@@ -34,6 +34,7 @@ public enum DecoderType
     MPT1327("MPT1327", "MPT1327", Protocol.MPT1327),
     NBFM("NBFM", "NBFM", Protocol.NBFM),
     PASSPORT("Passport", "Passport", Protocol.PASSPORT),
+    SMARTNET("SmartNet", "SmartNet", Protocol.SMARTNET),
     P25_PHASE1("P25 Phase 1", "P25-1", Protocol.APCO25),
     P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2),
 
@@ -67,7 +68,7 @@ public enum DecoderType
         DecoderType.NBFM,
         DecoderType.P25_PHASE1,
         DecoderType.P25_PHASE2,
-        DecoderType.PASSPORT);
+        DecoderType.PASSPORT, DecoderType.SMARTNET);
 
     /**
      * Auxiliary decoders that operate on in-band signalling in the decoded audio channel

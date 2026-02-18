@@ -28,6 +28,7 @@ import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
 import io.github.dsheirer.module.decode.mpt1327.identifier.MPT1327Talkgroup;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.module.decode.passport.identifier.PassportTalkgroup;
+import io.github.dsheirer.module.decode.smartnet.identifier.SmartNetTalkgroup;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.identifier.talkgroup.LTRTalkgroupFormatter;
 import io.github.dsheirer.preference.identifier.talkgroup.MPT1327TalkgroupFormatter;
@@ -152,6 +153,8 @@ public class RadioReferenceDecoder
                 return MPT1327Talkgroup.createTo(value);
             case PASSPORT:
                 return PassportTalkgroup.create(value);
+            case SMARTNET:
+                return SmartNetTalkgroup.create(value);
             default:
                 return UnknownTalkgroupIdentifier.create(value);
         }
@@ -428,7 +431,8 @@ public class RadioReferenceDecoder
                 {
                     return Protocol.APCO25;
                 }
-                break;
+                // SmartNet/SmartZone: Motorola Type II with analog or mixed voice
+                return Protocol.SMARTNET;
             case "NXDN":
             case "EDACS":
             case "TETRA":
@@ -501,7 +505,8 @@ public class RadioReferenceDecoder
                     {
                         return DecoderType.P25_PHASE1;
                     }
-                    break;
+                    // SmartNet/SmartZone: Motorola Type II with analog or mixed voice
+                    return DecoderType.SMARTNET;
                 case "NXDN":
 
                 case "EDACS":

@@ -98,6 +98,11 @@ import io.github.dsheirer.module.decode.passport.DecodeConfigPassport;
 import io.github.dsheirer.module.decode.passport.PassportDecoder;
 import io.github.dsheirer.module.decode.passport.PassportDecoderState;
 import io.github.dsheirer.module.decode.passport.PassportMessageFilter;
+import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
+import io.github.dsheirer.module.decode.smartnet.SmartNetBandPlan;
+import io.github.dsheirer.module.decode.smartnet.SmartNetDecoder;
+import io.github.dsheirer.module.decode.smartnet.SmartNetDecoderState;
+import io.github.dsheirer.module.decode.smartnet.SmartNetMessageFilter;
 import io.github.dsheirer.module.decode.tait.Tait1200Decoder;
 import io.github.dsheirer.module.decode.tait.Tait1200DecoderState;
 import io.github.dsheirer.module.decode.tait.Tait1200MessageFilter;
@@ -186,6 +191,9 @@ public class DecoderFactory
                 break;
             case PASSPORT:
                 processPassport(channel, modules, aliasList, decodeConfig);
+                break;
+            case SMARTNET:
+                processSmartNet(channel, modules, aliasList, decodeConfig);
                 break;
             case P25_PHASE1:
                 processP25Phase1(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
@@ -332,6 +340,26 @@ public class DecoderFactory
     }
 
     /**
+     * Creates decoder modules for SmartNet/SmartZone trunking decoder
+     */
+    private static void processSmartNet(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig)
+    {
+        DecodeConfigSmartNet smartNetConfig = (DecodeConfigSmartNet) decodeConfig;
+        SmartNetBandPlan bandPlan = smartNetConfig.createBandPlan();
+        modules.add(new SmartNetDecoder(bandPlan));
+        SmartNetDecoderState decoderState = new SmartNetDecoderState();
+        if(smartNetConfig.isTalkgroupFilterEnabled())
+        {
+            decoderState.setAllowedTalkgroups(new java.util.HashSet<>(smartNetConfig.getAllowedTalkgroups()));
+        }
+        modules.add(decoderState);
+        if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
+        {
+            modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
+        }
+    }
+
+    /**
      * Creates decoder modules for MPT-1327 decoder
      * @param channelMapModel to use in calculating traffic channel frequencies
      * @param channel configuration
@@ -435,8 +463,11 @@ public class DecoderFactory
         }
 
         DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)decodeConfig;
-        modules.add(new NBFMDecoder(decodeConfigNBFM));
-        modules.add(new NBFMDecoderState(channel.getName(), decodeConfigNBFM));
+        NBFMDecoderState decoderState = new NBFMDecoderState(channel.getName(), decodeConfigNBFM);
+        NBFMDecoder decoder = new NBFMDecoder(decodeConfigNBFM);
+        decoder.setDecoderState(decoderState);
+        modules.add(decoder);
+        modules.add(decoderState);
         modules.add(new AudioModule(aliasList, 0, 60000, decodeConfigNBFM.isAudioFilter()));
     }
 
@@ -677,6 +708,9 @@ public class DecoderFactory
             case PASSPORT:
                 filters.add(new PassportMessageFilter());
                 break;
+            case SMARTNET:
+                filters.add(new SmartNetMessageFilter());
+                break;
             case TAIT_1200:
                 filters.add(new Tait1200MessageFilter());
                 break;
@@ -710,6 +744,8 @@ public class DecoderFactory
                 return new DecodeConfigNBFM();
             case PASSPORT:
                 return new DecodeConfigPassport();
+            case SMARTNET:
+                return new DecodeConfigSmartNet();
             case P25_PHASE1:
                 return new DecodeConfigP25Phase1();
             case P25_PHASE2:
@@ -785,6 +821,8 @@ public class DecoderFactory
                     return copyP25P2;
                 case PASSPORT:
                     return new DecodeConfigPassport();
+                case SMARTNET:
+                    return new DecodeConfigSmartNet();
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
             }
