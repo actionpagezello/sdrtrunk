@@ -44,17 +44,30 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     private int mSquelchHysteresisOpenThreshold = NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD;
     private int mSquelchHysteresisCloseThreshold = NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD;
 
-    // === NEW: Channel-level tone filtering ===
+    // Channel-level tone filtering
     private List<ChannelToneFilter> mToneFilters = new ArrayList<>();
     private boolean mToneFilterEnabled = false;
 
-    // === NEW: Squelch tail/head removal ===
+    // Squelch tail/head removal
     private int mSquelchTailRemovalMs = SquelchTailRemover.DEFAULT_TAIL_REMOVAL_MS;
     private int mSquelchHeadRemovalMs = SquelchTailRemover.DEFAULT_HEAD_REMOVAL_MS;
     private boolean mSquelchTailRemovalEnabled = false;
 
-    // === NEW: FM de-emphasis ===
+    // FM de-emphasis
     private DeemphasisMode mDeemphasis = DeemphasisMode.US_750US;
+
+    // Audio post-processing configuration
+    private boolean mLowPassEnabled = true;
+    private double mLowPassCutoff = 3400.0; // Hz
+    private boolean mBassBoostEnabled = false;
+    private float mBassBoostDb = 0.0f; // 0 to +12 dB
+    private boolean mNoiseGateEnabled = false;
+    private float mNoiseGateThreshold = 4.0f; // percentage 0-100%
+    private float mNoiseGateReduction = 0.8f; // 0.0 to 1.0
+    private int mNoiseGateHoldTime = 500; // milliseconds
+    private boolean mVoiceEnhanceEnabled = true;
+    private float mVoiceEnhanceAmount = 30.0f; // percentage 0-100%
+    private float mOutputGain = 1.0f; // linear gain 0.1 to 5.0
 
     /**
      * FM de-emphasis time constant options
@@ -198,7 +211,7 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
         mSquelchHysteresisCloseThreshold = close;
     }
 
-    // ========== NEW: Channel-level tone filtering ==========
+    // ========== Channel-level tone filtering ==========
 
     /**
      * List of CTCSS/DCS tone filters for this channel. When enabled, audio is only passed
@@ -260,7 +273,7 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
         return mToneFilterEnabled && !mToneFilters.isEmpty();
     }
 
-    // ========== NEW: Squelch tail/head removal ==========
+    // ========== Squelch tail/head removal ==========
 
     /**
      * Squelch tail removal enabled state. When enabled, the configured number of
@@ -310,7 +323,7 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
                 Math.min(SquelchTailRemover.MAXIMUM_HEAD_REMOVAL_MS, ms));
     }
 
-    // ========== NEW: FM de-emphasis ==========
+    // ========== FM de-emphasis ==========
 
     /**
      * FM de-emphasis mode. Standard FM broadcasting uses pre-emphasis to boost high
@@ -329,5 +342,128 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     public void setDeemphasis(DeemphasisMode deemphasis)
     {
         mDeemphasis = deemphasis != null ? deemphasis : DeemphasisMode.NONE;
+    }
+
+    // ========== Audio post-processing getters and setters ==========
+
+    @JacksonXmlProperty(isAttribute = true, localName = "lowPassEnabled")
+    public boolean isLowPassEnabled()
+    {
+        return mLowPassEnabled;
+    }
+
+    public void setLowPassEnabled(boolean enabled)
+    {
+        mLowPassEnabled = enabled;
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "lowPassCutoff")
+    public double getLowPassCutoff()
+    {
+        return mLowPassCutoff;
+    }
+
+    public void setLowPassCutoff(double cutoff)
+    {
+        mLowPassCutoff = cutoff;
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "bassBoostEnabled")
+    public boolean isBassBoostEnabled()
+    {
+        return mBassBoostEnabled;
+    }
+
+    public void setBassBoostEnabled(boolean enabled)
+    {
+        mBassBoostEnabled = enabled;
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "bassBoostDb")
+    public float getBassBoostDb()
+    {
+        return mBassBoostDb;
+    }
+
+    public void setBassBoostDb(float boostDb)
+    {
+        mBassBoostDb = Math.max(0.0f, Math.min(12.0f, boostDb));
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "noiseGateEnabled")
+    public boolean isNoiseGateEnabled()
+    {
+        return mNoiseGateEnabled;
+    }
+
+    public void setNoiseGateEnabled(boolean enabled)
+    {
+        mNoiseGateEnabled = enabled;
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "noiseGateThreshold")
+    public float getNoiseGateThreshold()
+    {
+        return mNoiseGateThreshold;
+    }
+
+    public void setNoiseGateThreshold(float threshold)
+    {
+        mNoiseGateThreshold = Math.max(0.0f, Math.min(100.0f, threshold));
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "noiseGateReduction")
+    public float getNoiseGateReduction()
+    {
+        return mNoiseGateReduction;
+    }
+
+    public void setNoiseGateReduction(float reduction)
+    {
+        mNoiseGateReduction = Math.max(0.0f, Math.min(1.0f, reduction));
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "noiseGateHoldTime")
+    public int getNoiseGateHoldTime()
+    {
+        return mNoiseGateHoldTime;
+    }
+
+    public void setNoiseGateHoldTime(int timeMs)
+    {
+        mNoiseGateHoldTime = Math.max(0, Math.min(1000, timeMs));
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "voiceEnhanceEnabled")
+    public boolean isVoiceEnhanceEnabled()
+    {
+        return mVoiceEnhanceEnabled;
+    }
+
+    public void setVoiceEnhanceEnabled(boolean enabled)
+    {
+        mVoiceEnhanceEnabled = enabled;
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "voiceEnhanceAmount")
+    public float getVoiceEnhanceAmount()
+    {
+        return mVoiceEnhanceAmount;
+    }
+
+    public void setVoiceEnhanceAmount(float amount)
+    {
+        mVoiceEnhanceAmount = Math.max(0.0f, Math.min(100.0f, amount));
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "outputGain")
+    public float getOutputGain()
+    {
+        return mOutputGain;
+    }
+
+    public void setOutputGain(float gain)
+    {
+        mOutputGain = Math.max(0.1f, Math.min(5.0f, gain));
     }
 }

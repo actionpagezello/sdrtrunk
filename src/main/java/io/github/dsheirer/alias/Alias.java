@@ -491,6 +491,30 @@ public class Alias
     /**
      * Updates the streamable status for this alias
      */
+    /**
+     * Indicates if this alias has a custom audio output device configured
+     */
+    public boolean hasAudioOutputDevice()
+    {
+        return false; // Placeholder for future VAC routing
+    }
+
+    /**
+     * Gets the audio output device name for this alias
+     */
+    public String getAudioOutputDevice()
+    {
+        return null; // Placeholder for future VAC routing
+    }
+
+    /**
+     * Sets the audio output device name for this alias
+     */
+    public void setAudioOutputDevice(String device)
+    {
+        // Placeholder for future VAC routing
+    }
+
     private void updateStreamable()
     {
         for(AliasID aliasID: mAliasIDs)
