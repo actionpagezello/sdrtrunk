@@ -102,6 +102,7 @@ import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
 import io.github.dsheirer.module.decode.smartnet.SmartNetBandPlan;
 import io.github.dsheirer.module.decode.smartnet.SmartNetDecoder;
 import io.github.dsheirer.module.decode.smartnet.SmartNetDecoderState;
+import io.github.dsheirer.module.decode.smartnet.SmartNetTrafficChannelManager;
 import io.github.dsheirer.module.decode.smartnet.SmartNetMessageFilter;
 import io.github.dsheirer.module.decode.tait.Tait1200Decoder;
 import io.github.dsheirer.module.decode.tait.Tait1200DecoderState;
@@ -353,6 +354,9 @@ public class DecoderFactory
             decoderState.setAllowedTalkgroups(new java.util.HashSet<>(smartNetConfig.getAllowedTalkgroups()));
         }
         modules.add(decoderState);
+        SmartNetTrafficChannelManager trafficChannelManager = new SmartNetTrafficChannelManager(channel);
+        decoderState.setTrafficChannelManager(trafficChannelManager);
+        modules.add(trafficChannelManager);
         if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
         {
             modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));

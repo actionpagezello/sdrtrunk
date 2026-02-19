@@ -43,6 +43,7 @@ public class SmartNetDecoderState extends DecoderState
     private static final Logger mLog = LoggerFactory.getLogger(SmartNetDecoderState.class);
 
     private Set<Integer> mAllowedTalkgroups = new HashSet<>();
+    private SmartNetTrafficChannelManager mTrafficChannelManager;
     private boolean mFilterEnabled = false;
     private int mSystemId = 0;
     private int mSiteId = 0;
@@ -117,6 +118,7 @@ public class SmartNetDecoderState extends DecoderState
             .build();
 
         broadcast(event);
+        if(mTrafficChannelManager != null && message.isGroup()) { mTrafficChannelManager.processChannelGrant(message); }
     }
 
     private void processVoiceUpdate(SmartNetMessage message)
@@ -140,6 +142,7 @@ public class SmartNetDecoderState extends DecoderState
             .build();
 
         broadcast(event);
+        if(mTrafficChannelManager != null && message.isGroup()) { mTrafficChannelManager.processChannelGrant(message); }
     }
 
     private void processSystemId(SmartNetMessage message)
@@ -165,6 +168,8 @@ public class SmartNetDecoderState extends DecoderState
 
         broadcast(event);
     }
+
+    public void setTrafficChannelManager(SmartNetTrafficChannelManager manager) { mTrafficChannelManager = manager; }
 
     public void setAllowedTalkgroups(Set<Integer> talkgroups)
     {

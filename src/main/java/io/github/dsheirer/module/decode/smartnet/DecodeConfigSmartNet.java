@@ -37,6 +37,7 @@ public class DecodeConfigSmartNet extends DecodeConfiguration
     private boolean mTalkgroupFilterEnabled = false;
     private double mCustomBaseFrequency = 0;
     private double mCustomHighFrequency = 0;
+    private int mTrafficChannelPoolSize = 3;
     private double mCustomSpacing = 0.025;
     private int mCustomOffset = 0;
 
@@ -137,6 +138,9 @@ public class DecodeConfigSmartNet extends DecodeConfiguration
     }
 
     @JsonIgnore
+    public int getTrafficChannelPoolSize() { return mTrafficChannelPoolSize; }
+    public void setTrafficChannelPoolSize(int size) { mTrafficChannelPoolSize = size; }
+
     public SmartNetBandPlan createBandPlan()
     {
         switch(mBandPlan.toLowerCase())
