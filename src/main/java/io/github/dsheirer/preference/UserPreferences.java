@@ -124,6 +124,16 @@ public class UserPreferences implements Listener<PreferenceType>
         return mJmbeLibraryPreference;
     }
 
+    private NowPlayingPreference mNowPlayingPreference;
+
+    public NowPlayingPreference getNowPlayingPreference()
+    {    
+    if(mNowPlayingPreference == null)
+    {
+        mNowPlayingPreference = new NowPlayingPreference();
+    }
+    return mNowPlayingPreference;
+    }    
     /**
      * Directory preferences
      */

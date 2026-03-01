@@ -18,7 +18,10 @@
  */
 package io.github.dsheirer.module.decode.event;
 
+import io.github.dsheirer.filter.Filter;
+import io.github.dsheirer.filter.FilterElement;
 import io.github.dsheirer.filter.FilterSet;
+import io.github.dsheirer.filter.IFilter;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.MessageHistory;
 import io.github.dsheirer.module.ProcessingChain;
@@ -54,6 +57,7 @@ public class MessageActivityPanel extends JPanel implements Listener<ProcessingC
     private JTableColumnWidthMonitor mTableColumnWidthMonitor;
     private UserPreferences mUserPreferences;
     private FilterSet<IMessage> mMessageFilterSet;
+    private boolean mRestoringFilters = false;
     private HistoryManagementPanel<IMessage> mHistoryManagementPanel;
 
     /**
@@ -94,8 +98,17 @@ public class MessageActivityPanel extends JPanel implements Listener<ProcessingC
         {
             mCurrentMessageHistory = processingChain.getMessageHistory();
             mMessageFilterSet = DecoderFactory.getMessageFilters(processingChain.getModules());
-            //Register filter change listener to refresh the table any time the event filters are changed.
-            mMessageFilterSet.register(() -> mMessageModel.fireTableDataChanged());
+            mRestoringFilters = true;
+            restoreFilterStates(mMessageFilterSet);
+            mRestoringFilters = false;
+            //Register filter change listener to refresh the table and persist filter states.
+            mMessageFilterSet.register(() -> {
+                if(!mRestoringFilters)
+                {
+                    saveFilterStates(mMessageFilterSet);
+                }
+                mMessageModel.fireTableDataChanged();
+            });
             if(mHistoryManagementPanel != null)
             {
                 mHistoryManagementPanel.updateFilterSet(mMessageFilterSet);
@@ -117,6 +130,36 @@ public class MessageActivityPanel extends JPanel implements Listener<ProcessingC
             mMessageFilterSet = null;
             mMessageModel.clear();
             mHistoryManagementPanel.setEnabled(false);
+        }
+    }
+
+    private void restoreFilterStates(FilterSet<IMessage> filterSet)
+    {
+        for(IFilter<IMessage> ifilter : filterSet.getFilters())
+        {
+            if(ifilter instanceof Filter<?,?> filter)
+            {
+                for(FilterElement<?> element : filter.getFilterElements())
+                {
+                    String key = filter.getName() + "." + element.getName();
+                    element.setEnabled(mUserPreferences.getNowPlayingPreference().isFilterEnabled(key));
+                }
+            }
+        }
+    }
+
+    private void saveFilterStates(FilterSet<IMessage> filterSet)
+    {
+        for(IFilter<IMessage> ifilter : filterSet.getFilters())
+        {
+            if(ifilter instanceof Filter<?,?> filter)
+            {
+                for(FilterElement<?> element : filter.getFilterElements())
+                {
+                    String key = filter.getName() + "." + element.getName();
+                    mUserPreferences.getNowPlayingPreference().setFilterEnabled(key, element.isEnabled());
+                }
+            }
         }
     }
 
