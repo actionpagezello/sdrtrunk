@@ -481,6 +481,35 @@ public class SpectralDisplayPanel extends JPanel
     }
 
     /**
+     * Zooms the spectral display to center on the specified frequency.
+     * Uses 16x zoom (level 4) to provide a close-up view of the channel.
+     * @param frequency to center on in Hz
+     */
+    public void zoomToFrequency(long frequency)
+    {
+        if(mTuner != null && mOverlayPanel.containsFrequency(frequency))
+        {
+            int targetZoom = 5;
+
+            //If already at the target zoom level, just reposition the window
+            //to center on the new frequency without requiring a zoom level change
+            if(mZoom == targetZoom)
+            {
+                double binOffsetToFrequency = getBinOffset(frequency);
+                double windowBinOffset = (double)getZoomWindowSizeInBins() * 0.5;
+                double offset = binOffsetToFrequency - windowBinOffset;
+                setZoomWindowOffset(offset);
+            }
+            else
+            {
+                setZoom(targetZoom, frequency, 0.5);
+            }
+
+            mLog.info("Zoomed to frequency " + frequency + " Hz at 32x");
+        }
+    }
+
+    /**
      * Monitors the sizing of the layered pane and resizes the spectrum and
      * channel panels whenever the layered pane is resized
      */

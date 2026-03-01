@@ -20,6 +20,7 @@ package io.github.dsheirer.controller.channel;
 
 import com.google.common.eventbus.Subscribe;
 import io.github.dsheirer.alias.AliasModel;
+import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.audio.AudioSegment;
 import io.github.dsheirer.channel.metadata.ChannelAndMetadata;
 import io.github.dsheirer.channel.metadata.ChannelMetadata;
@@ -464,6 +465,15 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
         List<Module> modules = DecoderFactory.getModules(mChannelMapModel, channel, mAliasModel, mUserPreferences,
             request.getTrafficChannelManager(), request.getChannelDescriptor());
         processingChain.addModules(modules);
+
+        //Feature G: Wire channel mute supplier to audio modules
+        for(Module module : modules)
+        {
+            if(module instanceof AbstractAudioModule)
+            {
+                ((AbstractAudioModule)module).setChannelMutedSupplier(channel::isMuted);
+            }
+        }
 
         //Post preload data from the request to the event bus.  Modules that can handle preload data will annotate
         //their processor method with @Subscribe to receive each specific preload data content class.

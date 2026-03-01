@@ -26,6 +26,7 @@ public class TunerEvent
 {
     private Tuner mTuner;
     private Event mEvent;
+    private long mTargetFrequency;
 
     /**
      * Constructs an instance
@@ -36,6 +37,20 @@ public class TunerEvent
     {
         mTuner = tuner;
         mEvent = event;
+        mTargetFrequency = 0;
+    }
+
+    /**
+     * Constructs an instance with a target frequency for zoom-to-channel support.
+     * @param tuner that is generating the event
+     * @param event from the tuner
+     * @param targetFrequency to zoom/center on (0 = no zoom)
+     */
+    public TunerEvent(Tuner tuner, Event event, long targetFrequency)
+    {
+        mTuner = tuner;
+        mEvent = event;
+        mTargetFrequency = targetFrequency;
     }
 
     /**
@@ -44,6 +59,22 @@ public class TunerEvent
     public Tuner getTuner()
     {
         return mTuner;
+    }
+
+    /**
+     * Target frequency for zoom-to-channel, or 0 if not specified.
+     */
+    public long getTargetFrequency()
+    {
+        return mTargetFrequency;
+    }
+
+    /**
+     * Indicates if a target frequency has been specified for zoom.
+     */
+    public boolean hasTargetFrequency()
+    {
+        return mTargetFrequency > 0;
     }
 
     /**

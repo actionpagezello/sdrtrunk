@@ -26,6 +26,8 @@ import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
+import java.util.function.BooleanSupplier;
+import io.github.dsheirer.alias.id.priority.Priority;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +45,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     private Broadcaster<IdentifierUpdateNotification> mIdentifierUpdateNotificationBroadcaster = new Broadcaster<>();
     private AliasList mAliasList;
     private AudioSegment mAudioSegment;
+    private BooleanSupplier mChannelMutedSupplier;
     private int mAudioSampleCount = 0;
     private boolean mRecordAudioOverride;
     private int mTimeslot;
@@ -121,6 +124,12 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                     mAudioSegment.recordAudioProperty().set(true);
                 }
 
+                //Feature G: Channel-level mute check
+                if(mChannelMutedSupplier != null && mChannelMutedSupplier.getAsBoolean())
+                {
+                    mAudioSegment.monitorPriorityProperty().set(Priority.DO_NOT_MONITOR);
+                }
+
                 if(mAudioSegmentListener != null)
                 {
                     mAudioSegment.incrementConsumerCount();
@@ -137,6 +146,23 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     public void addAudio(float[] audioBuffer)
     {
         AudioSegment audioSegment = getAudioSegment();
+
+        //Feature G: Continuously check mute state so mute/unmute takes effect immediately
+        //on the current audio segment, not just on new segments
+        if(mChannelMutedSupplier != null)
+        {
+            boolean shouldMute = mChannelMutedSupplier.getAsBoolean();
+            int currentPriority = audioSegment.monitorPriorityProperty().get();
+
+            if(shouldMute && currentPriority != Priority.DO_NOT_MONITOR)
+            {
+                audioSegment.monitorPriorityProperty().set(Priority.DO_NOT_MONITOR);
+            }
+            else if(!shouldMute && currentPriority == Priority.DO_NOT_MONITOR)
+            {
+                audioSegment.monitorPriorityProperty().set(Priority.DEFAULT_PRIORITY);
+            }
+        }
 
         //If the current segment exceeds the max samples length, close it so that a new segment gets generated
         //and then link the segments together
@@ -175,6 +201,38 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 if(mAudioSegment != null)
                 {
                     mAudioSegment.recordAudioProperty().set(true);
+                }
+            }
+        }
+    }
+
+    /**
+     * Sets a supplier that indicates whether the parent channel is muted.
+     * When the supplier returns true, new audio segments are marked DO_NOT_MONITOR.
+     */
+    public void setChannelMutedSupplier(BooleanSupplier supplier)
+    {
+        mChannelMutedSupplier = supplier;
+    }
+
+    /**
+     * Directly updates the mute state of the current audio segment.
+     * This provides immediate mute/unmute effect without waiting for the next addAudio() call.
+     * @param muted true to mute, false to unmute
+     */
+    public void setMuted(boolean muted)
+    {
+        synchronized(this)
+        {
+            if(mAudioSegment != null)
+            {
+                if(muted)
+                {
+                    mAudioSegment.monitorPriorityProperty().set(Priority.DO_NOT_MONITOR);
+                }
+                else
+                {
+                    mAudioSegment.monitorPriorityProperty().set(Priority.DEFAULT_PRIORITY);
                 }
             }
         }

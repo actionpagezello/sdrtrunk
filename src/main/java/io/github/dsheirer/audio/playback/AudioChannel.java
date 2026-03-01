@@ -168,6 +168,39 @@ public class AudioChannel implements Listener<IdentifierUpdateNotification>
      */
     public float[] getAudio()
     {
+        //Check if current segment became DO_NOT_MONITOR mid-stream (user muted the channel).
+        //For DO_NOT_MONITOR: flush buffer and return silence, but KEEP the segment alive so
+        //that if the user unmutes, audio resumes instantly from the current position.
+        //For duplicates: dispose as before.
+        if(mCurrentAudioSegment != null && mCurrentAudioSegment.isDoNotMonitor())
+        {
+            //Flush any buffered audio from this now-muted segment
+            if(!mAudioBuffer.isEmpty())
+            {
+                mAudioBuffer.flush();
+            }
+
+            //Keep advancing through audio buffers so we stay in sync with the live stream,
+            //but don't actually play anything. This allows instant unmute resume.
+            while(mCurrentBufferIndex >= 0 && mCurrentBufferIndex < mCurrentAudioSegment.getAudioBufferCount())
+            {
+                mCurrentBufferIndex++;
+            }
+
+            //Dispose if the segment is complete (transmission ended while muted)
+            if(mCurrentAudioSegment.isComplete() && mCurrentBufferIndex >= mCurrentAudioSegment.getAudioBufferCount())
+            {
+                disposeCurrentAudioSegment();
+                mNoAudioFromSegmentIntervalCount = 0;
+            }
+            else
+            {
+                mNoAudioFromSegmentIntervalCount = 0;
+            }
+
+            return null;
+        }
+
         if(mAudioBuffer.isFull())
         {
             float[] audio = mAudioBuffer.get();

@@ -119,7 +119,11 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
 
         while(newSegment != null)
         {
-            if(newSegment.isDuplicate() &&
+            if(newSegment.isDoNotMonitor())
+            {
+                newSegment.decrementConsumerCount();
+            }
+            else if(newSegment.isDuplicate() &&
                mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled())
             {
                 newSegment.decrementConsumerCount();
@@ -147,7 +151,12 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
             {
                 audioSegment = it.next();
 
-                if(audioSegment.isDuplicate() &&
+                if(audioSegment.isDoNotMonitor())
+                {
+                    it.remove();
+                    audioSegment.decrementConsumerCount();
+                }
+                else if(audioSegment.isDuplicate() &&
                    mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled())
                 {
                     it.remove();

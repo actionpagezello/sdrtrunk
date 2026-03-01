@@ -96,7 +96,16 @@ public class TunerSpectralDisplayManager implements Listener<TunerEvent>
             case REQUEST_MAIN_SPECTRAL_DISPLAY:
                 if(SystemProperties.getInstance().get(SpectralDisplayPanel.SPECTRAL_DISPLAY_ENABLED, true))
                 {
-                    SwingUtils.run(() -> mSpectralDisplayPanel.showTuner(event.getTuner()));
+                    SwingUtils.run(() ->
+                    {
+                        mSpectralDisplayPanel.showTuner(event.getTuner());
+
+                        //Zoom to target frequency if specified (e.g. Show in Waterfall)
+                        if(event.hasTargetFrequency())
+                        {
+                            mSpectralDisplayPanel.zoomToFrequency(event.getTargetFrequency());
+                        }
+                    });
                 }
                 break;
             case REQUEST_NEW_SPECTRAL_DISPLAY:

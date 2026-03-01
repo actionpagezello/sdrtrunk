@@ -85,6 +85,8 @@ public class Channel extends Configuration implements Listener<SourceEvent>
     private BooleanProperty mAutoStart = new SimpleBooleanProperty();
     private IntegerProperty mAutoStartOrder = new SimpleIntegerProperty();
     private boolean mSelected;
+    @JacksonXmlProperty(isAttribute = true, localName = "muted")
+    private boolean mMuted = false;
     private List<TunerChannel> mTunerChannels = null;
 
     private ChannelType mChannelType = ChannelType.STANDARD;
@@ -800,5 +802,24 @@ public class Channel extends Configuration implements Listener<SourceEvent>
         return (Channel c) -> new Observable[] {c.processingProperty(), c.nameProperty(), c.aliasListNameProperty(),
             c.autoStartOrderProperty(), c.autoStartProperty(), c.siteProperty(), c.systemProperty(),
             c.getFrequencyList()};
+    }
+
+    /**
+     * Indicates if this channel is muted (audio suppressed).
+     * For channels without an alias, this provides direct mute control.
+     */
+    @JsonIgnore
+    public boolean isMuted()
+    {
+        return mMuted;
+    }
+
+    /**
+     * Sets the muted state for this channel.
+     * @param muted true to suppress audio, false to allow
+     */
+    public void setMuted(boolean muted)
+    {
+        mMuted = muted;
     }
 }

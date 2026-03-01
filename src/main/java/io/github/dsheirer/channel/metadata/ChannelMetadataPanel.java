@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2024 Dennis Sheirer
+ * Copyright (C) 2014-2025 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@ package io.github.dsheirer.channel.metadata;
 
 import com.google.common.base.Joiner;
 import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelModel;
@@ -31,6 +32,8 @@ import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.configuration.FrequencyConfigurationIdentifier;
 import io.github.dsheirer.identifier.decoder.ChannelStateIdentifier;
+import io.github.dsheirer.audio.AbstractAudioModule;
+import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
@@ -38,6 +41,10 @@ import io.github.dsheirer.preference.identifier.TalkgroupFormatPreference;
 import io.github.dsheirer.preference.swing.JTableColumnWidthMonitor;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.source.tuner.Tuner;
+import io.github.dsheirer.source.tuner.TunerEvent;
+import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
+import io.github.dsheirer.source.tuner.ui.DiscoveredTunerModel;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.event.MouseAdapter;
@@ -60,6 +67,9 @@ import javax.swing.SwingConstants;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableModel;
+import javax.swing.table.TableRowSorter;
+import java.util.Comparator;
 
 public class ChannelMetadataPanel extends JPanel implements ListSelectionListener
 {
@@ -68,8 +78,10 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private static final String TABLE_PREFERENCE_KEY = "channel.metadata.panel";
     private ChannelModel mChannelModel;
     private ChannelProcessingManager mChannelProcessingManager;
+    private PlaylistManager mPlaylistManager;
     private IconModel mIconModel;
     private UserPreferences mUserPreferences;
+    private DiscoveredTunerModel mDiscoveredTunerModel;
     private JTable mTable;
     private Broadcaster<ProcessingChain> mSelectedProcessingChainBroadcaster = new Broadcaster<>();
     private Map<State,Color> mBackgroundColors = new EnumMap<>(State.class);
@@ -78,15 +90,41 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private Channel mUserSelectedChannel;
 
     /**
-     * Table view for currently decoding channel metadata
+     * Table view for currently decoding channel metadata (backwards-compatible constructor).
+     * Show in Waterfall feature will not be available without DiscoveredTunerModel.
      */
     public ChannelMetadataPanel(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences)
     {
+        this(playlistManager, iconModel, userPreferences, null);
+    }
+
+    /**
+     * Table view for currently decoding channel metadata
+     *
+     * @param playlistManager for channel model, processing manager, and playlist save
+     * @param iconModel for alias icons
+     * @param userPreferences for column width persistence and talkgroup formatting
+     * @param discoveredTunerModel for Show in Waterfall tuner lookup (nullable)
+     */
+    public ChannelMetadataPanel(PlaylistManager playlistManager, IconModel iconModel,
+                                UserPreferences userPreferences, DiscoveredTunerModel discoveredTunerModel)
+    {
+        mPlaylistManager = playlistManager;
         mChannelModel = playlistManager.getChannelModel();
         mChannelProcessingManager = playlistManager.getChannelProcessingManager();
         mIconModel = iconModel;
         mUserPreferences = userPreferences;
+        mDiscoveredTunerModel = discoveredTunerModel;
         init();
+    }
+
+    /**
+     * Sets the DiscoveredTunerModel for Show in Waterfall feature.
+     * Can be called after construction if the model is not available at construction time.
+     */
+    public void setDiscoveredTunerModel(DiscoveredTunerModel discoveredTunerModel)
+    {
+        mDiscoveredTunerModel = discoveredTunerModel;
     }
 
     /**
@@ -118,7 +156,21 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         mTable.getColumnModel().getColumn(ChannelMetadataModel.COLUMN_CONFIGURATION_FREQUENCY)
             .setCellRenderer(new FrequencyCellRenderer());
 
-        //Add a table column width monitor to store/restore column widths
+        //Enable column sorting via click on column headers
+        TableRowSorter<TableModel> sorter = new TableRowSorter<>(mTable.getModel());
+        Comparator<Object> toStringComparator = (o1, o2) -> {
+            String s1 = o1 != null ? o1.toString() : "";
+            String s2 = o2 != null ? o2.toString() : "";
+            return s1.compareToIgnoreCase(s2);
+        };
+        for(int i = 0; i < mTable.getColumnCount(); i++)
+        {
+            sorter.setComparator(i, toStringComparator);
+        }
+        mTable.setRowSorter(sorter);
+
+        //Add column layout monitor AFTER sorter is set, so it can attach sort listener
+        //and so sorter setup doesn't trigger save of default widths
         mTableColumnMonitor = new JTableColumnWidthMonitor(mUserPreferences, mTable, TABLE_PREFERENCE_KEY);
 
         JScrollPane scrollPane = new JScrollPane(mTable, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
@@ -190,6 +242,45 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     public void addProcessingChainSelectionListener(Listener<ProcessingChain> listener)
     {
         mSelectedProcessingChainBroadcaster.addListener(listener);
+    }
+
+    /**
+     * Finds the tuner that is currently serving the given frequency by checking all available
+     * tuners in the discovered tuner model.
+     *
+     * @param frequency in Hz to find the serving tuner for
+     * @return the Tuner serving that frequency, or null if not found
+     */
+    private Tuner findTunerForFrequency(long frequency)
+    {
+        if(mDiscoveredTunerModel != null)
+        {
+            for(DiscoveredTuner discoveredTuner : mDiscoveredTunerModel.getAvailableTuners())
+            {
+                if(discoveredTuner.hasTuner())
+                {
+                    Tuner tuner = discoveredTuner.getTuner();
+
+                    try
+                    {
+                        long center = tuner.getTunerController().getFrequency();
+                        int sampleRate = (int)tuner.getTunerController().getSampleRate();
+                        long halfBand = sampleRate / 2;
+
+                        if(frequency >= (center - halfBand) && frequency <= (center + halfBand))
+                        {
+                            return tuner;
+                        }
+                    }
+                    catch(Exception e)
+                    {
+                        mLog.debug("Error checking tuner frequency range", e);
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -436,10 +527,126 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
                             if(channel != null)
                             {
+                                //View/Edit channel
                                 JMenuItem viewChannel = new JMenuItem("View/Edit: " + channel.getShortTitle());
                                 viewChannel.addActionListener(e2 -> MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(channel)));
                                 popupMenu.add(viewChannel);
                                 populated = true;
+
+                                //Show in Waterfall - find serving tuner and switch spectral display
+                                FrequencyConfigurationIdentifier freqId = metadata.getFrequencyConfigurationIdentifier();
+
+                                if(freqId != null && mDiscoveredTunerModel != null)
+                                {
+                                    long channelFrequency = freqId.getValue();
+
+                                    if(channelFrequency > 0)
+                                    {
+                                        JMenuItem showInWaterfall = new JMenuItem("Show in Waterfall");
+                                        showInWaterfall.addActionListener(e2 ->
+                                        {
+                                            mLog.info("Show in Waterfall: looking for tuner at frequency " + channelFrequency + " Hz");
+                                            Tuner tuner = findTunerForFrequency(channelFrequency);
+
+                                            if(tuner != null)
+                                            {
+                                                mLog.info("Show in Waterfall: found tuner [" + tuner + "], broadcasting REQUEST_MAIN_SPECTRAL_DISPLAY with zoom to " + channelFrequency + " Hz");
+                                                mDiscoveredTunerModel.broadcast(
+                                                    new TunerEvent(tuner, TunerEvent.Event.REQUEST_MAIN_SPECTRAL_DISPLAY, channelFrequency));
+                                            }
+                                            else
+                                            {
+                                                mLog.warn("Show in Waterfall: no tuner found for frequency " + channelFrequency + " Hz");
+                                            }
+                                        });
+                                        popupMenu.add(showInWaterfall);
+                                    }
+                                }
+
+                                //Mute/Unmute
+                                popupMenu.addSeparator();
+
+                                //Find the alias to use: prefer active TO alias, fall back to channel's alias list
+                                Alias muteAlias = null;
+                                List<Alias> toAliases = metadata.getToIdentifierAliases();
+
+                                if(toAliases != null && !toAliases.isEmpty())
+                                {
+                                    muteAlias = toAliases.get(0);
+                                }
+                                else
+                                {
+                                    //No active call - look up alias from channel's configured alias list
+                                    String aliasListName = channel.getAliasListName();
+
+                                    if(aliasListName != null && !aliasListName.isEmpty())
+                                    {
+                                        for(Alias candidate : mPlaylistManager.getAliasModel().getAliases())
+                                        {
+                                            if(aliasListName.equals(candidate.getAliasListName()))
+                                            {
+                                                muteAlias = candidate;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                //Build mute menu item
+                                final Alias alias = muteAlias;
+                                boolean channelMuted = channel.isMuted();
+                                boolean aliasMuted = (alias != null && alias.getPlaybackPriority() == Priority.DO_NOT_MONITOR);
+                                boolean isMuted = channelMuted || aliasMuted;
+
+                                String muteLabel;
+                                if(alias != null)
+                                {
+                                    muteLabel = (isMuted ? "Unmute: " : "Mute: ") + alias.getName();
+                                }
+                                else
+                                {
+                                    muteLabel = isMuted ? "Unmute" : "Mute";
+                                }
+
+                                JMenuItem muteItem = new JMenuItem(muteLabel);
+                                muteItem.addActionListener(e2 ->
+                                {
+                                    boolean newMuteState = !isMuted;
+
+                                    //Update alias priority if available
+                                    if(alias != null)
+                                    {
+                                        if(isMuted)
+                                        {
+                                            alias.setCallPriority(Priority.DEFAULT_PRIORITY);
+                                        }
+                                        else
+                                        {
+                                            alias.setCallPriority(Priority.DO_NOT_MONITOR);
+                                        }
+                                    }
+
+                                    //Set channel-level mute flag
+                                    channel.setMuted(newMuteState);
+
+                                    //Direct path: immediately update audio modules in the processing chain
+                                    ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+                                    if(processingChain != null)
+                                    {
+                                        int audioModuleCount = 0;
+                                        for(Module module : processingChain.getModules())
+                                        {
+                                            if(module instanceof AbstractAudioModule)
+                                            {
+                                                ((AbstractAudioModule)module).setMuted(newMuteState);
+                                                audioModuleCount++;
+                                            }
+                                        }
+                                    }
+
+                                    mPlaylistManager.schedulePlaylistSave();
+                                });
+                                popupMenu.add(muteItem);
                             }
                         }
                     }

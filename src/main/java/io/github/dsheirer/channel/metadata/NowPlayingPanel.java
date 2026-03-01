@@ -28,6 +28,7 @@ import io.github.dsheirer.module.decode.event.MessageActivityPanel;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.settings.SettingsManager;
+import io.github.dsheirer.source.tuner.ui.DiscoveredTunerModel;
 import java.awt.Color;
 import net.miginfocom.swing.MigLayout;
 
@@ -62,6 +63,15 @@ public class NowPlayingPanel extends JPanel
         mDetailTabsVisible = detailTabsVisible;
 
         init();
+    }
+
+    /**
+     * Sets the DiscoveredTunerModel for the Show in Waterfall feature.
+     * @param discoveredTunerModel to set
+     */
+    public void setDiscoveredTunerModel(DiscoveredTunerModel discoveredTunerModel)
+    {
+        mChannelMetadataPanel.setDiscoveredTunerModel(discoveredTunerModel);
     }
 
     /**

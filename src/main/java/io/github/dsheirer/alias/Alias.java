@@ -568,6 +568,9 @@ public class Alias
         {
             addAliasID(new Priority(priority));
         }
+
+        //Sync the JavaFX priority property so UI bindings update
+        updatePriority();
     }
 
     /**

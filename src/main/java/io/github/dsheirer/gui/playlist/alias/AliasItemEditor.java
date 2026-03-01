@@ -49,7 +49,12 @@ import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.alias.id.talkgroup.TalkgroupFormatter;
 import io.github.dsheirer.alias.id.talkgroup.TalkgroupRange;
 import io.github.dsheirer.alias.id.tone.TonesID;
+import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.audio.broadcast.ConfiguredBroadcast;
+import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.controller.channel.ChannelProcessingManager;
+import io.github.dsheirer.module.Module;
+import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.control.IntegerFormatter;
 import io.github.dsheirer.gui.playlist.Editor;
@@ -166,6 +171,8 @@ public class AliasItemEditor extends Editor<Alias>
     private Map<AliasActionType,ActionEditor> mActionEditorMap = new HashMap<>();
     private EmptyActionEditor mEmptyActionEditor = new EmptyActionEditor();
     private ActionEditor mActionEditor;
+    private Alias mCurrentAlias;
+    private ChangeListener<Number> mPriorityListener;
 
 
     public AliasItemEditor(PlaylistManager playlistManager, UserPreferences userPreferences)
@@ -226,6 +233,43 @@ public class AliasItemEditor extends Editor<Alias>
     public void setItem(Alias alias)
     {
         super.setItem(alias);
+
+        //Remove previous priority listener
+        if(mCurrentAlias != null && mPriorityListener != null)
+        {
+            mCurrentAlias.priorityProperty().removeListener(mPriorityListener);
+        }
+
+        mCurrentAlias = alias;
+
+        //Add listener for external priority changes (e.g. mute from Now Playing)
+        if(alias != null)
+        {
+            mPriorityListener = (observable, oldValue, newValue) ->
+            {
+                Platform.runLater(() ->
+                {
+                    //Suppress modified flag - this is an external change, not a user edit
+                    boolean wasModified = modifiedProperty().get();
+
+                    boolean canMonitor = (newValue.intValue() != io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR);
+                    getMonitorAudioToggleSwitch().setSelected(canMonitor);
+
+                    if(canMonitor && newValue.intValue() != io.github.dsheirer.alias.id.priority.Priority.DEFAULT_PRIORITY)
+                    {
+                        getMonitorPriorityComboBox().getSelectionModel().select(newValue.intValue());
+                    }
+                    else
+                    {
+                        getMonitorPriorityComboBox().getSelectionModel().select(null);
+                    }
+
+                    //Restore modified flag to its previous state
+                    modifiedProperty().set(wasModified);
+                });
+            };
+            alias.priorityProperty().addListener(mPriorityListener);
+        }
 
         refreshAutoCompleteBindings();
 
@@ -415,13 +459,38 @@ public class AliasItemEditor extends Editor<Alias>
                 {
                     mLog.error("Error while updating alias group value", e);
                 }
+                AliasList aliasList = mPlaylistManager.getAliasModel().getAliasList(alias.getAliasListName());
+                aliasList.updateAlias(alias);
+
+                //Sync channel mute state: find all channels using this alias list and update their mute flag
+                //and audio modules so the change takes effect immediately
+                boolean shouldMute = !canMonitor;
+                String aliasListName = alias.getAliasListName();
+                ChannelProcessingManager cpm = mPlaylistManager.getChannelProcessingManager();
+
+                for(Channel ch : mPlaylistManager.getChannelModel().getChannels())
+                {
+                    if(aliasListName != null && aliasListName.equals(ch.getAliasListName()))
+                    {
+                        ch.setMuted(shouldMute);
+
+                        ProcessingChain pc = cpm.getProcessingChain(ch);
+                        if(pc != null)
+                        {
+                            for(Module module : pc.getModules())
+                            {
+                                if(module instanceof AbstractAudioModule)
+                                {
+                                    ((AbstractAudioModule)module).setMuted(shouldMute);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                //Reset the alias to refresh the editor.
+                setItem(alias);
             }
-
-            AliasList aliasList = mPlaylistManager.getAliasModel().getAliasList(alias.getAliasListName());
-            aliasList.updateAlias(alias);
-
-            //Reset the alias to refresh the editor.
-            setItem(alias);
 
             modifiedProperty().set(false);
         }
