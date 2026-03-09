@@ -58,6 +58,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     private final LinkedTransferQueue<AudioSegment> mNewAudioSegmentQueue = new LinkedTransferQueue<>();
     private final ReentrantLock mAudioChannelsLock = new ReentrantLock();
     private final UserPreferences mUserPreferences;
+    private final AudioSegmentRouter mAudioRouter = new AudioSegmentRouter();
     private AudioPlaybackDeviceDescriptor mAudioPlaybackDevice;
     private AudioOutput mAudioOutput;
     private ScheduledFuture<?> mProcessingTask;

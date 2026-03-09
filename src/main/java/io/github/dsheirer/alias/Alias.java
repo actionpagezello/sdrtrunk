@@ -71,6 +71,7 @@ public class Alias
     private StringProperty mGroup = new SimpleStringProperty();
     private StringProperty mIconName = new SimpleStringProperty();
     private StringProperty mName = new SimpleStringProperty();
+    private StringProperty mAudioOutputDevice = new SimpleStringProperty();
     private ObservableList<AliasID> mAliasIDs = FXCollections.observableArrayList();
     private ObservableList<AliasAction> mAliasActions = FXCollections.observableArrayList();
     private ObjectProperty<StreamAsTalkgroup> mStreamTalkgroupAlias = new SimpleObjectProperty<>();
@@ -248,6 +249,15 @@ public class Alias
      * Sets the stream as talkgroup value that will be used in the TO field for streamed audio calls.
      * @param streamTalkgroupAlias with a talkgroup value.
      */
+    public StringProperty audioOutputDeviceProperty() { return mAudioOutputDevice; }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "audio_output_device")
+    public String getAudioOutputDevice() { return mAudioOutputDevice.get(); }
+
+    public void setAudioOutputDevice(String deviceName) { mAudioOutputDevice.set(deviceName != null ? deviceName : ""); }
+
+    public boolean hasAudioOutputDevice() { String d = mAudioOutputDevice.get(); return d != null && !d.isEmpty() && !d.equals("System Default"); }
+
     public void setStreamTalkgroupAlias(StreamAsTalkgroup streamTalkgroupAlias)
     {
         mStreamTalkgroupAlias.set(streamTalkgroupAlias);
@@ -735,6 +745,6 @@ public class Alias
         return (Alias a) -> new Observable[] {a.recordableProperty(), a.streamableProperty(), a.colorProperty(),
             a.aliasListNameProperty(), a.groupProperty(), a.iconNameProperty(), a.nameProperty(), a.aliasIds(),
             a.aliasActions(), a.nonAudioIdentifierCountProperty(), a.overlapProperty(), a.priorityProperty(),
-                a.streamTalkgroupAliasProperty()};
+                a.streamTalkgroupAliasProperty(), a.audioOutputDeviceProperty()};
     }
 }

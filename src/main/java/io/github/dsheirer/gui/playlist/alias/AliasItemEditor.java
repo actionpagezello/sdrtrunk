@@ -60,6 +60,7 @@ import io.github.dsheirer.gui.playlist.alias.identifier.EmptyIdentifierEditor;
 import io.github.dsheirer.gui.playlist.alias.identifier.IdentifierEditor;
 import io.github.dsheirer.gui.playlist.alias.identifier.IdentifierEditorFactory;
 import io.github.dsheirer.icon.Icon;
+import io.github.dsheirer.gui.editor.AudioOutputDeviceEditor;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.PreferenceType;
 import io.github.dsheirer.preference.UserPreferences;
@@ -158,6 +159,7 @@ public class AliasItemEditor extends Editor<Alias>
     private VBox mIdentifierEditorBox;
     private TextField mStreamAsTalkgroupField;
     private TextFormatter<Integer> mStreamAsIntegerTextFormatter = new IntegerFormatter(1,0xFFFF);
+    private AudioOutputDeviceEditor mAudioOutputDeviceEditor;
 
     private Map<AliasIDType,IdentifierEditor> mIdentifierEditorMap = new HashMap<>();
     private EmptyIdentifierEditor mEmptyIdentifierEditor = new EmptyIdentifierEditor();
@@ -298,7 +300,8 @@ public class AliasItemEditor extends Editor<Alias>
                 }
             }
 
-            for(AliasAction original: alias.getAliasActions())
+            getAudioOutputDeviceEditor().setAlias(alias);
+        for(AliasAction original: alias.getAliasActions())
             {
                 AliasAction copy = AliasFactory.copyOf(original);
 
@@ -1080,9 +1083,30 @@ public class AliasItemEditor extends Editor<Alias>
             mTextFieldPane.getChildren().add(iconLabel);
             GridPane.setConstraints(getIconNodeComboBox(), 5, row, 3, 1);
             mTextFieldPane.getChildren().add(getIconNodeComboBox());
+
+        // Audio Output Device
+        Label audioOutputLabel = new Label("Audio Output");
+        GridPane.setHalignment(audioOutputLabel, HPos.RIGHT);
+        GridPane.setConstraints(audioOutputLabel, 0, ++row);
+        mTextFieldPane.getChildren().add(audioOutputLabel);
+        GridPane.setConstraints(getAudioOutputDeviceEditor(), 1, row, 7, 1);
+        GridPane.setHgrow(getAudioOutputDeviceEditor(), Priority.ALWAYS);
+        mTextFieldPane.getChildren().add(getAudioOutputDeviceEditor());
         }
 
         return mTextFieldPane;
+    }
+
+    private AudioOutputDeviceEditor getAudioOutputDeviceEditor()
+    {
+        if(mAudioOutputDeviceEditor == null)
+        {
+            mAudioOutputDeviceEditor = new AudioOutputDeviceEditor();
+            mAudioOutputDeviceEditor.modifiedProperty().addListener((obs, old, newVal) -> {
+                if(newVal) { modifiedProperty().set(true); }
+            });
+        }
+        return mAudioOutputDeviceEditor;
     }
 
     private ToggleSwitch getMonitorAudioToggleSwitch()
