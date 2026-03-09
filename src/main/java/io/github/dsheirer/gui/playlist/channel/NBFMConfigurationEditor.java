@@ -144,9 +144,9 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
         getTitledPanesBox().getChildren().add(getSourcePane());
         getTitledPanesBox().getChildren().add(getDecoderPane());
-        getTitledPanesBox().getChildren().add(getAudioFiltersPane());
         getTitledPanesBox().getChildren().add(getToneFilterPane());
         getTitledPanesBox().getChildren().add(getSquelchTailPane());
+        getTitledPanesBox().getChildren().add(getAudioFiltersPane());
         getTitledPanesBox().getChildren().add(getAuxDecoderPane());
         getTitledPanesBox().getChildren().add(getEventLogPane());
         getTitledPanesBox().getChildren().add(getRecordPane());
@@ -1213,4 +1213,5 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         }
     }
 }
+
 
