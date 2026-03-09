@@ -26,6 +26,7 @@ import io.github.dsheirer.controller.channel.ChannelEvent.Event;
 import io.github.dsheirer.controller.channel.IChannelEventListener;
 import io.github.dsheirer.controller.channel.IChannelEventProvider;
 import io.github.dsheirer.controller.channel.event.ChannelStartProcessingRequest;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
@@ -131,7 +132,15 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
      * Constructs an instance.
      * @param parentChannel (ie control channel) that owns this traffic channel manager
      */
+    private boolean mIgnoreUnaliasedTalkgroups = false;
+    private AliasList mAliasList;
+
     public P25TrafficChannelManager(Channel parentChannel)
+    {
+        this(parentChannel, null);
+    }
+
+    public P25TrafficChannelManager(Channel parentChannel, AliasList aliasList)
     {
         mParentChannel = parentChannel;
 
@@ -144,6 +153,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         else if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase2 phase2)
         {
             mIgnoreDataCalls = phase2.getIgnoreDataCalls();
+            mIgnoreUnaliasedTalkgroups = phase2.getIgnoreUnaliasedTalkgroups();
             createPhase1TrafficChannels(phase2.getTrafficChannelPoolSize(), new DecodeConfigP25Phase1());
             createPhase2TrafficChannels(phase2.getTrafficChannelPoolSize(), phase2);
         }
@@ -153,6 +163,14 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
      * Talker alias manager
      * @return manager
      */
+    private boolean hasAlias(IdentifierCollection ic)
+    {
+        if(!mIgnoreUnaliasedTalkgroups || mAliasList == null) return true;
+        Identifier to = ic.getToIdentifier();
+        if(to == null) return true;
+        return !mAliasList.getAliases(to).isEmpty();
+    }
+
     public TalkerAliasManager getTalkerAliasManager()
     {
         return mTalkerAliasManager;

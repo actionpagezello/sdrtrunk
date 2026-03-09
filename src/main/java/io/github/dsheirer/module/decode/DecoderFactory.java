@@ -303,7 +303,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
+            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel, aliasList);
             modules.add(primaryTCM);
             modules.add(new P25P1DecoderState(channel, primaryTCM));
         }
@@ -509,7 +509,7 @@ public class DecoderFactory
         }
         else
         {
-            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel);
+            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel, aliasList);
         }
 
         //Only register the traffic channel manager as a module if this is the parent control channel.

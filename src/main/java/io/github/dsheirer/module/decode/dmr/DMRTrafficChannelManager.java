@@ -28,6 +28,7 @@ import io.github.dsheirer.controller.channel.ChannelEvent.Event;
 import io.github.dsheirer.controller.channel.IChannelEventListener;
 import io.github.dsheirer.controller.channel.IChannelEventProvider;
 import io.github.dsheirer.controller.channel.event.ChannelStartProcessingRequest;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.identifier.Role;
@@ -119,13 +120,23 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
      *
      * @param parentChannel that owns this traffic channel manager
      */
+    private boolean mIgnoreUnaliasedTalkgroups = false;
+    private AliasList mAliasList;
+    public static final String UNALIASED_CALL_IGNORED = "UNALIASED CALL IGNORED";
+
     public DMRTrafficChannelManager(Channel parentChannel)
+    {
+        this(parentChannel, null);
+    }
+
+    public DMRTrafficChannelManager(Channel parentChannel, AliasList aliasList)
     {
         mParentChannel = parentChannel;
 
         if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigDMR)
         {
             mIgnoreDataCalls = ((DecodeConfigDMR)parentChannel.getDecodeConfiguration()).getIgnoreDataCalls();
+            mIgnoreUnaliasedTalkgroups = ((DecodeConfigDMR)parentChannel.getDecodeConfiguration()).getIgnoreUnaliasedTalkgroups();
         }
 
         createTrafficChannels();
@@ -134,6 +145,14 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     /**
      * Talker alias manager
      */
+    private boolean hasAlias(IdentifierCollection ic)
+    {
+        if(!mIgnoreUnaliasedTalkgroups || mAliasList == null) return true;
+        Identifier to = ic.getToIdentifier();
+        if(to == null) return true;
+        return !mAliasList.getAliases(to).isEmpty();
+    }
+
     public TalkerAliasManager getTalkerAliasManager()
     {
         return mTalkerAliasManager;
