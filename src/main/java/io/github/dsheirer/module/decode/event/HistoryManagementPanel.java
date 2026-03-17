@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2023 Dennis Sheirer
+ * Copyright (C) 2014-2025 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ import io.github.dsheirer.filter.FilterSet;
 import java.awt.EventQueue;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.util.function.Consumer;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JButton;
@@ -48,13 +49,47 @@ public class HistoryManagementPanel<T> extends JPanel
     private String mFilterEditorTitle;
 
     /**
-     * Constructs an instance
-     * @param model to manage
+     * Optional callback invoked (on the slider's change listener) each time
+     * the user moves the slider, so the caller can persist the new value.
+     */
+    private Consumer<Integer> mHistorySizeChangedCallback;
+
+    /**
+     * Constructs an instance using the model's current history size as the
+     * initial slider position.  No persistence callback is installed.
+     *
+     * @param model             to manage
+     * @param filterEditorTitle title for the filter editor dialog
      */
     public HistoryManagementPanel(ClearableHistoryModel model, String filterEditorTitle)
     {
+        this(model, filterEditorTitle, model.getHistorySize(), null);
+    }
+
+    /**
+     * Constructs an instance with a caller-supplied initial slider value and
+     * an optional callback for persistence.
+     *
+     * @param model                      to manage
+     * @param filterEditorTitle          title for the filter editor dialog
+     * @param initialHistorySize         slider starting position (from saved prefs)
+     * @param historySizeChangedCallback called with the new value every time
+     *                                   the slider moves; may be {@code null}
+     */
+    public HistoryManagementPanel(ClearableHistoryModel model, String filterEditorTitle,
+                                  int initialHistorySize, Consumer<Integer> historySizeChangedCallback)
+    {
         mModel = model;
         mFilterEditorTitle = filterEditorTitle;
+        mHistorySizeChangedCallback = historySizeChangedCallback;
+
+        // Apply the persisted size to the model before the slider is built so
+        // getHistorySlider() picks up the right initial value.
+        if(initialHistorySize != model.getHistorySize())
+        {
+            model.setHistorySize(initialHistorySize);
+        }
+
         setLayout(new MigLayout("insets 6 1 5 5", "[]5[]10[]5[]5[][grow]", ""));
         add(getFilterButton());
         add(getClearButton());
@@ -147,7 +182,7 @@ public class HistoryManagementPanel<T> extends JPanel
     {
         if(mHistoryValueLabel == null)
         {
-            mHistoryValueLabel = new JLabel(String.valueOf(ClearableHistoryModel.DEFAULT_HISTORY_SIZE));
+            mHistoryValueLabel = new JLabel(String.valueOf(mModel.getHistorySize()));
         }
 
         return mHistoryValueLabel;
@@ -200,10 +235,20 @@ public class HistoryManagementPanel<T> extends JPanel
                 public void mouseReleased(MouseEvent arg0) {}
             });
 
+            // Initialise to whatever size the model currently holds (may have
+            // already been set from persisted prefs in the constructor).
             mHistorySlider.setValue(mModel.getHistorySize());
+
             mHistorySlider.addChangeListener(e -> {
-                mModel.setHistorySize(mHistorySlider.getValue());
-                getHistoryValueLabel().setText(String.valueOf(mHistorySlider.getValue()));
+                int size = mHistorySlider.getValue();
+                mModel.setHistorySize(size);
+                getHistoryValueLabel().setText(String.valueOf(size));
+
+                // Persist the new value if a callback was supplied.
+                if(mHistorySizeChangedCallback != null)
+                {
+                    mHistorySizeChangedCallback.accept(size);
+                }
             });
         }
 

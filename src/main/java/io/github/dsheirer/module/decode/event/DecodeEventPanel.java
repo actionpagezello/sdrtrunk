@@ -25,8 +25,12 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.eventbus.MyEventBus;
+import io.github.dsheirer.filter.Filter;
+import io.github.dsheirer.filter.IFilter;
+import io.github.dsheirer.filter.FilterElement;
 import io.github.dsheirer.filter.FilterSet;
 import io.github.dsheirer.icon.IconModel;
+import io.github.dsheirer.preference.NowPlayingPreference;
 import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
@@ -98,14 +102,55 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
         mTable.setRowSorter(mTableRowSorter);
         mTableColumnWidthMonitor = new JTableColumnWidthMonitor(mUserPreferences, mTable, TABLE_PREFERENCE_KEY);
         updateCellRenderers();
-        mHistoryManagementPanel = new HistoryManagementPanel<>(mEventModel, "Event Filter Editor");
+        NowPlayingPreference nowPlayingPreference = mUserPreferences.getNowPlayingPreference();
+        restoreFilterStates(nowPlayingPreference);
+
+        mHistoryManagementPanel = new HistoryManagementPanel<>(
+                mEventModel,
+                "Event Filter Editor",
+                nowPlayingPreference.getEventHistorySize(),
+                nowPlayingPreference::setEventHistorySize);
+
         mHistoryManagementPanel.updateFilterSet(mFilterSet);
         add(mHistoryManagementPanel, "span,growx");
         mEmptyScroller = new JScrollPane(mTable);
         add(mEmptyScroller);
 
-        //Register filter change listener to refresh the table any time the event filters are changed.
-        mFilterSet.register(() -> mEventModel.fireTableDataChanged());
+        mFilterSet.register(() -> {
+            saveFilterStates(nowPlayingPreference);
+            mEventModel.fireTableDataChanged();
+        });
+    }
+
+
+    private void restoreFilterStates(NowPlayingPreference prefs)
+    {
+        for(IFilter<IDecodeEvent> ifilter : mFilterSet.getFilters())
+        {
+            if(ifilter instanceof Filter<?,?> filter)
+            {
+                for(FilterElement<?> element : filter.getFilterElements())
+                {
+                    String key = filter.getName() + "." + element.getName();
+                    element.setEnabled(prefs.isFilterEnabled(key));
+                }
+            }
+        }
+    }
+
+    private void saveFilterStates(NowPlayingPreference prefs)
+    {
+        for(IFilter<IDecodeEvent> ifilter : mFilterSet.getFilters())
+        {
+            if(ifilter instanceof Filter<?,?> filter)
+            {
+                for(FilterElement<?> element : filter.getFilterElements())
+                {
+                    String key = filter.getName() + "." + element.getName();
+                    prefs.setFilterEnabled(key, element.isEnabled());
+                }
+            }
+        }
     }
 
     public void dispose()
