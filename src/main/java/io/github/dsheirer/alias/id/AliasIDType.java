@@ -26,6 +26,7 @@ public enum AliasIDType
     CTCSS("Continuous Tone-Coded Squelch (CTCSS)"),
     DCS("Digital Coded Squelch (DCS)"),
     ESN("ESN"),
+    NAC("P25 Network Access Code (NAC)"),
     INVERT("Audio Inversion"),
     LOJACK("LoJack"),
     LTR_NET_UID("LTR-Net UID"),
