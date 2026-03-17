@@ -36,6 +36,7 @@ import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.identifier.TalkgroupFormatPreference;
 import io.github.dsheirer.preference.swing.JTableColumnWidthMonitor;
+import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.sample.Broadcaster;
@@ -56,10 +57,8 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
 import java.util.EnumMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import net.miginfocom.swing.MigLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,7 +90,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private JTableColumnWidthMonitor mTableColumnMonitor;
     private Channel mUserSelectedChannel;
     private TunerManager mTunerManager;
-    private Set<Integer> mMutedChannelIds = new HashSet<>();
+    private PlaylistManager mPlaylistManager;
 
     /**
      * Table view for currently decoding channel metadata
@@ -99,6 +98,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     public ChannelMetadataPanel(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences,
                                 TunerManager tunerManager)
     {
+        mPlaylistManager = playlistManager;
         mChannelModel = playlistManager.getChannelModel();
         mChannelProcessingManager = playlistManager.getChannelProcessingManager();
         mIconModel = iconModel;
@@ -435,16 +435,43 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     }
 
     /**
-     * Toggles mute state for a channel by finding all AbstractAudioModule instances in its
-     * processing chain and setting their muted state.
+     * Toggles mute state for a channel by setting the DO_NOT_MONITOR priority on the aliases
+     * associated with the channel's TO (talkgroup) identifiers.  This integrates with the existing
+     * alias priority system so the mute state is reflected in the alias configuration and applies
+     * across all traffic channels for the same talkgroup.
+     *
+     * Also force-closes the current audio segment for immediate effect.
+     *
+     * @param metadata containing alias information
      * @param channel to mute/unmute
      * @param mute true to mute, false to unmute
      */
-    private void setChannelMuted(Channel channel, boolean mute)
+    private void setChannelMuted(ChannelMetadata metadata, Channel channel, boolean mute)
     {
-        ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+        int aliasCount = 0;
 
-        int audioModuleCount = 0;
+        //Toggle priority on TO aliases (talkgroup), falling back to FROM aliases
+        List<Alias> aliases = metadata.getToIdentifierAliases();
+
+        if(aliases == null || aliases.isEmpty())
+        {
+            aliases = metadata.getFromIdentifierAliases();
+        }
+
+        if(aliases != null)
+        {
+            for(Alias alias : aliases)
+            {
+                alias.setCallPriority(mute ? Priority.DO_NOT_MONITOR : Priority.DEFAULT_PRIORITY);
+                aliasCount++;
+            }
+        }
+
+        mLog.info("Channel {} {} - updated {} aliases", channel.getName(),
+            mute ? "MUTED" : "UNMUTED", aliasCount);
+
+        //Force-close current audio segment for immediate effect on already-playing audio
+        ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
 
         if(processingChain != null)
         {
@@ -453,22 +480,40 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                 if(module instanceof AbstractAudioModule)
                 {
                     ((AbstractAudioModule)module).setMuted(mute);
-                    audioModuleCount++;
                 }
             }
         }
 
-        mLog.info("Channel {} [ID:{}] {} - found {} audio modules in processing chain",
-            channel.getName(), channel.getChannelID(), mute ? "MUTED" : "UNMUTED", audioModuleCount);
+        //Trigger playlist save to persist the alias priority change
+        mPlaylistManager.schedulePlaylistSave();
+    }
 
-        if(mute)
+    /**
+     * Checks if any of the aliases associated with a channel's metadata have DO_NOT_MONITOR priority.
+     * @param metadata to check
+     * @return true if any alias has DO_NOT_MONITOR priority
+     */
+    private boolean isChannelMuted(ChannelMetadata metadata)
+    {
+        List<Alias> aliases = metadata.getToIdentifierAliases();
+
+        if(aliases == null || aliases.isEmpty())
         {
-            mMutedChannelIds.add(channel.getChannelID());
+            aliases = metadata.getFromIdentifierAliases();
         }
-        else
+
+        if(aliases != null)
         {
-            mMutedChannelIds.remove(channel.getChannelID());
+            for(Alias alias : aliases)
+            {
+                if(alias.getPlaybackPriority() == Priority.DO_NOT_MONITOR)
+                {
+                    return true;
+                }
+            }
         }
+
+        return false;
     }
 
     /**
@@ -634,12 +679,12 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                                 popupMenu.add(viewChannel);
                                 populated = true;
 
-                                // Mute/Unmute menu item
-                                boolean isMuted = mMutedChannelIds.contains(channel.getChannelID());
+                                // Mute/Unmute menu item - check alias DO_NOT_MONITOR priority
+                                boolean isMuted = isChannelMuted(metadata);
                                 String muteLabel = isMuted ? "Unmute: " + channel.getShortTitle()
                                                           : "Mute: " + channel.getShortTitle();
                                 JMenuItem muteItem = new JMenuItem(muteLabel);
-                                muteItem.addActionListener(e2 -> setChannelMuted(channel, !isMuted));
+                                muteItem.addActionListener(e2 -> setChannelMuted(metadata, channel, !isMuted));
                                 popupMenu.add(muteItem);
 
                                 // Show in Waterfall menu item - only show if channel has a tuner source
@@ -702,14 +747,6 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                 }
             }
 
-            //Re-apply mute state to channels that were previously muted.  This handles
-            //P25 traffic channels that get new ProcessingChains for each call.
-            if(mMutedChannelIds.contains(channel.getChannelID()))
-            {
-                mLog.info("Re-applying mute to channel {} [ID:{}] after new processing chain created",
-                    channel.getName(), channel.getChannelID());
-                setChannelMuted(channel, true);
-            }
         }
     }
 }
