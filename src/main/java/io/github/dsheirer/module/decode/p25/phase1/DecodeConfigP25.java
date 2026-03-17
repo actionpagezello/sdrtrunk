@@ -40,6 +40,7 @@ public abstract class DecodeConfigP25 extends DecodeConfiguration
 {
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mIgnoreDataCalls = false;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
     private List<Integer> mAllowedNACs = new ArrayList<>();
     private boolean mNacFilterEnabled = false;
     private int mTalkgroup = 0;
@@ -57,6 +58,17 @@ public abstract class DecodeConfigP25 extends DecodeConfiguration
     public void setIgnoreDataCalls(boolean ignore)
     {
         mIgnoreDataCalls = ignore;
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "ignore_unaliased_talkgroups")
+    public boolean getIgnoreUnaliasedTalkgroups()
+    {
+        return mIgnoreUnaliasedTalkgroups;
+    }
+
+    public void setIgnoreUnaliasedTalkgroups(boolean ignore)
+    {
+        mIgnoreUnaliasedTalkgroups = ignore;
     }
 
 

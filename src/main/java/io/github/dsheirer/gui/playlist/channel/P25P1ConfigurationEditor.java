@@ -70,6 +70,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private ToggleSwitch mIgnoreDataCallsButton;
+    private ToggleSwitch mIgnoreUnaliasedTalkgroupsButton;
     private ToggleSwitch mNacFilterButton;
     private javafx.scene.control.TextField mNacTextField;
     private javafx.scene.control.TextField mTalkgroupTextField;
@@ -170,6 +171,14 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
 
             GridPane.setConstraints(getTalkgroupTextField(), 3, 2);
             gridPane.getChildren().add(getTalkgroupTextField());
+
+            GridPane.setConstraints(getIgnoreUnaliasedTalkgroupsButton(), 4, 2);
+            gridPane.getChildren().add(getIgnoreUnaliasedTalkgroupsButton());
+
+            Label ignoreUnaliasedLabel = new Label("Ignore Unaliased TGs");
+            GridPane.setHalignment(ignoreUnaliasedLabel, HPos.LEFT);
+            GridPane.setConstraints(ignoreUnaliasedLabel, 5, 2);
+            gridPane.getChildren().add(ignoreUnaliasedLabel);
 
             mDecoderPane.setContent(gridPane);
         }
@@ -305,6 +314,19 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         return mIgnoreDataCallsButton;
     }
 
+    private ToggleSwitch getIgnoreUnaliasedTalkgroupsButton()
+    {
+        if(mIgnoreUnaliasedTalkgroupsButton == null)
+        {
+            mIgnoreUnaliasedTalkgroupsButton = new ToggleSwitch();
+            mIgnoreUnaliasedTalkgroupsButton.setDisable(true);
+            mIgnoreUnaliasedTalkgroupsButton.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreUnaliasedTalkgroupsButton;
+    }
+
     private ToggleSwitch getNacFilterButton()
     {
         if(mNacFilterButton == null)
@@ -392,17 +414,31 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
         getIgnoreDataCallsButton().setDisable(config == null);
+        getIgnoreUnaliasedTalkgroupsButton().setDisable(config == null);
+        getTrafficChannelPoolSizeSpinner().setDisable(config == null);
         getNacFilterButton().setDisable(config == null);
         getNacTextField().setDisable(config == null);
         getTalkgroupTextField().setDisable(config == null);
-        getTrafficChannelPoolSizeSpinner().setDisable(config == null);
 
         if(config instanceof DecodeConfigP25Phase1)
         {
             DecodeConfigP25Phase1 decodeConfig = (DecodeConfigP25Phase1)config;
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
-            getNacFilterButton().setSelected(decodeConfig.isNacFilterEnabled());
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(decodeConfig.getIgnoreUnaliasedTalkgroups());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
+            getNacFilterButton().setSelected(decodeConfig.isNacFilterEnabled());
+            int tg = decodeConfig.getTalkgroup();
+            getTalkgroupTextField().setText(tg > 0 ? String.valueOf(tg) : "");
+
+            //Format NAC list for display
+            StringBuilder sb = new StringBuilder();
+            for(Integer nac : decodeConfig.getAllowedNACs())
+            {
+                if(sb.length() > 0) sb.append(", ");
+                sb.append(String.format("%X", nac));
+            }
+            getNacTextField().setText(sb.toString());
+
             if(decodeConfig.getModulation() == Modulation.C4FM)
             {
                 getC4FMToggleButton().setSelected(true);
@@ -413,29 +449,15 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
                 getC4FMToggleButton().setSelected(false);
                 getLSMToggleButton().setSelected(true);
             }
-
-            int tg = decodeConfig.getTalkgroup();
-            getTalkgroupTextField().setText(tg > 0 ? String.valueOf(tg) : "");
-
-            StringBuilder sb = new StringBuilder();
-            List<Integer> nacs = decodeConfig.getAllowedNACs();
-            for(int i = 0; i < nacs.size(); i++)
-            {
-                if(i > 0)
-                {
-                    sb.append(", ");
-                }
-                sb.append(String.format("0x%03X", nacs.get(i)));
-            }
-            getNacTextField().setText(sb.toString());
         }
         else
         {
             getIgnoreDataCallsButton().setSelected(false);
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(false);
+            getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
             getNacFilterButton().setSelected(false);
             getNacTextField().setText("");
             getTalkgroupTextField().setText("");
-            getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
         }
     }
 
@@ -454,6 +476,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         }
 
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
+        config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroupsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setModulation(getC4FMToggleButton().isSelected() ? Modulation.C4FM : Modulation.CQPSK);
         config.setNacFilterEnabled(getNacFilterButton().isSelected());

@@ -81,6 +81,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private ToggleSwitch mIgnoreDataCallsButton;
+    private ToggleSwitch mIgnoreUnaliasedTalkgroupsButton;
     private ToggleSwitch mIgnoreCRCChecksumsButton;
     private ToggleSwitch mUseCompressedTalkgroupsToggle;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
@@ -156,20 +157,28 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(ignoreDataLabel, 3, row);
             gridPane.getChildren().add(ignoreDataLabel);
 
-            GridPane.setConstraints(getIgnoreCRCChecksumsButton(), 4, row);
+            GridPane.setConstraints(getIgnoreUnaliasedTalkgroupsButton(), 4, row);
+            gridPane.getChildren().add(getIgnoreUnaliasedTalkgroupsButton());
+
+            Label ignoreUnaliasedLabel = new Label("Ignore Unaliased TGs");
+            GridPane.setHalignment(ignoreUnaliasedLabel, HPos.LEFT);
+            GridPane.setConstraints(ignoreUnaliasedLabel, 5, row);
+            gridPane.getChildren().add(ignoreUnaliasedLabel);
+
+            GridPane.setConstraints(getIgnoreCRCChecksumsButton(), 6, row);
             gridPane.getChildren().add(getIgnoreCRCChecksumsButton());
 
             Label ignoreCRCLabel = new Label("Ignore CRC Checksums (RAS)");
             GridPane.setHalignment(ignoreCRCLabel, HPos.LEFT);
-            GridPane.setConstraints(ignoreCRCLabel, 5, row);
+            GridPane.setConstraints(ignoreCRCLabel, 7, row);
             gridPane.getChildren().add(ignoreCRCLabel);
 
-            GridPane.setConstraints(getUseCompressedTalkgroupsToggle(), 6, row);
+            GridPane.setConstraints(getUseCompressedTalkgroupsToggle(), 8, row);
             gridPane.getChildren().add(getUseCompressedTalkgroupsToggle());
 
             Label useCompressedTalkgroupsLabel = new Label("Use Compressed Talkgroups");
             GridPane.setHalignment(useCompressedTalkgroupsLabel, HPos.LEFT);
-            GridPane.setConstraints(useCompressedTalkgroupsLabel, 7, row);
+            GridPane.setConstraints(useCompressedTalkgroupsLabel, 9, row);
             gridPane.getChildren().add(useCompressedTalkgroupsLabel);
 
             Label timeslotTableLabel = new Label("Logical Channel Number (LCN) to Frequency Map. Required for: Connect Plus and Tier-III systems that don't use absolute frequencies.  LSN = Logical Slot Number");
@@ -505,6 +514,19 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         return mIgnoreDataCallsButton;
     }
 
+    private ToggleSwitch getIgnoreUnaliasedTalkgroupsButton()
+    {
+        if(mIgnoreUnaliasedTalkgroupsButton == null)
+        {
+            mIgnoreUnaliasedTalkgroupsButton = new ToggleSwitch();
+            mIgnoreUnaliasedTalkgroupsButton.setDisable(true);
+            mIgnoreUnaliasedTalkgroupsButton.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreUnaliasedTalkgroupsButton;
+    }
+
     private ToggleSwitch getIgnoreCRCChecksumsButton()
     {
         if(mIgnoreCRCChecksumsButton == null)
@@ -602,6 +624,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
     {
         getIgnoreCRCChecksumsButton().setDisable(config == null);
         getIgnoreDataCallsButton().setDisable(config == null);
+        getIgnoreUnaliasedTalkgroupsButton().setDisable(config == null);
         getUseCompressedTalkgroupsToggle().setDisable(config == null);
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
         getTimeslotTable().getItems().clear();
@@ -621,6 +644,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
             DecodeConfigDMR decodeConfig = (DecodeConfigDMR)config;
 
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(decodeConfig.getIgnoreUnaliasedTalkgroups());
             getIgnoreCRCChecksumsButton().setSelected(decodeConfig.getIgnoreCRCChecksums());
             getUseCompressedTalkgroupsToggle().setSelected(decodeConfig.isUseCompressedTalkgroups());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
@@ -634,6 +658,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         {
             getIgnoreCRCChecksumsButton().setSelected(false);
             getIgnoreDataCallsButton().setSelected(false);
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(false);
             getUseCompressedTalkgroupsToggle().setSelected(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
             getChannelRotationDelaySpinner().getValueFactory().setValue(200);
@@ -656,6 +681,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
 
         config.setIgnoreCRCChecksums(getIgnoreCRCChecksumsButton().isSelected());
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
+        config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroupsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setUseCompressedTalkgroups(getUseCompressedTalkgroupsToggle().isSelected());
         config.setTimeslotMap(new ArrayList<>(getTimeslotTable().getItems()));

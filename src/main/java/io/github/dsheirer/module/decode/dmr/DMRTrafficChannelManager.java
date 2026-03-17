@@ -19,6 +19,7 @@
 package io.github.dsheirer.module.decode.dmr;
 
 import com.google.common.eventbus.Subscribe;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
@@ -91,6 +92,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     private final static Logger mLog = LoggerFactory.getLogger(DMRTrafficChannelManager.class);
     public static final String CHANNEL_START_REJECTED = " REJECTED - NO TUNER";
     public static final String DATA_CALL_IGNORED = "DATA CALL IGNORED";
+    public static final String UNALIASED_CALL_IGNORED = "UNALIASED CALL IGNORED";
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
     public static final String NO_FREQUENCY = "NO FREQUENCY - CHECK PLAYLIST CHANNEL CONFIG LSN CHANNEL MAP";
     public static final long EVENT_TIME_STALE_THRESHOLD = 5000; //5 seconds
@@ -107,6 +109,8 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     private TalkerAliasManager mTalkerAliasManager = new TalkerAliasManager();
     private Channel mParentChannel;
     private boolean mIgnoreDataCalls;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
+    private AliasList mAliasList;
 
     //Used as temporary storage for message and decode event history during Cap+ REST channel rotation
     private DecodeEventHistory mTransientDecodeEventHistory;
@@ -121,12 +125,24 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
      */
     public DMRTrafficChannelManager(Channel parentChannel)
     {
-        mParentChannel = parentChannel;
+        this(parentChannel, null);
+    }
 
-        if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigDMR)
+    public DMRTrafficChannelManager(Channel parentChannel, AliasList aliasList)
+    {
+        mParentChannel = parentChannel;
+        mAliasList = aliasList;
+
+        if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigDMR dmrConfig)
         {
-            mIgnoreDataCalls = ((DecodeConfigDMR)parentChannel.getDecodeConfiguration()).getIgnoreDataCalls();
+            mIgnoreDataCalls = dmrConfig.getIgnoreDataCalls();
+            mIgnoreUnaliasedTalkgroups = dmrConfig.getIgnoreUnaliasedTalkgroups();
         }
+
+        mLog.debug("DMR TCM constructed: channel={} ignoreUnaliased={} aliasList={} aliasListName={}",
+            parentChannel.getName(), mIgnoreUnaliasedTalkgroups,
+            (mAliasList != null ? mAliasList.getName() : "NULL"),
+            parentChannel.getAliasListName());
 
         createTrafficChannels();
     }
@@ -137,6 +153,32 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     public TalkerAliasManager getTalkerAliasManager()
     {
         return mTalkerAliasManager;
+    }
+
+    /**
+     * Returns true if the identifier collection's TO talkgroup has at least one alias in the parent
+     * channel's alias list, or if alias-based filtering is not enabled.
+     * @param ic identifier collection to check
+     * @return true if the call should be processed, false if it should be ignored
+     */
+    private boolean hasAlias(IdentifierCollection ic)
+    {
+        if(!mIgnoreUnaliasedTalkgroups || mAliasList == null)
+        {
+            return true;
+        }
+
+        Identifier to = ic.getToIdentifier();
+
+        if(to == null)
+        {
+            mLog.debug("DMR hasAlias: TO identifier is null - allowing");
+            return true;
+        }
+
+        List<io.github.dsheirer.alias.Alias> aliases = mAliasList.getAliases(to);
+        mLog.debug("DMR hasAlias: TO={} class={} aliases={}", to, to.getClass().getSimpleName(), aliases.size());
+        return !aliases.isEmpty();
     }
 
     /**
@@ -377,10 +419,22 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
         try
         {
             boolean allocated = mAllocatedChannelFrequencyMap.containsKey(channel.getDownlinkFrequency());
+            mLog.debug("DMR processChannelGrant: to={} allocated={} ignoreUnaliased={} aliasList={}",
+                identifierCollection.getToIdentifier(), allocated, mIgnoreUnaliasedTalkgroups,
+                (mAliasList != null ? mAliasList.getName() : "NULL"));
 
             if(allocated)
             {
-                //Note: if traffic channel is allocated then do nothing & let the channel maintain its own event state
+                //If filtering is enabled and the talkgroup is not aliased, tear down the already-allocated channel
+                if(!hasAlias(identifierCollection))
+                {
+                    Channel trafficChannel = mAllocatedChannelFrequencyMap.get(channel.getDownlinkFrequency());
+                    if(trafficChannel != null)
+                    {
+                        broadcast(new ChannelEvent(trafficChannel, Event.REQUEST_DISABLE));
+                    }
+                }
+                //Otherwise do nothing & let the channel maintain its own event state
             }
             else
             {
@@ -460,6 +514,21 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
                     else if(!event.getDetails().endsWith(DATA_CALL_IGNORED))
                     {
                         event.setDetails(event.getDetails() + " - " + DATA_CALL_IGNORED);
+                    }
+
+                    broadcast(event);
+                    return;
+                }
+
+                if(!hasAlias(identifierCollection))
+                {
+                    if(event.getDetails() == null)
+                    {
+                        event.setDetails(UNALIASED_CALL_IGNORED);
+                    }
+                    else if(!event.getDetails().endsWith(UNALIASED_CALL_IGNORED))
+                    {
+                        event.setDetails(event.getDetails() + " - " + UNALIASED_CALL_IGNORED);
                     }
 
                     broadcast(event);
