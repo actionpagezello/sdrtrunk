@@ -25,6 +25,7 @@ import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
 import io.github.dsheirer.alias.id.dcs.Dcs;
 import io.github.dsheirer.alias.id.esn.Esn;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.legacy.fleetsync.FleetsyncID;
 import io.github.dsheirer.alias.id.legacy.mdc.MDC1200ID;
 import io.github.dsheirer.alias.id.legacy.mobileID.Min;
@@ -56,6 +57,7 @@ import javafx.util.Callback;
 @JsonSubTypes({
     @JsonSubTypes.Type(value = BroadcastChannel.class, name = "broadcastChannel"),
     @JsonSubTypes.Type(value = Dcs.class, name = "dcs"),
+    @JsonSubTypes.Type(value = Nac.class, name = "nac"),
     @JsonSubTypes.Type(value = Esn.class, name = "esn"),
     @JsonSubTypes.Type(value = FleetsyncID.class, name = "fleetsyncID"),
     @JsonSubTypes.Type(value = LegacyTalkgroupID.class, name = "talkgroupID"),

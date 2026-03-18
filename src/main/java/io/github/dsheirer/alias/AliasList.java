@@ -23,6 +23,7 @@ import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
 import io.github.dsheirer.alias.id.dcs.Dcs;
 import io.github.dsheirer.alias.id.esn.Esn;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.alias.id.radio.P25FullyQualifiedRadio;
 import io.github.dsheirer.alias.id.radio.Radio;
@@ -37,6 +38,7 @@ import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.identifier.dcs.DCSIdentifier;
 import io.github.dsheirer.identifier.esn.ESNIdentifier;
+import io.github.dsheirer.module.decode.p25.identifier.APCO25Nac;
 import io.github.dsheirer.identifier.patch.PatchGroup;
 import io.github.dsheirer.identifier.patch.PatchGroupIdentifier;
 import io.github.dsheirer.identifier.radio.FullyQualifiedRadioIdentifier;
@@ -74,6 +76,7 @@ public class AliasList
     private Map<Protocol,TalkgroupAliasList> mTalkgroupProtocolMap = new EnumMap<>(Protocol.class);
     private Map<Protocol,RadioAliasList> mRadioProtocolMap = new EnumMap<>(Protocol.class);
     private Map<DCSCode,Alias> mDCSCodeAliasMap = new EnumMap<>(DCSCode.class);
+    private Map<Integer,Alias> mNACValueAliasMap = new HashMap<>();
     private Map<String,Alias> mESNMap = new HashMap<>();
     private Map<Integer,Alias> mUnitStatusMap = new HashMap<>();
     private Map<Integer,Alias> mUserStatusMap = new HashMap<>();
@@ -217,6 +220,12 @@ public class AliasList
                             mDCSCodeAliasMap.put(dcs.getDCSCode(), alias);
                         }
                         break;
+                    case NAC:
+                        if(id instanceof Nac nac)
+                        {
+                            mNACValueAliasMap.put(nac.getNacValue(), alias);
+                        }
+                        break;
                     case ESN:
                         String esn = ((Esn)id).getEsn();
 
@@ -310,6 +319,7 @@ public class AliasList
         mRadioProtocolMap.values().stream().forEach(radioAliasList -> radioAliasList.remove(alias));
 
         Collection<Alias> collection = Collections.singleton(alias);
+        mNACValueAliasMap.values().removeAll(collection);
         mESNMap.values().removeAll(collection);
         mUnitStatusMap.values().removeAll(collection);
         mUserStatusMap.values().removeAll(collection);
@@ -518,6 +528,12 @@ public class AliasList
                         {
                             return toList(mDCSCodeAliasMap.get(dcsCode));
                         }
+                    }
+                    break;
+                case NETWORK_ACCESS_CODE:
+                    if(identifier instanceof APCO25Nac nacIdentifier)
+                    {
+                        return toList(mNACValueAliasMap.get(nacIdentifier.getValue()));
                     }
                     break;
             }

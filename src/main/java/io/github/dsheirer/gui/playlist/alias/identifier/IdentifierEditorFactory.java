@@ -37,6 +37,8 @@ public class IdentifierEditorFactory
         {
             case DCS:
                 return new DcsEditor();
+            case NAC:
+                return new NacEditor();
             case ESN:
                 return new EsnEditor();
             case LOJACK:
