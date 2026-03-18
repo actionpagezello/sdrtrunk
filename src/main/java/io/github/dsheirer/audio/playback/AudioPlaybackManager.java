@@ -58,6 +58,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     private final LinkedTransferQueue<AudioSegment> mNewAudioSegmentQueue = new LinkedTransferQueue<>();
     private final ReentrantLock mAudioChannelsLock = new ReentrantLock();
     private final UserPreferences mUserPreferences;
+    private final AudioSegmentRouter mAudioRouter = new AudioSegmentRouter(); // NEW: Multi-VAC router
     private AudioPlaybackDeviceDescriptor mAudioPlaybackDevice;
     private AudioOutput mAudioOutput;
     private ScheduledFuture<?> mProcessingTask;
@@ -105,6 +106,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     public void receive(AudioSegment audioSegment)
     {
         mNewAudioSegmentQueue.add(audioSegment);
+        mAudioRouter.route(audioSegment); // NEW: Route to VAC based on alias
     }
 
     /**
@@ -263,6 +265,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
 
         mNewAudioSegmentQueue.clear();
         mAudioSegments.clear();
+        mAudioRouter.dispose(); // NEW: Cleanup VAC router
     }
 
     /**
