@@ -69,6 +69,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
     private IntegerTextField mSystemTextField;
     private IntegerTextField mNacTextField;
     private ToggleSwitch mIgnoreDataCallsButton;
+    private ToggleSwitch mIgnoreUnaliasedTalkgroupsButton;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
 
     /**
@@ -133,6 +134,14 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setHalignment(directionLabel, HPos.LEFT);
             GridPane.setConstraints(directionLabel, 3, row);
             gridPane.getChildren().add(directionLabel);
+
+            GridPane.setConstraints(getIgnoreUnaliasedTalkgroupsButton(), 4, row);
+            gridPane.getChildren().add(getIgnoreUnaliasedTalkgroupsButton());
+
+            Label ignoreUnaliasedLabel = new Label("Ignore Unaliased TGs");
+            GridPane.setHalignment(ignoreUnaliasedLabel, HPos.LEFT);
+            GridPane.setConstraints(ignoreUnaliasedLabel, 5, row);
+            gridPane.getChildren().add(ignoreUnaliasedLabel);
 
             Label wacnLabel = new Label("WACN");
             GridPane.setHalignment(wacnLabel, HPos.RIGHT);
@@ -245,6 +254,19 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
         return mIgnoreDataCallsButton;
     }
 
+    private ToggleSwitch getIgnoreUnaliasedTalkgroupsButton()
+    {
+        if(mIgnoreUnaliasedTalkgroupsButton == null)
+        {
+            mIgnoreUnaliasedTalkgroupsButton = new ToggleSwitch();
+            mIgnoreUnaliasedTalkgroupsButton.setDisable(true);
+            mIgnoreUnaliasedTalkgroupsButton.selectedProperty()
+                    .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreUnaliasedTalkgroupsButton;
+    }
+
     private Spinner<Integer> getTrafficChannelPoolSizeSpinner()
     {
         if(mTrafficChannelPoolSizeSpinner == null)
@@ -345,6 +367,8 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
 
             getIgnoreDataCallsButton().setDisable(false);
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
+            getIgnoreUnaliasedTalkgroupsButton().setDisable(false);
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(decodeConfig.getIgnoreUnaliasedTalkgroups());
             getTrafficChannelPoolSizeSpinner().setDisable(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
         }
@@ -357,6 +381,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
             getSystemTextField().setDisable(true);
             getNacTextField().setDisable(true);
             getIgnoreDataCallsButton().setDisable(true);
+            getIgnoreUnaliasedTalkgroupsButton().setDisable(true);
             getTrafficChannelPoolSizeSpinner().setDisable(true);
         }
     }
@@ -381,6 +406,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
         int nac = getNacTextField().get();
         config.setScrambleParameters(new ScrambleParameters(wacn, system, nac));
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
+        config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroupsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
 
         getItem().setDecodeConfiguration(config);

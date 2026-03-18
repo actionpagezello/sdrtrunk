@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.module.decode.p25;
 
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
@@ -123,6 +124,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     private ScrambleParameters mPhase2ScrambleParameters;
     private Listener<IMessage> mMessageListener;
     private boolean mIgnoreDataCalls;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
+    private AliasList mAliasList;
     //Used only for data calls
     private DecodeEventDuplicateDetector mDuplicateDetector = new DecodeEventDuplicateDetector();
     private TalkerAliasManager mTalkerAliasManager = new TalkerAliasManager();
@@ -133,17 +136,30 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
      */
     public P25TrafficChannelManager(Channel parentChannel)
     {
+        this(parentChannel, null);
+    }
+
+    /**
+     * Constructs an instance with an alias model for talkgroup filtering.
+     * @param parentChannel (ie control channel) that owns this traffic channel manager
+     * @param aliasModel to use for alias lookups (may be null to disable filtering)
+     */
+    public P25TrafficChannelManager(Channel parentChannel, AliasList aliasList)
+    {
         mParentChannel = parentChannel;
+        mAliasList = aliasList;
 
         if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 phase1)
         {
             mIgnoreDataCalls = phase1.getIgnoreDataCalls();
+            mIgnoreUnaliasedTalkgroups = phase1.getIgnoreUnaliasedTalkgroups();
             createPhase1TrafficChannels(phase1.getTrafficChannelPoolSize(), phase1);
             createPhase2TrafficChannels(phase1.getTrafficChannelPoolSize(), new DecodeConfigP25Phase2());
         }
         else if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase2 phase2)
         {
             mIgnoreDataCalls = phase2.getIgnoreDataCalls();
+            mIgnoreUnaliasedTalkgroups = phase2.getIgnoreUnaliasedTalkgroups();
             createPhase1TrafficChannels(phase2.getTrafficChannelPoolSize(), new DecodeConfigP25Phase1());
             createPhase2TrafficChannels(phase2.getTrafficChannelPoolSize(), phase2);
         }
@@ -156,6 +172,29 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     public TalkerAliasManager getTalkerAliasManager()
     {
         return mTalkerAliasManager;
+    }
+
+    /**
+     * Returns true if the identifier collection's TO talkgroup has at least one alias in the parent
+     * channel's alias list, or if alias-based filtering is not enabled.
+     * @param ic identifier collection to check
+     * @return true if the call should be processed, false if it should be ignored
+     */
+    private boolean hasAlias(IdentifierCollection ic)
+    {
+        if(!mIgnoreUnaliasedTalkgroups || mAliasList == null)
+        {
+            return true;
+        }
+
+        Identifier to = ic.getToIdentifier();
+
+        if(to == null)
+        {
+            return true; // No talkgroup to check — let it through
+        }
+
+        return !mAliasList.getAliases(to).isEmpty();
     }
 
     /**
@@ -1213,6 +1252,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     {
         long frequency = apco25Channel.getDownlinkFrequency();
 
+        if(!hasAlias(ic))
+        {
+            return;
+        }
+
         P25TrafficChannelEventTracker tracker = getTrackerRemoveIfStale(frequency, P25P1Message.TIMESLOT_1, timestamp);
 
         if(tracker != null && tracker.isSameCallCheckingToOnly(ic, timestamp))
@@ -1339,6 +1383,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         int timeslot = apco25Channel.getTimeslot();
         long frequency = apco25Channel.getDownlinkFrequency();
         ic.setTimeslot(timeslot);
+
+        if(!hasAlias(ic))
+        {
+            return;
+        }
 
         P25TrafficChannelEventTracker tracker = getTrackerRemoveIfStale(apco25Channel, timestamp);
 

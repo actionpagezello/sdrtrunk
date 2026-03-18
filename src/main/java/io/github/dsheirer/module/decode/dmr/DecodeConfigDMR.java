@@ -39,6 +39,7 @@ public class DecodeConfigDMR extends DecodeConfiguration
     public static final int CHANNEL_ROTATION_DELAY_MAXIMUM_MS = 2000;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mIgnoreDataCalls = true;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
     private boolean mIgnoreCRCChecksums = false;
     private boolean mUseCompressedTalkgroups = false;
     private List<TimeslotFrequency> mTimeslotMap = new ArrayList<>();
@@ -90,6 +91,23 @@ public class DecodeConfigDMR extends DecodeConfiguration
     public void setIgnoreDataCalls(boolean ignore)
     {
         mIgnoreDataCalls = ignore;
+    }
+
+    /**
+     * Indicates if talkgroups without an alias entry should be ignored (no traffic channel allocated).
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "ignore_unaliased_talkgroups")
+    public boolean getIgnoreUnaliasedTalkgroups()
+    {
+        return mIgnoreUnaliasedTalkgroups;
+    }
+
+    /**
+     * Sets whether talkgroups without an alias entry should be ignored.
+     */
+    public void setIgnoreUnaliasedTalkgroups(boolean ignore)
+    {
+        mIgnoreUnaliasedTalkgroups = ignore;
     }
 
     /**

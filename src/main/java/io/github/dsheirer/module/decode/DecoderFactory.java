@@ -220,7 +220,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
         else if(trafficChannelManager instanceof P25TrafficChannelManager p25)
         {
@@ -228,7 +228,7 @@ public class DecoderFactory
         }
         else
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
 
         //Only add traffic channel manager to the modules if this is the control channel
@@ -275,11 +275,27 @@ public class DecoderFactory
             switch(p1.getModulation())
             {
                 case C4FM:
-                    modules.add(new P25P1DecoderC4FM());
+                {
+                    P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+                    java.util.Set<Integer> nacs = p1.getAllowedNACSet();
+                    if(nacs != null)
+                    {
+                        decoder.setAllowedNACs(nacs);
+                    }
+                    modules.add(decoder);
                     break;
+                }
                 case CQPSK:
-                    modules.add(new P25P1DecoderLSM());
+                {
+                    P25P1DecoderLSM decoder = new P25P1DecoderLSM();
+                    java.util.Set<Integer> nacs = p1.getAllowedNACSet();
+                    if(nacs != null)
+                    {
+                        decoder.setAllowedNACs(nacs);
+                    }
+                    modules.add(decoder);
                     break;
+                }
                 default:
                     throw new IllegalArgumentException("Unrecognized P25 Phase 1 Modulation [" + p1.getModulation() + "]");
             }
@@ -287,7 +303,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
+            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel, aliasList);
             modules.add(primaryTCM);
             modules.add(new P25P1DecoderState(channel, primaryTCM));
         }
@@ -435,8 +451,11 @@ public class DecoderFactory
         }
 
         DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)decodeConfig;
-        modules.add(new NBFMDecoder(decodeConfigNBFM));
-        modules.add(new NBFMDecoderState(channel.getName(), decodeConfigNBFM));
+        NBFMDecoderState decoderState = new NBFMDecoderState(channel.getName(), decodeConfigNBFM);
+        NBFMDecoder decoder = new NBFMDecoder(decodeConfigNBFM);
+        decoder.setDecoderState(decoderState);
+        modules.add(decoder);
+        modules.add(decoderState);
         modules.add(new AudioModule(aliasList, 0, 60000, decodeConfigNBFM.isAudioFilter()));
     }
 
@@ -490,7 +509,7 @@ public class DecoderFactory
         }
         else
         {
-            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel);
+            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel, aliasList);
         }
 
         //Only register the traffic channel manager as a module if this is the parent control channel.
