@@ -34,7 +34,9 @@ import io.github.dsheirer.alias.action.script.ScriptAction;
 import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.AliasIDType;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
+import io.github.dsheirer.alias.id.ctcss.Ctcss;
 import io.github.dsheirer.alias.id.dcs.Dcs;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.esn.Esn;
 import io.github.dsheirer.alias.id.lojack.LoJackFunctionAndID;
 import io.github.dsheirer.alias.id.radio.P25FullyQualifiedRadio;
@@ -735,6 +737,7 @@ public class AliasItemEditor extends Editor<Alias>
             p25Menu.getItems().add(new AddUserStatusItem());
             p25Menu.getItems().add(new AddUnitStatusItem());
             p25Menu.getItems().add(new SeparatorMenuItem());
+            p25Menu.getItems().add(new AddNacItem());
             p25Menu.getItems().add(new AddTonesItem("AMBE Audio Tones (Phase 2 Only)"));
 
             Menu dmrMenu = new ProtocolMenu(Protocol.DMR);
@@ -764,6 +767,8 @@ public class AliasItemEditor extends Editor<Alias>
             Menu nbfmMenu = new ProtocolMenu(Protocol.NBFM);
             nbfmMenu.getItems().add(new AddTalkgroupItem(Protocol.NBFM));
             nbfmMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.NBFM));
+            nbfmMenu.getItems().add(new SeparatorMenuItem());
+            nbfmMenu.getItems().add(new AddCtcssItem());
             nbfmMenu.getItems().add(new AddDcsItem());
 
             Menu passportMenu = new ProtocolMenu(Protocol.PASSPORT);
@@ -1351,6 +1356,24 @@ public class AliasItemEditor extends Editor<Alias>
     }
 
     /**
+     * Add Continuous Tone-Coded Squelch (CTCSS) alias identifier menu item
+     */
+    public class AddCtcssItem extends MenuItem
+    {
+        public AddCtcssItem()
+        {
+            super("Continuous Tone-Coded Squelch (CTCSS)");
+            setOnAction(event -> {
+                Ctcss ctcss = new Ctcss();
+                getIdentifiersList().getItems().add(ctcss);
+                getIdentifiersList().getSelectionModel().select(ctcss);
+                getIdentifiersList().scrollTo(ctcss);
+                modifiedProperty().set(true);
+            });
+        }
+    }
+
+    /**
      * Add Digital Coded Squelch (DCS) alias identifier menu item
      */
     public class AddDcsItem extends MenuItem
@@ -1363,6 +1386,24 @@ public class AliasItemEditor extends Editor<Alias>
                 getIdentifiersList().getItems().add(dcs);
                 getIdentifiersList().getSelectionModel().select(dcs);
                 getIdentifiersList().scrollTo(dcs);
+                modifiedProperty().set(true);
+            });
+        }
+    }
+
+    /**
+     * Add P25 Network Access Code (NAC) alias identifier menu item
+     */
+    public class AddNacItem extends MenuItem
+    {
+        public AddNacItem()
+        {
+            super("P25 Network Access Code (NAC)");
+            setOnAction(event -> {
+                Nac nac = new Nac();
+                getIdentifiersList().getItems().add(nac);
+                getIdentifiersList().getSelectionModel().select(nac);
+                getIdentifiersList().scrollTo(nac);
                 modifiedProperty().set(true);
             });
         }

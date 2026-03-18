@@ -34,4 +34,8 @@
   <!-- Apache Mina TCP/HTTP library -->
   <logger name="org.apache.mina" level="INFO" />
 
+  <!-- Suppress Zello stream start/stop/stream_id INFO messages on console.
+       Errors and warnings still appear. Full logging continues in the file appender. -->
+  <logger name="io.github.dsheirer.audio.broadcast.zello" level="WARN" />
+
 </configuration>
