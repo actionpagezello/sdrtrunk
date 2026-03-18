@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2022 Dennis Sheirer
+ * Copyright (C) 2014-2025 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,559 +17,641 @@
  * ****************************************************************************
  */
 
-package io.github.dsheirer.gui.playlist.source;
+package io.github.dsheirer.gui.playlist.radioreference;
 
+import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.eventbus.MyEventBus;
+import io.github.dsheirer.gui.playlist.channel.ViewChannelRequest;
+import io.github.dsheirer.module.decode.DecoderFactory;
+import io.github.dsheirer.module.decode.config.DecodeConfiguration;
+import io.github.dsheirer.module.decode.config.ChannelToneFilter;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
+import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
+import io.github.dsheirer.module.decode.p25.phase1.Modulation;
+import io.github.dsheirer.module.decode.dcs.DCSCode;
+import java.util.ArrayList;
+import java.util.List;
+import io.github.dsheirer.playlist.PlaylistManager;
+import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.rrapi.type.Category;
+import io.github.dsheirer.rrapi.type.Frequency;
+import io.github.dsheirer.rrapi.type.Mode;
+import io.github.dsheirer.rrapi.type.SubCategory;
+import io.github.dsheirer.service.radioreference.RadioReference;
 import io.github.dsheirer.source.config.SourceConfigTuner;
-import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
-import io.github.dsheirer.source.config.SourceConfiguration;
-import io.github.dsheirer.source.tuner.channel.rotation.ChannelRotationMonitor;
-import io.github.dsheirer.source.tuner.manager.TunerManager;
-import javafx.beans.binding.Bindings;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
+import io.github.dsheirer.util.ThreadPool;
+import java.text.DecimalFormat;
+import javafx.animation.FadeTransition;
+import javafx.application.Platform;
+import javafx.geometry.HPos;
 import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.Node;
-import javafx.scene.control.Alert;
+import javafx.geometry.Orientation;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ComboBox;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.Spinner;
-import javafx.scene.control.SpinnerValueFactory;
-import javafx.scene.control.Tooltip;
-import javafx.scene.layout.HBox;
+import javafx.scene.control.Separator;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-/**
- * Frequency editor that supports editing single or multiple frequencies.
- */
-public class FrequencyEditor extends SourceConfigurationEditor<SourceConfiguration>
+public class FrequencyEditor extends VBox
 {
-    private final static Logger mLog = LoggerFactory.getLogger(FrequencyEditor.class);
-    private static final String NONE = "(none)           ";
-    private TunerManager mTunerManager;
-    private FrequencyBox mPrimaryFrequencyBox;
-    private ObservableList<FrequencyBox> mFrequencyBoxes = FXCollections.observableArrayList();
-    private ComboBox<String> mPreferredTunerComboBox;
-    private VBox mFrequencyBoxContainer;
-    private Spinner<Integer> mChannelRotationDelaySpinner;
-    private boolean mAllowMultipleFrequencies = false;
-    private int mFrequencyRotationDefault = ChannelRotationMonitor.CHANNEL_ROTATION_DELAY_DEFAULT;
-    private int mFrequencyRotationMinimum = ChannelRotationMonitor.CHANNEL_ROTATION_DELAY_MINIMUM;
-    private int mFrequencyRotationMaximum = ChannelRotationMonitor.CHANNEL_ROTATION_DELAY_MAXIMUM;
+    private static final Logger mLog = LoggerFactory.getLogger(FrequencyEditor.class);
+    private final DecimalFormat FREQUENCY_FORMATTER = new DecimalFormat("0.00000");
+    private UserPreferences mUserPreferences;
+    private RadioReference mRadioReference;
+    private PlaylistManager mPlaylistManager;
+    private Level mLevel;
+    private TextField mAlphaTagTextField;
+    private TextField mFrequencyTextField;
+    private TextField mModeTextField;
+    private TextField mToneTextField;
+    private TextField mSystemTextField;
+    private TextField mSiteTextField;
+    private TextField mNameTextField;
+    private TextField mDecoderTextField;
+    private Button mCreateButton;
+    private Label mChannelCreatedLabel;
+    private CheckBox mShowCreatedChannelCheckBox;
+    private ModeDecoderType mModeDecoderType;
+    private long mFrequency;
 
-    /**
-     * Constructs an instance with support for multiple frequency values.  The min and max rotation delay values
-     * define constraints for the channel rotation delay monitor, how long the monitor dwells on each frequency in a
-     * multi-frequency configuration.
-     *
-     * @param tunerManager for accessing list of tuners to select a preferred tuner
-     * @param minRotationDelay in milliseconds for channel/frequency dwell
-     * @param maxRotationDelay in milliseconds for channel/frequency dwell
-     */
-    public FrequencyEditor(TunerManager tunerManager, int minRotationDelay, int maxRotationDelay, int defaultRotationDelay)
+    public FrequencyEditor(UserPreferences userPreferences, RadioReference radioReference,
+                           PlaylistManager playlistManager, Level level)
     {
-        mTunerManager = tunerManager;
-        mAllowMultipleFrequencies = true;
-        mFrequencyRotationMinimum = minRotationDelay;
-        mFrequencyRotationMaximum = maxRotationDelay;
-        mFrequencyRotationDefault = defaultRotationDelay;
-        init();
+        mUserPreferences = userPreferences;
+        mRadioReference = radioReference;
+        mPlaylistManager = playlistManager;
+        mLevel = level;
+
+        GridPane gridPane = new GridPane();
+        gridPane.setVgap(5);
+        gridPane.setHgap(5);
+
+        int row = 0;
+
+        Label detailsLabel = new Label("Radio Reference Details");
+        GridPane.setConstraints(detailsLabel, 1, row);
+        gridPane.getChildren().add(detailsLabel);
+
+        Label alphaLabel = new Label("Alpha Tag");
+        GridPane.setHalignment(alphaLabel, HPos.RIGHT);
+        GridPane.setConstraints(alphaLabel, 0, ++row);
+        gridPane.getChildren().add(alphaLabel);
+
+        GridPane.setHgrow(getAlphaTagTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getAlphaTagTextField(), 1, row);
+        gridPane.getChildren().add(getAlphaTagTextField());
+
+        Label toneLabel = new Label("Tone");
+        GridPane.setHalignment(toneLabel, HPos.RIGHT);
+        GridPane.setConstraints(toneLabel, 0, ++row);
+        gridPane.getChildren().add(toneLabel);
+
+        GridPane.setHgrow(getToneTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getToneTextField(), 1, row);
+        gridPane.getChildren().add(getToneTextField());
+
+        Label modeLabel = new Label("Mode");
+        GridPane.setHalignment(modeLabel, HPos.RIGHT);
+        GridPane.setConstraints(modeLabel, 0, ++row);
+        gridPane.getChildren().add(modeLabel);
+
+        GridPane.setHgrow(getModeTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getModeTextField(), 1, row);
+        gridPane.getChildren().add(getModeTextField());
+
+        Label frequencyLabel = new Label("Frequency");
+        GridPane.setHalignment(frequencyLabel, HPos.RIGHT);
+        GridPane.setConstraints(frequencyLabel, 0, ++row);
+        gridPane.getChildren().add(frequencyLabel);
+
+        GridPane.setHgrow(getFrequencyTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getFrequencyTextField(), 1, row);
+        gridPane.getChildren().add(getFrequencyTextField());
+
+        Separator separator = new Separator(Orientation.HORIZONTAL);
+        GridPane.setConstraints(separator, 0, ++row, 2, 1);
+        gridPane.getChildren().add(separator);
+
+        Label createLabel = new Label("Create Channel Configuration");
+        GridPane.setConstraints(createLabel, 1, ++row);
+        gridPane.getChildren().add(createLabel);
+
+        Label systemLabel = new Label("System");
+        GridPane.setHalignment(systemLabel, HPos.RIGHT);
+        GridPane.setConstraints(systemLabel, 0, ++row);
+        gridPane.getChildren().add(systemLabel);
+
+        GridPane.setHgrow(getSystemTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getSystemTextField(), 1, row);
+        gridPane.getChildren().add(getSystemTextField());
+
+        Label siteLabel = new Label("Site");
+        GridPane.setHalignment(siteLabel, HPos.RIGHT);
+        GridPane.setConstraints(siteLabel, 0, ++row);
+        gridPane.getChildren().add(siteLabel);
+
+        GridPane.setHgrow(getSiteTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getSiteTextField(), 1, row);
+        gridPane.getChildren().add(getSiteTextField());
+
+        Label nameLabel = new Label("Name");
+        GridPane.setHalignment(nameLabel, HPos.RIGHT);
+        GridPane.setConstraints(nameLabel, 0, ++row);
+        gridPane.getChildren().add(nameLabel);
+
+        GridPane.setHgrow(getNameTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getNameTextField(), 1, row);
+        gridPane.getChildren().add(getNameTextField());
+
+        Label decoderLabel = new Label("Decoder");
+        GridPane.setHalignment(decoderLabel, HPos.RIGHT);
+        GridPane.setConstraints(decoderLabel, 0, ++row);
+        gridPane.getChildren().add(decoderLabel);
+
+        GridPane.setHgrow(getDecoderTextField(), Priority.ALWAYS);
+        GridPane.setConstraints(getDecoderTextField(), 1, row);
+        gridPane.getChildren().add(getDecoderTextField());
+
+        GridPane.setConstraints(getShowCreatedChannelCheckBox(), 1, ++row);
+        gridPane.getChildren().add(getShowCreatedChannelCheckBox());
+
+        GridPane.setHgrow(getCreateButton(), Priority.ALWAYS);
+        GridPane.setMargin(getCreateButton(), new Insets(10,0,0,0));
+        GridPane.setConstraints(getCreateButton(), 1, ++row);
+        gridPane.getChildren().add(getCreateButton());
+
+        GridPane.setConstraints(getChannelCreatedLabel(), 1, ++row);
+        gridPane.getChildren().add(getChannelCreatedLabel());
+
+        getChildren().add(gridPane);
     }
 
-    /**
-     * Constructs an instance with a default behavior of single frequency support only.
-     * @param tunerManager for accessing list of tuners to select a preferred tuner
-     */
-    public FrequencyEditor(TunerManager tunerManager)
+    public void setItem(Frequency item, Category category, SubCategory subCategory)
     {
-        mTunerManager = tunerManager;
-        init();
-    }
+        mModeDecoderType = ModeDecoderType.UNKNOWN;
 
-    private void init()
-    {
-        HBox hBox = new HBox();
-        hBox.setPadding(new Insets(10,10,10,10));
-        hBox.setSpacing(10);
-        hBox.setAlignment(Pos.CENTER_LEFT);
-
-        Label label = new Label(mAllowMultipleFrequencies ? "Frequencies (MHz)" : "Frequency (MHz)");
-        label.setAlignment(Pos.BASELINE_RIGHT);
-        hBox.getChildren().addAll(label, getFrequencyBoxContainer());
-
-        Label preferredTunerLabel = new Label("Preferred Tuner");
-        HBox tunerBox = new HBox();
-        tunerBox.setAlignment(Pos.CENTER_LEFT);
-        tunerBox.setSpacing(10);
-        tunerBox.getChildren().addAll(preferredTunerLabel, getPreferredTunerComboBox());
-
-        VBox vbox = new VBox();
-        vbox.setSpacing(10);
-        vbox.setPadding(new Insets(0,0,0,20));
-
-        if(mAllowMultipleFrequencies)
+        if(item != null)
         {
-            Label frequencyRotationLabel = new Label("Frequency Rotation Delay (ms)");
-            HBox frequencyBox = new HBox();
-            frequencyBox.setAlignment(Pos.CENTER_LEFT);
-            frequencyBox.setSpacing(10);
-            frequencyBox.getChildren().addAll(frequencyRotationLabel, getFrequencyRotationDelaySpinner());
-            getFrequencyRotationDelaySpinner().disableProperty().bind(Bindings.greaterThan(2, Bindings.size(mFrequencyBoxes)));
-
-            vbox.getChildren().addAll(tunerBox, frequencyBox);
+            mFrequency = (long)(item.getDownlink() * 1E6);
+            getAlphaTagTextField().setText(item.getAlphaTag());
+            getFrequencyTextField().setText(FREQUENCY_FORMATTER.format(item.getDownlink()));
+            getToneTextField().setText(item.getTone());
+            updateMode(item.getMode());
+            getSystemTextField().setText(category != null ? category.getName() : null);
+            getSiteTextField().setText(subCategory != null ? subCategory.getName() : null);
+            getNameTextField().setText(item.getAlphaTag());
         }
         else
         {
-            vbox.getChildren().addAll(tunerBox);
-        }
+            mFrequency = 0;
+            getAlphaTagTextField().setText(null);
+            getFrequencyTextField().setText(null);
+            getModeTextField().setText(null);
+            getToneTextField().setText(null);
+            getSystemTextField().setText(null);
+            getSiteTextField().setText(null);
+            getNameTextField().setText(null);
 
-        hBox.getChildren().add(vbox);
-
-        setAlignment(Pos.TOP_LEFT);
-        getChildren().add(hBox);
-    }
-
-    /**
-     * Sets the disabled status for each of the frequency boxes and the preferred tuner combo box.
-     * @param disable true to disable each of the controls or false to enable.
-     */
-    @Override
-    public void disable(boolean disable)
-    {
-        for(FrequencyBox frequencyBox: mFrequencyBoxes)
-        {
-            frequencyBox.disable(disable);
-        }
-
-        getPreferredTunerComboBox().setDisable(disable);
-    }
-
-    /**
-     * Saves the current state of the editor to the source configuration which can then be accessed by invoking
-     * the getSourceConfiguration() method.
-     *
-     * Note: the source configuration will be a single frequency config if the editor has only a single frequency or
-     * if the single frequency is not specified.  It will create/use a multiple frequency configuration if the editor
-     * has more than one frequency listed.
-     */
-    @Override
-    public void save()
-    {
-        String preferredTuner = getPreferredTunerComboBox().getSelectionModel().getSelectedItem();
-
-        //Remove the preferred tuner value if it contains the default 'none' value
-        if(preferredTuner != null && preferredTuner.contentEquals(NONE))
-        {
-            preferredTuner = null;
-        }
-
-        List<Long> frequencies = getFrequencies();
-
-        if(frequencies.size() <= 1)
-        {
-            SourceConfigTuner sourceConfigTuner = null;
-
-            if(getSourceConfiguration() instanceof SourceConfigTuner)
-            {
-                sourceConfigTuner = (SourceConfigTuner)getSourceConfiguration();
-            }
-            else
-            {
-                sourceConfigTuner = new SourceConfigTuner();
-            }
-
-            if(frequencies.size() == 1)
-            {
-                sourceConfigTuner.setFrequency(frequencies.get(0));
-            }
-            else
-            {
-                sourceConfigTuner.setFrequency(0);
-            }
-
-            sourceConfigTuner.setPreferredTuner(preferredTuner);
-            setSourceConfiguration(sourceConfigTuner);
-        }
-        else
-        {
-            SourceConfigTunerMultipleFrequency sourceConfigMulti = null;
-
-            if(getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency)
-            {
-                sourceConfigMulti = (SourceConfigTunerMultipleFrequency)getSourceConfiguration();
-            }
-            else
-            {
-                sourceConfigMulti = new SourceConfigTunerMultipleFrequency();
-            }
-
-            sourceConfigMulti.setFrequencies(frequencies);
-            sourceConfigMulti.setPreferredTuner(preferredTuner);
-            sourceConfigMulti.setFrequencyRotationDelay(getFrequencyRotationDelaySpinner().getValue());
-            setSourceConfiguration(sourceConfigMulti);
+            getSystemTextField().setDisable(true);
+            getSiteTextField().setDisable(true);
+            getNameTextField().setDisable(true);
+            getCreateButton().setDisable(true);
+            getShowCreatedChannelCheckBox().setDisable(true);
         }
     }
 
     /**
-     * Loads the source configuration into the editor.
-     * @param sourceConfiguration to load
+     * Updates the mode text field and related controls to indicate if a channel configuration can be created.
      */
-    @Override
-    public void setSourceConfiguration(SourceConfiguration sourceConfiguration)
+    private void updateMode(String modeId)
     {
-        super.setSourceConfiguration(sourceConfiguration);
-
-        String preferredTuner = null;
-
-        disable(sourceConfiguration == null);
-
-        getFrequencyRotationDelaySpinner().getValueFactory()
-            .setValue(ChannelRotationMonitor.CHANNEL_ROTATION_DELAY_MINIMUM);
-
-        if(sourceConfiguration == null)
+        if(modeId != null)
         {
-            setFrequencies(Collections.emptyList());
-            getPreferredTunerComboBox().setDisable(true);
-            getPreferredTunerComboBox().getSelectionModel().select(null);
-        }
-        else if(sourceConfiguration instanceof SourceConfigTuner)
-        {
-            SourceConfigTuner sourceConfigTuner = (SourceConfigTuner)sourceConfiguration;
-            setFrequency(sourceConfigTuner.getFrequency());
-            preferredTuner = sourceConfigTuner.getPreferredTuner();
-        }
-        else if(sourceConfiguration instanceof SourceConfigTunerMultipleFrequency)
-        {
-            SourceConfigTunerMultipleFrequency sourceMulti = (SourceConfigTunerMultipleFrequency)sourceConfiguration;
-            setFrequencies(sourceMulti.getFrequencies());
-            preferredTuner = sourceMulti.getPreferredTuner();
+            ThreadPool.CACHED.execute(() -> {
+                Integer parsed = null;
 
-            int rotationDelay = sourceMulti.getFrequencyRotationDelay();
-
-            if(rotationDelay < mFrequencyRotationMinimum)
-            {
-                rotationDelay = mFrequencyRotationMinimum;
-
-                //For backward compatibility, we'll automatically update the value in the source config
-                sourceMulti.setFrequencyRotationDelay(rotationDelay);
-            }
-            if(rotationDelay > mFrequencyRotationMaximum)
-            {
-                rotationDelay = mFrequencyRotationMaximum;
-
-                //For backward compatibility, we'll automatically update the value in the source config
-                sourceMulti.setFrequencyRotationDelay(rotationDelay);
-            }
-
-            getFrequencyRotationDelaySpinner().getValueFactory().setValue(rotationDelay);
-        }
-        else
-        {
-            setFrequencies(Collections.emptyList());
-            getPreferredTunerComboBox().setDisable(false);
-            getPreferredTunerComboBox().getSelectionModel().select(null);
-        }
-
-        updatePreferredTuners();
-
-        if(preferredTuner != null)
-        {
-            if(!getPreferredTunerComboBox().getItems().contains(preferredTuner))
-            {
-                getPreferredTunerComboBox().getItems().add(preferredTuner);
-            }
-
-            getPreferredTunerComboBox().getSelectionModel().select(preferredTuner);
-        }
-        else
-        {
-            getPreferredTunerComboBox().getSelectionModel().select(NONE);
-        }
-
-        modifiedProperty().set(false);
-    }
-
-    /**
-     * Channel rotation monitor delay value.  This dictates how long the decoder will remain on each frequency before
-     * rotating to the next frequency in the list
-     * @return spinner
-     */
-    private Spinner<Integer> getFrequencyRotationDelaySpinner()
-    {
-        if(mChannelRotationDelaySpinner == null)
-        {
-            mChannelRotationDelaySpinner = new Spinner();
-            mChannelRotationDelaySpinner.setTooltip(
-                new Tooltip("Delay on each frequency before rotating to next when seeking to next active channel frequency"));
-            mChannelRotationDelaySpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_HORIZONTAL);
-            SpinnerValueFactory<Integer> svf = new SpinnerValueFactory.IntegerSpinnerValueFactory(mFrequencyRotationMinimum,
-                mFrequencyRotationMaximum, mFrequencyRotationMinimum, 50);
-            mChannelRotationDelaySpinner.setValueFactory(svf);
-            mChannelRotationDelaySpinner.getValueFactory().valueProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
-        }
-
-        return mChannelRotationDelaySpinner;
-    }
-
-    /**
-     * Updates the preferred tuner's combo box to reflect the current set of tuners.
-     */
-    private void updatePreferredTuners()
-    {
-        getPreferredTunerComboBox().getItems().clear();
-        getPreferredTunerComboBox().getItems().add(NONE);
-
-        if(mTunerManager != null)
-        {
-            getPreferredTunerComboBox().getItems().addAll(mTunerManager.getPreferredTunerNames());
-        }
-    }
-
-    /**
-     * Primary frequency editor control
-     */
-    private FrequencyBox getPrimaryFrequencyBox()
-    {
-        if(mPrimaryFrequencyBox == null)
-        {
-            mPrimaryFrequencyBox = new FrequencyBox(mAllowMultipleFrequencies ? Buttons.ADD : Buttons.NONE);
-            mFrequencyBoxes.add(mPrimaryFrequencyBox);
-        }
-
-        return mPrimaryFrequencyBox;
-    }
-
-    /**
-     * Preferred tuner combo box control
-     */
-    private ComboBox<String> getPreferredTunerComboBox()
-    {
-        if(mPreferredTunerComboBox == null)
-        {
-            mPreferredTunerComboBox = new ComboBox<>();
-            mPreferredTunerComboBox.setDisable(true);
-            mPreferredTunerComboBox.getItems().add(NONE);
-            mPreferredTunerComboBox.getSelectionModel().selectedItemProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
-        }
-
-        return mPreferredTunerComboBox;
-    }
-
-    /**
-     * Container for all frequency controls.
-     */
-    private VBox getFrequencyBoxContainer()
-    {
-        if(mFrequencyBoxContainer == null)
-        {
-            mFrequencyBoxContainer = new VBox();
-            mFrequencyBoxContainer.setSpacing(5);
-            mFrequencyBoxContainer.getChildren().addAll(getPrimaryFrequencyBox());
-        }
-
-        return mFrequencyBoxContainer;
-    }
-
-    /**
-     * Updates the control with the list of frequencies
-     */
-    public void setFrequencies(List<Long> frequencies)
-    {
-        resetFrequencyBoxes();
-
-        for(int x = 0; x < frequencies.size(); x++)
-        {
-            if(x == 0)
-            {
-                getPrimaryFrequencyBox().getFrequencyField().set(frequencies.get(0));
-            }
-            else
-            {
-                FrequencyBox frequencyBox = addFrequencyBox();
-                frequencyBox.getFrequencyField().set(frequencies.get(x));
-            }
-        }
-    }
-
-    /**
-     * Updates the control with the specified single frequency
-     */
-    public void setFrequency(Long frequency)
-    {
-        resetFrequencyBoxes();
-        getPrimaryFrequencyBox().getFrequencyField().set(frequency);
-    }
-
-    /**
-     * List of frequencies contained in this control
-     */
-    public List<Long> getFrequencies()
-    {
-        List<Long> frequencies = new ArrayList<>();
-        for(FrequencyBox frequencyBox: mFrequencyBoxes)
-        {
-            long frequency = frequencyBox.getFrequencyField().get();
-
-            if(frequency > 0)
-            {
-                frequencies.add(frequency);
-            }
-        }
-
-        return frequencies;
-    }
-
-    /**
-     * Resets the frequency boxes to a single frequency box with an empty frequency value.
-     */
-    private void resetFrequencyBoxes()
-    {
-        getFrequencyBoxContainer().getChildren().clear();
-        mFrequencyBoxes.clear();
-        getFrequencyBoxContainer().getChildren().add(getPrimaryFrequencyBox());
-        mFrequencyBoxes.add(getPrimaryFrequencyBox());
-        getPrimaryFrequencyBox().getFrequencyField().set(0);
-    }
-
-    /**
-     * Adds a frequency box to the editor
-     */
-    private FrequencyBox addFrequencyBox()
-    {
-        FrequencyBox frequencyBox = new FrequencyBox(Buttons.REMOVE);
-        frequencyBox.disable(false);
-        mFrequencyBoxes.add(frequencyBox);
-        getFrequencyBoxContainer().getChildren().add(frequencyBox);
-        return frequencyBox;
-    }
-
-    /**
-     * Removes the specified frequency box from this editor
-     */
-    private void removeFrequencyBox(FrequencyBox toRemove)
-    {
-        getFrequencyBoxContainer().getChildren().remove(toRemove);
-        mFrequencyBoxes.remove(toRemove);
-        modifiedProperty().set(true);
-    }
-
-    /**
-     * Buttons enum used for styling FrequencyBox controls
-     */
-    public enum Buttons {ADD, REMOVE, NONE }
-
-    /**
-     * Frequency field with optional ADD or REMOVE button
-     */
-    public class FrequencyBox extends HBox
-    {
-        private FrequencyField mFrequencyField;
-        private Button mAddButton;
-        private Button mRemoveButton;
-
-        /**
-         * Constructs a frequency box with the specified button styling
-         */
-        public FrequencyBox(Buttons buttons)
-        {
-            setSpacing(10);
-            getChildren().add(getFrequencyField());
-
-            switch(buttons)
-            {
-                case ADD:
-                    getChildren().add(getAddButton());
-                    break;
-                case REMOVE:
-                    getChildren().add(getRemoveButton());
-                    break;
-            }
-        }
-
-        /**
-         * Sets the disabled state for this frequency editor
-         */
-        public void disable(boolean disable)
-        {
-            getFrequencyField().setDisable(disable);
-            getAddButton().setDisable(disable);
-            getRemoveButton().setDisable(disable);
-        }
-
-        /**
-         * Frequency field control for this editor
-         */
-        public FrequencyField getFrequencyField()
-        {
-            if(mFrequencyField == null)
-            {
-                mFrequencyField = new FrequencyField();
-                mFrequencyField.setDisable(true);
-                mFrequencyField.textProperty().addListener(new ChangeListener<String>()
+                try
                 {
-                    @Override
-                    public void changed(ObservableValue<? extends String> observable, String oldValue, String newValue)
+                    parsed = Integer.parseInt(modeId);
+                }
+                catch(Exception e)
+                {
+                    //Do nothing, we couldn't parse the value
+                }
+
+                if(parsed != null)
+                {
+                    try
                     {
-                        modifiedProperty().set(true);
+                        Mode mode = mRadioReference.getService().getMode(parsed);
+                        mModeDecoderType = ModeDecoderType.get(mode);
+
+                        Platform.runLater(() -> {
+                            getModeTextField().setText(mode.getName());
+
+                            boolean disable = !mModeDecoderType.hasDecoderType();
+
+                            getSystemTextField().setDisable(disable);
+                            getSiteTextField().setDisable(disable);
+                            getNameTextField().setDisable(disable);
+                            getCreateButton().setDisable(disable);
+                            getShowCreatedChannelCheckBox().setDisable(disable);
+
+                            if(mModeDecoderType.hasDecoderType())
+                            {
+                                getDecoderTextField().setText(mModeDecoderType.getDecoderType().getDisplayString());
+                            }
+                            else
+                            {
+                                getDecoderTextField().setText(mode.getName() + " - Not Supported");
+                            }
+                        });
                     }
-                });
-            }
+                    catch(Throwable t)
+                    {
+                        mLog.error("Error retrieving mode from radio reference", t);
+                    }
+                }
+            });
+        }
+        else
+        {
+            getModeTextField().setText(null);
+        }
+    }
 
-            return mFrequencyField;
+    private TextField getAlphaTagTextField()
+    {
+        if(mAlphaTagTextField == null)
+        {
+            mAlphaTagTextField = new TextField();
+            mAlphaTagTextField.setMaxWidth(Double.MAX_VALUE);
+            mAlphaTagTextField.setDisable(true);
         }
 
-        /**
-         * Add button
-         */
-        private Button getAddButton()
-        {
-            if(mAddButton == null)
-            {
-                mAddButton = new Button("Add");
-                mAddButton.setDisable(true);
-                mAddButton.setOnAction(event -> addFrequencyBox());
-            }
+        return mAlphaTagTextField;
+    }
 
-            return mAddButton;
+    private TextField getFrequencyTextField()
+    {
+        if(mFrequencyTextField == null)
+        {
+            mFrequencyTextField = new TextField();
+            mFrequencyTextField.setMaxWidth(Double.MAX_VALUE);
+            mFrequencyTextField.setDisable(true);
         }
 
-        /**
-         * Remove button
-         */
-        private Button getRemoveButton()
+        return mFrequencyTextField;
+    }
+
+    private TextField getModeTextField()
+    {
+        if(mModeTextField == null)
         {
-            if(mRemoveButton == null)
+            mModeTextField = new TextField();
+            mModeTextField.setMaxWidth(Double.MAX_VALUE);
+            mModeTextField.setDisable(true);
+        }
+
+        return mModeTextField;
+    }
+
+    private TextField getToneTextField()
+    {
+        if(mToneTextField == null)
+        {
+            mToneTextField = new TextField();
+            mToneTextField.setMaxWidth(Double.MAX_VALUE);
+            mToneTextField.setDisable(true);
+        }
+
+        return mToneTextField;
+    }
+
+    private CheckBox getShowCreatedChannelCheckBox()
+    {
+        if(mShowCreatedChannelCheckBox == null)
+        {
+            boolean show = mUserPreferences.getRadioReferencePreference().getShowChannelEditor(mLevel);
+            mShowCreatedChannelCheckBox = new CheckBox("View Channel Editor After Create");
+            mShowCreatedChannelCheckBox.setDisable(true);
+            mShowCreatedChannelCheckBox.selectedProperty().set(show);
+            mShowCreatedChannelCheckBox.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> mUserPreferences.getRadioReferencePreference()
+                    .setShowChannelEditor(newValue, mLevel));
+        }
+
+        return mShowCreatedChannelCheckBox;
+    }
+
+    private Label getChannelCreatedLabel()
+    {
+        if(mChannelCreatedLabel == null)
+        {
+            mChannelCreatedLabel = new Label("Channel Created Successfully");
+            mChannelCreatedLabel.setDisable(true);
+            mChannelCreatedLabel.setOpacity(0);
+        }
+
+        return mChannelCreatedLabel;
+    }
+
+    private Button getCreateButton()
+    {
+        if(mCreateButton == null)
+        {
+            mCreateButton = new Button("Create");
+            mCreateButton.setDisable(true);
+            mCreateButton.setOnAction(event -> {
+                Channel channel = createChannel(mModeDecoderType, mFrequency, getSystemTextField().getText(),
+                    getSiteTextField().getText(), getNameTextField().getText());
+
+                if(channel != null)
+                {
+                    getCreateButton().setDisable(true);
+                    mPlaylistManager.getChannelModel().addChannel(channel);
+
+                    if(getShowCreatedChannelCheckBox().selectedProperty().get())
+                    {
+                        MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(channel));
+                    }
+                    else
+                    {
+                        getChannelCreatedLabel().setOpacity(1.0);
+                        FadeTransition transition = new FadeTransition(Duration.seconds(2), getChannelCreatedLabel());
+                        transition.setDelay(Duration.seconds(1));
+                        transition.setToValue(0.0);
+                        transition.play();
+                    }
+                }
+            });
+        }
+
+        return mCreateButton;
+    }
+
+    /**
+     * Creates a channel configuration from the supplied values
+     * @param modeDecoderType indicating the decoder type
+     * @param frequency value
+     * @param system value
+     * @param site value
+     * @param name value
+     * @return configured channel or null
+     */
+    private Channel createChannel(ModeDecoderType modeDecoderType, long frequency, String system, String site, String name)
+    {
+        if(modeDecoderType.hasDecoderType())
+        {
+            Channel channel = new Channel();
+            channel.setSystem(system);
+            channel.setSite(site);
+            channel.setName(name);
+            SourceConfigTuner sourceConfigTuner = new SourceConfigTuner();
+            sourceConfigTuner.setFrequency(frequency);
+            channel.setSourceConfiguration(sourceConfigTuner);
+            DecodeConfiguration decodeConfiguration = DecoderFactory.getDecodeConfiguration(modeDecoderType.getDecoderType());
+
+            if(decodeConfiguration instanceof DecodeConfigNBFM nbfmConfig)
             {
-                mRemoveButton = new Button("Remove");
-                mRemoveButton.setDisable(true);
-                mRemoveButton.setOnAction(event -> {
-                    Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                        "Do you want to remove this frequency?", ButtonType.YES, ButtonType.NO);
-                    confirm.setTitle("Remove Frequency");
-                    confirm.setHeaderText("Remove frequency?");
-                    confirm.initOwner(((Node)event.getTarget()).getScene().getWindow());
-                    confirm.showAndWait().ifPresent(buttonType -> {
-                        if(buttonType == ButtonType.YES)
-                        {
-                            removeFrequencyBox(FrequencyBox.this);
-                        }
-                    });
-                });
+                if(modeDecoderType == ModeDecoderType.FM)
+                {
+                    nbfmConfig.setBandwidth(DecodeConfigNBFM.Bandwidth.BW_25_0);
+                }
+
+                // === NEW: Auto-configure CTCSS/DCS from Radio Reference tone field ===
+                String tone = getToneTextField().getText();
+                if(tone != null && !tone.trim().isEmpty())
+                {
+                    configureToneFilter(nbfmConfig, tone.trim());
+                }
+            }
+            else if(decodeConfiguration instanceof DecodeConfigP25Phase1 p25Config)
+            {
+                p25Config.setModulation(Modulation.C4FM);
+
+                // === NEW: Auto-configure NAC from Radio Reference tone field ===
+                String tone = getToneTextField().getText();
+                if(tone != null && !tone.trim().isEmpty())
+                {
+                    configureNacFilter(p25Config, tone.trim());
+                }
+            }
+            channel.setDecodeConfiguration(decodeConfiguration);
+            return channel;
+        }
+        else
+        {
+            mLog.warn("Can't create channel configuration for [" + modeDecoderType.name() + "] no supported decoder type");
+        }
+
+        return null;
+    }
+
+    private TextField getSystemTextField()
+    {
+        if(mSystemTextField == null)
+        {
+            mSystemTextField = new TextField();
+            mSystemTextField.setMaxWidth(Double.MAX_VALUE);
+            mSystemTextField.setDisable(true);
+        }
+
+        return mSystemTextField;
+    }
+
+    private TextField getSiteTextField()
+    {
+        if(mSiteTextField == null)
+        {
+            mSiteTextField = new TextField();
+            mSiteTextField.setMaxWidth(Double.MAX_VALUE);
+            mSiteTextField.setDisable(true);
+        }
+
+        return mSiteTextField;
+    }
+
+    private TextField getNameTextField()
+    {
+        if(mNameTextField == null)
+        {
+            mNameTextField = new TextField();
+            mNameTextField.setMaxWidth(Double.MAX_VALUE);
+            mNameTextField.setDisable(true);
+        }
+
+        return mNameTextField;
+    }
+
+    private TextField getDecoderTextField()
+    {
+        if(mDecoderTextField == null)
+        {
+            mDecoderTextField = new TextField();
+            mDecoderTextField.setMaxWidth(Double.MAX_VALUE);
+            mDecoderTextField.setDisable(true);
+        }
+
+        return mDecoderTextField;
+    }
+
+    /**
+     * Parses Radio Reference tone string and configures CTCSS or DCS filter on NBFM channel.
+     *
+     * Tone formats from Radio Reference:
+     *   "100.0 PL" or "100.0" → CTCSS tone at 100.0 Hz
+     *   "D023N" or "D023I" → DCS code 023 Normal/Inverted
+     *   "CSQ" → Carrier squelch (no filter)
+     *   "117 NAC" → NAC (handled separately for P25)
+     *
+     * @param config the NBFM decode configuration to modify
+     * @param tone the tone string from Radio Reference
+     */
+    private void configureToneFilter(DecodeConfigNBFM config, String tone)
+    {
+        // Skip carrier squelch
+        if(tone.equalsIgnoreCase("CSQ") || tone.isEmpty())
+        {
+            return;
+        }
+
+        // Skip NAC entries (these are for P25, not NBFM)
+        if(tone.toUpperCase().contains("NAC"))
+        {
+            return;
+        }
+
+        mLog.info("Radio Reference tone field: [{}]", tone);
+
+        String upperTone = tone.toUpperCase().trim();
+
+        // Check for DCS/DPL code in various Radio Reference formats:
+        //   "D023N" or "D023I" → already in DCSCode enum format
+        //   "125 DPL" or "125DPL" → numeric DPL code, needs "D" prefix and "N" suffix
+        if(upperTone.contains("DPL") || upperTone.contains("DCS"))
+        {
+            // Extract the numeric code: "125 DPL" → "125", "D023N DPL" → "D023N"
+            String codeStr = upperTone.replace("DPL", "").replace("DCS", "").trim();
+
+            // If it's just a number like "074", convert to DCSCode format "N074" (normal polarity)
+            if(codeStr.matches("\\d+"))
+            {
+                codeStr = "N" + String.format("%03d", Integer.parseInt(codeStr));
             }
 
-            return mRemoveButton;
+            try
+            {
+                DCSCode dcsCode = DCSCode.valueOf(codeStr);
+                if(dcsCode != DCSCode.UNKNOWN)
+                {
+                    config.setToneFilterEnabled(true);
+                    config.addToneFilter(new ChannelToneFilter(
+                            ChannelToneFilter.ToneType.DCS, dcsCode.name(), dcsCode.toString()));
+                    mLog.info("Auto-configured DCS filter from Radio Reference: {}", dcsCode);
+                    return;
+                }
+            }
+            catch(IllegalArgumentException e)
+            {
+                mLog.debug("DCS code not recognized: {}", codeStr);
+            }
+        }
+        // Also check for "N023" or "I023" format without DPL/DCS suffix
+        else if((upperTone.startsWith("N") || upperTone.startsWith("I")) && upperTone.length() >= 4)
+        {
+            String dcsStr = upperTone.split("\\s+")[0];
+            try
+            {
+                DCSCode dcsCode = DCSCode.valueOf(dcsStr);
+                if(dcsCode != DCSCode.UNKNOWN)
+                {
+                    config.setToneFilterEnabled(true);
+                    config.addToneFilter(new ChannelToneFilter(
+                            ChannelToneFilter.ToneType.DCS, dcsCode.name(), dcsCode.toString()));
+                    mLog.info("Auto-configured DCS filter from Radio Reference: {}", dcsCode);
+                    return;
+                }
+            }
+            catch(IllegalArgumentException e)
+            {
+                // Not a valid DCS code — fall through to CTCSS
+            }
+        }
+
+        // Check for CTCSS tone: "173.8 PL", "100.0", "156.7 Hz", etc.
+        String freqStr = upperTone.replace("PL", "").replace("HZ", "").trim();
+        // Take the first token in case of "173.8 PL"
+        freqStr = freqStr.split("\\s+")[0];
+        try
+        {
+            float freq = Float.parseFloat(freqStr);
+            if(freq >= 67.0f && freq <= 254.1f)
+            {
+                config.setToneFilterEnabled(true);
+                config.addToneFilter(new ChannelToneFilter(
+                        ChannelToneFilter.ToneType.CTCSS, String.valueOf(freq), freq + " Hz"));
+                mLog.info("Auto-configured CTCSS filter from Radio Reference: {} Hz", freq);
+            }
+        }
+        catch(NumberFormatException e)
+        {
+            mLog.debug("Unable to parse tone value from Radio Reference: {}", tone);
+        }
+    }
+
+    /**
+     * Parses Radio Reference tone string and configures NAC filter on P25 channel.
+     *
+     * Tone formats:
+     *   "117 NAC" or "117" → NAC 0x117
+     *
+     * @param config the P25 Phase 1 decode configuration to modify
+     * @param tone the tone string from Radio Reference
+     */
+    private void configureNacFilter(DecodeConfigP25Phase1 config, String tone)
+    {
+        String upperTone = tone.toUpperCase().trim();
+
+        // Only process NAC entries
+        if(!upperTone.contains("NAC"))
+        {
+            return;
+        }
+
+        // Extract the NAC value: "117 NAC" → "117"
+        String nacStr = upperTone.replace("NAC", "").trim();
+        if(nacStr.isEmpty())
+        {
+            return;
+        }
+
+        try
+        {
+            // Radio Reference lists NAC in hex
+            int nac = Integer.parseInt(nacStr, 16);
+            if(nac >= 0 && nac <= 4095)
+            {
+                // DecodeConfigP25Phase1 extends DecodeConfigP25 which has the NAC filter
+                if(config instanceof DecodeConfigP25 p25Config)
+                {
+                    p25Config.setNacFilterEnabled(true);
+                    p25Config.addAllowedNAC(nac);
+                    mLog.info("Auto-configured NAC filter from Radio Reference: x{} ({})",
+                            String.format("%03X", nac), nac);
+                }
+            }
+        }
+        catch(NumberFormatException e)
+        {
+            mLog.debug("Unable to parse NAC value from Radio Reference: {}", tone);
         }
     }
 }
