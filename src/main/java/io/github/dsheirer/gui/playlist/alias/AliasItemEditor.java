@@ -167,6 +167,12 @@ public class AliasItemEditor extends Editor<Alias>
     private EmptyActionEditor mEmptyActionEditor = new EmptyActionEditor();
     private ActionEditor mActionEditor;
 
+    /**
+     * Flag to suppress modification events during programmatic UI updates (e.g., from @Subscribe handlers).
+     * Prevents race conditions between event bus updates and user-initiated changes.
+     */
+    private volatile boolean mSuppressModification = false;
+
 
     public AliasItemEditor(PlaylistManager playlistManager, UserPreferences userPreferences)
     {
@@ -219,6 +225,48 @@ public class AliasItemEditor extends Editor<Alias>
         if(selected != null)
         {
             getIdentifierEditor().setItem(selected);
+        }
+    }
+
+    /**
+     * Handles AliasPriorityChangedEvent from the global event bus.
+     * When the Now Playing right-click menu mutes/unmutes a channel, the alias priority changes.
+     * This handler refreshes the Listen toggle in the alias editor in real time.
+     *
+     * Uses mSuppressModification flag to prevent the toggle/combo change listeners from
+     * marking the editor as modified during this programmatic update, which would otherwise
+     * cause a race condition requiring multiple clicks to sync the toggle state.
+     */
+    @Subscribe
+    public void aliasPriorityChanged(io.github.dsheirer.channel.metadata.AliasPriorityChangedEvent event)
+    {
+        if(event.getAlias() != null && event.getAlias() == getItem())
+        {
+            Platform.runLater(() -> {
+                mSuppressModification = true;
+
+                try
+                {
+                    int priority = event.getAlias().getPlaybackPriority();
+                    boolean canMonitor = (priority != io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR);
+                    getMonitorAudioToggleSwitch().setSelected(canMonitor);
+
+                    if(canMonitor && priority != io.github.dsheirer.alias.id.priority.Priority.DEFAULT_PRIORITY)
+                    {
+                        getMonitorPriorityComboBox().getSelectionModel().select(priority);
+                    }
+                    else
+                    {
+                        getMonitorPriorityComboBox().getSelectionModel().select(null);
+                    }
+                }
+                finally
+                {
+                    mSuppressModification = false;
+                }
+
+                modifiedProperty().set(false);
+            });
         }
     }
 
@@ -1092,7 +1140,12 @@ public class AliasItemEditor extends Editor<Alias>
             mMonitorAudioToggleSwitch = new ToggleSwitch();
             mMonitorAudioToggleSwitch.setDisable(true);
             mMonitorAudioToggleSwitch.selectedProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+                .addListener((observable, oldValue, newValue) -> {
+                    if(!mSuppressModification)
+                    {
+                        modifiedProperty().set(true);
+                    }
+                });
         }
 
         return mMonitorAudioToggleSwitch;
@@ -1112,7 +1165,12 @@ public class AliasItemEditor extends Editor<Alias>
 
             mMonitorPriorityComboBox.disableProperty().bind(getMonitorAudioToggleSwitch().selectedProperty().not());
             mMonitorPriorityComboBox.getSelectionModel().selectedItemProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+                .addListener((observable, oldValue, newValue) -> {
+                    if(!mSuppressModification)
+                    {
+                        modifiedProperty().set(true);
+                    }
+                });
         }
 
         return mMonitorPriorityComboBox;
