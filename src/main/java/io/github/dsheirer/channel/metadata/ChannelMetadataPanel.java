@@ -36,16 +36,32 @@ import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.identifier.TalkgroupFormatPreference;
 import io.github.dsheirer.preference.swing.JTableColumnWidthMonitor;
+import io.github.dsheirer.alias.id.priority.Priority;
+import io.github.dsheirer.audio.AbstractAudioModule;
+import io.github.dsheirer.module.Module;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.source.Source;
+import io.github.dsheirer.source.config.SourceConfigTuner;
+import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
+import io.github.dsheirer.source.config.SourceConfiguration;
+import io.github.dsheirer.source.tuner.Tuner;
+import io.github.dsheirer.source.tuner.TunerEvent;
+import io.github.dsheirer.source.tuner.channel.TunerChannelSource;
+import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
+import io.github.dsheirer.source.tuner.manager.TunerManager;
+import io.github.dsheirer.source.tuner.ui.DiscoveredTunerModel;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.miginfocom.swing.MigLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,16 +92,22 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private Map<State,Color> mForegroundColors = new EnumMap<>(State.class);
     private JTableColumnWidthMonitor mTableColumnMonitor;
     private Channel mUserSelectedChannel;
+    private TunerManager mTunerManager;
+    private PlaylistManager mPlaylistManager;
+    private Set<Integer> mMutedChannelIds = new HashSet<>();
 
     /**
      * Table view for currently decoding channel metadata
      */
-    public ChannelMetadataPanel(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences)
+    public ChannelMetadataPanel(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences,
+                                TunerManager tunerManager)
     {
+        mPlaylistManager = playlistManager;
         mChannelModel = playlistManager.getChannelModel();
         mChannelProcessingManager = playlistManager.getChannelProcessingManager();
         mIconModel = iconModel;
         mUserPreferences = userPreferences;
+        mTunerManager = tunerManager;
         init();
     }
 
@@ -190,6 +212,14 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     public void addProcessingChainSelectionListener(Listener<ProcessingChain> listener)
     {
         mSelectedProcessingChainBroadcaster.addListener(listener);
+    }
+
+    /**
+     * Removes the listener from receiving processing chain selection events.
+     */
+    public void removeProcessingChainSelectionListener(Listener<ProcessingChain> listener)
+    {
+        mSelectedProcessingChainBroadcaster.removeListener(listener);
     }
 
     /**
@@ -408,6 +438,285 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         }
     }
 
+    /**
+     * Returns the aliases associated with a channel's metadata, preferring TO (talkgroup) aliases,
+     * falling back to FROM (radio) aliases, and finally falling back to the channel's configured
+     * alias list (for conventional channels like NBFM that may not have active TO/FROM identifiers
+     * between transmissions).
+     *
+     * @param metadata to get aliases from
+     * @param channel to get alias list name from (used as fallback)
+     * @return list of aliases, or null if none found
+     */
+    private List<Alias> getChannelAliases(ChannelMetadata metadata, Channel channel)
+    {
+        //First: check live metadata TO aliases (populated during active calls/transmissions)
+        List<Alias> toAliases = metadata.getToIdentifierAliases();
+
+        if(toAliases != null && !toAliases.isEmpty())
+        {
+            return toAliases;
+        }
+
+        //Second: check live metadata FROM aliases
+        List<Alias> fromAliases = metadata.getFromIdentifierAliases();
+
+        if(fromAliases != null && !fromAliases.isEmpty())
+        {
+            return fromAliases;
+        }
+
+        //Third: fallback to the channel's configured alias list.
+        //This handles conventional channels (NBFM) where TO/FROM identifiers are only
+        //present during active transmissions but the channel is conceptually tied to aliases.
+        String aliasListName = channel.getAliasListName();
+
+        if(aliasListName != null && !aliasListName.isEmpty())
+        {
+            List<Alias> aliasListAliases = new ArrayList<>();
+
+            for(Alias alias : mPlaylistManager.getAliasModel().getAliases())
+            {
+                if(alias.hasList() && alias.getAliasListName().equalsIgnoreCase(aliasListName))
+                {
+                    aliasListAliases.add(alias);
+                }
+            }
+
+            if(!aliasListAliases.isEmpty())
+            {
+                return aliasListAliases;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Toggles mute state for a channel.
+     *
+     * If the channel is tied to an alias, the alias listen/DO_NOT_MONITOR toggle is used so that
+     * the mute state is reflected in the alias configuration and applies across all traffic channels
+     * for the same talkgroup.
+     *
+     * If the channel has no alias, mute is applied independently via the audio module and tracked
+     * by channel ID so it can be re-applied when new processing chains are created.
+     *
+     * In both cases the current audio segment is force-closed for immediate effect.
+     *
+     * @param metadata containing alias information
+     * @param channel to mute/unmute
+     * @param mute true to mute, false to unmute
+     */
+    private void setChannelMuted(ChannelMetadata metadata, Channel channel, boolean mute)
+    {
+        List<Alias> aliases = getChannelAliases(metadata, channel);
+
+        if(aliases != null)
+        {
+            //Alias path: toggle DO_NOT_MONITOR on the alias so it persists and applies globally
+            for(Alias alias : aliases)
+            {
+                alias.setCallPriority(mute ? Priority.DO_NOT_MONITOR : Priority.DEFAULT_PRIORITY);
+            }
+
+            //Persist alias change to playlist
+            mPlaylistManager.schedulePlaylistSave();
+
+            //Notify alias editor to refresh its Listen toggle in real time
+            for(Alias alias : aliases)
+            {
+                MyEventBus.getGlobalEventBus().post(new AliasPriorityChangedEvent(alias));
+            }
+        }
+        else
+        {
+            //No alias path: track independently by channel ID
+            if(mute)
+            {
+                mMutedChannelIds.add(channel.getChannelID());
+            }
+            else
+            {
+                mMutedChannelIds.remove(channel.getChannelID());
+            }
+
+        }
+
+        //Force-close current audio segment for immediate effect on already-playing audio
+        ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+
+        if(processingChain != null)
+        {
+            for(Module module : processingChain.getModules())
+            {
+                if(module instanceof AbstractAudioModule)
+                {
+                    ((AbstractAudioModule)module).setMuted(mute);
+                }
+            }
+        }
+    }
+
+    /**
+     * Checks if a channel is currently muted.
+     *
+     * For channels with aliases, checks the alias DO_NOT_MONITOR priority.
+     * For channels without aliases, checks the independent mMutedChannelIds set.
+     *
+     * @param metadata to check alias state
+     * @param channel to check independent mute state
+     * @return true if the channel is muted
+     */
+    private boolean isChannelMuted(ChannelMetadata metadata, Channel channel)
+    {
+        List<Alias> aliases = getChannelAliases(metadata, channel);
+
+        if(aliases != null)
+        {
+            for(Alias alias : aliases)
+            {
+                if(alias.getPlaybackPriority() == Priority.DO_NOT_MONITOR)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        //No alias - check independent mute tracking
+        return mMutedChannelIds.contains(channel.getChannelID());
+    }
+
+    /**
+     * Attempts to show the tuner serving a channel in the main spectral display (waterfall).
+     * Finds the tuner by checking the channel's source configuration for a preferred tuner name,
+     * or by matching against the processing chain's current tuner channel source.
+     * @param channel to show in waterfall
+     */
+    private void showChannelInWaterfall(Channel channel)
+    {
+        if(mTunerManager == null)
+        {
+            mLog.warn("TunerManager not available - cannot show channel in waterfall");
+            return;
+        }
+
+        DiscoveredTunerModel discoveredTunerModel = mTunerManager.getDiscoveredTunerModel();
+        Tuner tuner = null;
+
+        // First try: find tuner via preferred tuner name from source config
+        SourceConfiguration sourceConfig = channel.getSourceConfiguration();
+
+        String preferredTunerName = null;
+
+        if(sourceConfig instanceof SourceConfigTuner)
+        {
+            preferredTunerName = ((SourceConfigTuner)sourceConfig).getPreferredTuner();
+        }
+        else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+        {
+            preferredTunerName = ((SourceConfigTunerMultipleFrequency)sourceConfig).getPreferredTuner();
+        }
+
+        if(preferredTunerName != null)
+        {
+            DiscoveredTuner discoveredTuner = mTunerManager.getDiscoveredTuner(preferredTunerName);
+
+            if(discoveredTuner != null && discoveredTuner.hasTuner())
+            {
+                tuner = discoveredTuner.getTuner();
+            }
+        }
+
+        // Second try: find tuner via the processing chain's source
+        if(tuner == null)
+        {
+            ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+
+            if(processingChain != null)
+            {
+                Source source = processingChain.getSource();
+
+                if(source instanceof TunerChannelSource)
+                {
+                    long channelFrequency = ((TunerChannelSource)source).getFrequency();
+
+                    // Find which tuner is serving this frequency
+                    for(DiscoveredTuner discoveredTuner : discoveredTunerModel.getAvailableTuners())
+                    {
+                        if(discoveredTuner.hasTuner())
+                        {
+                            try
+                            {
+                                long tunerFreq = discoveredTuner.getTuner().getTunerController().getFrequency();
+                                double sampleRate = discoveredTuner.getTuner().getTunerController().getSampleRate();
+                                long halfBandwidth = (long)(sampleRate / 2.0);
+
+                                if(channelFrequency >= tunerFreq - halfBandwidth &&
+                                   channelFrequency <= tunerFreq + halfBandwidth)
+                                {
+                                    tuner = discoveredTuner.getTuner();
+                                    break;
+                                }
+                            }
+                            catch(Exception ex)
+                            {
+                                mLog.error("Error checking tuner frequency", ex);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if(tuner != null)
+        {
+            // Determine the channel frequency to center on
+            long channelFrequency = 0;
+
+            if(sourceConfig instanceof SourceConfigTuner)
+            {
+                channelFrequency = ((SourceConfigTuner)sourceConfig).getFrequency();
+            }
+            else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+            {
+                List<Long> frequencies = ((SourceConfigTunerMultipleFrequency)sourceConfig).getFrequencies();
+
+                if(frequencies != null && !frequencies.isEmpty())
+                {
+                    channelFrequency = frequencies.get(0);
+                }
+            }
+
+            // Fall back to the live tuner channel source frequency if config frequency is 0
+            if(channelFrequency == 0)
+            {
+                ProcessingChain pc = mChannelProcessingManager.getProcessingChain(channel);
+
+                if(pc != null && pc.getSource() instanceof TunerChannelSource)
+                {
+                    channelFrequency = ((TunerChannelSource)pc.getSource()).getFrequency();
+                }
+            }
+
+            if(channelFrequency > 0)
+            {
+                discoveredTunerModel.broadcast(new TunerEvent(tuner,
+                    TunerEvent.Event.REQUEST_MAIN_SPECTRAL_DISPLAY, channelFrequency));
+            }
+            else
+            {
+                discoveredTunerModel.broadcast(new TunerEvent(tuner,
+                    TunerEvent.Event.REQUEST_MAIN_SPECTRAL_DISPLAY));
+            }
+        }
+        else
+        {
+        }
+    }
+
     public class MouseSupport extends MouseAdapter
     {
         @Override
@@ -436,10 +745,30 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
                             if(channel != null)
                             {
+                                // View/Edit menu item
                                 JMenuItem viewChannel = new JMenuItem("View/Edit: " + channel.getShortTitle());
                                 viewChannel.addActionListener(e2 -> MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(channel)));
                                 popupMenu.add(viewChannel);
                                 populated = true;
+
+                                // Mute/Unmute menu item
+                                boolean isMuted = isChannelMuted(metadata, channel);
+                                String muteLabel = isMuted ? "Unmute: " + channel.getShortTitle()
+                                                          : "Mute: " + channel.getShortTitle();
+                                JMenuItem muteItem = new JMenuItem(muteLabel);
+                                muteItem.addActionListener(e2 -> setChannelMuted(metadata, channel, !isMuted));
+                                popupMenu.add(muteItem);
+
+                                // Show in Waterfall menu item - only show if channel has a tuner source
+                                SourceConfiguration sourceConfig = channel.getSourceConfiguration();
+
+                                if(sourceConfig instanceof SourceConfigTuner ||
+                                   sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+                                {
+                                    JMenuItem waterfallItem = new JMenuItem("Show in Waterfall");
+                                    waterfallItem.addActionListener(e2 -> showChannelInWaterfall(channel));
+                                    popupMenu.add(waterfallItem);
+                                }
                             }
                         }
                     }
@@ -471,8 +800,10 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         @Override
         public void receive(ChannelAndMetadata channelAndMetadata)
         {
+            Channel channel = channelAndMetadata.getChannel();
+
             if(mUserSelectedChannel != null &&
-               mUserSelectedChannel.getChannelID() == channelAndMetadata.getChannel().getChannelID())
+               mUserSelectedChannel.getChannelID() == channel.getChannelID())
             {
                 List<ChannelMetadata> metadata = channelAndMetadata.getChannelMetadata();
 
@@ -484,6 +815,46 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                     {
                         int tableRow = mTable.convertRowIndexToView(modelRow);
                         mTable.getSelectionModel().setSelectionInterval(tableRow, tableRow);
+                    }
+                }
+            }
+
+            //Re-apply mute state when new processing chains are created.
+            //Check both independent mute tracking (non-alias channels) and alias-based
+            //DO_NOT_MONITOR priority (persisted in playlist across restarts).
+            boolean shouldMute = mMutedChannelIds.contains(channel.getChannelID());
+
+            if(!shouldMute)
+            {
+                //Check if any alias in the channel's alias list has DO_NOT_MONITOR priority
+                String aliasListName = channel.getAliasListName();
+
+                if(aliasListName != null && !aliasListName.isEmpty())
+                {
+                    for(Alias alias : mPlaylistManager.getAliasModel().getAliases())
+                    {
+                        if(alias.hasList() && alias.getAliasListName().equalsIgnoreCase(aliasListName)
+                            && alias.getPlaybackPriority() == Priority.DO_NOT_MONITOR)
+                        {
+                            shouldMute = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if(shouldMute)
+            {
+                ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+
+                if(processingChain != null)
+                {
+                    for(Module module : processingChain.getModules())
+                    {
+                        if(module instanceof AbstractAudioModule)
+                        {
+                            ((AbstractAudioModule)module).setMuted(true);
+                        }
                     }
                 }
             }
