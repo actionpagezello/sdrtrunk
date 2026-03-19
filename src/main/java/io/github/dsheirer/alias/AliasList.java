@@ -679,10 +679,49 @@ public class AliasList
 
         public Alias getAlias(TalkgroupIdentifier identifier)
         {
-            //Attempt to do a fully qualified identifier match only
+            //Attempt to do a fully qualified identifier match first
             if(identifier instanceof FullyQualifiedTalkgroupIdentifier fqti)
             {
-                return mFullyQualifiedTalkgroupAliasMap.get(fqti.getFullyQualifiedTalkgroupAddress());
+                Alias fqAlias = mFullyQualifiedTalkgroupAliasMap.get(fqti.getFullyQualifiedTalkgroupAddress());
+
+                if(fqAlias != null)
+                {
+                    return fqAlias;
+                }
+
+                //Fall through: try matching by the actual talkgroup ID from the home system
+                int talkgroupId = fqti.getTalkgroup();
+                Alias tgAlias = mTalkgroupAliasMap.get(talkgroupId);
+
+                if(tgAlias != null)
+                {
+                    return tgAlias;
+                }
+
+                //Also try the local address value if it differs from the home talkgroup ID
+                int localAddress = fqti.getValue();
+
+                if(localAddress != talkgroupId)
+                {
+                    Alias localAlias = mTalkgroupAliasMap.get(localAddress);
+
+                    if(localAlias != null)
+                    {
+                        return localAlias;
+                    }
+                }
+
+                //Try range matching against both the talkgroup ID and local address
+                for(Map.Entry<TalkgroupRange, Alias> entry : mTalkgroupRangeAliasMap.entrySet())
+                {
+                    if(entry.getKey().contains(talkgroupId) ||
+                       (localAddress != talkgroupId && entry.getKey().contains(localAddress)))
+                    {
+                        return entry.getValue();
+                    }
+                }
+
+                return null;
             }
 
             //Attempt to match the talkgroup value
@@ -799,10 +838,49 @@ public class AliasList
 
         public Alias getAlias(RadioIdentifier identifier)
         {
-            //Match fully qualified identifier only.
+            //Match fully qualified identifier first, then fall through to simpler matching
             if(identifier instanceof FullyQualifiedRadioIdentifier fqri)
             {
-                return mFullyQualifiedRadioAliasMap.get(fqri.getFullyQualifiedRadioAddress());
+                Alias fqAlias = mFullyQualifiedRadioAliasMap.get(fqri.getFullyQualifiedRadioAddress());
+
+                if(fqAlias != null)
+                {
+                    return fqAlias;
+                }
+
+                //Fall through: try matching by the actual radio ID from the home system
+                int radioId = fqri.getRadio();
+                Alias radioAlias = mRadioAliasMap.get(radioId);
+
+                if(radioAlias != null)
+                {
+                    return radioAlias;
+                }
+
+                //Also try the local address value if it differs from the home radio ID
+                int localAddress = fqri.getValue();
+
+                if(localAddress != radioId)
+                {
+                    Alias localAlias = mRadioAliasMap.get(localAddress);
+
+                    if(localAlias != null)
+                    {
+                        return localAlias;
+                    }
+                }
+
+                //Try range matching against both the radio ID and local address
+                for(Map.Entry<RadioRange, Alias> entry : mRadioRangeAliasMap.entrySet())
+                {
+                    if(entry.getKey().contains(radioId) ||
+                       (localAddress != radioId && entry.getKey().contains(localAddress)))
+                    {
+                        return entry.getValue();
+                    }
+                }
+
+                return null;
             }
 
             //Attempt to match against the radio identifier
