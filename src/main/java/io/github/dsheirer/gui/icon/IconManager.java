@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- *  Copyright (C) 2014-2020 Dennis Sheirer
+ * Copyright (C) 2014-2020 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -457,8 +457,9 @@ public class IconManager extends Editor<Icon>
             mFileButton.setOnAction(event -> {
                 FileChooser fileChooser = new FileChooser();
                 fileChooser.getExtensionFilters().addAll(
-                    new FileChooser.ExtensionFilter("Picture Files", "*.png", "*.tif", "*.tiff",
+                    new FileChooser.ExtensionFilter("Picture & Vector Files", "*.svg", "*.png", "*.tif", "*.tiff",
                         "*.gif", "*.jpg", "*.jpeg"),
+                    new FileChooser.ExtensionFilter("Vector Icons (*.svg)", "*.svg"),
                     new FileChooser.ExtensionFilter("All Files (*.*)", "*.*"));
 
                 if(getFilePathTextField().getText() != null)
