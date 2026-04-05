@@ -19,29 +19,12 @@
 
 import java.text.SimpleDateFormat
 
-
-
 /**
  * Instructions for building/compiling the sdrtrunk application.
  *
  * Prerequisites:
  * Install and configure an OpenJDK version 22+ that includes the JavaFX modules (e.g. Bellsoft Liberica JDK)
  * - Optional: install and configure Gradle 8.10+
- *
- * Scenario 1: run the application via gradle command line from the source code root directory:
- * command: ./gradlew run
- *
- * Scenario 2: create an application release for the current operating system
- * command: ./gradlew runtimeZipCurrent
- * Note: release image is located in the /build/image/ directory
- *
- * Scenario 3: create releases for Linux and OSX operating systems using downloaded JDKs
- * command: ./gradlew runtimeZipOthers
- * Note: release images are located in the /build/image/ directory
- *
- * Scenario 4: create release for Windows operating system using downloaded JDK
- * command: ./gradlew runtimeZipWindows
- * Note: release image is located in the /build/image/ directory
  */
 plugins {
     id 'application'
@@ -55,10 +38,8 @@ repositories {
     maven { url = "https://jitpack.io" }
 }
 
-//Version is defined in gradle.properties so that we can CLI override it for nightly builds.
 version = project.findProperty('projectVersion')
 
-//Java 24 is required for this version of the Project Panama preview/incubator feature
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
@@ -75,7 +56,6 @@ test {
 }
 
 dependencies {
-
     // JUnit Tests
     testImplementation(platform("org.junit:junit-bom:6.0.1"))
     testImplementation 'org.junit.jupiter:junit-jupiter-api:6.0.1'
@@ -83,12 +63,16 @@ dependencies {
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:6.0.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    //Jitpack imports
+    // Jitpack imports
     implementation 'com.github.dnault:libresample4j:master'
     implementation 'com.github.DSheirer.jmbe:jmbe-api:1.0.0'
     implementation 'com.github.nwaldispuehl:java-lame:v3.98.4'
 
-    //mavenCentral/jcenter imports
+    // Modern UI Framework - FlatLaf (Windows 11 Look and Feel & SVG Support)
+    implementation 'com.formdev:flatlaf:3.4'
+    implementation 'com.formdev:flatlaf-extras:3.4'
+
+    // mavenCentral/jcenter imports
     implementation 'ch.qos.logback:logback-classic:1.5.21'
     implementation 'ch.qos.logback:logback-core:1.5.21'
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.20.1'
@@ -105,8 +89,8 @@ dependencies {
     implementation 'commons-io:commons-io:2.21.0'
     implementation 'eu.hansolo:charts:1.0.5'
     implementation 'io.github.dsheirer:radio-reference-api:18.0.0'
-    implementation 'io.github.dsheirer:usb4java-native-libraries:1.3.3' //OSX & Windows aarch64 native libs
-    implementation 'io.github.dsheirer:usb4java:1.3.5' //Fork with Loader support for OSX Multi-Version
+    implementation 'io.github.dsheirer:usb4java-native-libraries:1.3.3'
+    implementation 'io.github.dsheirer:usb4java:1.3.5'
     implementation 'javax.usb:usb-api:1.0.2'
     implementation 'net.coderazzi:tablefilter-swing:5.5.4'
     implementation 'org.apache.commons:commons-compress:1.28.0'
@@ -126,41 +110,48 @@ dependencies {
 
 def os = org.gradle.nativeplatform.platform.internal.DefaultNativePlatform.currentOperatingSystem
 
-/**
- * This is needed for the JDK23 vector API ... until it moves out of incubation or preview
- */
 tasks.withType(JavaCompile) {
-    options.compilerArgs.add("--enable-preview") //Project Panama Vector API is still in incubator
-    options.compilerArgs.add("--add-modules=jdk.incubator.vector") //Project Panama Vector API is still in incubator
+    options.compilerArgs.add("--enable-preview")
+    options.compilerArgs.add("--add-modules=jdk.incubator.vector")
 }
 
 /**
  * JVM Arguments for running the application on Windows.
+ * Optimized for Windows 11 Hardware Acceleration and HiDPI.
  */
 def jvmArgsWindows =
-        ['--add-exports=javafx.base/com.sun.javafx.event=ALL-UNNAMED', //Needed for controls-fx.jar
-         '--add-exports=java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED', //windows users for JIDE
-         '--add-modules=jdk.incubator.vector',   //Project Panama Vector API is still in incubator
-         '--enable-preview', //Project Panama Vector API is still in incubator
-         '--enable-native-access=ALL-UNNAMED', //Suppress unsafe warnings for FFM API Foreign Memory calls
-         '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
-         '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
-         '-Xmx6g',                         //Set max heap size to 6GB
-         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
+        ['--add-exports=javafx.base/com.sun.javafx.event=ALL-UNNAMED',
+         '--add-exports=java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED',
+         '--add-modules=jdk.incubator.vector',
+         '--enable-preview',
+         '--enable-native-access=ALL-UNNAMED',
+         '--enable-native-access=javafx.graphics',
+         '--sun-misc-unsafe-memory-access=allow',
+         '-XX:+UseCompactObjectHeaders',
+         '-Xmx6g',
+         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64',
+         '-Dsun.java2d.d3d=true',          // Hardware acceleration (Direct3D)
+         '-Dsun.java2d.opengl=false',      // Avoid OpenGL conflicts on Windows
+         '-Dsun.java2d.noddraw=false',     // Ensure DirectDraw is active
+         '-Dflatlaf.uiScale=enabled'       // Enable High-DPI scaling
+        ]
 
 /**
  * JVM Arguments for running the application on Linux.
  */
 def jvmArgsLinux =
-        ['--add-exports=javafx.base/com.sun.javafx.event=ALL-UNNAMED', //Needed for controls-fx.jar
-         '--add-modules=jdk.incubator.vector',   //Needed while Project Panama API is still in incubator
-         '--enable-preview', //Project Panama Vector & Foreign Function APIs remain in incubator
-         '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
-         '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
-         '--enable-native-access=ALL-UNNAMED', //SDRPlay API library path
-         '-Xmx6g']                         //Set max heap size to 6GB
+        ['--add-exports=javafx.base/com.sun.javafx.event=ALL-UNNAMED',
+         '--add-modules=jdk.incubator.vector',
+         '--enable-preview',
+         '--sun-misc-unsafe-memory-access=allow',
+         '-XX:+UseCompactObjectHeaders',
+         '-XX:+UseZGC',                    // Improved GC for lower latency spectrums
+         '--enable-native-access=javafx.graphics',
+         '--enable-native-access=ALL-UNNAMED',
+         '-Xmx6g',
+         '-Dsun.java2d.opengl=true',       // Hardware acceleration (OpenGL)
+         '-Dflatlaf.uiScale=enabled'       // High-DPI scaling
+        ]
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"
@@ -208,7 +199,7 @@ javadoc {
 }
 
 /**
- * Runtime target OS and CPU image names.  We append version here so that version details are at end of zip filename.
+ * Runtime target OS and CPU image names.
  */
 String targetLinuxAarch64 = 'linux-aarch64-v' + version
 String targetLinuxX86_64 = 'linux-x86_64-v' + version
@@ -217,10 +208,6 @@ String targetOsxX86_64 = 'osx-x86_64-v' + version
 String targetWindowsX86_64 = 'windows-x86_64-v' + version
 String targetWindowsAarch64 = 'windows-aarch64-v' + version
 
-/**
- * Optional pre-downloaded Java Development Kit (JDK) for each target OS and CPU.  These locations are hard-coded to the
- * author's development environment, but can be changed to your environment if you want to use this build pattern.
- */
 String jdk_base = '/home/denny/java_jdks/'
 String jdk_linux_aarch64 = jdk_base + 'linux-arm64/jdk-25.0.1-full'
 String jdk_linux_x86_64 = jdk_base + 'linux-x64/jdk-25.0.1-full'
@@ -229,9 +216,6 @@ String jdk_osx_aarch64 = jdk_base + 'osx-arm64/jdk-25.0.1-full.jdk'
 String jdk_windows_x86_64 = jdk_base + 'windows-x64/jdk-25.0.1-full'
 String jdk_windows_aarch64 = jdk_base + 'windows-arm64/jdk-25.0.1-full'
 
-/**
- * Download URLs to download the JDK as part of the gradle build packaging process
- */
 def jdk_download_base = "https://download.bell-sw.com/java/25.0.1+11/bellsoft-jdk25.0.1+11-"
 def jdk_download_suffix = "-full.tar.gz"
 def jdk_download_linux_aarch64 = jdk_download_base + "linux-aarch64" + jdk_download_suffix
@@ -241,42 +225,14 @@ def jdk_download_osx_aarch64 = jdk_download_base + "macos-aarch64" + jdk_downloa
 def jdk_download_windows_x86_64 = jdk_download_base + "windows-amd64-full.zip"
 def jdk_download_windows_aarch64 = jdk_download_base + "windows-aarch64-full.zip"
 
-/**
- * Configures the runtime zip task with additional options/settings.
- * @param rt task to configure
- * @param jvmArgs to use (windows or linux)
- * @return configured task.
- */
 def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
-    //Use the correct set of JVM arguments
     rt.extension.launcherData.get().jvmArgs = jvmArgs
-
-    //Additional modules to include with auto-detected modules.
-    //jdk.crypto.ec - needed for HTTPS connections (broadcastify calls & map tile server)
-    //jdk.incubator.vector - needed for Project Panama foreign function and vector apis
-    //jdk.accessibility is used with assistive technologies like screen readers
-    //java.management for JVM resource monitoring
     rt.extension.addModules('jdk.crypto.ec', 'jdk.incubator.vector', 'jdk.accessibility', 'java.management')
-
-    //Use auto-detected modules and 'add' any specified modules.
     rt.extension.additive.set(true)
-
-    //Recommended options for reducing/shrinking runtime target image size
     rt.extension.addOptions('--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages')
-
-    //Runtime images have auto appended version in image zip name.  Override to include version in single target image.
     rt.extension.imageZip.set(file("$buildDir/image/sdr-trunk.zip"))
 }
 
-/**
- * Creates a release package for the current operating system.
- *
- * Note: you cannot create both Windows and Linux releases at the same time due to limitations of the Runtime plugin
- *
- * Usage: gradle runtimeZipCurrent
- * Usage: gradlew runtimeZipCurrent   (windows - using gradlew)
- * Usage: ./gradlew runtimeZipCurrent   (linux - using gradlew)
- */
 tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
     def arch = System.properties.getProperty("os.arch")
     def javaHome = org.gradle.internal.jvm.Jvm.current().getJavaHome().toString()
@@ -312,18 +268,7 @@ tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
     }
 }
 
-
-/**
- * Creates a Windows release package.
- *
- * Note: you cannot create both Windows and Linux releases at the same time due to limitations of the Runtime plugin
- *
- * Usage: gradle runtimeZipWindows
- * Usage: gradlew runtimeZipWindows   (windows - using gradlew)
- * Usage: ./gradlew runtimeZipWindows   (linux - using gradlew)
- */
 tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
-    //Windows aarch64
     if(file(jdk_windows_aarch64).exists()) {
         rt.extension.targetPlatform(targetWindowsAarch64, jdk_windows_aarch64, [])
     }
@@ -332,7 +277,6 @@ tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
             jdkHome = jdkDownload(jdk_download_windows_aarch64)
         }
     }
-    //Windows x86-64
     if(file(jdk_windows_x86_64).exists()) {
         rt.extension.targetPlatform(targetWindowsX86_64, jdk_windows_x86_64, [])
     }
@@ -341,21 +285,10 @@ tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
             jdkHome = jdkDownload(jdk_download_windows_x86_64)
         }
     }
-
     configure(rt, jvmArgsWindows)
 }
 
-/**
- * Creates Linux & OSX release packages.
- *
- * Note: you cannot create both Windows and Linux releases at the same time due to limitations of the Runtime plugin
- *
- * Usage: gradle runtimeZipOthers
- * Usage: gradlew runtimeZipOthers   (windows - using gradlew)
- * Usage: ./gradlew runtimeZipOthers   (linux - using gradlew)
- */
 tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
-    //Linux aarch64
     if(file(jdk_linux_aarch64).exists()) {
         rt.extension.targetPlatform(targetLinuxAarch64, jdk_linux_aarch64, [])
     }
@@ -364,7 +297,6 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
             jdkHome = jdkDownload(jdk_download_linux_aarch64)
         }
     }
-    //Linux x86-64
     if(file(jdk_linux_x86_64).exists()) {
         rt.extension.targetPlatform(targetLinuxX86_64, jdk_linux_x86_64, [])
     }
@@ -373,7 +305,6 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
             jdkHome = jdkDownload(jdk_download_linux_x86_64)
         }
     }
-    //OSX aarch64
     if(file(jdk_osx_aarch64).exists()) {
         rt.extension.targetPlatform(targetOsxAarch64, jdk_osx_aarch64, [])
     }
@@ -382,7 +313,6 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
             jdkHome = jdkDownload(jdk_download_osx_aarch64)
         }
     }
-    //OSX x86-64
     if(file(jdk_osx_x86_64).exists()) {
         rt.extension.targetPlatform(targetOsxX86_64, jdk_osx_x86_64, [])
     }
@@ -391,6 +321,5 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
             jdkHome = jdkDownload(jdk_download_osx_x86_64)
         }
     }
-
     configure(rt, jvmArgsLinux)
 }
