@@ -23,6 +23,7 @@ import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.IDecoderStateEventProvider;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.dsp.filter.FilterFactory;
+import io.github.dsheirer.dsp.filter.HighPassFilter;
 import io.github.dsheirer.dsp.filter.decimate.DecimationFilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
 import io.github.dsheirer.dsp.filter.design.FilterDesignException;
@@ -89,6 +90,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private RealResampler mResampler;
     private final double mChannelBandwidth;
 
+    // High-Pass filtering
+    private final boolean mHighPassFilterEnabled;
+    private HighPassFilter mHighPassFilter;
+
     // CTCSS/DCS tone filtering
     private final boolean mToneFilterEnabled;
     private final ChannelToneFilter.ToneType mToneFilterType;
@@ -117,6 +122,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mChannelBandwidth = config.getBandwidth().getValue();
         mNoiseSquelch = new NoiseSquelch(config.getSquelchNoiseOpenThreshold(), config.getSquelchNoiseCloseThreshold(),
                 config.getSquelchHysteresisOpenThreshold(), config.getSquelchHysteresisCloseThreshold());
+
+        // Extract High Pass filter configuration
+        mHighPassFilterEnabled = config.isHighPassFilterEnabled();
+        if (mHighPassFilterEnabled)
+        {
+            mHighPassFilter = new HighPassFilter((float) DEMODULATED_AUDIO_SAMPLE_RATE, config.getHighPassCutoffHz(), 0.707f);
+        }
 
         // Extract CTCSS/DCS tone filter configuration
         mToneFilterEnabled = config.hasToneFiltering();
@@ -191,6 +203,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 if(mDCSDetector != null)
                 {
                     mDCSDetector.reset();
+                }
+                if(mHighPassFilter != null)
+                {
+                    mHighPassFilter.reset();
                 }
 
                 // Only send call end if a call was actually active (tone was matched or no filter)
@@ -381,6 +397,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     protected void broadcast(float[] demodulatedSamples)
     {
+        // Apply the High-Pass Filter *after* tone detectors and tail remover are finished.
+        // This strips out sub-audible tones (CTCSS/DCS) before sending it to the speaker
+        if (mHighPassFilterEnabled && mHighPassFilter != null)
+        {
+            mHighPassFilter.filter(demodulatedSamples);
+        }
+
         if(mResampledBufferListener != null)
         {
             mResampledBufferListener.receive(demodulatedSamples);
