@@ -55,8 +55,31 @@ public abstract class DecodeConfiguration extends Configuration
     public static final int CALL_TIMEOUT_MAXIMUM = 180;
     public static final int TRAFFIC_CHANNEL_LIMIT_DEFAULT = 20;
 
+    private boolean mHighPassFilterEnabled = false;
+    private int mHighPassCutoffHz = 300;
+
     public DecodeConfiguration()
     {
+    }
+
+    public boolean isHighPassFilterEnabled() 
+    {
+        return mHighPassFilterEnabled;
+    }
+
+    public void setHighPassFilterEnabled(boolean enabled) 
+    {
+        mHighPassFilterEnabled = enabled;
+    }
+
+    public int getHighPassCutoffHz() 
+    {
+        return mHighPassCutoffHz;
+    }
+
+    public void setHighPassCutoffHz(int cutoffHz) 
+    {
+        mHighPassCutoffHz = cutoffHz;
     }
 
     @JsonIgnore

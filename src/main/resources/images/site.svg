@@ -1,0 +1,8 @@
+<?xml version="1.0" standalone="yes"?>
+<svg width="32" height="16">
+<path style="fill:#555555; stroke:none;" d="M0 0L0 16L32 16L32 0L0 0z"/>
+<path style="fill:#ffffff; stroke:none;" d="M21 1C21.8824 4.8931 21.9077 7.14244 19 10C22.0216 -0.338184 10.9784 -0.338182 14 10C11.0923 7.14244 11.1176 4.8931 12 1C-0.293383 1.03528 -3.27751 14.8106 10 14.9961C14.9324 15.0651 24.3365 16.7322 28.5664 13.821C37.0516 7.98092 27.0354 1.05466 21 1z"/>
+<path style="fill:#242424; stroke:none;" d="M12 1C10.9096 4.73084 10.5189 7.74284 14 10L14 1L12 1z"/>
+<path style="fill:#2e2e2e; stroke:none;" d="M19 1L19 10C22.6927 7.60567 22.6926 3.39433 19 1z"/>
+<path style="fill:#4c4c4c; stroke:none;" d="M14 3L14 8L19 8L19 3L14 3M16 9L16 14L17 14L16 9z"/>
+</svg>

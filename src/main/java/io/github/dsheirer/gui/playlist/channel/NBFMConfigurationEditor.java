@@ -121,6 +121,8 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private Label mHoldTimeLabel;
     private javafx.scene.control.Button mAnalyzeButton;
     private Label mAnalyzeStatusLabel;
+    private ToggleSwitch mHighPassEnabledSwitch;
+    private Spinner<Integer> mHighPassCutoffSpinner;
 
     private boolean mLoadingConfiguration = false;
 
@@ -196,9 +198,6 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
             GridPane.setConstraints(getTalkgroupField(), 1, 1);
             gridPane.getChildren().add(getTalkgroupField());
-
-            GridPane.setConstraints(getAudioFilterEnable(), 2, 1);
-            gridPane.getChildren().add(getAudioFilterEnable());
 
             mDecoderPane.setContent(gridPane);
 
@@ -367,6 +366,10 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             VBox contentBox = new VBox(10);
             contentBox.setPadding(new Insets(10,10,10,10));
 
+            // 0. High-Pass Filter
+            contentBox.getChildren().add(createHighPassSection());
+            contentBox.getChildren().add(new Separator());
+
             // 1. Low-pass filter
             contentBox.getChildren().add(createLowPassSection());
             contentBox.getChildren().add(new Separator());
@@ -444,10 +447,51 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         return mRecordPane;
     }
 
+    private VBox createHighPassSection()
+    {
+        VBox section = new VBox(5);
+        Label title = new Label("High-Pass Filter");
+        title.setFont(Font.font(null, FontWeight.BOLD, 12));
+
+        mHighPassEnabledSwitch = new ToggleSwitch("Enable High-Pass Filter");
+        mHighPassEnabledSwitch.setTooltip(new Tooltip("Remove low-frequency rumble and sub-audible tones (CTCSS/DCS)"));
+        mHighPassEnabledSwitch.selectedProperty().addListener((obs, old, val) -> {
+            if(!mLoadingConfiguration)
+            {
+                modifiedProperty().set(true);
+                mHighPassCutoffSpinner.setDisable(!val);
+            }
+        });
+
+        GridPane controlsPane = new GridPane();
+        controlsPane.setHgap(10);
+        controlsPane.setVgap(5);
+
+        Label cutoffLabel = new Label("Cutoff (Hz):");
+        GridPane.setConstraints(cutoffLabel, 0, 0);
+        controlsPane.getChildren().add(cutoffLabel);
+
+        mHighPassCutoffSpinner = new Spinner<>(20, 1000, 300, 10);
+        mHighPassCutoffSpinner.setEditable(true);
+        mHighPassCutoffSpinner.setPrefWidth(100);
+        mHighPassCutoffSpinner.setTooltip(new Tooltip("Frequencies below this will be reduced. Default: 300 Hz"));
+        mHighPassCutoffSpinner.getValueFactory().valueProperty().addListener((obs, old, val) -> {
+            if(!mLoadingConfiguration)
+            {
+                modifiedProperty().set(true);
+            }
+        });
+        GridPane.setConstraints(mHighPassCutoffSpinner, 1, 0);
+        controlsPane.getChildren().add(mHighPassCutoffSpinner);
+
+        section.getChildren().addAll(title, mHighPassEnabledSwitch, controlsPane);
+        return section;
+    }
+
     private VBox createInputGainSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("6. Output Gain (Applied Last)");
+        Label title = new Label("Output Gain (Applied Last)");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         GridPane controlsPane = new GridPane();
@@ -487,7 +531,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createLowPassSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("1. Low-Pass Filter");
+        Label title = new Label("Low-Pass Filter");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mLowPassEnabledSwitch = new ToggleSwitch("Enable Low-Pass Filter");
@@ -536,7 +580,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createDeemphasisSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("3. FM De-emphasis");
+        Label title = new Label("FM De-emphasis");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mDeemphasisEnabledSwitch = new ToggleSwitch("Enable De-emphasis");
@@ -573,7 +617,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createVoiceEnhanceSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("4. Voice Enhancement");
+        Label title = new Label("Voice Enhancement");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mVoiceEnhanceEnabledSwitch = new ToggleSwitch("Enable Voice Enhancement");
@@ -622,7 +666,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createBassBoostSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("2. Bass Boost");
+        Label title = new Label("Bass Boost");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mBassBoostEnabledSwitch = new ToggleSwitch("Enable Bass Boost");
@@ -671,7 +715,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createSquelchSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("5. Squelch / Noise Gate");
+        Label title = new Label("Squelch / Noise Gate");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mSquelchEnabledSwitch = new ToggleSwitch("Enable Squelch/Noise Gate");
@@ -991,7 +1035,6 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
             updateTextFormatter(decodeConfigNBFM.getTalkgroup());
             getAudioFilterEnable().setDisable(false);
-            getAudioFilterEnable().setSelected(decodeConfigNBFM.isAudioFilter());
 
             // Load tone filter settings
             mToneFilterEnabledSwitch.setSelected(decodeConfigNBFM.isToneFilterEnabled());
@@ -1033,6 +1076,10 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             mTailRemovalSpinner.getValueFactory().setValue(decodeConfigNBFM.getSquelchTailRemovalMs());
             mHeadRemovalSpinner.getValueFactory().setValue(decodeConfigNBFM.getSquelchHeadRemovalMs());
 
+            // Load high-pass filter settings
+            mHighPassEnabledSwitch.setSelected(decodeConfigNBFM.isHighPassFilterEnabled());
+            mHighPassCutoffSpinner.getValueFactory().setValue(decodeConfigNBFM.getHighPassCutoffHz());
+
             // Load audio filter settings
             loadAudioFilterConfiguration(decodeConfigNBFM);
         }
@@ -1063,6 +1110,10 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             mSquelchTailEnabledSwitch.setSelected(false);
             mTailRemovalSpinner.getValueFactory().setValue(100);
             mHeadRemovalSpinner.getValueFactory().setValue(0);
+
+            // Reset high-pass filter controls
+            mHighPassEnabledSwitch.setSelected(false);
+            mHighPassCutoffSpinner.getValueFactory().setValue(300);
 
             // Disable audio filter controls
             disableAudioFilterControls();
@@ -1102,7 +1153,6 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         }
 
         config.setTalkgroup(talkgroup);
-        config.setAudioFilter(getAudioFilterEnable().isSelected());
 
         // Save tone filter settings
         config.setToneFilterEnabled(mToneFilterEnabledSwitch.isSelected());
@@ -1130,6 +1180,10 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         config.setSquelchTailRemovalEnabled(mSquelchTailEnabledSwitch.isSelected());
         config.setSquelchTailRemovalMs(mTailRemovalSpinner.getValue());
         config.setSquelchHeadRemovalMs(mHeadRemovalSpinner.getValue());
+
+        // Save high-pass filter settings
+        config.setHighPassFilterEnabled(mHighPassEnabledSwitch.isSelected());
+        config.setHighPassCutoffHz(mHighPassCutoffSpinner.getValue());
 
         // Save audio filter settings
         saveAudioFilterConfiguration(config);

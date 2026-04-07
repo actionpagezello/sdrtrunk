@@ -1,0 +1,49 @@
+<?xml version="1.0" standalone="yes"?>
+<svg width="48" height="30">
+<path style="fill:#ffffff; stroke:none;" d="M0 0L0 6L5 2C9.24106 4.0667 11.8638 2.92702 16 1L0 0z"/>
+<path style="fill:#000100; stroke:none;" d="M13 2L13 3L17 1L23 1L13 2z"/>
+<path style="fill:#3a3a38; stroke:none;" d="M10 18L10 19L20 20L21 5L40 6L36 11L36 12L40 12L41 7L42 7L41 11L45 11L41 14L45 18L48 10L44 10C43.2004 5.05988 39.5631 2.56841 35 1L35 5L27 5L27 4L34 4L34 2L26 2L26 1L33 1C17.1873 -5.63528 21.9543 16.4326 10 18z"/>
+<path style="fill:#000000; stroke:none;" d="M33 0L33 1L39 3C40.3563 -0.598003 35.5347 0.0103588 33 0z"/>
+<path style="fill:#ffffff; stroke:none;" d="M40 0L40 5L44 4L44 10L47 11L48 0L40 0M17 1L17 2L20 2L17 1z"/>
+<path style="fill:#b5906d; stroke:none;" d="M18 4L23 1L18 4z"/>
+<path style="fill:#cc8a42; stroke:none;" d="M26 1L26 2L35 2L26 1z"/>
+<path style="fill:#ffffff; stroke:none;" d="M38 1L39 2L38 1z"/>
+<path style="fill:#010100; stroke:none;" d="M5 2L4 5L7 5L5 2z"/>
+<path style="fill:#9d7436; stroke:none;" d="M34 2L27 4L27 5C29.5721 4.99825 35.4584 5.86868 34 2z"/>
+<path style="fill:#545145; stroke:none;" d="M10 3L10 4L13 4L10 3z"/>
+<path style="fill:#d8a87a; stroke:none;" d="M1 6L1 7C6.05586 6.89565 14.9045 7.38127 18 3L1 6z"/>
+<path style="fill:#856b50; stroke:none;" d="M16 5L19 13L20 4L16 5z"/>
+<path style="fill:#181b1a; stroke:none;" d="M43.3333 4.66667L43.6667 5.33333L43.3333 4.66667z"/>
+<path style="fill:#554f43; stroke:none;" d="M1.66667 5.33333L2.33333 5.66667L1.66667 5.33333z"/>
+<path style="fill:#2e241f; stroke:none;" d="M21 5L21 11L39 11L40 6L21 5z"/>
+<path style="fill:#966932; stroke:none;" d="M0 6L0 17L22 23C18.5926 19.3129 14.8469 19.0407 10 19L10 18L15 18L15 16L5 16L5 15L16 15L16 13L2 12L5 8L5 7L0 6z"/>
+<path style="fill:#966d3f; stroke:none;" d="M7 6L7 7L12 7L7 6z"/>
+<path style="fill:#2e261a; stroke:none;" d="M8 7L8 11L12 11L12 12L10 12L10 13L16 13L16 15L5 15L5 16L18 16L17 6L8 7z"/>
+<path style="fill:#4d3f39; stroke:none;" d="M5 7L5 13L12 12L12 11L8 11L8 7L5 7z"/>
+<path style="fill:#ffffff; stroke:none;" d="M41 7L41 13L45 13L41 11L41 7z"/>
+<path style="fill:#1f1812; stroke:none;" d="M0 8L0 15L1 15L0 8z"/>
+<path style="fill:#352822; stroke:none;" d="M2 8L2 12L6 12L6 8L2 8z"/>
+<path style="fill:#b1812d; stroke:none;" d="M20 11L20 21L21 21L24 15L28 17C26.7022 12.888 23.9373 12.157 20 11z"/>
+<path style="fill:#2a3349; stroke:none;" d="M21 11L21 12L35 12L21 11z"/>
+<path style="fill:#f0ae31; stroke:none;" d="M27 13L33 20L32 15L37 14L27 13z"/>
+<path style="fill:#e3a55f; stroke:none;" d="M31 12L31 13L41 15C38.6677 11.4024 34.9871 12.0031 31 12z"/>
+<path style="fill:#141414; stroke:none;" d="M40 12L41 13L40 12z"/>
+<path style="fill:#030303; stroke:none;" d="M43 12L41 13L41 14L43 12z"/>
+<path style="fill:#8f6934; stroke:none;" d="M32 15L32 19C36.592 19.3464 40.0928 20.4197 41 15L32 15z"/>
+<path style="fill:#f6c11c; stroke:none;" d="M24 15L23 16L26 20L27 16L24 15z"/>
+<path style="fill:#ffffff; stroke:none;" d="M46 15L43 30L48 30L46 15z"/>
+<path style="fill:#f3a71a; stroke:none;" d="M41 16L41 20L42 20L43 16L41 16z"/>
+<path style="fill:#000000; stroke:none;" d="M45 16L45 18L47 16L45 16z"/>
+<path style="fill:#313137; stroke:none;" d="M0 17L4 21L4 25L10 23L6 24L1 19L1 18L5 18L0 17z"/>
+<path style="fill:#1c1f28; stroke:none;" d="M5 17L6 24C10.0101 23.4963 13.5487 22.2333 16 26L20 25L20 26L18 26L18 27L21 30C25.3331 29.8718 28.8302 27.6327 32.9961 27.2816C41.2157 26.589 44.251 31.833 46 20C36.9773 21.1403 30.5057 21.306 22 18L22 23L5 17z"/>
+<path style="fill:#4c5b76; stroke:none;" d="M25 19L28 17L25 19z"/>
+<path style="fill:#775a42; stroke:none;" d="M1 18L1 19L5 20L1 18z"/>
+<path style="fill:#7292b0; stroke:none;" d="M26 19L26 20L31 20L26 19z"/>
+<path style="fill:#c8bb89; stroke:none;" d="M28.6667 18.3333L29.3333 18.6667L28.6667 18.3333z"/>
+<path style="fill:#536179; stroke:none;" d="M42 20L45 18L42 20z"/>
+<path style="fill:#ba922c; stroke:none;" d="M31 20L31 21L43 21L31 20z"/>
+<path style="fill:#ffffff; stroke:none;" d="M0 20L0 30L22 29L22 28L18 27L18 26L20 26L20 25L16 26C14.8 20.3998 8.03531 24.9149 4 25L4 21L0 20z"/>
+<path style="fill:#6e5623; stroke:none;" d="M29 20L32 22L29 20z"/>
+<path style="fill:#000000; stroke:none;" d="M5 28L8 26L5 28z"/>
+<path style="fill:#ffffff; stroke:none;" d="M27 27L28 28L27 27M27 29L27 30L39 30C36.1621 25.6226 31.1342 27.0105 27 29z"/>
+</svg>
