@@ -88,6 +88,10 @@ dependencies {
     implementation 'com.github.DSheirer.jmbe:jmbe-api:1.0.0'
     implementation 'com.github.nwaldispuehl:java-lame:v3.98.4'
 
+    // FlatLaf UI Themes
+    implementation 'com.formdev:flatlaf:3.4'
+    implementation 'com.formdev:flatlaf-extras:3.4'
+
     //mavenCentral/jcenter imports
     implementation 'ch.qos.logback:logback-classic:1.5.21'
     implementation 'ch.qos.logback:logback-core:1.5.21'
@@ -147,7 +151,11 @@ def jvmArgsWindows =
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '-Xmx6g',                         //Set max heap size to 6GB
-         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
+         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64', //SDRPlay API library path
+         '-Dsun.java2d.d3d=true',          // Hardware acceleration for Windows
+         '-Dsun.java2d.opengl=false',      // Hardware acceleration for Windows
+         '-Dsun.java2d.noddraw=false',     // Hardware acceleration for Windows
+         '-Dflatlaf.uiScale=enabled']      // High-DPI scaling support
 
 /**
  * JVM Arguments for running the application on Linux.
@@ -160,7 +168,9 @@ def jvmArgsLinux =
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--enable-native-access=ALL-UNNAMED', //SDRPlay API library path
-         '-Xmx6g']                         //Set max heap size to 6GB
+         '-Xmx6g',                          //Set max heap size to 6GB
+         '-Dsun.java2d.opengl=true',       // Hardware acceleration for Linux
+         '-Dflatlaf.uiScale=enabled']      // High-DPI scaling support
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"
