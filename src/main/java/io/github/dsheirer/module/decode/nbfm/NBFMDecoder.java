@@ -201,32 +201,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mSquelchTailRemover.squelchClose();
                 }
 
-<<<<<<< HEAD
-                // Reset tone match — next transmission must re-confirm
-                boolean wasMatched = mToneMatch;
-                mToneMatch = false;
-
-                // Reset the tone detectors for the next transmission
-                if(mCTCSSDetector != null)
-                {
-                    mCTCSSDetector.reset();
-                }
-                if(mDCSDetector != null)
-                {
-                    mDCSDetector.reset();
-                }
-                if(mHighPassFilter != null)
-                {
-                    mHighPassFilter.reset();
-                }
-=======
                 // DON'T immediately reset tone match or detectors here.
                 // Brief squelch closures (noise flutter) shouldn't force a full
                 // re-detection cycle. Instead, we preserve the tone match for a
                 // holdover period. The tone match will be cleared either:
                 //   (a) when squelch re-opens and holdover has expired, or
                 //   (b) when the detector reports tone lost or rejected.
->>>>>>> 635865d3ebb5419874dda7a5f4a36ccd4569fcd9
 
                 // Only send call end if a call was actually active (tone was matched or no filter)
                 if(!mToneFilterEnabled || mToneMatch)
@@ -273,6 +253,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         if(mDCSDetector != null)
                         {
                             mDCSDetector.reset();
+                        }
+                        // Added missing HighPassFilter reset from the conflicting branch
+                        if(mHighPassFilter != null)
+                        {
+                            mHighPassFilter.reset();
                         }
                     }
                 }
