@@ -103,6 +103,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private DCSDetector mDCSDetector;
     private volatile boolean mToneMatch = false;
 
+    /**
+     * Holdover period (ms) for tone match across brief squelch closures.
+     * When noise squelch flutters closed and re-opens within this window,
+     * the previously confirmed tone match is preserved — avoiding a full
+     * re-detection delay (225ms+ for CTCSS, 340ms+ for DCS) on each flutter.
+     * This mimics real radio behavior where tone squelch has a short holdover.
+     */
+    private static final long TONE_HOLDOVER_MS = 500;
+    private volatile long mLastToneMatchTime = 0;
+
     // Squelch tail/head removal
     private final boolean mSquelchTailRemovalEnabled;
     private final int mSquelchTailRemovalMs;
@@ -191,26 +201,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mSquelchTailRemover.squelchClose();
                 }
 
-                // Reset tone match — next transmission must re-confirm
-                boolean wasMatched = mToneMatch;
-                mToneMatch = false;
-
-                // Reset the tone detectors for the next transmission
-                if(mCTCSSDetector != null)
-                {
-                    mCTCSSDetector.reset();
-                }
-                if(mDCSDetector != null)
-                {
-                    mDCSDetector.reset();
-                }
-                if(mHighPassFilter != null)
-                {
-                    mHighPassFilter.reset();
-                }
+                // DON'T immediately reset tone match or detectors here.
+                // Brief squelch closures (noise flutter) shouldn't force a full
+                // re-detection cycle. Instead, we preserve the tone match for a
+                // holdover period. The tone match will be cleared either:
+                //   (a) when squelch re-opens and holdover has expired, or
+                //   (b) when the detector reports tone lost or rejected.
 
                 // Only send call end if a call was actually active (tone was matched or no filter)
-                if(!mToneFilterEnabled || wasMatched)
+                if(!mToneFilterEnabled || mToneMatch)
                 {
                     notifyCallEnd();
                 }
@@ -223,14 +222,44 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mSquelchTailRemover.squelchOpen();
                 }
 
-                // Tone match starts as false; detector must confirm before channel activates
-                mToneMatch = false;
-
-                // If no tone filter, start call immediately (original behavior).
-                // If tone filter is active, defer — channel stays idle until tone confirmed.
                 if(!mToneFilterEnabled)
                 {
+                    // No tone filter — start call immediately (original behavior)
                     notifyCallStart();
+                }
+                else
+                {
+                    // Tone filter is active. Check if we have a recent tone match
+                    // within the holdover window — if so, preserve it and resume
+                    // audio immediately without waiting for re-detection.
+                    long elapsed = System.currentTimeMillis() - mLastToneMatchTime;
+
+                    if(mToneMatch && elapsed < TONE_HOLDOVER_MS)
+                    {
+                        // Holdover active — continue as if tone is still confirmed.
+                        // The detector keeps running and will reject/lost if tone changes.
+                        notifyCallStart();
+                    }
+                    else
+                    {
+                        // Holdover expired or no previous match — full reset.
+                        // Channel stays idle until detector confirms the correct tone.
+                        mToneMatch = false;
+
+                        if(mCTCSSDetector != null)
+                        {
+                            mCTCSSDetector.reset();
+                        }
+                        if(mDCSDetector != null)
+                        {
+                            mDCSDetector.reset();
+                        }
+                        // Added missing HighPassFilter reset from the conflicting branch
+                        if(mHighPassFilter != null)
+                        {
+                            mHighPassFilter.reset();
+                        }
+                    }
                 }
             }
         });
@@ -644,6 +673,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // Matching tone confirmed — wake up the channel like a real radio unsquelching
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
+                    mLastToneMatchTime = System.currentTimeMillis();
 
                     // If we were previously blocked, fire a call start now
                     if(wasBlocked)
@@ -713,6 +743,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // Matching code confirmed — wake up the channel
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
+                    mLastToneMatchTime = System.currentTimeMillis();
 
                     if(wasBlocked)
                     {
