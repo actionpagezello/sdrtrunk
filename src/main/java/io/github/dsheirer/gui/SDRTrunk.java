@@ -107,11 +107,6 @@ import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import javax.swing.plaf.metal.MetalLookAndFeel;
 
-import com.formdev.flatlaf.FlatLaf;
-import com.formdev.flatlaf.extras.FlatSVGIcon;
-import com.formdev.flatlaf.themes.FlatWindowsDarkLaf;
-import javax.swing.UIManager;
-
 public class SDRTrunk implements Listener<TunerEvent>
 {
     private final static Logger mLog = LoggerFactory.getLogger(SDRTrunk.class);
@@ -939,39 +934,7 @@ public class SDRTrunk implements Listener<TunerEvent>
 
     public static void main(String[] args)
     {
-        // --- PHASE 2: WINDOWS 11 LOOK AND FEEL INITIALIZATION ---
-        try {
-            // Enable Windows 11 custom title bar, snap layouts, and drop shadows
-            System.setProperty("flatlaf.useWindowDecorations", "true");
-            System.setProperty("flatlaf.menuBarEmbedded", "true");
-            
-            // Set the FlatLaf Windows 11 Dark Theme
-            FlatWindowsDarkLaf.setup();
-            
-            // Update UI defaults for better component scaling and aesthetics
-            UIManager.put("TitlePane.menuBarEmbedded", true);
-            UIManager.put("TabbedPane.showTabSeparators", true);
-            UIManager.put("Component.focusWidth", 1);
-        } catch (Exception e) {
-            System.err.println("Failed to initialize FlatLaf Windows 11 Theme");
-            e.printStackTrace();
-        }
-        // --- END PHASE 2 ---
-
-
-        System.out.println("SDRTrunk Version : " + Version.VERSION);
-
-        if(SystemProperties.getInstance().getOS() == OSType.LINUX)
-        {
-            if(!SystemProperties.getInstance().getJavaVersion().startsWith("1.8.0"))
-            {
-                System.out.println("************************************************************************");
-                System.out.println("WARNING - Unsupported Java Version: " +
-                        SystemProperties.getInstance().getJavaVersion());
-                System.out.println("SDRTrunk requires Java 8 (1.8.0) to operate correctly on Linux.");
-                System.out.println("************************************************************************");
-            }
-        }
-        
-        // ... The rest of the original main() method remains exactly the same ...
-        // (e.g., ApplicationLog.getInstance(), ThreadPool.getInstance(), etc.)
+        System.out.println("Starting SDRTrunk...");
+        new SDRTrunk();
+    }
+}

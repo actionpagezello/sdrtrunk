@@ -520,7 +520,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         mTunerStatusMap.put(discoveredTuner.getId(), current);
         
         // If the tuner recovers, clear its retry counter
-        if (current == TunerStatus.ENABLED || current == TunerStatus.PLAYING) {
+        if (current == TunerStatus.ENABLED) {
             mTunerRetryCounts.remove(discoveredTuner.getId());
         }
         // -----------------------------------

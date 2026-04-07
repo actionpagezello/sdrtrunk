@@ -1,0 +1,11 @@
+<SDRTrunk_settings>
+  <setting type="colorSetting" alpha="255" colorSettingName="SPECTRUM_CURSOR" rgb="#ffc800"/>
+  <setting type="colorSetting" alpha="255" colorSettingName="SPECTRUM_LINE" rgb="#c0c0c0"/>
+  <setting type="colorSetting" alpha="255" colorSettingName="SPECTRUM_BACKGROUND" rgb="#000000"/>
+  <setting type="colorSetting" alpha="255" colorSettingName="SPECTRUM_GRADIENT_BOTTOM" rgb="#00ff00"/>
+  <setting type="colorSetting" alpha="255" colorSettingName="SPECTRUM_GRADIENT_TOP" rgb="#ffffff"/>
+  <setting type="mapViewSetting" zoom="7" longitude="-76.147" latitude="43.048" name="Default"/>
+  <setting type="colorSetting" alpha="255" colorSettingName="CHANNEL_CONFIG" rgb="#c0c0c0"/>
+  <setting type="colorSetting" alpha="255" colorSettingName="CHANNEL_CONFIG_PROCESSING" rgb="#00ff00"/>
+  <setting type="colorSetting" alpha="255" colorSettingName="CHANNEL_CONFIG_SELECTED" rgb="#0000ff"/>
+</SDRTrunk_settings>
