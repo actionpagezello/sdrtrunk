@@ -93,6 +93,11 @@ import net.miginfocom.swing.MigLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLightLaf;
+import io.github.dsheirer.preference.gui.FlatLafTheme;
+import io.github.dsheirer.preference.gui.GuiPreference;
+import io.github.dsheirer.util.OSType;
 import javax.imageio.ImageIO;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFrame;
@@ -153,9 +158,6 @@ public class SDRTrunk implements Listener<TunerEvent>
         mApplicationLog = new ApplicationLog(mUserPreferences);
         mApplicationLog.start();
 
-        //Note: invoke this early in the application lifecycle, before the TunerManager causes the sdrplay classes
-        //to be loaded since the jextract auto-generated code attempts to load the library by name and that can fail
-        //when the library was not installed into a normal/default location, particularly on windows OS systems.
         if(SDRPlayLibraryHelper.LOADED)
         {
             mLog.info("SDRPlay API native library preemptively loaded");
@@ -177,16 +179,21 @@ public class SDRTrunk implements Listener<TunerEvent>
                 mLog.error("Error trying to set Metal look and feel for OS [" + operatingSystem + "]");
             }
         }
+        else if(operatingSystem.contains("win"))
+        {
+            try
+            {
+                LookAndFeelFactory.installJideExtension();
+            }
+            catch(Exception e)
+            {
+                mLog.error("Error trying to install JIDE extension for OS [" + operatingSystem + "]");
+            }
+        }
 
         ThreadPool.logSettings();
-
-        //Load properties file
         loadProperties();
-
-        //Log current properties setting
         SystemProperties.getInstance().logCurrentSettings();
-
-        //Register FontAwesome so we can use the fonts in Swing windows
         IconFontSwing.register(FontAwesome.getIconFont());
 
         mTunerManager = new TunerManager(mUserPreferences);
@@ -258,12 +265,9 @@ public class SDRTrunk implements Listener<TunerEvent>
         else
         {
             mLog.info("starting main application gui");
-
-            //Initialize the GUI
             initGUI();
         }
 
-        //Start the gui
         EventQueue.invokeLater(() -> {
             try
             {
@@ -286,7 +290,6 @@ public class SDRTrunk implements Listener<TunerEvent>
                         Optional<ButtonType> calibrate = calibrationDialog.showAndWait();
                         if(calibrate.isPresent() && calibrate.get().getText().equals("Calibrate"))
                         {
-                            //Request focus and execute calibration
                             MyEventBus.getGlobalEventBus().post(new ViewUserPreferenceEditorRequest(PreferenceEditorType.VECTOR_CALIBRATION));
                             MyEventBus.getGlobalEventBus().post(new CalibrateRequest());
                         }
@@ -308,11 +311,6 @@ public class SDRTrunk implements Listener<TunerEvent>
         });
     }
 
-    /**
-     * Shows a dialog that lists the channels that have been designated for auto-start, sorted by auto-start order and
-     * allows the user to start now, cancel, or allow the timer to expire and then start the channels.  The dialog will
-     * only show if there are one ore more channels designated for auto-start.
-     */
     private void autoStartChannels()
     {
         List<Channel> channels = mPlaylistManager.getChannelModel().getAutoStartChannels();
@@ -341,16 +339,9 @@ public class SDRTrunk implements Listener<TunerEvent>
         }
     }
 
-    /**
-     * Initialize the contents of the frame.
-     */
     private void initGUI()
     {
         mMainGui.setLayout(new MigLayout("insets 0 0 0 0 ", "[grow,fill]", "[grow,fill]0[shrink 0]"));
-
-        /**
-         * Setup main JFrame window
-         */
         mTitle = SystemProperties.getInstance().getApplicationName();
         mMainGui.setTitle(mTitle);
 
@@ -378,7 +369,6 @@ public class SDRTrunk implements Listener<TunerEvent>
             {
                 Dimension pref = mSpectralPanel.getPreferredSize();
                 mSpectralPanel.setPreferredSize(new Dimension(pref.width, spectral.height));
-                // mSpectralPanel.setSize(spectral);
             }
 
             Dimension controller = mUserPreferences.getSwingPreference().getDimension(CONTROLLER_PANEL_IDENTIFIER);
@@ -386,7 +376,6 @@ public class SDRTrunk implements Listener<TunerEvent>
             {
                 Dimension pref = mControllerPanel.getPreferredSize();
                 mControllerPanel.setPreferredSize(new Dimension(pref.width, controller.height));
-                // mControllerPanel.setSize(controller);
             }
 
             mMainGui.setSize(dimension);
@@ -407,7 +396,6 @@ public class SDRTrunk implements Listener<TunerEvent>
 
         mBroadcastStatusVisible = mPreferences.getBoolean(PREFERENCE_BROADCAST_STATUS_VISIBLE, false);
 
-        //Show broadcast status panel when user requests - disabled by default
         if(mBroadcastStatusVisible)
         {
             mSplitPane.add(getBroadcastStatusPanel());
@@ -422,9 +410,6 @@ public class SDRTrunk implements Listener<TunerEvent>
             mMainGui.add(getResourceStatusPanel(), "span,growx");
         }
 
-        /**
-         * Menu items
-         */
         JMenuBar menuBar = new JMenuBar();
         mMainGui.setJMenuBar(menuBar);
 
@@ -465,7 +450,7 @@ public class SDRTrunk implements Listener<TunerEvent>
             }
         });
 
-        JMenu diagnosticMenu = new JMenu(("Reports"));
+        JMenu diagnosticMenu = new JMenu("Reports");
         diagnosticMenu.add(processingStatusReportMenuItem);
         diagnosticMenu.add(threadDumpReportMenuItem);
         fileMenu.add(diagnosticMenu);
@@ -477,7 +462,6 @@ public class SDRTrunk implements Listener<TunerEvent>
                 System.exit(0);
             }
         );
-
         fileMenu.add(exitMenu);
 
         JMenu viewMenu = new JMenu("View");
@@ -500,7 +484,6 @@ public class SDRTrunk implements Listener<TunerEvent>
             catch(Exception e)
             {
                 mLog.error("Couldn't open file explorer");
-
                 JOptionPane.showMessageDialog(mMainGui,
                         "Can't launch file explorer - files are located at: " + logsDirectory,
                         "Can't launch file explorer",
@@ -513,7 +496,6 @@ public class SDRTrunk implements Listener<TunerEvent>
         viewRecordingsMenuItem.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
         viewRecordingsMenuItem.addActionListener(arg0 -> {
             File recordingsDirectory = mUserPreferences.getDirectoryPreference().getDirectoryRecording().toFile();
-
             try
             {
                 Desktop.getDesktop().open(recordingsDirectory);
@@ -521,10 +503,8 @@ public class SDRTrunk implements Listener<TunerEvent>
             catch(Exception e)
             {
                 mLog.error("Couldn't open file explorer");
-
                 JOptionPane.showMessageDialog(mMainGui,
-                        "Can't launch file explorer - files are located at: " +
-                                recordingsDirectory,
+                        "Can't launch file explorer - files are located at: " + recordingsDirectory,
                         "Can't launch file explorer",
                         JOptionPane.ERROR_MESSAGE);
             }
@@ -542,7 +522,6 @@ public class SDRTrunk implements Listener<TunerEvent>
             catch(Exception e)
             {
                 mLog.error("Couldn't open file explorer");
-
                 JOptionPane.showMessageDialog(mMainGui,
                         "Can't launch file explorer - files are located at: " + eventLogsDirectory,
                         "Can't launch file explorer",
@@ -572,7 +551,6 @@ public class SDRTrunk implements Listener<TunerEvent>
             catch(Exception e)
             {
                 mLog.error("Couldn't open file explorer");
-
                 JOptionPane.showMessageDialog(mMainGui,
                         "Can't launch file explorer - files are located at: " + screenCapturesDirectory,
                         "Can't launch file explorer",
@@ -632,9 +610,6 @@ public class SDRTrunk implements Listener<TunerEvent>
         menuBar.add(screenCaptureItem);
     }
 
-    /**
-     * Performs shutdown operations
-     */
     private void processShutdown()
     {
         mLog.info("Application shutdown started ...");
@@ -650,7 +625,6 @@ public class SDRTrunk implements Listener<TunerEvent>
         mPlaylistManager.getChannelProcessingManager().shutdown();
         mAudioRecordingManager.stop();
         mResourceMonitor.stop();
-
         mLog.info("Stopping spectral display ...");
         mSpectralPanel.clearTuner();
         mLog.info("Stopping tuners ...");
@@ -659,85 +633,45 @@ public class SDRTrunk implements Listener<TunerEvent>
         mApplicationLog.stop();
     }
 
-    /**
-     * Lazy constructor for broadcast status panel
-     */
     private BroadcastStatusPanel getBroadcastStatusPanel()
     {
         if(mBroadcastStatusPanel == null)
         {
-            mBroadcastStatusPanel = new BroadcastStatusPanel(mPlaylistManager.getBroadcastModel(), mUserPreferences,
-                "application.broadcast.status.panel");
+            mBroadcastStatusPanel = new BroadcastStatusPanel(mPlaylistManager.getBroadcastModel(), mUserPreferences, "application.broadcast.status.panel");
             mBroadcastStatusPanel.setPreferredSize(new Dimension(880, 70));
             mBroadcastStatusPanel.getTable().setEnabled(false);
         }
-
         return mBroadcastStatusPanel;
     }
 
-    /**
-     * Toggles visibility of the broadcast channels status panel at the bottom of the controller panel
-     */
     private void toggleBroadcastStatusPanelVisibility()
     {
         mBroadcastStatusVisible = !mBroadcastStatusVisible;
-
         EventQueue.invokeLater(() -> {
-            if(mBroadcastStatusVisible)
-            {
-                mSplitPane.add(getBroadcastStatusPanel());
-            }
-            else
-            {
-                mSplitPane.remove(getBroadcastStatusPanel());
-            }
-
+            if(mBroadcastStatusVisible) { mSplitPane.add(getBroadcastStatusPanel()); }
+            else { mSplitPane.remove(getBroadcastStatusPanel()); }
             mMainGui.revalidate();
         });
-
         mPreferences.putBoolean(PREFERENCE_BROADCAST_STATUS_VISIBLE, mBroadcastStatusVisible);
     }
 
-    /**
-     * Lazy constructor for resource status panel
-     */
     private JFXPanel getResourceStatusPanel()
     {
-
-        if(mResourceStatusPanel == null)
-        {
-            mResourceStatusPanel = mJavaFxWindowManager.getStatusPanel(mResourceMonitor);
-        }
-
+        if(mResourceStatusPanel == null) { mResourceStatusPanel = mJavaFxWindowManager.getStatusPanel(mResourceMonitor); }
         return mResourceStatusPanel;
     }
 
-    /**
-     * Toggles visibility of the resource status panel at the bottom of the main UI window
-     */
     private void toggleResourceStatusPanelVisibility()
     {
         mResourceStatusVisible = !mResourceStatusVisible;
-
         EventQueue.invokeLater(() -> {
-            if(mResourceStatusVisible)
-            {
-                mMainGui.add(getResourceStatusPanel(), "span,growx");
-            }
-            else
-            {
-                mMainGui.remove(getResourceStatusPanel());
-            }
-
+            if(mResourceStatusVisible) { mMainGui.add(getResourceStatusPanel(), "span,growx"); }
+            else { mMainGui.remove(getResourceStatusPanel()); }
             mMainGui.revalidate();
         });
-
         mPreferences.putBoolean(PREFERENCE_RESOURCE_STATUS_VISIBLE, mResourceStatusVisible);
     }
 
-    /**
-     * Toggles visibility of the Now Playing channel details panel
-     */
     private void toggleNowPlayingDetailsPanelVisibility()
     {
         mNowPlayingDetailsVisible = !mNowPlayingDetailsVisible;
@@ -745,68 +679,10 @@ public class SDRTrunk implements Listener<TunerEvent>
         mPreferences.putBoolean(PREFERENCE_NOW_PLAYING_DETAILS_VISIBLE, mNowPlayingDetailsVisible);
     }
 
-
-    /**
-     * Loads the application properties file from the user's home directory,
-     * creating the properties file for the first-time, if necessary
-     */
     private void loadProperties()
     {
         Path propertiesPath = mUserPreferences.getDirectoryPreference().getDirectoryApplicationRoot().resolve("SDRTrunk.properties");
-
-        if(!Files.exists(propertiesPath))
-        {
-            try
-            {
-                mLog.info("SDRTrunk - creating application properties file [" + propertiesPath.toAbsolutePath() + "]");
-                Files.createFile(propertiesPath);
-            }
-            catch(IOException e)
-            {
-                mLog.error("SDRTrunk - couldn't create application properties file [" + propertiesPath.toAbsolutePath(), e);
-            }
-        }
-
-        if(Files.exists(propertiesPath))
-        {
-            SystemProperties.getInstance().load(propertiesPath);
-        }
-        else
-        {
-            mLog.error("SDRTrunk - couldn't find or recreate the SDRTrunk application properties file");
-        }
-    }
-
-    /**
-     * Gets (or creates) the SDRTRunk application home directory.
-     *
-     * Note: the user can change this setting to allow log files and other
-     * files to reside elsewhere on the file system.
-     */
-    private Path getHomePath()
-    {
-        Path homePath = FileSystems.getDefault()
-            .getPath(System.getProperty("user.home"), "SDRTrunk");
-
-        if(!Files.exists(homePath))
-        {
-            try
-            {
-                Files.createDirectory(homePath);
-
-                mLog.info("SDRTrunk - created application home directory [" +
-                    homePath.toString() + "]");
-            }
-            catch(Exception e)
-            {
-                homePath = null;
-
-                mLog.error("SDRTrunk: exception while creating SDRTrunk home " +
-                    "directory in the user's home directory", e);
-            }
-        }
-
-        return homePath;
+        if(Files.exists(propertiesPath)) { SystemProperties.getInstance().load(propertiesPath); }
     }
 
     @Override
@@ -814,93 +690,47 @@ public class SDRTrunk implements Listener<TunerEvent>
     {
         switch(event.getEvent())
         {
-            case REQUEST_MAIN_SPECTRAL_DISPLAY:
-                updateTitle(event.getTuner().getPreferredName());
-                break;
-            case REQUEST_CLEAR_MAIN_SPECTRAL_DISPLAY:
-                updateTitle(null);
-                break;
-            case NOTIFICATION_SHUTTING_DOWN:
-                Tuner currentTuner = mSpectralPanel.getTuner();
-
-                if(event.hasTuner() && event.getTuner().equals(currentTuner) || currentTuner == null)
-                {
-                    updateTitle(null);
-                }
-                break;
+            case REQUEST_MAIN_SPECTRAL_DISPLAY: updateTitle(event.getTuner().getPreferredName()); break;
+            case REQUEST_CLEAR_MAIN_SPECTRAL_DISPLAY: updateTitle(null); break;
         }
     }
 
-    /**
-     * Updates the title bar with the tuner name
-     * @param tunerName optional
-     */
     private void updateTitle(String tunerName)
     {
-        if(tunerName != null)
-        {
-            mMainGui.setTitle(mTitle + " - " + tunerName);
-        }
-        else
-        {
-            mMainGui.setTitle(mTitle);
-        }
+        if(tunerName != null) { mMainGui.setTitle(mTitle + " - " + tunerName); }
+        else { mMainGui.setTitle(mTitle); }
     }
 
     public class ShutdownMonitor extends WindowAdapter
     {
         @Override
-        public void windowClosing(WindowEvent e)
-        {
-            processShutdown();
-        }
+        public void windowClosing(WindowEvent e) { processShutdown(); }
     }
 
-    /**
-     * Broadcast status panel visible toggle menu item
-     */
     public class BroadcastStatusVisibleMenuItem extends JCheckBoxMenuItem
     {
-        public BroadcastStatusVisibleMenuItem()
-        {
-            super("Show Streaming Status");
-            setSelected(mBroadcastStatusVisible);
-            addActionListener(e -> {
-                toggleBroadcastStatusPanelVisibility();
-                setSelected(mBroadcastStatusVisible);
-            });
+        public BroadcastStatusVisibleMenuItem() { 
+            super("Show Streaming Status"); 
+            setSelected(mBroadcastStatusVisible); 
+            addActionListener(e -> toggleBroadcastStatusPanelVisibility()); 
         }
     }
 
-    /**
-     * Resource status panel visible toggle menu item
-     */
     public class ResourceStatusVisibleMenuItem extends JCheckBoxMenuItem
     {
-        public ResourceStatusVisibleMenuItem()
-        {
-            super("Show Resource Status");
-            setSelected(mResourceStatusVisible);
-            addActionListener(e -> {
-                toggleResourceStatusPanelVisibility();
-                setSelected(mResourceStatusVisible);
-            });
+        public ResourceStatusVisibleMenuItem() { 
+            super("Show Resource Status"); 
+            setSelected(mResourceStatusVisible); 
+            addActionListener(e -> toggleResourceStatusPanelVisibility()); 
         }
     }
 
-    /**
-     * Now Playing channel details visible toggle menu item
-     */
     public class NowPlayingChannelDetailsVisibleMenuItem extends JCheckBoxMenuItem
     {
-        public NowPlayingChannelDetailsVisibleMenuItem()
-        {
-            super("Show Now Playing Channel Details");
-            setSelected(mNowPlayingDetailsVisible);
-            addActionListener(e -> {
-                toggleNowPlayingDetailsPanelVisibility();
-                setSelected(mNowPlayingDetailsVisible);
-            });
+        public NowPlayingChannelDetailsVisibleMenuItem() { 
+            super("Show Now Playing Channel Details"); 
+            setSelected(mNowPlayingDetailsVisible); 
+            addActionListener(e -> toggleNowPlayingDetailsPanelVisibility()); 
         }
     }
 
@@ -932,11 +762,39 @@ public class SDRTrunk implements Listener<TunerEvent>
 
     }
 
-    /**
-     * Launch the application.
-     */
     public static void main(String[] args)
     {
+        System.out.println("Starting SDRTrunk...");
+
+        // Apply FlatLaf modern look and feel on Windows 11 before any Swing components are created.
+        // The theme (Light or Dark) is read from the stored user preference; Light is the default.
+        OSType currentOS = OSType.getCurrentOSType();
+        if(currentOS.isWindows() && currentOS.isWindows11OrHigher())
+        {
+            try
+            {
+                FlatLafTheme theme = GuiPreference.readStoredTheme();
+                System.setProperty("flatlaf.useWindowDecorations", "true");
+                System.setProperty("flatlaf.menuBarEmbedded", "true");
+                if(theme == FlatLafTheme.DARK)
+                {
+                    FlatDarkLaf.setup();
+                }
+                else
+                {
+                    FlatLightLaf.setup();
+                }
+                UIManager.put("TitlePane.menuBarEmbedded", true);
+                UIManager.put("TabbedPane.showTabSeparators", true);
+                UIManager.put("Component.focusWidth", 1);
+                System.out.println("Windows 11 modern theme (FlatLaf " + theme + ") applied.");
+            }
+            catch(Exception e)
+            {
+                System.err.println("Failed to initialize FlatLaf Windows 11 theme: " + e.getMessage());
+            }
+        }
+
         new SDRTrunk();
     }
 }

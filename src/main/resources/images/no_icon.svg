@@ -1,0 +1,10 @@
+<?xml version="1.0" standalone="yes"?>
+<svg width="16" height="16">
+<path style="fill:#ffffff; stroke:none;" d="M0 0C0.122654 3.71363 0.423786 5.56335 4 7L2 2L7 3L8 3L9 3L14 2L12 7C15.5762 5.56335 15.8773 3.71363 16 0L0 0z"/>
+<path style="fill:#f5b600; stroke:none;" d="M2 2L4 7L0 6L0 10L4 10L2 15L10 14L7 11L4 15L6 9L1 9L1 8L6 8L4 2L7 6C9.63821 4.24534 10.4682 2.63024 13 5L14 2L9 3L8 3L2 2z"/>
+<path style="fill:#ffd961; stroke:none;" d="M4 2L6 8L1 8L1 9L6 9L4 15L7 11L12 15L10 9L15 9L15 8L10 8L12 2L7 6L4 2z"/>
+<path style="fill:#e09d00; stroke:none;" d="M11 5L10 8L15 8L15 9L10 9L12 14L13 14L12 10L16 10L16 6L11 5z"/>
+<path style="fill:#ffffff; stroke:none;" d="M0 10C0.0134775 13.1942 -0.402856 15.2708 3 16L4 10L0 10M12 10L13 16C16.4029 15.2708 15.9865 13.1942 16 10L12 10z"/>
+<path style="fill:#c07500; stroke:none;" d="M13 13L9 14C10.5412 16.0716 13.5005 16.0106 13 13z"/>
+<path style="fill:#ffffff; stroke:none;" d="M7 14L7 16L9 16L9 14L7 14z"/>
+</svg>

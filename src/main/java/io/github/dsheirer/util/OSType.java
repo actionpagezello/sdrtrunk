@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
+ * along with this program.  If not, see [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/)
  * ****************************************************************************
  */
 
@@ -61,6 +61,37 @@ public enum OSType
     public boolean isOsx()
     {
         return OSX_TYPES.contains(this);
+    }
+
+    /**
+     * Identifies if the OS is Windows 11 or higher based on the build number.
+     * Windows 11 starts at build number 22000.
+     */
+    public boolean isWindows11OrHigher()
+    {
+        if (!isWindows())
+        {
+            return false;
+        }
+
+        try
+        {
+            String version = System.getProperty("os.version");
+            if (version != null)
+            {
+                String[] parts = version.split("\\.");
+                if (parts.length >= 3)
+                {
+                    int build = Integer.parseInt(parts[parts.length - 1]);
+                    return build >= 22000;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            // Fallback if version string format is unexpected
+        }
+        return false;
     }
 
     /**
@@ -118,8 +149,6 @@ public enum OSType
                 return OSType.LINUX_ARM_32;
             }
         }
-
-
 
         return OSType.UNKNOWN;
     }

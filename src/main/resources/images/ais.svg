@@ -1,0 +1,10 @@
+<?xml version="1.0" standalone="yes"?>
+<svg width="32" height="16">
+<path style="fill:#ffffff; stroke:none;" d="M0 0L0 16L1 16L1 11L5 11L5 16L8 12C3.69514 12 6.91945 5.06095 7 2L12 2L13 10L14 10L14 2L16 2L15 16C16.6403 15.1168 19.2483 12.911 16 13L20 9L20 8L17 2L24 2L21 5L25 16C26.6403 15.1168 29.2483 12.911 26 13L29 11L32 16L32 0L0 0z"/>
+<path style="fill:#000000; stroke:none;" d="M7 2C6.61655 5.14 3.87897 11.4035 8 12L6 15L6 16L10 16L9 9L10 9L11 16L15 16L16 2L14 2L14 10L13 10L12 2L7 2M17 2L20 8L20 9L16 13L18 13L16 15L16 16L20 16L19 11L21 11L21 16L25 16C24.815 11.7032 24.6739 7.61943 21 5L24 2L17 2z"/>
+<path style="fill:#ffffff; stroke:none;" d="M9 7L10 8L9 7M9 9L10 16L11 16L9 9z"/>
+<path style="fill:#000000; stroke:none;" d="M1 11L1 16L5 16L5 11L1 11z"/>
+<path style="fill:#ffffff; stroke:none;" d="M19 11L20 16L21 16L21 11L19 11z"/>
+<path style="fill:#000000; stroke:none;" d="M26 13L28 13L26 15L26 16L30 16L29 11L26 13z"/>
+<path style="fill:#ffffff; stroke:none;" d="M2 12L2 15L3 15L2 12M12 12L12 15L13 15L12 12M22 12L22 15L23 15L22 12z"/>
+</svg>

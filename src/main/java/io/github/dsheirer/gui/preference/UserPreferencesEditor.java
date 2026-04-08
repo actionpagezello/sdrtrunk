@@ -190,6 +190,7 @@ public class UserPreferencesEditor extends BorderPane
 
             TreeItem<String> displayItem = new TreeItem<>("Display");
             displayItem.getChildren().add(new TreeItem(PreferenceEditorType.CHANNEL_EVENT));
+            displayItem.getChildren().add(new TreeItem(PreferenceEditorType.DISPLAY_INTERFACE));
             displayItem.getChildren().add(new TreeItem(PreferenceEditorType.TALKGROUP_FORMAT));
             treeRoot.getChildren().add(displayItem);
             displayItem.setExpanded(true);

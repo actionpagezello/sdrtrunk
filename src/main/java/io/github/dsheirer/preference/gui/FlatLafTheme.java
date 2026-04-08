@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2023 Dennis Sheirer
+ * Copyright (C) 2014-2026 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,26 +17,26 @@
  * ****************************************************************************
  */
 
-package io.github.dsheirer.preference;
+package io.github.dsheirer.preference.gui;
 
 /**
- * Types of preferences
+ * FlatLaf theme choices for the Windows 11 modern look and feel.
  */
-public enum PreferenceType
+public enum FlatLafTheme
 {
-    APPLICATION,
-    CALIBRATION,
-    DECODE_EVENT,
-    DIRECTORY,
-    DUPLICATE_CALL_DETECTION,
-    GUI,
-    JMBE_LIBRARY,
-    MP3,
-    MULTI_FREQUENCY,
-    PLAYLIST,
-    PLAYBACK,
-    RADIO_REFERENCE,
-    RECORD,
-    TALKGROUP_FORMAT,
-    TUNER;
+    LIGHT("Light"),
+    DARK("Dark");
+
+    private final String mLabel;
+
+    FlatLafTheme(String label)
+    {
+        mLabel = label;
+    }
+
+    @Override
+    public String toString()
+    {
+        return mLabel;
+    }
 }

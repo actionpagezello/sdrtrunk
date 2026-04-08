@@ -20,6 +20,7 @@
 package io.github.dsheirer.gui.preference;
 
 import io.github.dsheirer.gui.preference.application.ApplicationPreferenceEditor;
+import io.github.dsheirer.gui.preference.gui.GuiPreferenceEditor;
 import io.github.dsheirer.gui.preference.calibration.VectorCalibrationPreferenceEditor;
 import io.github.dsheirer.gui.preference.call.CallManagementPreferenceEditor;
 import io.github.dsheirer.gui.preference.decoder.JmbeLibraryPreferenceEditor;
@@ -54,6 +55,8 @@ public class PreferenceEditorFactory
                 return new DecodeEventViewPreferenceEditor(userPreferences);
             case DIRECTORY:
                 return new DirectoryPreferenceEditor(userPreferences);
+            case DISPLAY_INTERFACE:
+                return new GuiPreferenceEditor(userPreferences);
             case JMBE_LIBRARY:
                 return new JmbeLibraryPreferenceEditor(userPreferences);
             case SOURCE_TUNERS:

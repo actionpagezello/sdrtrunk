@@ -21,6 +21,7 @@ package io.github.dsheirer.preference;
 
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.preference.application.ApplicationPreference;
+import io.github.dsheirer.preference.gui.GuiPreference;
 import io.github.dsheirer.preference.calibration.VectorCalibrationPreference;
 import io.github.dsheirer.preference.decoder.JmbeLibraryPreference;
 import io.github.dsheirer.preference.directory.DirectoryPreference;
@@ -57,6 +58,7 @@ import io.github.dsheirer.sample.Listener;
 public class UserPreferences implements Listener<PreferenceType>
 {
     private ApplicationPreference mApplicationPreference;
+    private GuiPreference mGuiPreference;
     private ChannelMultiFrequencyPreference mChannelMultiFrequencyPreference;
     private DecodeEventPreference mDecodeEventPreference;
     private DirectoryPreference mDirectoryPreference;
@@ -89,6 +91,14 @@ public class UserPreferences implements Listener<PreferenceType>
     public ApplicationPreference getApplicationPreference()
     {
         return mApplicationPreference;
+    }
+
+    /**
+     * GUI / Look-and-Feel preferences (FlatLaf theme on Windows 11).
+     */
+    public GuiPreference getGuiPreference()
+    {
+        return mGuiPreference;
     }
 
     /**
@@ -230,6 +240,7 @@ public class UserPreferences implements Listener<PreferenceType>
     private void loadPreferenceTypes()
     {
         mApplicationPreference = new ApplicationPreference(this::receive);
+        mGuiPreference = new GuiPreference(this::receive);
         mChannelMultiFrequencyPreference = new ChannelMultiFrequencyPreference(this::receive);
         mDecodeEventPreference = new DecodeEventPreference(this::receive);
         mDirectoryPreference = new DirectoryPreference(this::receive);
