@@ -93,6 +93,8 @@ import net.miginfocom.swing.MigLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.formdev.flatlaf.FlatDarkLaf;
+import io.github.dsheirer.util.OSType;
 import javax.imageio.ImageIO;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFrame;
@@ -172,6 +174,17 @@ public class SDRTrunk implements Listener<TunerEvent>
             catch(Exception e)
             {
                 mLog.error("Error trying to set Metal look and feel for OS [" + operatingSystem + "]");
+            }
+        }
+        else if(operatingSystem.contains("win"))
+        {
+            try
+            {
+                LookAndFeelFactory.installJideExtension();
+            }
+            catch(Exception e)
+            {
+                mLog.error("Error trying to install JIDE extension for OS [" + operatingSystem + "]");
             }
         }
 
@@ -400,6 +413,46 @@ public class SDRTrunk implements Listener<TunerEvent>
         JMenu fileMenu = new JMenu("File");
         menuBar.add(fileMenu);
 
+        JMenuItem processingStatusReportMenuItem = new JMenuItem("Processing Diagnostic Report");
+        processingStatusReportMenuItem.addActionListener(e -> {
+            try
+            {
+                Path path = mDiagnosticMonitor.generateProcessingDiagnosticReport("User initiated diagnostic report");
+
+                JOptionPane.showMessageDialog(mMainGui, "Report created: " +
+                        path.toString(), "Processing Status Report Created", JOptionPane.INFORMATION_MESSAGE);
+            }
+            catch(IOException ioe)
+            {
+                mLog.error("Error creating processing status report file", ioe);
+                JOptionPane.showMessageDialog(mMainGui, "Unable to create report file.  Please " +
+                        "see application log for details.", "Processing Status Report Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        JMenuItem threadDumpReportMenuItem = new JMenuItem("Thread Dump Report");
+        threadDumpReportMenuItem.addActionListener(e -> {
+            try
+            {
+                Path path = mDiagnosticMonitor.generateThreadDumpReport();
+
+                JOptionPane.showMessageDialog(mMainGui, "Report created: " +
+                        path.toString(), "Thread Dump Report Created", JOptionPane.INFORMATION_MESSAGE);
+            }
+            catch(IOException ioe)
+            {
+                mLog.error("Error creating thread dump report file", ioe);
+                JOptionPane.showMessageDialog(mMainGui, "Unable to create report file.  Please " +
+                        "see application log for details.", "Thread Dump Report Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        JMenu diagnosticMenu = new JMenu("Reports");
+        diagnosticMenu.add(processingStatusReportMenuItem);
+        diagnosticMenu.add(threadDumpReportMenuItem);
+        fileMenu.add(diagnosticMenu);
+        fileMenu.add(new JSeparator(JSeparator.HORIZONTAL));
+
         JMenuItem exitMenu = new JMenuItem("Exit");
         exitMenu.addActionListener(event -> {
                 processShutdown();
@@ -409,9 +462,7 @@ public class SDRTrunk implements Listener<TunerEvent>
         fileMenu.add(exitMenu);
 
         JMenu viewMenu = new JMenu("View");
-        menuBar.add(viewMenu);
 
-        // --- FULL VIEW MENU RESTORATION ---
         JMenuItem viewPlaylistItem = new JMenuItem("Playlist Editor");
         viewPlaylistItem.setIcon(IconFontSwing.buildIcon(FontAwesome.PLAY_CIRCLE_O, 12));
         viewPlaylistItem.addActionListener(e -> MyEventBus.getGlobalEventBus().post(new ViewPlaylistRequest()));
@@ -419,23 +470,62 @@ public class SDRTrunk implements Listener<TunerEvent>
 
         viewMenu.add(new JSeparator());
 
-        JMenuItem viewLogsMenu = new JMenuItem("Application Log Files");
-        viewLogsMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
-        viewLogsMenu.addActionListener(arg0 -> {
+        JMenuItem viewApplicationLogsMenu = new JMenuItem("Application Log Files");
+        viewApplicationLogsMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewApplicationLogsMenu.addActionListener(arg0 -> {
             File logsDirectory = mUserPreferences.getDirectoryPreference().getDirectoryApplicationLog().toFile();
-            try { Desktop.getDesktop().open(logsDirectory); }
-            catch(Exception e) { mLog.error("Couldn't open logs"); }
+            try
+            {
+                Desktop.getDesktop().open(logsDirectory);
+            }
+            catch(Exception e)
+            {
+                mLog.error("Couldn't open file explorer");
+                JOptionPane.showMessageDialog(mMainGui,
+                        "Can't launch file explorer - files are located at: " + logsDirectory,
+                        "Can't launch file explorer",
+                        JOptionPane.ERROR_MESSAGE);
+            }
         });
-        viewMenu.add(viewLogsMenu);
+        viewMenu.add(viewApplicationLogsMenu);
 
-        JMenuItem viewRecordingsMenu = new JMenuItem("Audio Recordings");
-        viewRecordingsMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
-        viewRecordingsMenu.addActionListener(arg0 -> {
+        JMenuItem viewRecordingsMenuItem = new JMenuItem("Audio Recordings");
+        viewRecordingsMenuItem.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewRecordingsMenuItem.addActionListener(arg0 -> {
             File recordingsDirectory = mUserPreferences.getDirectoryPreference().getDirectoryRecording().toFile();
-            try { Desktop.getDesktop().open(recordingsDirectory); }
-            catch(Exception e) { mLog.error("Couldn't open recordings"); }
+            try
+            {
+                Desktop.getDesktop().open(recordingsDirectory);
+            }
+            catch(Exception e)
+            {
+                mLog.error("Couldn't open file explorer");
+                JOptionPane.showMessageDialog(mMainGui,
+                        "Can't launch file explorer - files are located at: " + recordingsDirectory,
+                        "Can't launch file explorer",
+                        JOptionPane.ERROR_MESSAGE);
+            }
         });
-        viewMenu.add(viewRecordingsMenu);
+        viewMenu.add(viewRecordingsMenuItem);
+
+        JMenuItem viewEventLogsMenu = new JMenuItem("Channel Event Log Files");
+        viewEventLogsMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewEventLogsMenu.addActionListener(arg0 -> {
+            File eventLogsDirectory = mUserPreferences.getDirectoryPreference().getDirectoryEventLog().toFile();
+            try
+            {
+                Desktop.getDesktop().open(eventLogsDirectory);
+            }
+            catch(Exception e)
+            {
+                mLog.error("Couldn't open file explorer");
+                JOptionPane.showMessageDialog(mMainGui,
+                        "Can't launch file explorer - files are located at: " + eventLogsDirectory,
+                        "Can't launch file explorer",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        viewMenu.add(viewEventLogsMenu);
 
         JMenuItem iconManagerMenu = new JMenuItem("Icon Manager");
         iconManagerMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.PICTURE_O, 12));
@@ -446,6 +536,25 @@ public class SDRTrunk implements Listener<TunerEvent>
         recordingViewerMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.BRAILLE, 12));
         recordingViewerMenu.addActionListener(e -> MyEventBus.getGlobalEventBus().post(new ViewRecordingViewerRequest()));
         viewMenu.add(recordingViewerMenu);
+
+        JMenuItem viewScreenCapturesMenu = new JMenuItem("Screen Captures");
+        viewScreenCapturesMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewScreenCapturesMenu.addActionListener(arg0 -> {
+            File screenCapturesDirectory = mUserPreferences.getDirectoryPreference().getDirectoryScreenCapture().toFile();
+            try
+            {
+                Desktop.getDesktop().open(screenCapturesDirectory);
+            }
+            catch(Exception e)
+            {
+                mLog.error("Couldn't open file explorer");
+                JOptionPane.showMessageDialog(mMainGui,
+                        "Can't launch file explorer - files are located at: " + screenCapturesDirectory,
+                        "Can't launch file explorer",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        viewMenu.add(viewScreenCapturesMenu);
 
         JMenuItem preferencesItem = new JMenuItem("User Preferences");
         preferencesItem.setIcon(IconFontSwing.buildIcon(FontAwesome.COG, 12));
@@ -460,22 +569,41 @@ public class SDRTrunk implements Listener<TunerEvent>
         viewMenu.add(new BroadcastStatusVisibleMenuItem());
         viewMenu.add(new ResourceStatusVisibleMenuItem());
 
+        menuBar.add(viewMenu);
+
         JMenuItem screenCaptureItem = new JMenuItem("Screen Capture");
         screenCaptureItem.setIcon(IconFontSwing.buildIcon(FontAwesome.CAMERA, 12));
+        screenCaptureItem.setMnemonic(KeyEvent.VK_C);
+        screenCaptureItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_C, ActionEvent.ALT_MASK));
+        screenCaptureItem.setMaximumSize(screenCaptureItem.getPreferredSize());
         screenCaptureItem.addActionListener(arg0 -> {
             try
             {
                 Robot robot = new Robot();
+
                 final BufferedImage image = robot.createScreenCapture(mMainGui.getBounds());
+
                 String filename = TimeStamp.getTimeStamp("_") + "_screen_capture.png";
+
                 final Path captureFile = mUserPreferences.getDirectoryPreference().getDirectoryScreenCapture().resolve(filename);
+
                 ThreadPool.CACHED.submit(() -> {
-                    try { ImageIO.write(image, "png", captureFile.toFile()); }
-                    catch(IOException e) { mLog.error("Couldn't write screen capture", e); }
+                    try
+                    {
+                        ImageIO.write(image, "png", captureFile.toFile());
+                    }
+                    catch(IOException e)
+                    {
+                        mLog.error("Couldn't write screen capture to file [" + captureFile + "]", e);
+                    }
                 });
             }
-            catch(AWTException e) { mLog.error("Exception while taking screen capture", e); }
+            catch(AWTException e)
+            {
+                mLog.error("Exception while taking screen capture", e);
+            }
         });
+
         menuBar.add(screenCaptureItem);
     }
 
@@ -485,12 +613,20 @@ public class SDRTrunk implements Listener<TunerEvent>
         mDiagnosticMonitor.stop();
         mUserPreferences.getSwingPreference().setLocation(WINDOW_FRAME_IDENTIFIER, mMainGui.getLocation());
         mUserPreferences.getSwingPreference().setDimension(WINDOW_FRAME_IDENTIFIER, mMainGui.getSize());
-        mUserPreferences.getSwingPreference().setMaximized(WINDOW_FRAME_IDENTIFIER, (mMainGui.getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH);
+        mUserPreferences.getSwingPreference().setMaximized(WINDOW_FRAME_IDENTIFIER,
+            (mMainGui.getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH);
+        mUserPreferences.getSwingPreference().setDimension(SPECTRAL_PANEL_IDENTIFIER, mSpectralPanel.getSize());
+        mUserPreferences.getSwingPreference().setDimension(CONTROLLER_PANEL_IDENTIFIER, mControllerPanel.getSize());
         mJavaFxWindowManager.shutdown();
+        mLog.info("Stopping channels ...");
         mPlaylistManager.getChannelProcessingManager().shutdown();
         mAudioRecordingManager.stop();
         mResourceMonitor.stop();
+        mLog.info("Stopping spectral display ...");
+        mSpectralPanel.clearTuner();
+        mLog.info("Stopping tuners ...");
         mTunerManager.stop();
+        mLog.info("Shutdown complete.");
         mApplicationLog.stop();
     }
 
@@ -626,6 +762,27 @@ public class SDRTrunk implements Listener<TunerEvent>
     public static void main(String[] args)
     {
         System.out.println("Starting SDRTrunk...");
+
+        // Apply FlatLaf modern look and feel on Windows 11 before any Swing components are created
+        OSType currentOS = OSType.getCurrentOSType();
+        if(currentOS.isWindows() && currentOS.isWindows11OrHigher())
+        {
+            try
+            {
+                System.setProperty("flatlaf.useWindowDecorations", "true");
+                System.setProperty("flatlaf.menuBarEmbedded", "true");
+                FlatDarkLaf.setup();
+                UIManager.put("TitlePane.menuBarEmbedded", true);
+                UIManager.put("TabbedPane.showTabSeparators", true);
+                UIManager.put("Component.focusWidth", 1);
+                System.out.println("Windows 11 modern theme (FlatDarkLaf) applied.");
+            }
+            catch(Exception e)
+            {
+                System.err.println("Failed to initialize FlatLaf Windows 11 theme: " + e.getMessage());
+            }
+        }
+
         new SDRTrunk();
     }
 }
