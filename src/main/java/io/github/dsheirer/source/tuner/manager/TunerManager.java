@@ -50,6 +50,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
@@ -77,6 +81,13 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     private final Context mLibUsbApplicationContext = new Context();
     private boolean mLibUsbInitialized = false;
     private SDRplay mSDRplay;
+
+    // --- Self-Healing Fields ---
+    private ScheduledExecutorService mSelfHealingTimer;
+    private final Map<String, TunerStatus> mTunerStatusMap = new ConcurrentHashMap<>();
+    private final Map<String, Integer> mTunerRetryCounts = new ConcurrentHashMap<>();
+    private static final int MAX_HEAL_RETRIES = 5;
+    // ---------------------------
 
     /**
      * Constructs an instance
@@ -170,6 +181,11 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         }
 
         discoverRecordingTuners();
+
+        // --- Start Self-Healing Monitor ---
+        mSelfHealingTimer = Executors.newSingleThreadScheduledExecutor();
+        mSelfHealingTimer.scheduleAtFixedRate(this::checkAndHealTuners, 10, 5, TimeUnit.SECONDS);
+        // ----------------------------------
     }
 
     /**
@@ -194,6 +210,13 @@ public class TunerManager implements IDiscoveredTunerStatusListener
             LibUsb.exit(mLibUsbApplicationContext);
             mLibUsbInitialized = false;
         }
+
+        // --- Stop Self-Healing Monitor ---
+        if (mSelfHealingTimer != null) {
+            mSelfHealingTimer.shutdownNow();
+            mSelfHealingTimer = null;
+        }
+        // ---------------------------------
     }
 
     /**
@@ -442,6 +465,46 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     }
 
     /**
+     * Periodically checks all managed tuners and attempts to restart any 
+     * that have fallen into an ERROR state, up to a maximum limit.
+     */
+    private void checkAndHealTuners() {
+        try {
+            for (DiscoveredTuner tuner : mDiscoveredTunerModel.getAvailableTuners()) {
+                String id = tuner.getId();
+                TunerStatus status = mTunerStatusMap.get(id);
+                
+                if (status == TunerStatus.ERROR) {
+                    int retries = mTunerRetryCounts.getOrDefault(id, 0);
+                    
+                    if (retries < MAX_HEAL_RETRIES) {
+                        mLog.warn("Self-Healing: Detected tuner [{}] in ERROR state. Attempting restart {}/{}", 
+                                tuner.getTuner().getPreferredName(), retries + 1, MAX_HEAL_RETRIES);
+                        
+                        mTunerRetryCounts.put(id, retries + 1);
+                        
+                        try {
+                            tuner.stop();
+                            Thread.sleep(1000); // Give the bus a moment to settle
+                            tuner.start();
+                            mLog.info("Self-Healing: Tuner [{}] restart command issued.", tuner.getTuner().getPreferredName());
+                        } catch (Exception e) {
+                            mLog.error("Self-Healing: Failed to restart tuner [{}]", tuner.getTuner().getPreferredName(), e);
+                        }
+                    } else if (retries == MAX_HEAL_RETRIES) {
+                        // Log only once when the maximum is reached to prevent log spamming
+                        mLog.error("Self-Healing: Tuner [{}] reached maximum restart attempts ({}). Giving up.", 
+                                tuner.getTuner().getPreferredName(), MAX_HEAL_RETRIES);
+                        mTunerRetryCounts.put(id, retries + 1);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+             mLog.error("Self-Healing: Monitor loop encountered an error.", ex);
+        }
+    }
+
+    /**
      * Handles tuner status change events.  Events are sent to the tuner configuration manager so that it can save
      * configuration updates and events are also monitored to detect when a user changes the tuner state of a tuner
      * so that we can auto-start the tuner and apply a tuner configuration.
@@ -453,6 +516,15 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     @Override
     public void tunerStatusUpdated(DiscoveredTuner discoveredTuner, TunerStatus previous, TunerStatus current)
     {
+        // --- Self-Healing State Tracking ---
+        mTunerStatusMap.put(discoveredTuner.getId(), current);
+        
+        // If the tuner recovers, clear its retry counter
+        if (current == TunerStatus.ENABLED || current == TunerStatus.PLAYING) {
+            mTunerRetryCounts.remove(discoveredTuner.getId());
+        }
+        // -----------------------------------
+
         if(current == TunerStatus.ENABLED)
         {
             discoveredTuner.start();
