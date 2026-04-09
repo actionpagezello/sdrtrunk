@@ -47,9 +47,9 @@ public class ZelloConfiguration extends BroadcastConfiguration
     private StringProperty mNetworkName = new SimpleStringProperty();
     private StringProperty mChannel = new SimpleStringProperty();
     private StringProperty mUsername = new SimpleStringProperty();
-    private IntegerProperty mStreamGuardMs = new SimpleIntegerProperty(500);
+    private IntegerProperty mStreamGuardMs = new SimpleIntegerProperty(0);
     private IntegerProperty mPauseTimeMs = new SimpleIntegerProperty(0);
-    private IntegerProperty mRelaxationTimeMs = new SimpleIntegerProperty(0);
+    private IntegerProperty mRelaxationTimeMs = new SimpleIntegerProperty(700);
 
     /**
      * Default constructor for Jackson XML deserialization

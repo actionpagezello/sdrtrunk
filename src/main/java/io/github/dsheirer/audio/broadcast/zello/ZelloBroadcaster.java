@@ -370,9 +370,9 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                 processAudioBuffer(buffer);
             }
         }
-        catch(Exception e)
+        catch(Exception | AssertionError e)
         {
-            mLog.error("Error processing audio queue", e);
+            mLog.debug("{}Error processing audio queue (non-fatal): {}", ch(), e.getMessage());
         }
     }
 
@@ -437,9 +437,21 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                 sendAudioPacket(streamId, opusFrame);
             }
         }
-        catch(Exception e)
+        catch(Exception | AssertionError e)
         {
-            mLog.debug("Opus encoding error: {}", e.getMessage());
+            mLog.debug("{}Opus encoding error (non-fatal): {}", ch(), e.getMessage());
+
+            // Re-initialize the encoder to prevent cascading failures on subsequent frames
+            try
+            {
+                initOpusEncoder();
+                mLog.debug("{}Opus encoder re-initialized after error", ch());
+            }
+            catch(Exception reinitEx)
+            {
+                mLog.warn("{}Failed to re-initialize Opus encoder: {}", ch(), reinitEx.getMessage());
+                mOpusEncoder = null;
+            }
         }
     }
 

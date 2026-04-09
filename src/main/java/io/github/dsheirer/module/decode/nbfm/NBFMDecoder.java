@@ -28,6 +28,7 @@ import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
 import io.github.dsheirer.dsp.filter.design.FilterDesignException;
 import io.github.dsheirer.dsp.filter.fir.FIRFilterSpecification;
 import io.github.dsheirer.dsp.filter.fir.real.IRealFilter;
+import io.github.dsheirer.dsp.filter.nbfm.NBFMAudioFilters;
 import io.github.dsheirer.dsp.filter.resample.RealResampler;
 import io.github.dsheirer.dsp.fm.FmDemodulatorFactory;
 import io.github.dsheirer.dsp.fm.IDemodulator;
@@ -114,6 +115,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private final int mSquelchHeadRemovalMs;
     private SquelchTailRemover mSquelchTailRemover;
 
+    // VoxSend audio filter chain (low-pass, de-emphasis, bass boost, voice enhancement, noise gate)
+    private NBFMAudioFilters mAudioFilters;
+    private final DecodeConfigNBFM mNBFMConfig;
+
     /**
      * Constructs an instance
      *
@@ -122,6 +127,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     public NBFMDecoder(DecodeConfigNBFM config)
     {
         super(config);
+
+        //Save config reference for audio filter initialization (deferred until sample rate is known)
+        mNBFMConfig = config;
 
         //Save channel bandwidth to setup channel baseband filter.
         mChannelBandwidth = config.getBandwidth().getValue();
@@ -442,7 +450,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             return;
         }
 
-        // Step 3: Pass through squelch tail remover if enabled, otherwise broadcast directly
+        // Step 3: Apply VoxSend audio filter chain (low-pass, de-emphasis, bass boost,
+        //         voice enhancement, noise gate) — processes samples in-place
+        if(mAudioFilters != null)
+        {
+            mAudioFilters.process(resampledAudio);
+        }
+
+        // Step 4: Pass through squelch tail remover if enabled, otherwise broadcast directly
         if(mSquelchTailRemover != null)
         {
             mSquelchTailRemover.process(resampledAudio);
@@ -781,6 +796,68 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             mSquelchTailRemover.setOutputListener(NBFMDecoder.this::broadcast);
             mLog.info("SquelchTailRemover initialized: tail={}ms, head={}ms", mSquelchTailRemovalMs, mSquelchHeadRemovalMs);
         }
+
+        // Initialize VoxSend audio filter chain at the resampled audio rate (8 kHz)
+        initializeAudioFilters(DEMODULATED_AUDIO_SAMPLE_RATE);
+    }
+
+    /**
+     * Initializes the VoxSend audio filter chain from the channel configuration.
+     * Applies settings for low-pass, de-emphasis, bass boost, voice enhancement, and noise gate.
+     *
+     * @param sampleRate the audio sample rate (typically 8000 Hz after resampling)
+     */
+    private void initializeAudioFilters(double sampleRate)
+    {
+        mAudioFilters = new NBFMAudioFilters(sampleRate);
+
+        // Low-pass filter
+        mAudioFilters.setLowPassEnabled(mNBFMConfig.isLowPassEnabled());
+        mAudioFilters.setLowPassCutoff(mNBFMConfig.getLowPassCutoff());
+
+        // FM de-emphasis
+        mAudioFilters.setDeemphasisEnabled(mNBFMConfig.isDeemphasisEnabled());
+        mAudioFilters.setDeemphasisTimeConstant(mNBFMConfig.getDeemphasisTimeConstant());
+
+        // Bass boost
+        mAudioFilters.setBassBoostEnabled(mNBFMConfig.isBassBoostEnabled());
+        mAudioFilters.setBassBoost(mNBFMConfig.getBassBoostDb());
+
+        // Voice enhancement (stored as AGC target level, mapped from -30...-6 dB to 0...1.0)
+        mAudioFilters.setVoiceEnhanceEnabled(mNBFMConfig.isAgcEnabled());
+        float voiceEnhanceAmount = mapAgcTargetToVoiceEnhancement(mNBFMConfig.getAgcTargetLevel());
+        mAudioFilters.setVoiceEnhancement(voiceEnhanceAmount);
+
+        // Input gain (stored as AGC max gain in dB, map to linear)
+        float inputGainDb = mNBFMConfig.getAgcMaxGain();
+        float inputGainLinear = (float)Math.pow(10.0, inputGainDb / 40.0); // half the dB for reasonable mapping
+        mAudioFilters.setInputGain(inputGainLinear);
+
+        // Noise gate
+        mAudioFilters.setNoiseGateEnabled(mNBFMConfig.isNoiseGateEnabled());
+        mAudioFilters.setSquelchThreshold(mNBFMConfig.getNoiseGateThreshold());
+        mAudioFilters.setSquelchReduction(mNBFMConfig.getNoiseGateReduction());
+        mAudioFilters.setHoldTime(mNBFMConfig.getNoiseGateHoldTime());
+
+        mLog.info("VoxSend audio filters initialized: lowPass={} ({}Hz), deemphasis={} ({}μs), " +
+                "bassBoost={} ({}dB), voiceEnhance={} ({}), noiseGate={} ({}%)",
+                mNBFMConfig.isLowPassEnabled(), mNBFMConfig.getLowPassCutoff(),
+                mNBFMConfig.isDeemphasisEnabled(), mNBFMConfig.getDeemphasisTimeConstant(),
+                mNBFMConfig.isBassBoostEnabled(), mNBFMConfig.getBassBoostDb(),
+                mNBFMConfig.isAgcEnabled(), voiceEnhanceAmount,
+                mNBFMConfig.isNoiseGateEnabled(), mNBFMConfig.getNoiseGateThreshold());
+    }
+
+    /**
+     * Maps the AGC target level (stored as -30 to -6 dB) to voice enhancement amount (0.0 to 1.0).
+     * The AGC target level field is repurposed to store voice enhancement strength.
+     */
+    private float mapAgcTargetToVoiceEnhancement(float agcTargetLevel)
+    {
+        // agcTargetLevel range is -30 to -6 dB, map to 0.0 to 1.0
+        // -30 dB = 0.0 (no enhancement), -6 dB = 1.0 (max enhancement)
+        float normalized = (agcTargetLevel - (-30.0f)) / ((-6.0f) - (-30.0f));
+        return Math.max(0.0f, Math.min(1.0f, normalized));
     }
 
     /**
