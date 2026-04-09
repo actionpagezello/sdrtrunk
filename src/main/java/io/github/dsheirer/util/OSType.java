@@ -74,6 +74,16 @@ public enum OSType
             return false;
         }
 
+        // Modern JDKs (17+) report "Windows 11" directly in os.name — fastest check
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ENGLISH);
+        if (osName.contains("windows 11"))
+        {
+            return true;
+        }
+
+        // Fallback: try to parse build number from os.version.
+        // Standard Java os.version on Windows is "10.0", but some JVM builds do expose
+        // the full kernel build string (e.g., "10.0.22631").
         try
         {
             String version = System.getProperty("os.version");
