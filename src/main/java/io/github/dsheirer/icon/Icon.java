@@ -22,19 +22,25 @@ package io.github.dsheirer.icon;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
+import com.formdev.flatlaf.extras.FlatSVGIcon;
 import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.image.Image;
 import javafx.util.Callback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.swing.ImageIcon;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.net.URL;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Objects;
 
 @JacksonXmlRootElement(localName = "icon")
@@ -42,6 +48,7 @@ public class Icon implements Comparable<Icon>
 {
     private final static Logger mLog = LoggerFactory.getLogger(Icon.class);
     private static final int ICON_HEIGHT_JAVAFX = 16;
+    private static final int ICON_HEIGHT_SWING_SVG = 32; // render SVGs at 32px; IconModel scales down as needed
     private StringProperty mName = new SimpleStringProperty();
     private StringProperty mPath = new SimpleStringProperty();
     private BooleanProperty mDefaultIcon = new SimpleBooleanProperty();
@@ -175,17 +182,27 @@ public class Icon implements Comparable<Icon>
         {
             try
             {
-                if(!getPath().startsWith("images"))
+                String path = getPath();
+
+                if(path.toLowerCase(Locale.ENGLISH).endsWith(".svg"))
                 {
-                    mImageIcon = new ImageIcon(getPath());
+                    BufferedImage bi = renderSvgToBufferedImage(path, ICON_HEIGHT_SWING_SVG);
+                    if(bi != null)
+                    {
+                        mImageIcon = new ImageIcon(bi);
+                    }
+                }
+                else if(!path.startsWith("images"))
+                {
+                    mImageIcon = new ImageIcon(path);
                 }
                 else
                 {
-                    URL imageURL = Icon.class.getResource(getPath());
+                    URL imageURL = Icon.class.getResource(path);
 
-                    if(imageURL == null && !getPath().startsWith("/"))
+                    if(imageURL == null && !path.startsWith("/"))
                     {
-                        imageURL = (Icon.class.getResource("/" + getPath()));
+                        imageURL = Icon.class.getResource("/" + path);
                     }
 
                     if(imageURL != null)
@@ -212,35 +229,79 @@ public class Icon implements Comparable<Icon>
     {
         if(!mFxImageLoaded && getPath() != null && !getPath().isEmpty())
         {
-            //Set the loaded flag to true regardless if the image loads so that if there is an error loading the
-            //image we log it once and don't attempt to reload it again
             mFxImageLoaded = true;
 
-            if(getPath() == null || getPath().isEmpty())
+            try
             {
-                mLog.error("Error loading icon [" + getName() + "] - null or empty file path to image");
-            }
-            else
-            {
-                if(getPath().startsWith("images"))
+                String path = getPath();
+
+                if(path.toLowerCase(Locale.ENGLISH).endsWith(".svg"))
                 {
-                    mFxImage = new Image(getPath(), 0, ICON_HEIGHT_JAVAFX, true, true);
+                    BufferedImage bi = renderSvgToBufferedImage(path, ICON_HEIGHT_JAVAFX);
+                    if(bi != null)
+                    {
+                        mFxImage = SwingFXUtils.toFXImage(bi, null);
+                    }
+                }
+                else if(path.startsWith("images"))
+                {
+                    mFxImage = new Image(path, 0, ICON_HEIGHT_JAVAFX, true, true);
                 }
                 else
                 {
-                    Path filePath = Path.of(getPath());
-                    mFxImage = new Image(filePath.toUri().toString(), 0, ICON_HEIGHT_JAVAFX, true, true);
+                    mFxImage = new Image(Path.of(path).toUri().toString(), 0, ICON_HEIGHT_JAVAFX, true, true);
                 }
 
-                if(mFxImage.getException() != null)
+                if(mFxImage != null && mFxImage.getException() != null)
                 {
                     mLog.error("Error loading icon [" + getName() + " " + getPath() + "] - " +
                         mFxImage.getException().getLocalizedMessage());
                 }
             }
+            catch(Exception e)
+            {
+                mLog.error("Error loading icon [" + getName() + " " + getPath() + "]", e);
+            }
         }
 
         return mFxImage;
+    }
+
+    /**
+     * Renders an SVG resource or file to a square BufferedImage using FlatSVGIcon.
+     * Works for both classpath resources (path starts with "images/") and absolute file paths.
+     */
+    private static BufferedImage renderSvgToBufferedImage(String path, int size)
+    {
+        try
+        {
+            FlatSVGIcon svgIcon;
+
+            if(path.startsWith("images"))
+            {
+                // Classpath resource - ensure it has a leading slash for getResource()
+                String resourcePath = path.startsWith("/") ? path : "/" + path;
+                svgIcon = new FlatSVGIcon(resourcePath, size, size);
+            }
+            else
+            {
+                // Absolute file system path
+                svgIcon = new FlatSVGIcon(path, size, size);
+            }
+
+            BufferedImage bi = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g2 = bi.createGraphics();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            svgIcon.paintIcon(null, g2, 0, 0);
+            g2.dispose();
+            return bi;
+        }
+        catch(Exception e)
+        {
+            mLog.error("Error rendering SVG [" + path + "]", e);
+            return null;
+        }
     }
 
     @Override
