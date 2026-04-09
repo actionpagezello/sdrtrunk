@@ -297,8 +297,17 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         }
 
         if(mEncoderFuture != null) { mEncoderFuture.cancel(false); mEncoderFuture = null; }
-        processAudioQueue();
-        if(mResampleBufferPos > 0) flushResampleBuffer();
+
+        // Drain remaining audio — catch Opus encoder assertion errors gracefully
+        try
+        {
+            processAudioQueue();
+            if(mResampleBufferPos > 0) flushResampleBuffer();
+        }
+        catch(Exception | AssertionError e)
+        {
+            mLog.debug("{}Error flushing audio on stream stop: {}", ch(), e.getMessage());
+        }
 
         long streamId = mCurrentStreamId.get();
         if(streamId > 0)
@@ -341,9 +350,9 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
                     processAudioBuffer(buffer);
                 }
             }
-            catch(Exception e)
+            catch(Exception | AssertionError e)
             {
-                mLog.error("Error processing audio queue", e);
+                mLog.debug("{}Error processing audio queue (non-fatal): {}", ch(), e.getMessage());
             }
         }
     }
@@ -395,9 +404,21 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
                 sendAudioPacket(streamId, opusFrame);
             }
         }
-        catch(Exception e)
+        catch(Exception | AssertionError e)
         {
-            mLog.error("Opus encoding error", e);
+            mLog.debug("{}Opus encoding error (non-fatal): {}", ch(), e.getMessage());
+
+            // Re-initialize the encoder to prevent cascading failures on subsequent frames
+            try
+            {
+                initOpusEncoder();
+                mLog.debug("{}Opus encoder re-initialized after error", ch());
+            }
+            catch(Exception reinitEx)
+            {
+                mLog.warn("{}Failed to re-initialize Opus encoder: {}", ch(), reinitEx.getMessage());
+                mOpusEncoder = null;
+            }
         }
     }
 
