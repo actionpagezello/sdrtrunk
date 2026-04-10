@@ -26,6 +26,7 @@ import io.github.dsheirer.dsp.squelch.SquelchTailRemover;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
+import io.github.dsheirer.module.decode.config.TwoToneDetectorConfiguration;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 
 import java.util.ArrayList;
@@ -44,6 +45,7 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
 
     // === NEW: Channel-level tone filtering ===
     private List<ChannelToneFilter> mToneFilters = new ArrayList<>();
+    private List<TwoToneDetectorConfiguration> mTwoToneDetectors = new ArrayList<>();
     private boolean mToneFilterEnabled = false;
 
     // === NEW: Squelch tail/head removal ===
@@ -104,6 +106,17 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
                 throw new IllegalArgumentException("Unrecognized FM bandwidth value: " + getBandwidth());
         }
     }
+
+    @JacksonXmlElementWrapper(localName = "twoToneDetectors")
+    @JacksonXmlProperty(localName = "twoToneDetector")
+    public List<TwoToneDetectorConfiguration> getTwoToneDetectors() {
+        return mTwoToneDetectors;
+    }
+
+    public void setTwoToneDetectors(List<TwoToneDetectorConfiguration> twoToneDetectors) {
+        this.mTwoToneDetectors = twoToneDetectors;
+    }
+
 
     /**
      * Indicates if the user wants the demodulated audio to be high-pass filtered.

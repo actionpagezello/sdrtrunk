@@ -32,6 +32,8 @@ import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.gui.playlist.channel.TwoToneDetectorPanel;
+import io.github.dsheirer.gui.playlist.channel.TwoToneDetectorConfigurationEditor;
 import io.github.dsheirer.module.log.EventLogType;
 import io.github.dsheirer.module.log.config.EventLogConfiguration;
 import io.github.dsheirer.playlist.PlaylistManager;
@@ -99,6 +101,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
     // Audio Filters (VoxSend Chain) UI
     private TitledPane mAudioFiltersPane;
+    private TwoToneDetectorPanel mTwoToneDetectorPanel;
     private Slider mInputGainSlider;
     private Label mInputGainLabel;
     private ToggleSwitch mLowPassEnabledSwitch;
@@ -150,6 +153,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         getTitledPanesBox().getChildren().add(getAudioFiltersPane());
         getTitledPanesBox().getChildren().add(getAuxDecoderPane());
         getTitledPanesBox().getChildren().add(getEventLogPane());
+        getTitledPanesBox().getChildren().add(getTwoToneDetectorPane());
         getTitledPanesBox().getChildren().add(getRecordPane());
     }
 
@@ -213,6 +217,24 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         }
 
         return mDecoderPane;
+    }
+
+    private TwoToneDetectorPanel getTwoToneDetectorPane()
+    {
+        if(mTwoToneDetectorPanel == null)
+        {
+            mTwoToneDetectorPanel = new TwoToneDetectorPanel();
+        }
+        return mTwoToneDetectorPanel;
+    }
+
+    private TwoToneDetectorPanel getTwoToneDetectorPane()
+    {
+        if(mTwoToneDetectorPanel == null)
+        {
+            mTwoToneDetectorPanel = new TwoToneDetectorPanel();
+        }
+        return mTwoToneDetectorPanel;
     }
 
     // === Tone Filter (CTCSS / DCS) pane ===

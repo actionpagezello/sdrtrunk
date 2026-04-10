@@ -19,6 +19,12 @@
 package io.github.dsheirer.module.decode.nbfm;
 
 import io.github.dsheirer.audio.squelch.SquelchState;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
+import io.github.dsheirer.audio.broadcast.zello.ZelloBroadcaster;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import io.github.dsheirer.module.decode.config.TwoToneDetector;
+import io.github.dsheirer.module.decode.config.TwoToneDetectorConfiguration;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.IDecoderStateEventProvider;
 import io.github.dsheirer.channel.state.State;
@@ -124,6 +130,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private NBFMAudioFilters mAudioFilters;
     private final DecodeConfigNBFM mNBFMConfig;
 
+    // Two Tone Detectors
+    private final List<TwoToneDetector> mTwoToneDetectors = new ArrayList<>();
+    private final List<ZelloBroadcaster> mZelloAlertBroadcasters = new ArrayList<>();
+
     /**
      * Constructs an instance
      *
@@ -177,6 +187,21 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             mTargetCTCSSCodes = null;
             mTargetDCSCodes = null;
             mToneFilterType = null;
+        }
+
+        if (config.getTwoToneDetectors() != null) {
+            for (TwoToneDetectorConfiguration ttdConfig : config.getTwoToneDetectors()) {
+                TwoToneDetector detector = new TwoToneDetector(ttdConfig, (float) DEMODULATED_AUDIO_SAMPLE_RATE);
+                if (ttdConfig.isZelloAlertEnabled() && ttdConfig.getZelloChannel() != null && !ttdConfig.getZelloChannel().isEmpty()) {
+                    ZelloConfiguration zConfig = new ZelloConfiguration();
+                    zConfig.setChannel(ttdConfig.getZelloChannel());
+                    ZelloBroadcaster alertBroadcaster = new ZelloBroadcaster(zConfig);
+                    alertBroadcaster.start();
+                    mZelloAlertBroadcasters.add(alertBroadcaster);
+                    detector.addListener(c -> alertBroadcaster.sendTextMessage(c.getZelloAlertText().replace("${label}", c.getLabel()).replace("[TIMESTAMP]", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date()))));
+                }
+                mTwoToneDetectors.add(detector);
+            }
         }
 
         // Extract squelch tail removal configuration
@@ -445,6 +470,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             mResampledBufferListener.receive(demodulatedSamples);
         }
+
+        for (ZelloBroadcaster zb : mZelloAlertBroadcasters) {
+            zb.stop();
+        }
     }
 
     /**
@@ -472,6 +501,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             // Tone/code not confirmed yet — block audio
             return;
+        }
+
+        for (TwoToneDetector detector : mTwoToneDetectors) {
+            detector.processAudio(resampledAudio);
         }
 
         // Step 3: Apply VoxSend audio filter chain (low-pass, de-emphasis, bass boost,
