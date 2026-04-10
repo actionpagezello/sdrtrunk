@@ -101,23 +101,27 @@ public class StreamingEditor extends SplitPane
             .addListener((observable, oldValue, newValue) -> refreshBroadcastifyStreams());
         refreshBroadcastifyStreams();
 
-        VBox buttonsBox = new VBox();
-        buttonsBox.getChildren().addAll(getNewButton(), getDeleteButton(), getRefreshButton());
-        buttonsBox.setPadding(new Insets(0, 0, 0, 10));
-        buttonsBox.setSpacing(10);
+        HBox toolbarBox = new HBox();
+        toolbarBox.setSpacing(10);
+        toolbarBox.setPadding(new Insets(0, 0, 10, 0));
+        toolbarBox.setAlignment(Pos.CENTER_LEFT);
+        toolbarBox.getChildren().addAll(getNewButton(), getDeleteButton(), getRefreshButton());
 
-        VBox tableAndLabelBox = new VBox();
+        VBox masterBox = new VBox();
+        masterBox.setPadding(new Insets(15));
+        masterBox.setSpacing(10);
         VBox.setVgrow(getConfiguredBroadcastTableView(), Priority.ALWAYS);
-        tableAndLabelBox.getChildren().addAll(getConfiguredBroadcastTableView(), getRadioReferenceLoginLabel());
+        masterBox.getChildren().addAll(toolbarBox, getConfiguredBroadcastTableView(), getRadioReferenceLoginLabel());
+        masterBox.setPrefWidth(450);
 
-        HBox editorBox = new HBox();
-        editorBox.setPadding(new Insets(10, 10, 10, 10));
-        HBox.setHgrow(tableAndLabelBox, Priority.ALWAYS);
-        editorBox.getChildren().addAll(tableAndLabelBox, buttonsBox);
-        editorBox.setPrefHeight(50);
+        VBox detailBox = new VBox();
+        detailBox.setPadding(new Insets(15, 15, 15, 5));
+        VBox.setVgrow(getTabPane(), Priority.ALWAYS);
+        detailBox.getChildren().add(getTabPane());
 
-        setOrientation(Orientation.VERTICAL);
-        getItems().addAll(editorBox, getTabPane());
+        setOrientation(Orientation.HORIZONTAL);
+        getItems().addAll(masterBox, detailBox);
+        setDividerPositions(0.4);
     }
 
     private void setEditor(AbstractBroadcastEditor<?> editor)
@@ -318,6 +322,10 @@ public class StreamingEditor extends SplitPane
         if(mNewButton == null)
         {
             mNewButton = new MenuButton("New");
+            IconNode plusIcon = new IconNode(FontAwesome.PLUS);
+            plusIcon.setIconSize(14);
+            mNewButton.setGraphic(plusIcon);
+            mNewButton.setStyle("-fx-background-radius: 4; -fx-padding: 4 12;");
             mNewButton.setMaxWidth(Double.MAX_VALUE);
             mNewButton.setOnShowing(event -> {
                 mNewButton.getItems().clear();
@@ -353,6 +361,10 @@ public class StreamingEditor extends SplitPane
         if(mRefreshButton == null)
         {
             mRefreshButton = new Button("Refresh");
+            IconNode refreshIcon = new IconNode(FontAwesome.REFRESH);
+            refreshIcon.setIconSize(14);
+            mRefreshButton.setGraphic(refreshIcon);
+            mRefreshButton.setStyle("-fx-background-radius: 4; -fx-padding: 4 12;");
             mRefreshButton.setTooltip(new Tooltip("Refresh streams available from Broadcastify"));
             mRefreshButton.setOnAction(event -> refreshBroadcastifyStreams());
         }
@@ -365,7 +377,10 @@ public class StreamingEditor extends SplitPane
         if(mDeleteButton == null)
         {
             mDeleteButton = new Button("Delete");
-            mDeleteButton.setMaxWidth(Double.MAX_VALUE);
+            IconNode trashIcon = new IconNode(FontAwesome.TRASH);
+            trashIcon.setIconSize(14);
+            mDeleteButton.setGraphic(trashIcon);
+            mDeleteButton.setStyle("-fx-background-radius: 4; -fx-padding: 4 12;");
             mDeleteButton.setOnAction(event -> {
                 BroadcastConfiguration config = getConfiguredBroadcastTableView().getSelectionModel()
                     .getSelectedItem().getBroadcastConfiguration();
@@ -396,8 +411,17 @@ public class StreamingEditor extends SplitPane
         if(mConfiguredBroadcastTableView == null)
         {
             mConfiguredBroadcastTableView = new TableView<>();
-            mConfiguredBroadcastTableView.setPlaceholder(new Label("Click the New button to create a new " +
-                "audio streaming configuration"));
+
+            VBox placeholderBox = new VBox();
+            placeholderBox.setAlignment(Pos.CENTER);
+            placeholderBox.setSpacing(10);
+            IconNode placeholderIcon = new IconNode(FontAwesome.WIFI);
+            placeholderIcon.setIconSize(48);
+            placeholderIcon.setFill(Color.web("#a0a0a0"));
+            Label placeholderLabel = new Label("Click the New button to create a new audio streaming configuration");
+            placeholderLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #a0a0a0;");
+            placeholderBox.getChildren().addAll(placeholderIcon, placeholderLabel);
+            mConfiguredBroadcastTableView.setPlaceholder(placeholderBox);
             mConfiguredBroadcastTableView.setItems(mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts());
 
             TableColumn<ConfiguredBroadcast,Boolean> enabledColumn = new TableColumn("Enabled");
