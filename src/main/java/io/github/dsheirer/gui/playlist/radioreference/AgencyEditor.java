@@ -72,7 +72,7 @@ public class AgencyEditor extends VBox
         mLevel = level;
         mAgencyCountProperty.bind(Bindings.size(getAgencyListView().getItems()));
 
-        setPadding(new Insets(10,10,10,10));
+        setPadding(new Insets(15,15,15,15));
         setSpacing(10);
         VBox.setVgrow(getAgencyFrequencyEditor(), Priority.ALWAYS);
         getChildren().addAll(getAgencyListView(), getAgencyFrequencyEditor());

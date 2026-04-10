@@ -96,14 +96,14 @@ public class SystemEditor extends VBox
         mLevel = level;
         mSystemCountProperty.bind(Bindings.size(getSystemComboBox().getItems()));
 
-        setPadding(new Insets(20,10,10,10));
+        setPadding(new Insets(15,15,15,15));
         setSpacing(10);
         HBox systemBox = new HBox();
         HBox.setHgrow(getSystemComboBox(), Priority.ALWAYS);
         systemBox.setAlignment(Pos.CENTER_LEFT);
         systemBox.setSpacing(5);
         systemBox.setMaxWidth(Double.MAX_VALUE);
-        systemBox.getChildren().addAll(new Label("System"), getSystemComboBox());
+        systemBox.getChildren().addAll(createBoldLabel("System"), getSystemComboBox());
         VBox.setVgrow(getTabPane(), Priority.ALWAYS);
         getChildren().addAll(systemBox, getTabPane());
     }
@@ -114,6 +114,13 @@ public class SystemEditor extends VBox
     public IntegerProperty systemCountProperty()
     {
         return mSystemCountProperty;
+    }
+
+
+    private Label createBoldLabel(String text) {
+        Label l = new Label(text);
+        l.setStyle("-fx-font-weight: bold;");
+        return l;
     }
 
     public void clear()

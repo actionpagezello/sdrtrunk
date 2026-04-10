@@ -43,6 +43,8 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.StackPane;
+import javafx.scene.control.TitledPane;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -68,7 +70,6 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
     private PlaylistManager mPlaylistManager;
     private VBox mTopBox;
     private HBox mCredentialsBox;
-    private Label mRRStatusText;
     private TextField mUserNameText;
     private TextField mAccountExpiresText;
     private IconNode mTestPassIcon;
@@ -76,6 +77,11 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
     private IconNode mTestExpiredIcon;
     private Button mLoginButton;
     private GridPane mComboBoxPane;
+    private TitledPane mComboBoxTitledPane;
+    private TitledPane mDataTitledPane;
+    private StackPane mCenterStackPane;
+    private VBox mLoginPromptBox;
+    private VBox mBrowsingBox;
     private ComboBox<Country> mCountryComboBox;
     private ComboBox<State> mStateComboBox;
     private ComboBox<County> mCountyComboBox;
@@ -97,8 +103,18 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
         mRadioReference = playlistManager.getRadioReference();
         mPlaylistManager = playlistManager;
 
+        mCenterStackPane = new StackPane();
+
+        mBrowsingBox = new VBox();
+        mBrowsingBox.setSpacing(5);
+        VBox.setVgrow(getDataTitledPane(), Priority.ALWAYS);
+        mBrowsingBox.getChildren().addAll(getComboBoxTitledPane(), getDataTitledPane());
+        mBrowsingBox.visibleProperty().bind(Bindings.and(mRadioReference.availableProperty(), mRadioReference.premiumAccountProperty()));
+
+        mCenterStackPane.getChildren().addAll(getLoginPromptBox(), mBrowsingBox);
+
         setTop(getTopBox());
-        setCenter(getTabPane());
+        setCenter(mCenterStackPane);
 
         login();
 
@@ -168,6 +184,20 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
         });
     }
 
+    private TitledPane getDataTitledPane()
+    {
+        if(mDataTitledPane == null)
+        {
+            mDataTitledPane = new TitledPane("2. Browse & Import Data", getTabPane());
+            mDataTitledPane.setCollapsible(false);
+            mDataTitledPane.setStyle("-fx-font-size: 1.1em; -fx-font-weight: bold;");
+            VBox.setMargin(mDataTitledPane, new Insets(5, 10, 10, 10));
+            VBox.setVgrow(mDataTitledPane, Priority.ALWAYS);
+            mDataTitledPane.setMaxHeight(Double.MAX_VALUE);
+        }
+        return mDataTitledPane;
+    }
+
     private TabPane getTabPane()
     {
         if(mTabPane == null)
@@ -176,7 +206,7 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
             mTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
             mTabPane.getTabs().addAll(getCountySystemTab(), getStateSystemTab(), getCountyAgencyTab(),
                 getStateAgencyTab(), getNationalAgencyTab());
-            mTabPane.disableProperty().bind(mRadioReference.premiumAccountProperty().not());
+
         }
 
         return mTabPane;
@@ -347,17 +377,59 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
         return mCountySystemEditor;
     }
 
-    private VBox getTopBox()
+private VBox getTopBox()
     {
         if(mTopBox == null)
         {
             mTopBox = new VBox();
-            mTopBox.setSpacing(5);
+            mTopBox.setSpacing(10);
             mTopBox.setPadding(new Insets(10,10,10,10));
-            mTopBox.getChildren().addAll(getCredentialsBox(), getComboBoxPane());
+            mTopBox.getChildren().addAll(getCredentialsBox());
         }
 
         return mTopBox;
+    }
+
+    private VBox getLoginPromptBox()
+    {
+        if(mLoginPromptBox == null)
+        {
+            mLoginPromptBox = new VBox();
+            mLoginPromptBox.setAlignment(Pos.CENTER);
+            mLoginPromptBox.setSpacing(15);
+
+            IconNode lockIcon = new IconNode(FontAwesome.LOCK);
+            lockIcon.setIconSize(48);
+            lockIcon.setFill(Color.LIGHTGRAY);
+
+            Label titleLabel = new Label("RadioReference Import");
+            titleLabel.setStyle("-fx-font-size: 1.5em; -fx-font-weight: bold;");
+
+            Label descLabel = new Label("A valid RadioReference Premium account is required to browse and import systems.");
+
+            Button bigLoginButton = new Button("Login to RadioReference");
+            IconNode signinIcon = new IconNode(FontAwesome.SIGN_IN);
+            signinIcon.setFill(Color.GRAY);
+            bigLoginButton.setGraphic(signinIcon);
+            bigLoginButton.setStyle("-fx-font-size: 1.2em; -fx-padding: 10 20 10 20;");
+            bigLoginButton.setOnAction(event -> new LoginDialog(mUserPreferences).showAndWait().ifPresent(this));
+
+            mLoginPromptBox.getChildren().addAll(lockIcon, titleLabel, descLabel, bigLoginButton);
+            mLoginPromptBox.visibleProperty().bind(Bindings.or(mRadioReference.availableProperty().not(), mRadioReference.premiumAccountProperty().not()));
+        }
+        return mLoginPromptBox;
+    }
+
+    private TitledPane getComboBoxTitledPane()
+    {
+        if(mComboBoxTitledPane == null)
+        {
+            mComboBoxTitledPane = new TitledPane("1. Select Location", getComboBoxPane());
+            mComboBoxTitledPane.setStyle("-fx-font-size: 1.1em; -fx-font-weight: bold;");
+            mComboBoxTitledPane.setCollapsible(false);
+            VBox.setMargin(mComboBoxTitledPane, new Insets(5, 10, 5, 10));
+        }
+        return mComboBoxTitledPane;
     }
 
     private GridPane getComboBoxPane()
@@ -365,8 +437,9 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
         if(mComboBoxPane == null)
         {
             mComboBoxPane = new GridPane();
-            mComboBoxPane.setHgap(5);
-            mComboBoxPane.setVgap(2);
+            mComboBoxPane.setHgap(15);
+            mComboBoxPane.setVgap(10);
+            mComboBoxPane.setPadding(new Insets(15, 15, 15, 15));
 
             ColumnConstraints column1 = new ColumnConstraints();
             column1.setPercentWidth(33.33);
@@ -377,6 +450,7 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
             mComboBoxPane.getColumnConstraints().addAll(column1, column2, column3);
 
             Label countryLabel = new Label("Country");
+            countryLabel.setStyle("-fx-font-weight: bold;");
             GridPane.setConstraints(countryLabel, 0, 0);
             mComboBoxPane.getChildren().add(countryLabel);
 
@@ -385,6 +459,7 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
             mComboBoxPane.getChildren().add(getCountryComboBox());
 
             Label stateLabel = new Label("State");
+            stateLabel.setStyle("-fx-font-weight: bold;");
             GridPane.setConstraints(stateLabel, 1, 0);
             mComboBoxPane.getChildren().add(stateLabel);
 
@@ -393,6 +468,7 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
             mComboBoxPane.getChildren().add(getStateComboBox());
 
             Label countyLabel = new Label("County");
+            countyLabel.setStyle("-fx-font-weight: bold;");
             GridPane.setConstraints(countyLabel, 2, 0);
             mComboBoxPane.getChildren().add(countyLabel);
 
@@ -400,6 +476,7 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
             GridPane.setHgrow(getCountyComboBox(), Priority.ALWAYS);
             mComboBoxPane.getChildren().add(getCountyComboBox());
 
+            // The ComboBoxPane should be disabled if no premium account
             mComboBoxPane.disableProperty().bind(mRadioReference.premiumAccountProperty().not());
         }
 
@@ -416,10 +493,6 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
             Region leftFiller = new Region();
             HBox.setHgrow(leftFiller, Priority.ALWAYS);
             mCredentialsBox.getChildren().add(leftFiller);
-            mCredentialsBox.getChildren().add(getRRPremiumReqText());
-            Region rightFiller = new Region();
-            HBox.setHgrow(rightFiller, Priority.ALWAYS);
-            mCredentialsBox.getChildren().add(rightFiller);
             mCredentialsBox.getChildren().add(new Label("User Name:"));
             mCredentialsBox.getChildren().add(getUserNameText());
             mCredentialsBox.getChildren().add(new Label("Expires:"));
@@ -428,27 +501,14 @@ public class RadioReferenceEditor extends BorderPane implements Consumer<Authori
             mCredentialsBox.getChildren().add(getTestPassIcon());
             mCredentialsBox.getChildren().add(getTestExpiredIcon());
             mCredentialsBox.getChildren().add(getLoginButton());
+
+            mCredentialsBox.visibleProperty().bind(mRadioReference.availableProperty());
         }
 
         return mCredentialsBox;
     }
 
-    private Label getRRPremiumReqText()
-    {
-        if(mRRStatusText == null)
-        {
-            mRRStatusText = new Label();
-            mRRStatusText.setText("A premium Radio Reference subscription is required to import systems.");
-            mRRStatusText.visibleProperty().bind(
-                    Bindings.and(
-                            mRadioReference.availableProperty(),
-                            mRadioReference.premiumAccountProperty().not()));
-            mRRStatusText.setTextFill(Color.ORANGERED);
-            mRRStatusText.setStyle("-fx-font-weight: bold;"); // I guess
-        }
 
-        return mRRStatusText;
-    }
 
     private TextField getUserNameText()
     {
