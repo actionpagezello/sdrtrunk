@@ -26,7 +26,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -39,13 +38,10 @@ public class RemezFIRFilterDesignerWithLagrange
     public static final int MAXIMUM_ITERATION_COUNT = 40;
     public static final double TWO_PI = 2.0 * FastMath.PI;
 
-    private static final DecimalFormat DECIMAL_FORMATTER = new DecimalFormat("0.00000000");
-
     private FIRFilterSpecification mSpecification;
     private Grid mGrid;
     private List<Integer> mExtremalIndices;
 
-    private double[] mD;
     private double[] mGridErrors;
     private double[] mGridFrequencyResponse;
     private double[] mIdealFrequencyResponse;
@@ -226,29 +222,6 @@ public class RemezFIRFilterDesignerWithLagrange
         }
 
         return mLagrangeInterpolator.value(cosineOfFrequency);
-
-//    	double numerator = 0.0;
-//    	double denominator = 0.0;
-//
-//		for( int k = 0; k < mExtremalIndices.size() - 1; k++ )
-//    	{
-//    		double cosineDelta = cosineOfFrequency - mGrid.getCosineFrequencyGrid()[ mExtremalIndices.get( k ) ];
-//
-//    		//If this frequency is close to one of the polynomial points, use the polynomial point for the response
-//    		if( Math.abs( cosineDelta ) < 1.0e-7 )
-//    		{
-//    			return mIdealFrequencyResponse[ k ];
-//    		}
-//    		else
-//    		{
-//    			double dkOverCosineDelta = mD[ k ] / cosineDelta;
-//
-//        		numerator += dkOverCosineDelta * mIdealFrequencyResponse[ k ];
-//        		denominator += dkOverCosineDelta;
-//    		}
-//    	}
-//
-//    	return numerator / denominator;
     }
 
     /**
