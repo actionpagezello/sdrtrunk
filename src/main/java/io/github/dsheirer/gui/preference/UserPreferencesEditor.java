@@ -38,6 +38,8 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
+import jiconfont.icons.font_awesome.FontAwesome;
+import jiconfont.javafx.IconNode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -60,6 +62,8 @@ public class UserPreferencesEditor extends BorderPane
     private VBox mEditorAndButtonsBox;
     private Node mEditor;
     private HBox mButtonsBox;
+    private Label mHeaderLabel;
+    private VBox mContentWrapper;
 
     /**
      * Constructs an instance
@@ -130,10 +134,23 @@ public class UserPreferencesEditor extends BorderPane
         if(mEditorAndButtonsBox == null)
         {
             mEditorAndButtonsBox = new VBox();
+            mEditorAndButtonsBox.setStyle("-fx-background-color: #ffffff;");
+
+            mHeaderLabel = new Label("Settings");
+            mHeaderLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold; -fx-padding: 20 20 10 20;");
+            mHeaderLabel.setMaxWidth(Double.MAX_VALUE);
+
+            mContentWrapper = new VBox();
+            mContentWrapper.setPadding(new Insets(10, 20, 20, 20));
+            VBox.setVgrow(mContentWrapper, Priority.ALWAYS);
+
             mEditor = getDefaultEditor();
             VBox.setVgrow(getDefaultEditor(), Priority.ALWAYS);
-            VBox.setVgrow(getButtonsBox(), Priority.NEVER);
-            mEditorAndButtonsBox.getChildren().addAll(getDefaultEditor(), getButtonsBox());
+            mContentWrapper.getChildren().add(mEditor);
+
+            VBox.setVgrow(mEditorAndButtonsBox, Priority.ALWAYS);
+
+            mEditorAndButtonsBox.getChildren().addAll(mHeaderLabel, mContentWrapper, getButtonsBox());
         }
 
         return mEditorAndButtonsBox;
@@ -146,8 +163,9 @@ public class UserPreferencesEditor extends BorderPane
         if(editor == null)
         {
             VBox defaultEditor = new VBox();
-            defaultEditor.setPadding(new Insets(10, 10, 10, 10));
-            Label label = new Label("Please select a preference ...");
+            defaultEditor.setAlignment(Pos.CENTER);
+            Label label = new Label("Please select a preference category from the sidebar.");
+            label.setStyle("-fx-font-size: 14px; -fx-text-fill: #666666;");
             defaultEditor.getChildren().add(label);
             mEditors.put(PreferenceEditorType.DEFAULT, defaultEditor);
             editor = defaultEditor;
@@ -159,18 +177,24 @@ public class UserPreferencesEditor extends BorderPane
     /**
      * Preference type selection list
      */
-    private TreeView getEditorSelectionTreeView()
-    {
+    private IconNode getIcon(FontAwesome icon) {
+        IconNode iconNode = new IconNode(icon);
+        iconNode.setIconSize(16);
+        iconNode.setStyle("-fx-fill: #555555;");
+        return iconNode;
+    }
+
+    private TreeView getEditorSelectionTreeView() {
         if(mEditorSelectionTreeView == null)
         {
             TreeItem<String> treeRoot = new TreeItem<>("Root node");
 
-            TreeItem<String> applicationItem = new TreeItem<>("Application");
+            TreeItem<String> applicationItem = new TreeItem<>("Application", getIcon(FontAwesome.DESKTOP));
             applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.APPLICATION));
             treeRoot.getChildren().add(applicationItem);
             applicationItem.setExpanded(true);
 
-            TreeItem<String> audioItem = new TreeItem<>("Audio");
+            TreeItem<String> audioItem = new TreeItem<>("Audio", getIcon(FontAwesome.VOLUME_UP));
             audioItem.getChildren().add(new TreeItem(PreferenceEditorType.AUDIO_CALL_MANAGEMENT));
             audioItem.getChildren().add(new TreeItem(PreferenceEditorType.AUDIO_MP3));
             audioItem.getChildren().add(new TreeItem(PreferenceEditorType.AUDIO_OUTPUT));
@@ -178,29 +202,29 @@ public class UserPreferencesEditor extends BorderPane
             treeRoot.getChildren().add(audioItem);
             audioItem.setExpanded(true);
 
-            TreeItem<String> cpuItem = new TreeItem<>("CPU");
+            TreeItem<String> cpuItem = new TreeItem<>("CPU", getIcon(FontAwesome.MICROCHIP));
             cpuItem.getChildren().add(new TreeItem(PreferenceEditorType.VECTOR_CALIBRATION));
             treeRoot.getChildren().add(cpuItem);
             cpuItem.setExpanded(true);
 
-            TreeItem<String> decoderItem = new TreeItem<>("Decoder");
+            TreeItem<String> decoderItem = new TreeItem<>("Decoder", getIcon(FontAwesome.SHIELD));
             decoderItem.getChildren().add(new TreeItem(PreferenceEditorType.JMBE_LIBRARY));
             treeRoot.getChildren().add(decoderItem);
             decoderItem.setExpanded(true);
 
-            TreeItem<String> displayItem = new TreeItem<>("Display");
+            TreeItem<String> displayItem = new TreeItem<>("Display", getIcon(FontAwesome.EYE));
             displayItem.getChildren().add(new TreeItem(PreferenceEditorType.CHANNEL_EVENT));
             displayItem.getChildren().add(new TreeItem(PreferenceEditorType.DISPLAY_INTERFACE));
             displayItem.getChildren().add(new TreeItem(PreferenceEditorType.TALKGROUP_FORMAT));
             treeRoot.getChildren().add(displayItem);
             displayItem.setExpanded(true);
 
-            TreeItem<String> storageItem = new TreeItem<>("File Storage");
+            TreeItem<String> storageItem = new TreeItem<>("File Storage", getIcon(FontAwesome.FOLDER_OPEN));
             storageItem.getChildren().add(new TreeItem(PreferenceEditorType.DIRECTORY));
             treeRoot.getChildren().add(storageItem);
             storageItem.setExpanded(true);
 
-            TreeItem<String> sourceItem = new TreeItem<>("Source");
+            TreeItem<String> sourceItem = new TreeItem<>("Source", getIcon(FontAwesome.PLUG));
             sourceItem.getChildren().add(new TreeItem(PreferenceEditorType.SOURCE_TUNERS));
             treeRoot.getChildren().add(sourceItem);
             sourceItem.setExpanded(true);
@@ -212,7 +236,9 @@ public class UserPreferencesEditor extends BorderPane
             mEditorSelectionTreeView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
             mEditorSelectionTreeView.getSelectionModel().selectedItemProperty().addListener(new EditorTreeSelectionListener());
 
-            mEditorSelectionTreeView.setMinWidth(Control.USE_PREF_SIZE);
+            mEditorSelectionTreeView.setMinWidth(250);
+            mEditorSelectionTreeView.setPrefWidth(250);
+            mEditorSelectionTreeView.setStyle("-fx-background-color: #f3f3f3; -fx-border-color: transparent; -fx-padding: 10 0 0 0;");
         }
 
         return mEditorSelectionTreeView;
@@ -282,10 +308,16 @@ public class UserPreferencesEditor extends BorderPane
             }
         }
 
-        getEditorAndButtonsBox().getChildren().remove(mEditor);
+        mContentWrapper.getChildren().remove(mEditor);
         VBox.setVgrow(editor, Priority.ALWAYS);
         mEditor = editor;
-        getEditorAndButtonsBox().getChildren().add(0, mEditor);
+        mContentWrapper.getChildren().add(editor);
+
+        if (type == PreferenceEditorType.DEFAULT) {
+            mHeaderLabel.setText("Settings");
+        } else {
+            mHeaderLabel.setText(type.toString());
+        }
     }
 
     /**

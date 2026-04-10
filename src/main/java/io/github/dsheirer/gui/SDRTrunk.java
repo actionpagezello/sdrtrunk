@@ -766,9 +766,23 @@ public class SDRTrunk implements Listener<TunerEvent>
     {
         System.out.println("Starting SDRTrunk...");
 
+        OSType currentOS = OSType.getCurrentOSType();
+
+        // Ensure hardware acceleration is enabled when running on Windows (especially Windows 11)
+        if(currentOS.isWindows())
+        {
+            System.setProperty("sun.java2d.d3d", "true");
+            System.setProperty("sun.java2d.opengl", "false");
+            System.setProperty("sun.java2d.noddraw", "false");
+            System.out.println("Windows hardware acceleration (Direct3D) enabled.");
+        }
+        else if(currentOS.isLinux())
+        {
+            System.setProperty("sun.java2d.opengl", "true");
+        }
+
         // Apply FlatLaf modern look and feel on Windows 11 before any Swing components are created.
         // The theme (Light or Dark) is read from the stored user preference; Light is the default.
-        OSType currentOS = OSType.getCurrentOSType();
         if(currentOS.isWindows() && currentOS.isWindows11OrHigher())
         {
             try

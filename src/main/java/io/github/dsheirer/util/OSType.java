@@ -80,8 +80,7 @@ public enum OSType
         {
             return true;
         }
-
-        // Fallback: try to parse build number from os.version.
+        // Fallback 1: try to parse build number from os.version.
         // Standard Java os.version on Windows is "10.0", but some JVM builds do expose
         // the full kernel build string (e.g., "10.0.22631").
         try
@@ -101,6 +100,40 @@ public enum OSType
         {
             // Fallback if version string format is unexpected
         }
+
+        // Fallback 2: Execute cmd.exe /c ver to reliably fetch the build number from the OS
+        // This handles cases where the JDK incorrectly reports "Windows 10" with an incomplete version string.
+        try
+        {
+            Process process = Runtime.getRuntime().exec("cmd.exe /c ver");
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null)
+            {
+                // Typical output: Microsoft Windows [Version 10.0.22631.3593]
+                line = line.toLowerCase(Locale.ENGLISH);
+                if (line.contains("version "))
+                {
+                    int start = line.indexOf("version ") + 8;
+                    int end = line.indexOf("]", start);
+                    if (end == -1) end = line.length();
+
+                    String versionString = line.substring(start, end).trim();
+                    String[] parts = versionString.split("\\.");
+                    if (parts.length >= 3)
+                    {
+                        int build = Integer.parseInt(parts[2]);
+                        return build >= 22000;
+                    }
+                }
+            }
+            process.waitFor();
+        }
+        catch (Exception e)
+        {
+            // Ignore execution or parsing errors
+        }
+
         return false;
     }
 
