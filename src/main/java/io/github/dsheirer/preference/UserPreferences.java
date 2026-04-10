@@ -72,6 +72,7 @@ public class UserPreferences implements Listener<PreferenceType>
     private TalkgroupFormatPreference mTalkgroupFormatPreference;
     private TunerPreference mTunerPreference;
     private VectorCalibrationPreference mVectorCalibrationPreference;
+    private io.github.dsheirer.preference.ai.AIPreference mAIPreference;
 
     private SwingPreference mSwingPreference = new SwingPreference();
     private JavaFxPreferences mJavaFxPreferences = new JavaFxPreferences();
@@ -108,6 +109,15 @@ public class UserPreferences implements Listener<PreferenceType>
     public VectorCalibrationPreference getVectorCalibrationPreference()
     {
         return mVectorCalibrationPreference;
+    }
+
+    /**
+     * AI settings preferences.
+     * @return AI preferences.
+     */
+    public io.github.dsheirer.preference.ai.AIPreference getAIPreference()
+    {
+        return mAIPreference;
     }
 
     /**
@@ -254,6 +264,7 @@ public class UserPreferences implements Listener<PreferenceType>
         mTalkgroupFormatPreference = new TalkgroupFormatPreference(this::receive);
         mTunerPreference = new TunerPreference(this::receive);
         mVectorCalibrationPreference = new VectorCalibrationPreference(this::receive);
+        mAIPreference = new io.github.dsheirer.preference.ai.AIPreference(this::receive);
     }
 
     /**

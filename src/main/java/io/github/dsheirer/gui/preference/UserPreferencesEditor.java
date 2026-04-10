@@ -191,6 +191,7 @@ public class UserPreferencesEditor extends BorderPane
 
             TreeItem<String> applicationItem = new TreeItem<>("Application", getIcon(FontAwesome.DESKTOP));
             applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.APPLICATION));
+            applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.AI_SETTINGS));
             treeRoot.getChildren().add(applicationItem);
             applicationItem.setExpanded(true);
 

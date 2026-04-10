@@ -36,6 +36,7 @@ public enum PreferenceEditorType
     SOURCE_TUNERS("Tuners"),
     TALKGROUP_FORMAT("Talkgroup & Radio ID"),
     VECTOR_CALIBRATION("Vector Calibration"),
+    AI_SETTINGS("AI Settings"),
     DEFAULT("Default");
 
     private String mLabel;

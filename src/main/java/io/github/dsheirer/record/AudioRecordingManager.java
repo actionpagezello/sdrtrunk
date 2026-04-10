@@ -34,6 +34,7 @@ import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.util.StringUtils;
 import io.github.dsheirer.util.ThreadPool;
 import io.github.dsheirer.util.TimeStamp;
+import io.github.dsheirer.identifier.string.StringIdentifier;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -118,6 +119,18 @@ public class AudioRecordingManager implements Listener<AudioSegment>
         if(toIdentifiers.isEmpty())
         {
 //            mLog.debug("Audio Segment detected with NO TO identifiers");
+        }
+
+        // --- AI OPTIMIZATION BUFFERING HOOK ---
+        if (mUserPreferences.getAIPreference() != null && mUserPreferences.getAIPreference().isEnabled()) {
+            Identifier channel = audioSegment.getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL, Role.ANY);
+            if (channel != null && channel instanceof StringIdentifier) {
+                String channelName = ((StringIdentifier) channel).getValue();
+                // Determine if this is NBFM. In current code, we might not strictly know the protocol just from the segment,
+                // but we can buffer by channel name and check it at optimization time. Or just buffer all for simplicity
+                // and use it if it's NBFM.
+                io.github.dsheirer.record.AIBufferManager.getInstance().bufferAudioSegment(audioSegment, channelName, mUserPreferences);
+            }
         }
 
         if(audioSegment.recordAudioProperty().get())

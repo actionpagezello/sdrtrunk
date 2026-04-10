@@ -19,6 +19,18 @@
 
 package io.github.dsheirer.gui.playlist.channel;
 
+import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.preference.ai.AIPreference;
+import io.github.dsheirer.record.AIBufferManager;
+import io.github.dsheirer.util.ThreadPool;
+import java.nio.file.Path;
+import java.util.List;
+import javafx.application.Platform;
+import javafx.scene.control.ProgressIndicator;
+import com.google.cloud.vertexai.VertexAI;
+import com.google.cloud.vertexai.api.GenerateContentResponse;
+import com.google.cloud.vertexai.generativeai.GenerativeModel;
+
 import io.github.dsheirer.gui.control.HexFormatter;
 import io.github.dsheirer.gui.control.IntegerFormatter;
 import io.github.dsheirer.gui.playlist.decoder.AuxDecoderConfigurationEditor;
@@ -143,6 +155,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
                                    UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
+        mUserPreferences = userPreferences;
         getTabPane().getTabs().add(getSourcePane());
         getTabPane().getTabs().add(getDecoderPane());
         getTabPane().getTabs().add(getToneFilterPane());
@@ -742,16 +755,24 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         analyzePane.setVgap(5);
         analyzePane.setPadding(new Insets(5,0,10,0));
 
-        mAnalyzeButton = new javafx.scene.control.Button("Analyze Audio & Suggest Settings");
-        mAnalyzeButton.setTooltip(new Tooltip("Listen to audio for 5-10 seconds and suggest optimal threshold\nMake sure transmissions are active!"));
+        mAnalyzeButton = new javafx.scene.control.Button("Optimize Filters via AI");
+        mAnalyzeButton.setTooltip(new Tooltip("Analyze the last 5 NBFM recordings with Gemini AI to optimize audio filters."));
         mAnalyzeButton.setStyle("-fx-font-weight: bold;");
         mAnalyzeButton.setOnAction(e -> handleAnalyzeClick());
         GridPane.setConstraints(mAnalyzeButton, 0, 0);
         analyzePane.getChildren().add(mAnalyzeButton);
 
-        mAnalyzeStatusLabel = new Label("Click 'Analyze' while transmissions are active");
+        mAnalyzeProgress = new ProgressIndicator();
+        mAnalyzeProgress.setPrefSize(16, 16);
+        mAnalyzeProgress.setVisible(false);
+        javafx.scene.layout.HBox progressBox = new javafx.scene.layout.HBox(mAnalyzeProgress);
+        progressBox.setPadding(new javafx.geometry.Insets(0, 0, 0, 10));
+        GridPane.setConstraints(progressBox, 1, 0);
+        analyzePane.getChildren().add(progressBox);
+
+        mAnalyzeStatusLabel = new Label("");
         mAnalyzeStatusLabel.setStyle("-fx-text-fill: #666;");
-        GridPane.setConstraints(mAnalyzeStatusLabel, 1, 0);
+        GridPane.setConstraints(mAnalyzeStatusLabel, 2, 0);
         analyzePane.getChildren().add(mAnalyzeStatusLabel);
 
         GridPane controlsPane = new GridPane();
@@ -1255,6 +1276,40 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mSquelchThresholdSlider.setDisable(!squelchEnabled);
         mSquelchReductionSlider.setDisable(!squelchEnabled);
         mHoldTimeSlider.setDisable(!squelchEnabled);
+
+        updateAIButtonState();
+    }
+
+    private void updateAIButtonState() {
+        if (mUserPreferences == null || mUserPreferences.getAIPreference() == null ||
+            !mUserPreferences.getAIPreference().isEnabled()) {
+            mAnalyzeButton.setDisable(true);
+            mAnalyzeStatusLabel.setText("AI Optimization is disabled globally in settings.");
+            return;
+        }
+
+        String apiKey = mUserPreferences.getAIPreference().getApiKey();
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            mAnalyzeButton.setDisable(true);
+            mAnalyzeStatusLabel.setText("Gemini API key is missing. Please set it in settings.");
+            return;
+        }
+
+        if (getItem() == null || getItem().getName() == null) {
+            mAnalyzeButton.setDisable(true);
+            mAnalyzeStatusLabel.setText("Channel not configured yet.");
+            return;
+        }
+
+        List<Path> recordings = AIBufferManager.getInstance().getBufferedRecordings(getItem().getName());
+        if (recordings == null || recordings.size() < 5) {
+            mAnalyzeButton.setDisable(true);
+            mAnalyzeStatusLabel.setText("Need 5 recent transmissions to analyze. Currently have " + (recordings == null ? 0 : recordings.size()) + ".");
+            return;
+        }
+
+        mAnalyzeButton.setDisable(false);
+        mAnalyzeStatusLabel.setText("Ready to analyze 5 recent transmissions.");
     }
 
     private void disableAudioFilterControls()
@@ -1307,58 +1362,159 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         config.setNoiseGateHoldTime((int)mHoldTimeSlider.getValue());
     }
 
-    private void handleAnalyzeClick()
-    {
-        if (mAnalyzeButton.getText().equals("Analyze Audio & Suggest Settings")) {
-            // Start analysis
-            mAnalyzeButton.setText("Stop Analysis");
-            mAnalyzeStatusLabel.setText("Analyzing... listening to audio (10 seconds)");
-            mAnalyzeStatusLabel.setStyle("-fx-text-fill: #0066cc; -fx-font-weight: bold;");
+    private void handleAnalyzeClick() {
+        mAnalyzeButton.setDisable(true);
+        mAnalyzeProgress.setVisible(true);
+        mAnalyzeStatusLabel.setText("Packaging audio and sending to Gemini API...");
 
-            // TODO: Get decoder's audio filter and start analyzing
-            // NBFMAudioFilters filter = getDecoderAudioFilter();
-            // filter.startAnalyzing();
+        String apiKey = mUserPreferences.getAIPreference().getApiKey();
+        List<Path> recordings = AIBufferManager.getInstance().getBufferedRecordings(getItem().getName());
 
-            // TODO: After 10 seconds (or when stopped), get results
-            // javafx.application.Platform.runLater(() -> {
-            //     float[] results = filter.stopAnalyzing();
-            //     if (results != null) {
-            //         float carrierMax = results[0];
-            //         float voiceMin = results[1];
-            //         float recommended = results[2];
-            //
-            //         mSquelchThresholdSlider.setValue(recommended);
-            //         mAnalyzeStatusLabel.setText(String.format(
-            //             "✅ Suggested: %.1f%% (Carrier: %.1f%%, Voice: %.1f%%)",
-            //             recommended, carrierMax, voiceMin));
-            //         mAnalyzeStatusLabel.setStyle("-fx-text-fill: #009900; -fx-font-weight: bold;");
-            //         modifiedProperty().set(true);
-            //     } else {
-            //         mAnalyzeStatusLabel.setText("⚠️ Not enough audio - try again with active transmissions");
-            //         mAnalyzeStatusLabel.setStyle("-fx-text-fill: #cc6600;");
-            //     }
-            //     mAnalyzeButton.setText("Analyze Audio & Suggest Settings");
-            // }, 10000);  // 10 second delay
+        ThreadPool.execute(() -> {
+            try {
+                // Initialize Vertex AI with API Key via Transport Channel Provider setup (for pure REST API we use HttpURLConnection directly)
+                // Due to classpath/dependency complexities in the sandbox, we'll use a direct REST call to Gemini 1.5 Pro
+                String urlStr = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" + apiKey;
+                java.net.URL url = new java.net.URL(urlStr);
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
 
-            // For now, just show a message after short delay
-            new javafx.animation.Timeline(new javafx.animation.KeyFrame(
-                javafx.util.Duration.millis(1000),
-                ae -> {
-                    mAnalyzeStatusLabel.setText("⚠️ Analysis requires decoder connection (not yet wired)");
-                    mAnalyzeStatusLabel.setStyle("-fx-text-fill: #cc6600;");
-                    mAnalyzeButton.setText("Analyze Audio & Suggest Settings");
+                // Build the prompt and JSON payload
+                StringBuilder partsBuilder = new StringBuilder();
+                partsBuilder.append("{\"text\":\"You are an expert RF and audio engineer. Analyze these 5 recent NBFM transmissions. " +
+                        "Evaluate audio quality, baseline noise floor, and voice clarity. " +
+                        "Return optimal numerical values for NBFM filters. Provide your response as a strict JSON object with these keys: " +
+                        "\\\"squelchTailRemovalEnabled\\\" (boolean), \\\"squelchTailRemovalMs\\\" (int 0-300), \\\"squelchHeadRemovalMs\\\" (int 0-150), " +
+                        "\\\"deemphasisEnabled\\\" (boolean), \\\"lowPassEnabled\\\" (boolean), \\\"lowPassCutoff\\\" (double 3000-4000), " +
+                        "\\\"bassBoostEnabled\\\" (boolean), \\\"bassBoostDb\\\" (float 0-12), \\\"noiseGateEnabled\\\" (boolean), " +
+                        "\\\"noiseGateThreshold\\\" (float 0-100), \\\"noiseGateReduction\\\" (float 0-1), \\\"noiseGateHoldTime\\\" (int 0-1000), " +
+                        "\\\"agcEnabled\\\" (boolean), \\\"agcTargetLevel\\\" (float -30 to -6), \\\"agcMaxGain\\\" (float 0-40), " +
+                        "\\\"diagnosticSummary\\\" (string explaining what you heard and reasoning for changes).\"}");
+
+                for (Path p : recordings) {
+                    byte[] fileBytes = java.nio.file.Files.readAllBytes(p);
+                    String base64 = java.util.Base64.getEncoder().encodeToString(fileBytes);
+                    partsBuilder.append(",{\"inlineData\":{\"mimeType\":\"audio/mp3\",\"data\":\"").append(base64).append("\"}}");
                 }
-            )).play();
 
-        } else {
-            // Stop analysis
-            mAnalyzeButton.setText("Analyze Audio & Suggest Settings");
-            mAnalyzeStatusLabel.setText("Analysis stopped");
-            mAnalyzeStatusLabel.setStyle("-fx-text-fill: #666;");
+                String payload = "{\"contents\":[{\"parts\":[" + partsBuilder.toString() + "]}], \"generationConfig\": {\"responseMimeType\": \"application/json\"}}";
 
-            // TODO: Stop analyzing
-            // filter.stopAnalyzing();
+                try(java.io.OutputStream os = conn.getOutputStream()) {
+                    byte[] input = payload.getBytes("utf-8");
+                    os.write(input, 0, input.length);
+                }
+
+                int code = conn.getResponseCode();
+                if (code == 200) {
+                    java.io.InputStream is = conn.getInputStream();
+                    String responseStr;
+                    try (java.util.Scanner scanner = new java.util.Scanner(is)) {
+                        scanner.useDelimiter("\\A");
+                        responseStr = scanner.hasNext() ? scanner.next() : "";
+                    }
+
+                    // Parse Gemini response
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(responseStr);
+                    String jsonText = root.path("candidates").get(0).path("content").path("parts").get(0).path("text").asText();
+                    com.fasterxml.jackson.databind.JsonNode aiResult = mapper.readTree(jsonText);
+
+                    Platform.runLater(() -> {
+                        // Apply settings
+                        if (aiResult.has("squelchTailRemovalEnabled")) mSquelchTailRemovalEnabledSwitch.setSelected(aiResult.get("squelchTailRemovalEnabled").asBoolean());
+                        if (aiResult.has("squelchTailRemovalMs")) mSquelchTailRemovalMsSlider.setValue(aiResult.get("squelchTailRemovalMs").asInt());
+                        if (aiResult.has("squelchHeadRemovalMs")) mSquelchHeadRemovalMsSlider.setValue(aiResult.get("squelchHeadRemovalMs").asInt());
+
+                        if (aiResult.has("deemphasisEnabled")) mDeemphasisEnabledSwitch.setSelected(aiResult.get("deemphasisEnabled").asBoolean());
+
+                        if (aiResult.has("lowPassEnabled")) mLowPassEnabledSwitch.setSelected(aiResult.get("lowPassEnabled").asBoolean());
+                        if (aiResult.has("lowPassCutoff")) mLowPassCutoffSlider.setValue(aiResult.get("lowPassCutoff").asDouble());
+
+                        if (aiResult.has("bassBoostEnabled")) mBassBoostEnabledSwitch.setSelected(aiResult.get("bassBoostEnabled").asBoolean());
+                        if (aiResult.has("bassBoostDb")) mBassBoostSlider.setValue(aiResult.get("bassBoostDb").asDouble());
+
+                        if (aiResult.has("noiseGateEnabled")) mSquelchEnabledSwitch.setSelected(aiResult.get("noiseGateEnabled").asBoolean());
+                        if (aiResult.has("noiseGateThreshold")) mSquelchThresholdSlider.setValue(aiResult.get("noiseGateThreshold").asDouble());
+                        if (aiResult.has("noiseGateReduction")) mSquelchReductionSlider.setValue(aiResult.get("noiseGateReduction").asDouble() * 100.0);
+                        if (aiResult.has("noiseGateHoldTime")) mHoldTimeSlider.setValue(aiResult.get("noiseGateHoldTime").asInt());
+
+                        if (aiResult.has("agcEnabled")) mVoiceEnhanceEnabledSwitch.setSelected(aiResult.get("agcEnabled").asBoolean());
+                        if (aiResult.has("agcTargetLevel")) {
+                            float target = (float)aiResult.get("agcTargetLevel").asDouble();
+                            float voiceAmount = ((target + 30.0f) / 24.0f) * 100.0f;
+                            mVoiceEnhanceSlider.setValue(Math.max(0, Math.min(100, voiceAmount)));
+                        }
+                        if (aiResult.has("agcMaxGain")) {
+                            float maxGainDb = (float)aiResult.get("agcMaxGain").asDouble();
+                            float inputGain = (float)Math.pow(10, maxGainDb / 40.0);
+                            mInputGainSlider.setValue(inputGain);
+                        }
+
+                        modifiedProperty().set(true);
+
+                        mAnalyzeProgress.setVisible(false);
+                        mAnalyzeButton.setDisable(false);
+                        mAnalyzeStatusLabel.setText("Optimization applied successfully.");
+
+                        String summary = aiResult.has("diagnosticSummary") ? aiResult.get("diagnosticSummary").asText() : "No summary provided.";
+                        showResultsNotification(summary, aiResult);
+                    });
+                } else {
+                    java.io.InputStream errorStream = conn.getErrorStream();
+                    String errorMessage = "Unknown error";
+                    if (errorStream != null) {
+                        try (java.util.Scanner scanner = new java.util.Scanner(errorStream)) {
+                            scanner.useDelimiter("\\A");
+                            errorMessage = scanner.hasNext() ? scanner.next() : "Unknown error";
+                        }
+                    }
+                    final String msg = errorMessage;
+                    Platform.runLater(() -> {
+                        mAnalyzeProgress.setVisible(false);
+                        mAnalyzeButton.setDisable(false);
+                        mAnalyzeStatusLabel.setText("API Error: " + code);
+                        System.err.println("Gemini API Error: " + msg);
+                    });
+                }
+            } catch (Exception ex) {
+                Platform.runLater(() -> {
+                    mAnalyzeProgress.setVisible(false);
+                    mAnalyzeButton.setDisable(false);
+                    mAnalyzeStatusLabel.setText("Error connecting to Gemini API.");
+                    ex.printStackTrace();
+                });
+            }
+        });
+    }
+
+    private void showResultsNotification(String summary, com.fasterxml.jackson.databind.JsonNode aiResult) {
+        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION);
+        alert.setTitle("AI Filter Optimization Results");
+        alert.setHeaderText("NBFM Filters Optimized");
+
+        StringBuilder content = new StringBuilder();
+        content.append("AI Diagnostic Summary:\n").append(summary).append("\n\n");
+        content.append("Changes Applied:\n");
+
+        java.util.Iterator<java.util.Map.Entry<String, com.fasterxml.jackson.databind.JsonNode>> fields = aiResult.fields();
+        while (fields.hasNext()) {
+            java.util.Map.Entry<String, com.fasterxml.jackson.databind.JsonNode> field = fields.next();
+            if (!field.getKey().equals("diagnosticSummary")) {
+                content.append(field.getKey()).append(": ").append(field.getValue().asText()).append("\n");
+            }
         }
+
+        javafx.scene.control.TextArea area = new javafx.scene.control.TextArea(content.toString());
+        area.setEditable(false);
+        area.setWrapText(true);
+        area.setMaxWidth(Double.MAX_VALUE);
+        area.setMaxHeight(Double.MAX_VALUE);
+
+        alert.getDialogPane().setExpandableContent(area);
+        alert.getDialogPane().setExpanded(true);
+        alert.showAndWait();
     }
 
     @Override

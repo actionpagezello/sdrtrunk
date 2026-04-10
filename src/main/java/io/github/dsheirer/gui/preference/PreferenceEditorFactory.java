@@ -65,6 +65,8 @@ public class PreferenceEditorFactory
                 return new TalkgroupFormatPreferenceEditor(userPreferences);
             case VECTOR_CALIBRATION:
                 return new VectorCalibrationPreferenceEditor(userPreferences);
+            case AI_SETTINGS:
+                return new io.github.dsheirer.gui.preference.ai.AIPreferenceEditor(userPreferences);
         }
 
         return null;

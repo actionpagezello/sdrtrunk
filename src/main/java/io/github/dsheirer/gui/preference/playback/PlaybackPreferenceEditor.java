@@ -181,7 +181,7 @@ public class PlaybackPreferenceEditor extends HBox
             IconNode iconNode = new IconNode(FontAwesome.PLAY);
             iconNode.setFill(Color.CORNFLOWERBLUE);
             mTestStartToneButton.setGraphic(iconNode);
-            mTestStartToneButton.setOnAction(_ ->
+            mTestStartToneButton.setOnAction(event ->
                 play(mPlaybackPreference.getStartTone(PlaybackPreference.TONE_LENGTH_SAMPLES * 3),
                         PlayTestAudioRequest.ALL_CHANNELS));
             mTestStartToneButton.disableProperty().bind(getUseAudioSegmentStartToneSwitch().selectedProperty().not());
@@ -198,7 +198,7 @@ public class PlaybackPreferenceEditor extends HBox
             IconNode iconNode = new IconNode(FontAwesome.PLAY);
             iconNode.setFill(Color.CORNFLOWERBLUE);
             mTestDropToneButton.setGraphic(iconNode);
-            mTestDropToneButton.setOnAction(_ ->
+            mTestDropToneButton.setOnAction(event ->
                     play(mPlaybackPreference.getDropTone(PlaybackPreference.TONE_LENGTH_SAMPLES * 3),
                             PlayTestAudioRequest.ALL_CHANNELS));
             mTestDropToneButton.disableProperty().bind(getUseAudioSegmentDropToneSwitch().selectedProperty().not());
