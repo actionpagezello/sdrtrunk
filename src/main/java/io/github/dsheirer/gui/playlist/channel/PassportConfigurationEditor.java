@@ -40,7 +40,7 @@ import java.util.ArrayList;
 import java.util.List;
 import javafx.geometry.Insets;
 import javafx.scene.control.Label;
-import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tab;
 import javafx.scene.layout.VBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,11 +51,11 @@ import org.slf4j.LoggerFactory;
 public class PassportConfigurationEditor extends ChannelConfigurationEditor
 {
     private final static Logger mLog = LoggerFactory.getLogger(PassportConfigurationEditor.class);
-    private TitledPane mAuxDecoderPane;
-    private TitledPane mDecoderPane;
-    private TitledPane mEventLogPane;
-    private TitledPane mRecordPane;
-    private TitledPane mSourcePane;
+    private Tab mAuxDecoderPane;
+    private Tab mDecoderPane;
+    private Tab mEventLogPane;
+    private Tab mRecordPane;
+    private Tab mSourcePane;
     private SourceConfigurationEditor mSourceConfigurationEditor;
     private AuxDecoderConfigurationEditor mAuxDecoderConfigurationEditor;
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
@@ -70,11 +70,11 @@ public class PassportConfigurationEditor extends ChannelConfigurationEditor
                                        UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
-        getTitledPanesBox().getChildren().add(getSourcePane());
-        getTitledPanesBox().getChildren().add(getDecoderPane());
-        getTitledPanesBox().getChildren().add(getAuxDecoderPane());
-        getTitledPanesBox().getChildren().add(getEventLogPane());
-        getTitledPanesBox().getChildren().add(getRecordPane());
+        getTabPane().getTabs().add(getSourcePane());
+        getTabPane().getTabs().add(getDecoderPane());
+        getTabPane().getTabs().add(getAuxDecoderPane());
+        getTabPane().getTabs().add(getEventLogPane());
+        getTabPane().getTabs().add(getRecordPane());
     }
 
     @Override
@@ -83,59 +83,61 @@ public class PassportConfigurationEditor extends ChannelConfigurationEditor
         return DecoderType.PASSPORT;
     }
 
-    private TitledPane getSourcePane()
+    private Tab getSourcePane()
     {
         if(mSourcePane == null)
         {
-            mSourcePane = new TitledPane("Source", getSourceConfigurationEditor());
-            mSourcePane.setExpanded(true);
+            mSourcePane = new Tab("Source", getSourceConfigurationEditor());
+
         }
 
         return mSourcePane;
     }
 
-    private TitledPane getDecoderPane()
+    private Tab getDecoderPane()
     {
         if(mDecoderPane == null)
         {
-            mDecoderPane = new TitledPane();
+            mDecoderPane = new Tab();
+
             mDecoderPane.setText("Decoder: Passport");
-            mDecoderPane.setExpanded(false);
+
             mDecoderPane.setDisable(true);
         }
 
         return mDecoderPane;
     }
 
-    private TitledPane getEventLogPane()
+    private Tab getEventLogPane()
     {
         if(mEventLogPane == null)
         {
-            mEventLogPane = new TitledPane("Logging", getEventLogConfigurationEditor());
-            mEventLogPane.setExpanded(false);
+            mEventLogPane = new Tab("Logging", getEventLogConfigurationEditor());
+
         }
 
         return mEventLogPane;
     }
 
-    private TitledPane getAuxDecoderPane()
+    private Tab getAuxDecoderPane()
     {
         if(mAuxDecoderPane == null)
         {
-            mAuxDecoderPane = new TitledPane("Additional Decoders", getAuxDecoderConfigurationEditor());
-            mAuxDecoderPane.setExpanded(false);
+            mAuxDecoderPane = new Tab("Additional Decoders", getAuxDecoderConfigurationEditor());
+
         }
 
         return mAuxDecoderPane;
     }
 
-    private TitledPane getRecordPane()
+    private Tab getRecordPane()
     {
         if(mRecordPane == null)
         {
-            mRecordPane = new TitledPane();
+            mRecordPane = new Tab();
+
             mRecordPane.setText("Recording");
-            mRecordPane.setExpanded(false);
+
 
             Label notice = new Label("Note: use aliases to control call audio recording");
             notice.setPadding(new Insets(10, 10, 0, 10));

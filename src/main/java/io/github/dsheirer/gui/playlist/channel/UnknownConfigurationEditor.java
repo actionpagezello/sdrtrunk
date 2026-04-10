@@ -28,7 +28,7 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.record.config.RecordConfiguration;
 import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
-import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tab;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
 public class UnknownConfigurationEditor extends ChannelConfigurationEditor
 {
     private final static Logger mLog = LoggerFactory.getLogger(UnknownConfigurationEditor.class);
-    private TitledPane mDecoderPane;
+    private Tab mDecoderPane;
 
     /**
      * Constructs an instance
@@ -48,16 +48,17 @@ public class UnknownConfigurationEditor extends ChannelConfigurationEditor
                                       UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
-        getTitledPanesBox().getChildren().add(getDecoderPane());
+        getTabPane().getTabs().add(getDecoderPane());
     }
 
-    private TitledPane getDecoderPane()
+    private Tab getDecoderPane()
     {
         if(mDecoderPane == null)
         {
-            mDecoderPane = new TitledPane();
+            mDecoderPane = new Tab();
+
             mDecoderPane.setText("Decoder: Unknown Protocol");
-            mDecoderPane.setExpanded(false);
+
             mDecoderPane.setDisable(true);
         }
 

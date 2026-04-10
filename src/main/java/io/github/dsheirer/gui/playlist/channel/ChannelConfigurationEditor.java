@@ -92,8 +92,8 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
     private Button mSaveButton;
     private Button mResetButton;
     private VBox mButtonBox;
-    private ScrollPane mTitledPanesScrollPane;
-    private VBox mTitledPanesBox;
+    private ScrollPane mTabsScrollPane;
+    private VBox mTabsBox;
     private ToggleSwitch mAutoStartSwitch;
     private Spinner<Integer> mAutoStartOrderSpinner;
     private IconNode mPlayGraphicNode;
@@ -124,9 +124,9 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
         HBox.setHgrow(getTextFieldPane(), Priority.ALWAYS);
         HBox.setHgrow(getButtonBox(), Priority.NEVER);
         hbox.getChildren().addAll(getTextFieldPane(), getButtonBox());
-        VBox.setVgrow(getTitledPanesScrollPane(), Priority.ALWAYS);
+        VBox.setVgrow(getTabsScrollPane(), Priority.ALWAYS);
 
-        getChildren().addAll(hbox, getTitledPanesScrollPane());
+        getChildren().addAll(hbox, getTabsScrollPane());
     }
 
     /**
@@ -490,27 +490,27 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
         return mAutoStartOrderSpinner;
     }
 
-    protected VBox getTitledPanesBox()
+    protected VBox getTabPane()
     {
-        if(mTitledPanesBox == null)
+        if(mTabsBox == null)
         {
-            mTitledPanesBox = new VBox();
-            mTitledPanesBox.setMaxWidth(Double.MAX_VALUE);
+            mTabsBox = new VBox();
+            mTabsBox.setMaxWidth(Double.MAX_VALUE);
         }
 
-        return mTitledPanesBox;
+        return mTabsBox;
     }
 
-    private ScrollPane getTitledPanesScrollPane()
+    private ScrollPane getTabsScrollPane()
     {
-        if(mTitledPanesScrollPane == null)
+        if(mTabsScrollPane == null)
         {
-            mTitledPanesScrollPane = new ScrollPane();
-            mTitledPanesScrollPane.setFitToWidth(true);
-            mTitledPanesScrollPane.setContent(getTitledPanesBox());
+            mTabsScrollPane = new ScrollPane();
+            mTabsScrollPane.setFitToWidth(true);
+            mTabsScrollPane.setContent(getTabPane());
         }
 
-        return mTitledPanesScrollPane;
+        return mTabsScrollPane;
     }
 
 
@@ -520,8 +520,8 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
         if(mTextFieldPane == null)
         {
             mTextFieldPane = new GridPane();
-            mTextFieldPane.setVgap(10);
-            mTextFieldPane.setHgap(10);
+            mTextFieldPane.setVgap(15);
+            mTextFieldPane.setHgap(20);
 
             int row = 0;
 

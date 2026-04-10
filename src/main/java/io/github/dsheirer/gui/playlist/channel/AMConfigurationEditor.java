@@ -50,7 +50,7 @@ import javafx.geometry.Insets;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
-import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tab;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
@@ -67,10 +67,10 @@ import org.slf4j.LoggerFactory;
 public class AMConfigurationEditor extends ChannelConfigurationEditor
 {
     private final static Logger mLog = LoggerFactory.getLogger(AMConfigurationEditor.class);
-    private TitledPane mSourcePane;
-    private TitledPane mDecoderPane;
-    private TitledPane mRecordPane;
-    private TitledPane mEventLogPane;
+    private Tab mSourcePane;
+    private Tab mDecoderPane;
+    private Tab mRecordPane;
+    private Tab mEventLogPane;
     private ToggleSwitch mBasebandRecordSwitch;
     private SourceConfigurationEditor mSourceConfigurationEditor;
     private SegmentedButton mBandwidthButton;
@@ -95,10 +95,10 @@ public class AMConfigurationEditor extends ChannelConfigurationEditor
                                  UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
-        getTitledPanesBox().getChildren().add(getSourcePane());
-        getTitledPanesBox().getChildren().add(getDecoderPane());
-        getTitledPanesBox().getChildren().add(getEventLogPane());
-        getTitledPanesBox().getChildren().add(getRecordPane());
+        getTabPane().getTabs().add(getSourcePane());
+        getTabPane().getTabs().add(getDecoderPane());
+        getTabPane().getTabs().add(getEventLogPane());
+        getTabPane().getTabs().add(getRecordPane());
     }
 
     @Override
@@ -107,24 +107,25 @@ public class AMConfigurationEditor extends ChannelConfigurationEditor
         return DecoderType.AM;
     }
 
-    private TitledPane getSourcePane()
+    private Tab getSourcePane()
     {
         if(mSourcePane == null)
         {
-            mSourcePane = new TitledPane("Source", getSourceConfigurationEditor());
-            mSourcePane.setExpanded(true);
+            mSourcePane = new Tab("Source", getSourceConfigurationEditor());
+
         }
 
         return mSourcePane;
     }
 
-    private TitledPane getDecoderPane()
+    private Tab getDecoderPane()
     {
         if(mDecoderPane == null)
         {
-            mDecoderPane = new TitledPane();
+            mDecoderPane = new Tab();
+
             mDecoderPane.setText("Decoder: AM");
-            mDecoderPane.setExpanded(true);
+
 
             GridPane gridPane = new GridPane();
             gridPane.setPadding(new Insets(10,10,10,10));
@@ -182,24 +183,25 @@ public class AMConfigurationEditor extends ChannelConfigurationEditor
         return mDecoderPane;
     }
 
-    private TitledPane getEventLogPane()
+    private Tab getEventLogPane()
     {
         if(mEventLogPane == null)
         {
-            mEventLogPane = new TitledPane("Logging", getEventLogConfigurationEditor());
-            mEventLogPane.setExpanded(false);
+            mEventLogPane = new Tab("Logging", getEventLogConfigurationEditor());
+
         }
 
         return mEventLogPane;
     }
 
-    private TitledPane getRecordPane()
+    private Tab getRecordPane()
     {
         if(mRecordPane == null)
         {
-            mRecordPane = new TitledPane();
+            mRecordPane = new Tab();
+
             mRecordPane.setText("Recording");
-            mRecordPane.setExpanded(false);
+
 
             GridPane gridPane = new GridPane();
             gridPane.setPadding(new Insets(10,10,10,10));
