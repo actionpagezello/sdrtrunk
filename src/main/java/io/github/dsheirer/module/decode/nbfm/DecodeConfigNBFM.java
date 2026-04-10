@@ -26,6 +26,7 @@ import io.github.dsheirer.dsp.squelch.SquelchTailRemover;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
+import io.github.dsheirer.module.decode.config.TwoToneDetectorConfiguration;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 
 import java.util.ArrayList;
@@ -44,17 +45,18 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
 
     // === NEW: Channel-level tone filtering ===
     private List<ChannelToneFilter> mToneFilters = new ArrayList<>();
+    private List<TwoToneDetectorConfiguration> mTwoToneDetectors = new ArrayList<>();
     private boolean mToneFilterEnabled = false;
 
     // === NEW: Squelch tail/head removal ===
     private int mSquelchTailRemovalMs = SquelchTailRemover.DEFAULT_TAIL_REMOVAL_MS;
     private int mSquelchHeadRemovalMs = SquelchTailRemover.DEFAULT_HEAD_REMOVAL_MS;
-    private boolean mSquelchTailRemovalEnabled = true;
+    private boolean mSquelchTailRemovalEnabled = false;
 
     // VOXSEND AUDIO FILTER CONFIGURATION
-    private boolean mDeemphasisEnabled = false;
+    private boolean mDeemphasisEnabled = true;
     private double mDeemphasisTimeConstant = 75.0; // microseconds
-    private boolean mLowPassEnabled = false;
+    private boolean mLowPassEnabled = true;
     private double mLowPassCutoff = 3400.0; // Hz
     private boolean mBassBoostEnabled = false;
     private float mBassBoostDb = 0.0f; // 0 to +12 dB
@@ -62,14 +64,9 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     private float mNoiseGateThreshold = 4.0f; // percentage 0-100%
     private float mNoiseGateReduction = 0.8f; // 0.0 to 1.0
     private int mNoiseGateHoldTime = 500; // milliseconds
-    private boolean mAgcEnabled = false;
+    private boolean mAgcEnabled = true;
     private float mAgcTargetLevel = -18.0f; // dB (stores voice enhancement amount)
     private float mAgcMaxGain = 24.0f; // dB (stores input gain)
-
-    // Hiss reduction (high-shelf filter above corner frequency)
-    private boolean mHissReductionEnabled = false;
-    private float mHissReductionDb = -6.0f; // -12 to 0 dB (shelf cut)
-    private double mHissReductionCornerHz = 2000.0; // Shelf pivot frequency
 
     /**
      * Constructs an instance
@@ -109,6 +106,17 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
                 throw new IllegalArgumentException("Unrecognized FM bandwidth value: " + getBandwidth());
         }
     }
+
+    @JacksonXmlElementWrapper(localName = "twoToneDetectors")
+    @JacksonXmlProperty(localName = "twoToneDetector")
+    public List<TwoToneDetectorConfiguration> getTwoToneDetectors() {
+        return mTwoToneDetectors;
+    }
+
+    public void setTwoToneDetectors(List<TwoToneDetectorConfiguration> twoToneDetectors) {
+        this.mTwoToneDetectors = twoToneDetectors;
+    }
+
 
     /**
      * Indicates if the user wants the demodulated audio to be high-pass filtered.
@@ -588,60 +596,6 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     public void setAgcMaxGain(float gain)
     {
         mAgcMaxGain = gain;
-    }
-
-    /**
-     * Indicates if the hiss reduction high-shelf filter is enabled.
-     * @return enable status, defaults to false.
-     */
-    @JacksonXmlProperty(isAttribute = true, localName = "hissReductionEnabled")
-    public boolean isHissReductionEnabled()
-    {
-        return mHissReductionEnabled;
-    }
-
-    /**
-     * Sets the hiss reduction enabled state.
-     */
-    public void setHissReductionEnabled(boolean enabled)
-    {
-        mHissReductionEnabled = enabled;
-    }
-
-    /**
-     * Hiss reduction shelf gain in dB (negative = cut). Range: -12 to 0 dB.
-     * @return shelf gain (default -6 dB)
-     */
-    @JacksonXmlProperty(isAttribute = true, localName = "hissReductionDb")
-    public float getHissReductionDb()
-    {
-        return mHissReductionDb;
-    }
-
-    /**
-     * Sets the hiss reduction shelf gain in dB (clamped to -12..0).
-     */
-    public void setHissReductionDb(float db)
-    {
-        mHissReductionDb = Math.max(-12.0f, Math.min(0.0f, db));
-    }
-
-    /**
-     * Hiss reduction shelf corner frequency in Hz. Range: 500-3800 Hz.
-     * @return corner frequency (default 2000 Hz)
-     */
-    @JacksonXmlProperty(isAttribute = true, localName = "hissReductionCornerHz")
-    public double getHissReductionCornerHz()
-    {
-        return mHissReductionCornerHz;
-    }
-
-    /**
-     * Sets the hiss reduction corner frequency (clamped to 500-3800 Hz).
-     */
-    public void setHissReductionCornerHz(double hz)
-    {
-        mHissReductionCornerHz = Math.max(500.0, Math.min(3800.0, hz));
     }
 
 }

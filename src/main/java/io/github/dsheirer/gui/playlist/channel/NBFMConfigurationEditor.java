@@ -32,6 +32,8 @@ import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.gui.playlist.channel.TwoToneDetectorPanel;
+import io.github.dsheirer.gui.playlist.channel.TwoToneDetectorConfigurationEditor;
 import io.github.dsheirer.module.log.EventLogType;
 import io.github.dsheirer.module.log.config.EventLogConfiguration;
 import io.github.dsheirer.playlist.PlaylistManager;
@@ -98,6 +100,8 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private Spinner<Integer> mHeadRemovalSpinner;
 
     // Audio Filters (VoxSend Chain) UI
+    private TitledPane mAudioFiltersPane;
+    private TwoToneDetectorPanel mTwoToneDetectorPanel;
     private Tab mAudioFiltersPane;
     private Slider mInputGainSlider;
     private Label mInputGainLabel;
@@ -148,14 +152,15 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
                                    UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
-        getTabPane().getTabs().add(getSourcePane());
-        getTabPane().getTabs().add(getDecoderPane());
-        getTabPane().getTabs().add(getToneFilterPane());
-        getTabPane().getTabs().add(getSquelchTailPane());
-        getTabPane().getTabs().add(getAudioFiltersPane());
-        getTabPane().getTabs().add(getAuxDecoderPane());
-        getTabPane().getTabs().add(getEventLogPane());
-        getTabPane().getTabs().add(getRecordPane());
+        getTitledPanesBox().getChildren().add(getSourcePane());
+        getTitledPanesBox().getChildren().add(getDecoderPane());
+        getTitledPanesBox().getChildren().add(getToneFilterPane());
+        getTitledPanesBox().getChildren().add(getSquelchTailPane());
+        getTitledPanesBox().getChildren().add(getAudioFiltersPane());
+        getTitledPanesBox().getChildren().add(getAuxDecoderPane());
+        getTitledPanesBox().getChildren().add(getEventLogPane());
+        getTitledPanesBox().getChildren().add(getTwoToneDetectorPane());
+        getTitledPanesBox().getChildren().add(getRecordPane());
     }
 
     @Override
@@ -219,6 +224,24 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         }
 
         return mDecoderPane;
+    }
+
+    private TwoToneDetectorPanel getTwoToneDetectorPane()
+    {
+        if(mTwoToneDetectorPanel == null)
+        {
+            mTwoToneDetectorPanel = new TwoToneDetectorPanel();
+        }
+        return mTwoToneDetectorPanel;
+    }
+
+    private TwoToneDetectorPanel getTwoToneDetectorPane()
+    {
+        if(mTwoToneDetectorPanel == null)
+        {
+            mTwoToneDetectorPanel = new TwoToneDetectorPanel();
+        }
+        return mTwoToneDetectorPanel;
     }
 
     // === Tone Filter (CTCSS / DCS) pane ===

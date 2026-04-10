@@ -670,6 +670,20 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         mWebSocket.sendText(mGson.toJson(cmd), true);
     }
 
+    public void sendTextMessage(String text)
+    {
+        if(mWebSocket == null) return;
+        ZelloConfiguration config = getBroadcastConfiguration();
+        JsonObject cmd = new JsonObject();
+        cmd.addProperty("command", "send_text_message");
+        int seq = mSequence.getAndIncrement();
+        cmd.addProperty("seq", seq);
+        mPendingCommands.put(seq, "send_text_message");
+        cmd.addProperty("text", text);
+        cmd.addProperty("channel", config.getChannel());
+        mWebSocket.sendText(mGson.toJson(cmd), true);
+    }
+
     private void sendAudioPacket(long streamId, byte[] opusData)
     {
         if(mWebSocket == null) return;
