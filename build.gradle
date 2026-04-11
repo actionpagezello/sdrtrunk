@@ -278,6 +278,12 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
  * Usage: ./gradlew runtimeZipCurrent   (linux - using gradlew)
  */
 tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
+    //ap-fork: only configure platforms when this task is actually being run, otherwise
+    //the beryx runtime plugin accumulates platforms from every runtimeZip* task into
+    //the shared jre task and produces zips you didn't ask for.
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipCurrent') }) {
+        return
+    }
     def arch = System.properties.getProperty("os.arch")
     def javaHome = org.gradle.internal.jvm.Jvm.current().getJavaHome().toString()
 
@@ -323,16 +329,11 @@ tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
  * Usage: ./gradlew runtimeZipWindows   (linux - using gradlew)
  */
 tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
-    //Windows aarch64
-    if(file(jdk_windows_aarch64).exists()) {
-        rt.extension.targetPlatform(targetWindowsAarch64, jdk_windows_aarch64, [])
+    //ap-fork: only configure platforms when this task is actually being run (see runtimeZipCurrent note).
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipWindows') }) {
+        return
     }
-    else {
-        rt.extension.targetPlatform(targetWindowsAarch64) {
-            jdkHome = jdkDownload(jdk_download_windows_aarch64)
-        }
-    }
-    //Windows x86-64
+    //ap-fork: Windows x86_64 only. aarch64 intentionally omitted to keep builds lean.
     if(file(jdk_windows_x86_64).exists()) {
         rt.extension.targetPlatform(targetWindowsX86_64, jdk_windows_x86_64, [])
     }
@@ -355,6 +356,10 @@ tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
  * Usage: ./gradlew runtimeZipOthers   (linux - using gradlew)
  */
 tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
+    //ap-fork: only configure platforms when this task is actually being run (see runtimeZipCurrent note).
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipOthers') }) {
+        return
+    }
     //Linux aarch64
     if(file(jdk_linux_aarch64).exists()) {
         rt.extension.targetPlatform(targetLinuxAarch64, jdk_linux_aarch64, [])
