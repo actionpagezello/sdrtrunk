@@ -129,7 +129,7 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
      * Indicates if a processing chain is constructed for the channel and that
      * the processing chain is currently processing.
      */
-    private boolean isProcessing(Channel channel)
+    public boolean isProcessing(Channel channel)
     {
         boolean isProcessing = false;
 
