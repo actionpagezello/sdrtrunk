@@ -1,0 +1,54 @@
+--- ./src/main/java/io/github/dsheirer/gui/SDRTrunk.java
++++ ./src/main/java/io/github/dsheirer/gui/SDRTrunk.java
+@@ -394,11 +394,6 @@
+         mSplitPane.add(mSpectralPanel);
+         mSplitPane.add(mControllerPanel);
+
+-        mBroadcastStatusVisible = mPreferences.getBoolean(PREFERENCE_BROADCAST_STATUS_VISIBLE, false);
+-
+-        if(mBroadcastStatusVisible)
+-        {
+-            mSplitPane.add(getBroadcastStatusPanel());
+-        }
+
+         mMainGui.add(mSplitPane, "cell 0 0,span,grow");
+
+@@ -522,7 +517,6 @@
+         viewMenu.add(new NowPlayingDetailsVisibleMenuItem());
+-        viewMenu.add(new BroadcastStatusVisibleMenuItem());
+         viewMenu.add(new ResourceStatusVisibleMenuItem());
+         viewMenu.addSeparator();
+         viewMenu.add(new SpectralDisplayMenuItem());
+
+@@ -645,16 +639,6 @@
+         return mBroadcastStatusPanel;
+     }
+
+-    private void toggleBroadcastStatusPanelVisibility()
+-    {
+-        mBroadcastStatusVisible = !mBroadcastStatusVisible;
+-        EventQueue.invokeLater(() -> {
+-            if(mBroadcastStatusVisible) { mSplitPane.add(getBroadcastStatusPanel()); }
+-            else { mSplitPane.remove(getBroadcastStatusPanel()); }
+-            mMainGui.revalidate();
+-        });
+-        mPreferences.putBoolean(PREFERENCE_BROADCAST_STATUS_VISIBLE, mBroadcastStatusVisible);
+-    }
+
+     private JFXPanel getResourceStatusPanel()
+     {
+@@ -707,14 +691,6 @@
+         public void windowClosing(WindowEvent e) { processShutdown(); }
+     }
+
+-    public class BroadcastStatusVisibleMenuItem extends JCheckBoxMenuItem
+-    {
+-        public BroadcastStatusVisibleMenuItem() {
+-            super("Show Streaming Status");
+-            setSelected(mBroadcastStatusVisible);
+-            addActionListener(e -> toggleBroadcastStatusPanelVisibility());
+-        }
+-    }
+
+     public class ResourceStatusVisibleMenuItem extends JCheckBoxMenuItem
+     {

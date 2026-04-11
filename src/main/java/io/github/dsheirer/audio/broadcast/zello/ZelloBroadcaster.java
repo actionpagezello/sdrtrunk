@@ -670,6 +670,20 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         mWebSocket.sendText(mGson.toJson(cmd), true);
     }
 
+    public void sendTextMessage(String text)
+    {
+        if(mWebSocket == null) return;
+        ZelloConfiguration config = getBroadcastConfiguration();
+        JsonObject cmd = new JsonObject();
+        cmd.addProperty("command", "send_text_message");
+        int seq = mSequence.getAndIncrement();
+        cmd.addProperty("seq", seq);
+        mPendingCommands.put(seq, "send_text_message");
+        cmd.addProperty("text", text);
+        cmd.addProperty("channel", config.getChannel());
+        mWebSocket.sendText(mGson.toJson(cmd), true);
+    }
+
     private void sendAudioPacket(long streamId, byte[] opusData)
     {
         if(mWebSocket == null) return;
@@ -806,10 +820,14 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                     int bridgeCode = mapBridgeErrorCode(errorMsg);
 
                     // Stream-related errors (3006/3007): the Zello server expired or
-                    // closed the stream, or another user interrupted our transmission.
-                    // This is transient — clean up and allow the next transmission.
-                    if("invalid stream id".equals(errorMsg) || "failed to stop stream".equals(errorMsg)
-                        || "failed to start stream".equals(errorMsg))
+                    // closed the stream, another user interrupted our transmission, or
+                    // the server refused a brand-new stream attempt. These are all
+                    // transient — clean up, stay CONNECTED, and allow the next transmission.
+                    if("invalid stream id".equals(errorMsg)
+                        || "failed to stop stream".equals(errorMsg)
+                        || "failed to start stream".equals(errorMsg)
+                        || "failed to start sending message".equals(errorMsg)
+                        || "failed to stop sending message".equals(errorMsg))
                     {
                         mLog.debug("{}Zello [{}]: error=\"{}\" seq={} command={}",
                             ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");

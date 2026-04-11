@@ -61,6 +61,13 @@ public class PlaylistEditorApplication extends Application
         mStage = primaryStage;
         mStage.setTitle("Playlist Editor");
         Scene scene = new Scene(getPlaylistEditor(), 1000, 750);
+
+        java.net.URL resource = getClass().getResource("/sdrtrunk_style.css");
+        if(resource != null)
+        {
+            scene.getStylesheets().add(resource.toExternalForm());
+        }
+
         mStage.setScene(scene);
         mStage.show();
     }

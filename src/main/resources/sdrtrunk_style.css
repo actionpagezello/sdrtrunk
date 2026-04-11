@@ -22,3 +22,123 @@
     -fx-background-radius: 2px;
     -fx-padding: 1px;
 }
+
+/*
+ * Windows 11 Modern Styling for Playlist Editor
+ */
+
+.win11-style {
+    -fx-background-color: #f3f3f3; /* Light, clean background */
+    -fx-font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+.win11-style .label {
+    -fx-text-fill: #1c1c1c;
+}
+
+/* Semi-transparent panels */
+.win11-style .grid-pane, .win11-style .vbox, .win11-style .hbox {
+    /* To simulate mica effect minimally in JavaFX, we apply a slightly lighter color on surfaces */
+}
+
+/* Rounded inputs and buttons */
+.win11-style .text-field,
+.win11-style .combo-box,
+.win11-style .color-picker {
+    -fx-background-radius: 4px;
+    -fx-border-radius: 4px;
+    -fx-border-color: #e5e5e5;
+    -fx-background-color: #ffffff;
+    -fx-padding: 4px 8px;
+}
+
+.win11-style .text-field:focused,
+.win11-style .combo-box:focused,
+.win11-style .color-picker:focused {
+    -fx-border-color: #0078D4; /* Windows 11 Accent Blue */
+    -fx-border-width: 2px;
+}
+
+/* Modern buttons */
+.win11-style .button {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cccccc;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    -fx-padding: 6px 12px;
+    -fx-text-fill: #1c1c1c;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.05), 2, 0, 0, 1);
+}
+
+.win11-style .button:hover {
+    -fx-background-color: #f0f0f0;
+}
+
+.win11-style .button:pressed {
+    -fx-background-color: #e5e5e5;
+}
+
+/* Primary Accent Button Style if any */
+.win11-style .button.default-button {
+    -fx-background-color: #0078D4;
+    -fx-text-fill: white;
+    -fx-border-color: #0078D4;
+}
+
+.win11-style .button.default-button:hover {
+    -fx-background-color: #006CBE;
+}
+
+/* TabPane Styling */
+.win11-style .tab-pane {
+    -fx-background-color: transparent;
+}
+
+.win11-style .tab-pane .tab-header-area .tab-header-background {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent transparent #e5e5e5 transparent;
+}
+
+.win11-style .tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-padding: 8px 16px;
+    -fx-background-radius: 4px 4px 0 0;
+}
+
+.win11-style .tab-pane .tab:selected {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e5e5e5 #e5e5e5 transparent #e5e5e5;
+    -fx-border-width: 1px;
+    -fx-border-radius: 4px 4px 0 0;
+}
+
+.win11-style .tab-pane .tab .tab-label {
+    -fx-text-fill: #5c5c5c;
+    -fx-font-weight: bold;
+}
+
+.win11-style .tab-pane .tab:selected .tab-label {
+    -fx-text-fill: #0078D4;
+}
+
+/* TableView and ListView styling for a cleaner look */
+.win11-style .table-view, .win11-style .list-view {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e5e5e5;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+}
+
+.win11-style .table-view .column-header-background {
+    -fx-background-color: #f9f9f9;
+}
+
+.win11-style .table-view .table-cell {
+    -fx-padding: 6px;
+}
+
+.win11-style .table-row-cell:selected, .win11-style .list-cell:selected {
+    -fx-background-color: #e5f3ff;
+    -fx-text-fill: #1c1c1c;
+}

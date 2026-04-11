@@ -1,0 +1,19 @@
+--- ./src/main/java/io/github/dsheirer/gui/playlist/streaming/StreamingEditor.java
++++ ./src/main/java/io/github/dsheirer/gui/playlist/streaming/StreamingEditor.java
+@@ -515,4 +515,16 @@
+             }
+         }
+     }
++
++    public void process(ViewStreamRequest request)
++    {
++        for (ConfiguredBroadcast cb : mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts()) {
++            if (cb.getBroadcastConfiguration().getName().equals(request.getStreamName())) {
++                mConfiguredBroadcastTableView.getSelectionModel().select(cb);
++                mConfiguredBroadcastTableView.scrollTo(cb);
++                return;
++            }
++        }
++    }
++
+ }

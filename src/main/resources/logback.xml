@@ -34,7 +34,9 @@
   <!-- Apache Mina TCP/HTTP library -->
   <logger name="org.apache.mina" level="INFO" />
 
-  <!-- Zello: INFO to see stream start/stop/connect, WARN to see only errors -->
-  <logger name="io.github.dsheirer.audio.broadcast.zello" level="INFO" />
+  <!-- Zello: DEBUG exposes all activity including transient server errors
+       (invalid stream id, failed to start/stop stream, opus hiccups, reconnects,
+       session-epoch drops). Change to INFO if the log becomes too noisy. -->
+  <logger name="io.github.dsheirer.audio.broadcast.zello" level="DEBUG" />
 
 </configuration>

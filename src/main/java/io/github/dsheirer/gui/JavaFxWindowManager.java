@@ -321,6 +321,13 @@ public class JavaFxWindowManager extends Application
         {
             createJFXPanel();
             Scene scene = new Scene(getPlaylistEditor(), 1000, 750);
+
+            java.net.URL resource = getClass().getResource("/sdrtrunk_style.css");
+            if(resource != null)
+            {
+                scene.getStylesheets().add(resource.toExternalForm());
+            }
+
             mPlaylistStage = new Stage();
             mPlaylistStage.setTitle("sdrtrunk - Playlist Editor");
             mPlaylistStage.setScene(scene);

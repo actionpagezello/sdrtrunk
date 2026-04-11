@@ -1,7 +1,7 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-08
-Location: C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-08.zip
+## Current Build: ap-09
+Location: C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-09.zip
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
@@ -13,7 +13,7 @@ Location: C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Features path: C:\Users\Admin\projects\sdrtrunk-ap-features
 - Build command: .\gradlew runtimeZipCurrent
-- Version property: gradle.properties -> projectVersion=0.6.2-ap-08
+- Version property: gradle.properties -> projectVersion=0.6.2-ap-09
 - 6GB heap (-Xmx6g in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Completed Features
@@ -31,6 +31,17 @@ Location: C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_
 12. Column order persistence (added to JTableColumnWidthMonitor)
 13. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
 14. Debug logging cleanup (ChannelMetadataPanel)
+
+## Bug Fixes in ap-09
+1. **ZelloBroadcaster "invalid stream id" fix** - Added session epoch tracking (mSessionEpoch) that
+   increments on every WebSocket reconnect. Stream operations capture the epoch at start and abort if
+   it changes, preventing start_stream commands and audio packets from being sent on a new connection
+   using stale session state. Also fixed onClose() and onError() to unconditionally reset mStreamActive
+   and mCurrentStreamId on any disconnect, eliminating stale stream IDs surviving across sessions.
+   Affected channels: Chelsea MA Police, Winthrop MA Police (and any other ZelloBroadcaster channel
+   with high traffic volume during WebSocket reconnects).
+   File: ZelloBroadcaster.java (mSessionEpoch, mStreamSessionEpoch, sendStartStream, encodeAndSendFrame,
+   onClose, onError, connectWebSocket)
 
 ## Bug Fixes in ap-08
 1. **Mute now sticks across restarts** - ChannelAddListener now checks alias DO_NOT_MONITOR priority

@@ -59,6 +59,15 @@ public class NBFMAudioFilters
     private float mBassBoostY1 = 0, mBassBoostY2 = 0;
     private float mBassBoostB0, mBassBoostB1, mBassBoostB2;
     private float mBassBoostA1, mBassBoostA2;
+
+    // Hiss reduction (high-shelf filter above 2 kHz) - cuts high-frequency hiss
+    private boolean mHissReductionEnabled = false;
+    private float mHissReductionDb = -6.0f;  // -12 to 0 dB (negative = cut)
+    private double mHissReductionCornerHz = 2000.0;  // Shelf corner frequency
+    private float mHissX1 = 0, mHissX2 = 0;
+    private float mHissY1 = 0, mHissY2 = 0;
+    private float mHissB0, mHissB1, mHissB2;
+    private float mHissA1, mHissA2;
     
     // Intelligent squelch (simple Vox-Send style gate)
     private float mSquelchThresholdPercent = 4.0f;  // 0-100% threshold
@@ -111,6 +120,7 @@ public class NBFMAudioFilters
         setDeemphasisTimeConstant(75.0);      // 75μs North America
         setVoiceEnhancement(0.3f);            // 30% boost
         setBassBoost(0.0f);                   // 0 dB (off by default)
+        setHissReductionDb(-6.0f);            // -6 dB high-shelf (off by default)
         setSquelchThreshold(4.0f);            // 4% threshold
         setSquelchReduction(0.8f);            // 80% reduction
         setHoldTime(500);                     // 500ms hold time
@@ -123,38 +133,43 @@ public class NBFMAudioFilters
     
     /**
      * Process a single audio sample through the Vox-Send chain
-     * Processing order: Low-Pass -> Bass Boost -> De-emphasis -> Voice Enhancement -> Squelch -> Output Gain
+     * Processing order: Low-Pass -> De-emphasis -> Hiss Reduction -> Bass Boost -> Voice Enhancement -> Squelch -> Output Gain
      */
-    public float process(float sample) 
+    public float process(float sample)
     {
-        // 1. Low-Pass Filter - Remove high hiss/noise
+        // 1. Low-Pass Filter - Remove high hiss/noise (brickwall)
         if (mLowPassEnabled) {
             sample = processLowPass(sample);
         }
-        
-        // 2. Bass Boost - Enhance low-end warmth (after noise removal)
-        if (mBassBoostEnabled) {
-            sample = processBassBoost(sample);
-        }
-        
-        // 3. FM De-emphasis - Correct FM radio pre-emphasis
+
+        // 2. FM De-emphasis - Correct FM radio pre-emphasis (gentle HF rolloff)
         if (mDeemphasisEnabled) {
             sample = processDeemphasis(sample);
         }
-        
-        // 4. Voice Enhancement - Boost speech clarity
+
+        // 3. Hiss Reduction - High-shelf cut in the 2-3.4 kHz hiss band
+        if (mHissReductionEnabled) {
+            sample = processHissReduction(sample);
+        }
+
+        // 4. Bass Boost - Enhance low-end warmth
+        if (mBassBoostEnabled) {
+            sample = processBassBoost(sample);
+        }
+
+        // 5. Voice Enhancement - Boost speech clarity
         if (mVoiceEnhanceEnabled) {
             sample = processVoiceEnhancement(sample);
         }
-        
-        // 5. Intelligent Squelch - Gate out carrier noise
+
+        // 6. Intelligent Squelch - Gate out carrier noise
         if (mSquelchEnabled) {
             sample = processIntelligentSquelch(sample);
         }
-        
-        // 6. Output Gain - Amplify clean signal (don't amplify noise!)
+
+        // 7. Output Gain - Amplify clean signal (don't amplify noise!)
         sample *= mInputGain;
-        
+
         return sample;
     }
     
@@ -381,15 +396,116 @@ public class NBFMAudioFilters
         if (mBassBoostDb < 0.1f) {
             return input;  // Bypass if boost is off
         }
-        
+
         float output = mBassBoostB0 * input + mBassBoostB1 * mBassBoostX1 + mBassBoostB2 * mBassBoostX2
                      - mBassBoostA1 * mBassBoostY1 - mBassBoostA2 * mBassBoostY2;
-        
+
         mBassBoostX2 = mBassBoostX1;
         mBassBoostX1 = input;
         mBassBoostY2 = mBassBoostY1;
         mBassBoostY1 = output;
-        
+
+        return output;
+    }
+
+    // ========== HISS REDUCTION (HIGH-SHELF FILTER) ==========
+
+    /**
+     * Enable/disable hiss reduction high-shelf filter
+     */
+    public void setHissReductionEnabled(boolean enabled)
+    {
+        mHissReductionEnabled = enabled;
+        if (!enabled) {
+            mHissX1 = mHissX2 = 0.0f;
+            mHissY1 = mHissY2 = 0.0f;
+        }
+    }
+
+    public boolean isHissReductionEnabled()
+    {
+        return mHissReductionEnabled;
+    }
+
+    /**
+     * Set hiss reduction amount in dB
+     * @param dbGain Shelf gain in dB. Negative values cut (e.g. -6 = -6 dB cut above corner).
+     *               Valid range: -12 to 0 dB.
+     */
+    public void setHissReductionDb(float dbGain)
+    {
+        mHissReductionDb = Math.max(-12.0f, Math.min(0.0f, dbGain));
+        calculateHissReductionCoefficients();
+    }
+
+    public float getHissReductionDb()
+    {
+        return mHissReductionDb;
+    }
+
+    /**
+     * Set hiss reduction corner frequency (shelf pivot frequency)
+     * @param hz Corner frequency in Hz (typical 1500-2500 Hz)
+     */
+    public void setHissReductionCornerHz(double hz)
+    {
+        mHissReductionCornerHz = Math.max(500.0, Math.min(3800.0, hz));
+        calculateHissReductionCoefficients();
+    }
+
+    public double getHissReductionCornerHz()
+    {
+        return mHissReductionCornerHz;
+    }
+
+    /**
+     * Calculate high-shelf biquad coefficients (Audio EQ Cookbook formula)
+     * Above the corner frequency, gain approaches mHissReductionDb.
+     * Below the corner, gain is 0 dB (flat passthrough).
+     */
+    private void calculateHissReductionCoefficients()
+    {
+        double fs = mSampleRate;
+        double f0 = mHissReductionCornerHz;
+        double dbGain = mHissReductionDb;
+
+        double A = Math.pow(10.0, dbGain / 40.0);  // sqrt of linear gain
+        double w0 = 2.0 * Math.PI * f0 / fs;
+        double cosw0 = Math.cos(w0);
+        double sinw0 = Math.sin(w0);
+        double S = 1.0;  // shelf slope (1.0 = max steepness)
+        double alpha = sinw0 / 2.0 * Math.sqrt((A + 1.0/A) * (1.0/S - 1.0) + 2.0);
+        double twoSqrtAalpha = 2.0 * Math.sqrt(A) * alpha;
+
+        // High-shelf cookbook formulae
+        double b0 = A * ((A + 1.0) + (A - 1.0) * cosw0 + twoSqrtAalpha);
+        double b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cosw0);
+        double b2 = A * ((A + 1.0) + (A - 1.0) * cosw0 - twoSqrtAalpha);
+        double a0 = (A + 1.0) - (A - 1.0) * cosw0 + twoSqrtAalpha;
+        double a1 = 2.0 * ((A - 1.0) - (A + 1.0) * cosw0);
+        double a2 = (A + 1.0) - (A - 1.0) * cosw0 - twoSqrtAalpha;
+
+        mHissB0 = (float)(b0 / a0);
+        mHissB1 = (float)(b1 / a0);
+        mHissB2 = (float)(b2 / a0);
+        mHissA1 = (float)(a1 / a0);
+        mHissA2 = (float)(a2 / a0);
+    }
+
+    private float processHissReduction(float input)
+    {
+        if (mHissReductionDb > -0.1f) {
+            return input;  // Bypass if cut is effectively zero
+        }
+
+        float output = mHissB0 * input + mHissB1 * mHissX1 + mHissB2 * mHissX2
+                     - mHissA1 * mHissY1 - mHissA2 * mHissY2;
+
+        mHissX2 = mHissX1;
+        mHissX1 = input;
+        mHissY2 = mHissY1;
+        mHissY1 = output;
+
         return output;
     }
     
@@ -660,6 +776,8 @@ public class NBFMAudioFilters
         mVoiceEnhY1 = mVoiceEnhY2 = 0.0f;
         mBassBoostX1 = mBassBoostX2 = 0.0f;
         mBassBoostY1 = mBassBoostY2 = 0.0f;
+        mHissX1 = mHissX2 = 0.0f;
+        mHissY1 = mHissY2 = 0.0f;
         mSquelchCurrentGain = 1.0f;
         mSquelchCurrentLevel = 0.0f;
         mRmsSmoothed = 0.0f;

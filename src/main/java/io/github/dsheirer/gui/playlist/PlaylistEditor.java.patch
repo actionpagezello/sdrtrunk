@@ -1,0 +1,22 @@
+--- ./src/main/java/io/github/dsheirer/gui/playlist/PlaylistEditor.java
++++ ./src/main/java/io/github/dsheirer/gui/playlist/PlaylistEditor.java
+@@ -30,6 +30,7 @@
+ import io.github.dsheirer.gui.playlist.radioreference.RadioReferenceEditor;
+ import io.github.dsheirer.gui.playlist.streaming.StreamingEditor;
++import io.github.dsheirer.gui.playlist.streaming.ViewStreamRequest;
+ import io.github.dsheirer.gui.preference.PreferenceEditorType;
+ import io.github.dsheirer.gui.preference.ViewUserPreferenceEditorRequest;
+ import io.github.dsheirer.playlist.PlaylistManager;
+@@ -124,6 +125,12 @@
+                 }
+                 break;
++            case STREAM:
++                if(request instanceof ViewStreamRequest)
++                {
++                    getTabPane().getSelectionModel().select(getStreamingTab());
++                    ((StreamingEditor)getStreamingTab().getContent()).process((ViewStreamRequest)request);
++                }
++                break;
+             case PLAYLIST:
+                 //Ignore - this is a request to simply show te playlist editor
+                 break;

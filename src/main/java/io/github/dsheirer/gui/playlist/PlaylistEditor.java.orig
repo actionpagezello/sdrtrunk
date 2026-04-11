@@ -28,7 +28,6 @@ import io.github.dsheirer.gui.playlist.channel.ChannelTabRequest;
 import io.github.dsheirer.gui.playlist.manager.PlaylistManagerEditor;
 import io.github.dsheirer.gui.playlist.radioreference.RadioReferenceEditor;
 import io.github.dsheirer.gui.playlist.streaming.StreamingEditor;
-import io.github.dsheirer.gui.playlist.streaming.ViewStreamRequest;
 import io.github.dsheirer.gui.preference.PreferenceEditorType;
 import io.github.dsheirer.gui.preference.ViewUserPreferenceEditorRequest;
 import io.github.dsheirer.playlist.PlaylistManager;
@@ -91,9 +90,6 @@ public class PlaylistEditor extends BorderPane
         mTunerManager = tunerManager;
         mUserPreferences = userPreferences;
 
-        // Apply Windows 11 styling base class
-        getStyleClass().add("win11-style");
-
         //Throw a new runnable back onto the FX thread to lazy load the editor content after the editor has been
         //constructed and shown.
         Platform.runLater(() -> {
@@ -124,13 +120,6 @@ public class PlaylistEditor extends BorderPane
                 {
                     getTabPane().getSelectionModel().select(getChannelsTab());
                     getChannelEditor().process((ChannelTabRequest)request);
-                }
-                break;
-            case STREAM:
-                if(request instanceof ViewStreamRequest)
-                {
-                    getTabPane().getSelectionModel().select(getStreamingTab());
-                    ((StreamingEditor)getStreamingTab().getContent()).process((ViewStreamRequest)request);
                 }
                 break;
             case PLAYLIST:

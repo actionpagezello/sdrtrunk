@@ -1,0 +1,10 @@
+--- ./src/main/java/io/github/dsheirer/audio/broadcast/BroadcastEvent.java
++++ ./src/main/java/io/github/dsheirer/audio/broadcast/BroadcastEvent.java
+@@ -84,6 +84,7 @@
+         BROADCASTER_STREAMED_COUNT_CHANGE,
+         BROADCASTER_AGED_OFF_COUNT_CHANGE,
+         BROADCASTER_ERROR_COUNT_CHANGE,
++        BROADCASTER_LAST_STREAMED_TIME_CHANGE,
+         BROADCASTER_DELETE,
+
+         CONFIGURATION_ADD,

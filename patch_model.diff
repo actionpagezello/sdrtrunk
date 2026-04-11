@@ -1,0 +1,41 @@
+--- ./src/main/java/io/github/dsheirer/audio/broadcast/BroadcastModel.java
++++ ./src/main/java/io/github/dsheirer/audio/broadcast/BroadcastModel.java
+@@ -65,7 +65,8 @@
+     public static final int COLUMN_BROADCASTER_AGED_OFF_COUNT = 5;
+     public static final int COLUMN_BROADCASTER_ERROR_COUNT = 6;
++    public static final int COLUMN_BROADCASTER_LAST_STREAMED = 7;
+
+     public static final String[] COLUMN_NAMES = new String[]
+-        {"Stream Type", "Name", "Status", "Queued", "Streamed/Uploaded", "Aged Off", "Upload Error"};
++        {"Stream Type", "Name", "Status", "Queued", "Streamed/Uploaded", "Aged Off", "Upload Error", "Last Streamed"};
+
+     private ObservableList<ConfiguredBroadcast> mConfiguredBroadcasts =
+@@ -542,6 +543,12 @@
+                     }
+                     break;
++                case BROADCASTER_LAST_STREAMED_TIME_CHANGE:
++                    if(row >= 0)
++                    {
++                        fireTableCellUpdated(row, COLUMN_BROADCASTER_LAST_STREAMED);
++                    }
++                    break;
+             }
+         }
+@@ -620,6 +627,12 @@
+                                 return configuredBroadcast.getAudioBroadcaster().getAudioErrorCount();
+                             }
+                             break;
++                        case COLUMN_BROADCASTER_LAST_STREAMED:
++                            if(configuredBroadcast.hasAudioBroadcaster())
++                            {
++                                return configuredBroadcast.getAudioBroadcaster().getLastStreamedTime();
++                            }
++                            break;
+                         default:
+                             break;
+@@ -649,6 +662,8 @@
+                 return BroadcastServerType.class;
++            case COLUMN_BROADCASTER_LAST_STREAMED:
++                return Long.class;
+             case COLUMN_STREAM_NAME:
+             default:

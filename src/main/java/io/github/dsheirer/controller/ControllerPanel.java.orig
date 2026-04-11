@@ -54,7 +54,6 @@ public class ControllerPanel extends JPanel
     private NowPlayingPanel mNowPlayingPanel;
     private MapPanel mMapPanel;
     private TunerViewPanel mTunerManagerPanel;
-    private io.github.dsheirer.audio.broadcast.BroadcastStatusPanel mBroadcastStatusPanel;
 
     private JideTabbedPane mTabbedPane;
 
@@ -67,7 +66,6 @@ public class ControllerPanel extends JPanel
         mNowPlayingPanel = new NowPlayingPanel(playlistManager, iconModel, userPreferences, settingsManager, tunerManager, detailTabsVisible);
         mMapPanel = new MapPanel(mapService, playlistManager.getAliasModel(), iconModel, settingsManager);
         mTunerManagerPanel = new TunerViewPanel(tunerManager, userPreferences);
-        mBroadcastStatusPanel = new io.github.dsheirer.audio.broadcast.BroadcastStatusPanel(playlistManager.getBroadcastModel(), userPreferences, "application.broadcast.status.panel");
 
         init();
     }
@@ -106,7 +104,6 @@ public class ControllerPanel extends JPanel
         mTabbedPane.addTab("Now Playing", mNowPlayingPanel);
         mTabbedPane.addTab("Map", mMapPanel);
         mTabbedPane.addTab("Tuners", mTunerManagerPanel);
-        mTabbedPane.addTab("Streams", mBroadcastStatusPanel);
 
         Icon playIcon = IconFontSwing.buildIcon(FontAwesome.PLAY_CIRCLE_O, 20, Color.DARK_GRAY);
         mTabbedPane.addTab("Playlist Editor", playIcon, new JLabel("Show Playlist Manager"));
