@@ -394,3 +394,50 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
 
     configure(rt, jvmArgsLinux)
 }
+
+/**
+ * ap-fork: Archive built runtime zips to the sibling sdrtrunk-ap-versions folder.
+ *
+ * After any runtimeZip* task completes, this task copies every .zip produced under
+ * build/image/ to ../sdrtrunk-ap-versions/v<version>/ so a clean build does not wipe
+ * prior deliverables. The destination can be overridden with -PversionsDir=<path>.
+ *
+ * Usage (runs automatically as a finalizer): gradlew runtimeZipCurrent
+ * Usage (manual):                            gradlew archiveVersion
+ */
+tasks.register('archiveVersion', Copy) {
+    description = 'ap-fork: copies built runtime zips into sdrtrunk-ap-versions/v<version>'
+    group = 'ap-fork'
+
+    def defaultVersionsDir = file("${rootDir}/../sdrtrunk-ap-versions")
+    def versionsDir = project.hasProperty('versionsDir') ? file(project.versionsDir) : defaultVersionsDir
+
+    from("$buildDir/image") {
+        include '*.zip'
+    }
+    into(new File(versionsDir, "v${version}"))
+
+    doFirst {
+        versionsDir.mkdirs()
+        logger.lifecycle("ap-fork: archiving v${version} zips -> ${destinationDir}")
+    }
+    doLast {
+        def copied = destinationDir.listFiles()?.findAll { it.name.endsWith('.zip') } ?: []
+        if (copied.isEmpty()) {
+            logger.lifecycle("ap-fork: no zips found in ${buildDir}/image (did runtimeZip* run?)")
+        } else {
+            copied.each { logger.lifecycle("ap-fork: archived ${it.name}") }
+        }
+    }
+}
+
+//Hook the archive task onto every runtimeZip* task as a finalizer so it runs
+//automatically after each build, even if the runtimeZip task fails partway through.
+afterEvaluate {
+    ['runtimeZipCurrent', 'runtimeZipWindows', 'runtimeZipOthers'].each { name ->
+        def t = tasks.findByName(name)
+        if (t != null) {
+            t.finalizedBy('archiveVersion')
+        }
+    }
+}
