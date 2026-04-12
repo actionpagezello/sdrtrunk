@@ -37,6 +37,7 @@ public class SidebarPanel extends JPanel {
     public SidebarPanel(SidebarListener listener) {
         mListener = listener;
         setBackground(BG_COLOR);
+        setPreferredSize(new Dimension(250, 0));
         setLayout(new MigLayout("insets 10 5 10 5, gapy 5, wrap 1, fillx", "[grow, fill]", "[]"));
 
         initItems();
