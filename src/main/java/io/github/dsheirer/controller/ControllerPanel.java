@@ -43,6 +43,17 @@ import org.slf4j.LoggerFactory;
 import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSplitPane;
+import javax.swing.JPanel;
+import javax.swing.JList;
+import javax.swing.ListSelectionModel;
+import javax.swing.JScrollPane;
+import javax.swing.event.ListSelectionListener;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.DefaultListModel;
+import java.awt.CardLayout;
+import java.awt.BorderLayout;
+
 
 public class ControllerPanel extends JPanel
 {
@@ -55,7 +66,10 @@ public class ControllerPanel extends JPanel
     private MapPanel mMapPanel;
     private TunerViewPanel mTunerManagerPanel;
 
-    private JideTabbedPane mTabbedPane;
+    private JSplitPane mSplitPane;
+    private JPanel mCardPanel;
+    private CardLayout mCardLayout;
+    private JList<String> mSidebarList;
 
     public ControllerPanel(PlaylistManager playlistManager, AudioPlaybackManager audioPlaybackManager,
                            IconModel iconModel, MapService mapService, SettingsManager settingsManager,
@@ -80,38 +94,48 @@ public class ControllerPanel extends JPanel
 
     private void init()
     {
-        setLayout(new MigLayout("insets 0 0 0 0 ", "[grow,fill]", "[]0[grow,fill]0[]"));
+        setLayout(new BorderLayout());
 
-        add(mAudioPanel, "wrap");
+        add(mAudioPanel, BorderLayout.NORTH);
 
-        mTabbedPane = new JideTabbedPane()
-        {
-            @Override
-            public void setSelectedIndex(int index)
-            {
-                if(index == mSettingsTabIndex)
-                {
+        mCardLayout = new CardLayout();
+        mCardPanel = new JPanel(mCardLayout);
+        
+        mCardPanel.add(mNowPlayingPanel, "Monitoring - Now Playing");
+        mCardPanel.add(mMapPanel, "Monitoring - Map");
+        mCardPanel.add(new JLabel("Playlist Manager (Click link below)"), "Configuration - Playlist Editor");
+        
+        DefaultListModel<String> listModel = new DefaultListModel<>();
+        listModel.addElement("Monitoring - Now Playing");
+        listModel.addElement("Monitoring - Map");
+        listModel.addElement("Configuration - Playlist Editor");
+        
+        mSidebarList = new JList<>(listModel);
+        mSidebarList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        mSidebarList.setSelectedIndex(0);
+        
+        mSidebarList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                String selected = mSidebarList.getSelectedValue();
+                if ("Configuration - Playlist Editor".equals(selected)) {
                     MyEventBus.getGlobalEventBus().post(new ViewPlaylistRequest());
-                }
-                else
-                {
-                    super.setSelectedIndex(index);
+                    mSidebarList.setSelectedIndex(0); // revert selection
+                } else if (selected != null) {
+                    mCardLayout.show(mCardPanel, selected);
                 }
             }
-        };
-        mTabbedPane.setFont(this.getFont());
-        mTabbedPane.setForeground(Color.BLACK);
-        mTabbedPane.addTab("Now Playing", mNowPlayingPanel);
-        mTabbedPane.addTab("Map", mMapPanel);
-        mTabbedPane.addTab("Tuners", mTunerManagerPanel);
+        });
 
-        Icon playIcon = IconFontSwing.buildIcon(FontAwesome.PLAY_CIRCLE_O, 20, Color.DARK_GRAY);
-        mTabbedPane.addTab("Playlist Editor", playIcon, new JLabel("Show Playlist Manager"));
-        mSettingsTabIndex = mTabbedPane.getTabCount() - 1;
+        JScrollPane sidebarScroll = new JScrollPane(mSidebarList);
+        
+        // Tuners panel is persistently visible below the card panel
+        JSplitPane centerSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mCardPanel, mTunerManagerPanel);
+        centerSplit.setResizeWeight(0.8);
+        centerSplit.setDividerLocation(400);
 
-        //Set preferred size to influence the split between these panels
-        mTabbedPane.setPreferredSize(new Dimension(880, 500));
-
-        add(mTabbedPane, "wrap");
+        mSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebarScroll, centerSplit);
+        mSplitPane.setDividerLocation(200);
+        
+        add(mSplitPane, BorderLayout.CENTER);
     }
 }

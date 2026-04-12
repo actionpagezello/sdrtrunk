@@ -75,6 +75,10 @@ test {
 }
 
 dependencies {
+    implementation 'com.formdev:flatlaf:3.4'
+    implementation 'com.formdev:flatlaf-extras:3.4'
+    implementation 'net.java.dev.jna:jna:5.14.0'
+    implementation 'net.java.dev.jna:jna-platform:5.14.0'
 
     // JUnit Tests
     testImplementation(platform("org.junit:junit-bom:6.0.1"))
@@ -147,6 +151,8 @@ def jvmArgsWindows =
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '-Xmx6g',                         //Set max heap size to 6GB
+         '-Dsun.java2d.d3d=true',          //Hardware Acceleration Direct3D
+         '-Dsun.java2d.opengl=True',       //Hardware Acceleration OpenGL
          '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
 
 /**

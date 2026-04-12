@@ -33,6 +33,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.swing.ImageIcon;
+import com.formdev.flatlaf.extras.FlatSVGIcon;
+import java.io.InputStream;
+
 import java.net.URL;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -169,28 +172,40 @@ public class Icon implements Comparable<Icon>
     }
 
     @JsonIgnore
-    public ImageIcon getIcon()
+        public ImageIcon getIcon()
     {
         if(mImageIcon == null && getPath() != null && !getPath().isEmpty())
         {
             try
             {
+                String svgPath = getPath().replaceAll("\\.png$", ".svg");
                 if(!getPath().startsWith("images"))
                 {
-                    mImageIcon = new ImageIcon(getPath());
+                    // For absolute or external paths
+                    try {
+                        mImageIcon = new FlatSVGIcon(svgPath);
+                    } catch (Exception e) {
+                        mImageIcon = new ImageIcon(getPath());
+                    }
                 }
                 else
                 {
-                    URL imageURL = Icon.class.getResource(getPath());
-
-                    if(imageURL == null && !getPath().startsWith("/"))
-                    {
-                        imageURL = (Icon.class.getResource("/" + getPath()));
+                    String resourcePath = getPath();
+                    if (!resourcePath.startsWith("/")) {
+                        resourcePath = "/" + resourcePath;
                     }
-
-                    if(imageURL != null)
-                    {
-                        mImageIcon = new ImageIcon(imageURL);
+                    String svgResourcePath = resourcePath.replaceAll("\\.png$", ".svg");
+                    
+                    URL svgURL = Icon.class.getResource(svgResourcePath);
+                    if (svgURL != null) {
+                        // FlatSVGIcon takes a path relative to the root or a class. We can use the resource path
+                        mImageIcon = new FlatSVGIcon(svgResourcePath.startsWith("/") ? svgResourcePath.substring(1) : svgResourcePath);
+                    } else {
+                        URL imageURL = Icon.class.getResource(resourcePath);
+                        if(imageURL != null)
+                        {
+                            mImageIcon = new ImageIcon(imageURL);
+                        }
                     }
                 }
             }

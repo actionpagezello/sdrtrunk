@@ -103,6 +103,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JSeparator;
 import javax.swing.KeyStroke;
 import javax.swing.UIManager;
+import io.github.dsheirer.gui.theme.ThemeManager;
+
 import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import javax.swing.plaf.metal.MetalLookAndFeel;
@@ -164,17 +166,12 @@ public class SDRTrunk implements Listener<TunerEvent>
         mResourceMonitor = new ResourceMonitor(mUserPreferences);
 
         String operatingSystem = System.getProperty("os.name", "generic").toLowerCase(Locale.ENGLISH);
-
-        if(operatingSystem.contains("mac") || operatingSystem.contains("nux"))
-        {
-            try
-            {
-                UIManager.setLookAndFeel(MetalLookAndFeel.class.getName());
+        ThemeManager themeManager = new ThemeManager();
+        if(operatingSystem.contains("mac") || operatingSystem.contains("nux")) {
+            try {
                 LookAndFeelFactory.installJideExtension();
-            }
-            catch(Exception e)
-            {
-                mLog.error("Error trying to set Metal look and feel for OS [" + operatingSystem + "]");
+            } catch(Exception e) {
+                mLog.error("Error trying to set LookAndFeelFactory extension for OS [" + operatingSystem + "]");
             }
         }
 
@@ -937,6 +934,8 @@ public class SDRTrunk implements Listener<TunerEvent>
      */
     public static void main(String[] args)
     {
+        System.setProperty("sun.java2d.d3d", "true");
+        System.setProperty("sun.java2d.opengl", "true");
         new SDRTrunk();
     }
 }

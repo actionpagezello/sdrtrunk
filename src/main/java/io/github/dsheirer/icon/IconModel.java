@@ -45,6 +45,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.swing.ImageIcon;
+import com.formdev.flatlaf.extras.FlatSVGIcon;
+
 
 public class IconModel
 {
@@ -215,10 +217,15 @@ public class IconModel
      * @param height new height to scale the image (width will be scaled accordingly)
      * @return
      */
-    public static ImageIcon getScaledIcon(ImageIcon original, int height)
+        public static ImageIcon getScaledIcon(ImageIcon original, int height)
     {
         if(original != null)
         {
+            if (original instanceof FlatSVGIcon) {
+                FlatSVGIcon svgIcon = (FlatSVGIcon) original;
+                float scale = (float) height / svgIcon.getIconHeight();
+                return svgIcon.derive(svgIcon.getIconWidth() * scale, height);
+            }
             double scale = (double) original.getIconHeight() / (double) height;
 
             int scaledWidth = (int) ((double) original.getIconWidth() / scale);
