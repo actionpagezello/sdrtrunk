@@ -50,22 +50,12 @@ public class SidebarPanel extends JPanel {
         mItems.add(new SidebarItem("Playlist Editor", FontAwesome.LIST, "playlist_editor", true));
         mItems.add(new SidebarItem("Tuners", FontAwesome.SLIDERS, "tuners", true));
 
-        SidebarItem logsItem = new SidebarItem("Logs", FontAwesome.FILE_TEXT, "logs", false);
-        logsItem.addSubItem("Application Log Files", "logs_app");
-        logsItem.addSubItem("Channel Event Log Files", "logs_event");
-        mItems.add(logsItem);
+        mItems.add(new SidebarItem("Logs", FontAwesome.FILE_TEXT, "logs", true));
 
-        mItems.add(new SidebarItem("Audio Recordings", FontAwesome.MICROPHONE, "audio_recordings", true));
+        mItems.add(new SidebarItem("Audio Recordings", FontAwesome.MICROPHONE, "audio_recordings", false));
         mItems.add(new SidebarItem("Icon Manager", FontAwesome.PICTURE_O, "icon_manager", true));
-        mItems.add(new SidebarItem("Message Recording Viewer (.bits)", FontAwesome.FILE_CODE_O, "msg_viewer", true));
+        mItems.add(new SidebarItem(".bits Viewer", FontAwesome.FILE_CODE_O, "msg_viewer", true));
         mItems.add(new SidebarItem("User Preferences", FontAwesome.COGS, "user_prefs", true));
-
-        SidebarItem visibilityItem = new SidebarItem("Visibility", FontAwesome.EYE, "visibility", false);
-        visibilityItem.addSubItem("Disable Spectrum & Waterfall", "vis_disable_spec");
-        visibilityItem.addSubItem("Show Now Playing Channel Details", "vis_now_playing");
-        visibilityItem.addSubItem("Show Streaming Status", "vis_stream_status");
-        visibilityItem.addSubItem("Show Resource Status", "vis_resource_status");
-        mItems.add(visibilityItem);
 
         mItems.add(new SidebarItem("Exit", FontAwesome.SIGN_OUT, "exit", true));
     }
@@ -81,6 +71,7 @@ public class SidebarPanel extends JPanel {
         toggleBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         toggleBtn.addActionListener(e -> {
             mCollapsed = !mCollapsed;
+            setPreferredSize(new Dimension(mCollapsed ? 50 : 250, 0));
             render();
             revalidate();
             repaint();
@@ -167,6 +158,7 @@ public class SidebarPanel extends JPanel {
             mView.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
             mIconLabel = new JLabel(IconFontSwing.buildIcon(mIcon, 16, TEXT_COLOR));
+            mIconLabel.setToolTipText(mLabel);
             mTextLabel = new JLabel(mLabel);
             mTextLabel.setForeground(TEXT_COLOR);
             mTextLabel.setFont(mTextLabel.getFont().deriveFont(Font.BOLD));
@@ -255,6 +247,7 @@ public class SidebarPanel extends JPanel {
             private void createView() {
                 mView = new JPanel(new MigLayout("insets 6 30 6 6", "[grow]", "[]"));
                 mView.setCursor(new Cursor(Cursor.HAND_CURSOR));
+                mView.setToolTipText(mLabel);
 
                 JLabel textLabel = new JLabel(mLabel);
                 textLabel.setForeground(TEXT_COLOR);

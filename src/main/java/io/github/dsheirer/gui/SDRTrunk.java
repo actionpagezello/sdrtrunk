@@ -112,8 +112,41 @@ import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import javax.swing.plaf.metal.MetalLookAndFeel;
 
-public class SDRTrunk implements Listener<TunerEvent>
+public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.VisibilityListener
 {
+    @Override
+    public void onToggleSpectrum() {
+        mSpectrumDisabled = !mSpectrumDisabled;
+        if (mSpectrumDisabled || (!mCurrentViewId.equals("now_playing") && !mCurrentViewId.equals("tuners"))) {
+            mMainContentPanel.remove(mSpectralPanel);
+        } else {
+            mMainContentPanel.add(mSpectralPanel, BorderLayout.NORTH);
+        }
+        mMainContentPanel.revalidate();
+        mMainContentPanel.repaint();
+    }
+
+    @Override
+    public void onToggleDetails() {
+        toggleNowPlayingDetailsPanelVisibility();
+        mMainContentPanel.revalidate();
+        mMainContentPanel.repaint();
+    }
+
+    @Override
+    public void onToggleStreaming() {
+        toggleBroadcastStatusPanelVisibility();
+        mMainContentPanel.revalidate();
+        mMainContentPanel.repaint();
+    }
+
+    @Override
+    public void onToggleResource() {
+        toggleResourceStatusPanelVisibility();
+        mMainContentPanel.revalidate();
+        mMainContentPanel.repaint();
+    }
+
     private final static Logger mLog = LoggerFactory.getLogger(SDRTrunk.class);
     private Preferences mPreferences = Preferences.userNodeForPackage(SDRTrunk.class);
 
@@ -237,24 +270,13 @@ public class SDRTrunk implements Listener<TunerEvent>
 
                 @Override
                 public void onActionRequested(String actionId) {
-                    if (actionId.equals("vis_disable_spec")) {
-                        mSpectrumDisabled = !mSpectrumDisabled;
-                        if (mSpectrumDisabled || (!mCurrentViewId.equals("now_playing") && !mCurrentViewId.equals("tuners"))) {
-                            mMainContentPanel.remove(mSpectralPanel);
-                        } else {
-                            mMainContentPanel.add(mSpectralPanel, BorderLayout.NORTH);
+                    if (actionId.equals("audio_recordings")) {
+                        try {
+                            java.awt.Desktop.getDesktop().open(mUserPreferences.getDirectoryPreference().getDirectoryRecording().toFile());
+                        } catch (Exception ex) {
+                            mLog.error("Error opening audio recordings directory", ex);
                         }
-                    } else if (actionId.equals("vis_now_playing")) {
-
-                        toggleNowPlayingDetailsPanelVisibility();
-                    } else if (actionId.equals("vis_stream_status")) {
-                        toggleBroadcastStatusPanelVisibility();
-                    } else if (actionId.equals("vis_resource_status")) {
-                        toggleResourceStatusPanelVisibility();
                     }
-
-                    mMainContentPanel.revalidate();
-                    mMainContentPanel.repaint();
                 }
             });
             mMainGui.add(sidebar, BorderLayout.WEST);
@@ -292,17 +314,15 @@ public class SDRTrunk implements Listener<TunerEvent>
         if(!GraphicsEnvironment.isHeadless())
         {
             mControllerPanel = new ControllerPanel(mPlaylistManager, audioPlaybackManager, mIconModel, mapService,
-                    mSettingsManager, mTunerManager, mUserPreferences, mNowPlayingDetailsVisible);
+                    mSettingsManager, mTunerManager, mUserPreferences, mNowPlayingDetailsVisible, this);
 
             mControllerPanel.addView("playlist_editor", mJavaFxWindowManager.getPlaylistEditorPanel());
             mControllerPanel.addView("icon_manager", mJavaFxWindowManager.getIconManagerPanel());
             mControllerPanel.addView("user_prefs", mJavaFxWindowManager.getUserPreferencesEditorPanel());
             mControllerPanel.addView("msg_viewer", mJavaFxWindowManager.getRecordingViewerPanel());
 
-            LogsPanel appLogsPanel = new LogsPanel(mUserPreferences, "app");
-            LogsPanel eventLogsPanel = new LogsPanel(mUserPreferences, "event");
-            mControllerPanel.addView("logs_app", appLogsPanel);
-            mControllerPanel.addView("logs_event", eventLogsPanel);
+            LogsPanel logsPanel = new LogsPanel(mUserPreferences);
+            mControllerPanel.addView("logs", logsPanel);
 
         }
 

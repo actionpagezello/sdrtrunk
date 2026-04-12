@@ -33,6 +33,10 @@ import java.awt.Color;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JPanel;
+import javax.swing.JToggleButton;
+import javax.swing.JToolBar;
+import io.github.dsheirer.gui.VisibilityListener;
+
 import javax.swing.event.ChangeListener;
 
 /**
@@ -48,6 +52,7 @@ public class NowPlayingPanel extends JPanel
     private JideTabbedPane mTabbedPane;
     private JideSplitPane mSplitPane;
     private boolean mDetailTabsVisible;
+    private VisibilityListener mVisibilityListener;
     private ChangeListener mTabbedPaneChangeListener;
 
     /**
@@ -55,8 +60,9 @@ public class NowPlayingPanel extends JPanel
      * messages, events, and spectral view.
      */
     public NowPlayingPanel(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences,
-                           SettingsManager settingsManager, TunerManager tunerManager, boolean detailTabsVisible)
+                           SettingsManager settingsManager, TunerManager tunerManager, boolean detailTabsVisible, VisibilityListener visibilityListener)
     {
+        mVisibilityListener = visibilityListener;
         mChannelDetailPanel = new ChannelDetailPanel(playlistManager.getChannelProcessingManager());
         mDecodeEventPanel = new DecodeEventPanel(iconModel, userPreferences, playlistManager.getAliasModel());
         mMessageActivityPanel = new MessageActivityPanel(userPreferences);
@@ -138,7 +144,38 @@ public class NowPlayingPanel extends JPanel
 
     private void init()
     {
-        setLayout( new MigLayout( "insets 0 0 0 0", "[grow,fill]", "[grow,fill]") );
+        setLayout( new MigLayout( "insets 0 0 0 0", "[grow,fill]", "[][grow,fill]") );
+
+        JToolBar toolBar = new JToolBar();
+        toolBar.setFloatable(false);
+
+        JToggleButton specBtn = new JToggleButton("Spectrum/Waterfall");
+        specBtn.addActionListener(e -> {
+            if(mVisibilityListener != null) mVisibilityListener.onToggleSpectrum();
+        });
+
+        JToggleButton detailsBtn = new JToggleButton("Channel Details");
+        detailsBtn.addActionListener(e -> {
+            if(mVisibilityListener != null) mVisibilityListener.onToggleDetails();
+        });
+
+        JToggleButton streamBtn = new JToggleButton("Streaming Status");
+        streamBtn.addActionListener(e -> {
+            if(mVisibilityListener != null) mVisibilityListener.onToggleStreaming();
+        });
+
+        JToggleButton resourceBtn = new JToggleButton("Resource Status");
+        resourceBtn.addActionListener(e -> {
+            if(mVisibilityListener != null) mVisibilityListener.onToggleResource();
+        });
+
+        toolBar.add(specBtn);
+        toolBar.add(detailsBtn);
+        toolBar.add(streamBtn);
+        toolBar.add(resourceBtn);
+
+        add(toolBar, "wrap");
+
         getSplitPane().add(mChannelMetadataPanel);
 
         if(mDetailTabsVisible)

@@ -31,6 +31,9 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.control.Button;
+import javafx.geometry.Insets;
 import javafx.scene.control.TextField;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.Priority;
@@ -60,44 +63,37 @@ public class MessageRecordingViewer extends VBox
     public MessageRecordingViewer()
     {
         VBox.setVgrow(getTabPane(), Priority.ALWAYS);
-        getChildren().addAll(getMenuBar(), getTabPane());
+        getChildren().addAll(getToolbar(), getTabPane());
     }
 
-    public MenuBar getMenuBar()
+    public HBox getToolbar()
     {
-        if(mMenuBar == null)
-        {
-            mMenuBar = new MenuBar();
-            Menu fileMenu = new Menu("File");
+        HBox toolbar = new HBox(10);
+        toolbar.setPadding(new Insets(10));
 
-            Menu createNewViewerMenu = new Menu("New Viewer ...");
-            MenuItem dmrMenuItem = new MenuItem("DMR");
-            dmrMenuItem.onActionProperty().set(event -> {
-                Tab tab = new LabeledTab("DMR-" + mTabCounterDmr++, new DmrViewer());
-                getTabPane().getTabs().add(tab);
-                getTabPane().getSelectionModel().select(tab);
-            });
-            MenuItem p25p1MenuItem = new MenuItem("P25 Phase 1");
-            p25p1MenuItem.onActionProperty().set(event -> {
-                Tab tab = new LabeledTab("P25P1-" + mTabCounterP25P1++, new P25P1Viewer(mUserPreferences));
-                getTabPane().getTabs().add(tab);
-                getTabPane().getSelectionModel().select(tab);
-            });
-            MenuItem p25p2MenuItem = new MenuItem("P25 Phase 2");
-            p25p2MenuItem.onActionProperty().set(event -> {
-                Tab tab = new LabeledTab("P25P2-" + mTabCounterP25P2++, new P25P2Viewer());
-                getTabPane().getTabs().add(tab);
-                getTabPane().getSelectionModel().select(tab);
-            });
-            createNewViewerMenu.getItems().addAll(dmrMenuItem, p25p1MenuItem, p25p2MenuItem);
+        Button dmrBtn = new Button("New DMR Viewer");
+        dmrBtn.setOnAction(event -> {
+            Tab tab = new LabeledTab("DMR-" + mTabCounterDmr++, new DmrViewer());
+            getTabPane().getTabs().add(tab);
+            getTabPane().getSelectionModel().select(tab);
+        });
 
-            MenuItem exitMenu = new MenuItem("Exit");
-            exitMenu.onActionProperty().set(event -> ((Stage)getScene().getWindow()).close());
-            fileMenu.getItems().addAll(createNewViewerMenu, new SeparatorMenuItem(), exitMenu);
-            mMenuBar.getMenus().add(fileMenu);
-        }
+        Button p25p1Btn = new Button("New P25 Phase 1 Viewer");
+        p25p1Btn.setOnAction(event -> {
+            Tab tab = new LabeledTab("P25P1-" + mTabCounterP25P1++, new P25P1Viewer(mUserPreferences));
+            getTabPane().getTabs().add(tab);
+            getTabPane().getSelectionModel().select(tab);
+        });
 
-        return mMenuBar;
+        Button p25p2Btn = new Button("New P25 Phase 2 Viewer");
+        p25p2Btn.setOnAction(event -> {
+            Tab tab = new LabeledTab("P25P2-" + mTabCounterP25P2++, new P25P2Viewer());
+            getTabPane().getTabs().add(tab);
+            getTabPane().getSelectionModel().select(tab);
+        });
+
+        toolbar.getChildren().addAll(dmrBtn, p25p1Btn, p25p2Btn);
+        return toolbar;
     }
 
     /**

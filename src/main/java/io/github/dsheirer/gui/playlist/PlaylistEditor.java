@@ -93,7 +93,6 @@ public class PlaylistEditor extends BorderPane
         //Throw a new runnable back onto the FX thread to lazy load the editor content after the editor has been
         //constructed and shown.
         Platform.runLater(() -> {
-            setTop(getMenuBar());
             setCenter(getTabPane());
         });
     }

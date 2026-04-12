@@ -41,6 +41,10 @@ import org.slf4j.LoggerFactory;
 import javax.swing.JButton;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JToggleButton;
+import javax.swing.JToolBar;
+import io.github.dsheirer.gui.VisibilityListener;
+
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
@@ -77,8 +81,11 @@ public class TunerViewPanel extends JPanel
      * @param tunerManager for tuners
      * @param userPreferences for making recordings in the tuner editor
      */
-    public TunerViewPanel(TunerManager tunerManager, UserPreferences userPreferences)
+    private VisibilityListener mVisibilityListener;
+
+    public TunerViewPanel(TunerManager tunerManager, UserPreferences userPreferences, VisibilityListener visibilityListener)
     {
+        mVisibilityListener = visibilityListener;
         mDiscoveredTunerModel = tunerManager.getDiscoveredTunerModel();
         mDiscoveredTunerEditor = new DiscoveredTunerEditor(userPreferences, tunerManager);
         mTunerConfigurationManager = tunerManager.getTunerConfigurationManager();
@@ -88,7 +95,18 @@ public class TunerViewPanel extends JPanel
 
     private void init()
     {
-        setLayout(new MigLayout("insets 0 0 0 0", "[fill,grow]", "[fill,grow]"));
+        setLayout(new MigLayout("insets 0 0 0 0", "[fill,grow]", "[][fill,grow]"));
+
+        JToolBar toolBar = new JToolBar();
+        toolBar.setFloatable(false);
+
+        JToggleButton specBtn = new JToggleButton("Spectrum/Waterfall");
+        specBtn.addActionListener(e -> {
+            if(mVisibilityListener != null) mVisibilityListener.onToggleSpectrum();
+        });
+
+        toolBar.add(specBtn);
+        add(toolBar, "wrap");
 
         mRowSorter = new TableRowSorter<>(mDiscoveredTunerModel);
         List<RowSorter.SortKey> sortKeys = new ArrayList<>();

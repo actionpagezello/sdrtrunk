@@ -19,6 +19,8 @@
 package io.github.dsheirer.controller;
 
 import io.github.dsheirer.gui.SidebarPanel;
+import io.github.dsheirer.gui.VisibilityListener;
+
 
 
 import com.jidesoft.swing.JideTabbedPane;
@@ -76,13 +78,13 @@ public class ControllerPanel extends JPanel
 
     public ControllerPanel(PlaylistManager playlistManager, AudioPlaybackManager audioPlaybackManager,
                            IconModel iconModel, MapService mapService, SettingsManager settingsManager,
-                           TunerManager tunerManager, UserPreferences userPreferences, boolean detailTabsVisible)
+                           TunerManager tunerManager, UserPreferences userPreferences, boolean detailTabsVisible, VisibilityListener visibilityListener)
     {
         mAudioPanel = new AudioPanel(iconModel, userPreferences, settingsManager, audioPlaybackManager,
             playlistManager.getAliasModel());
-        mNowPlayingPanel = new NowPlayingPanel(playlistManager, iconModel, userPreferences, settingsManager, tunerManager, detailTabsVisible);
+        mNowPlayingPanel = new NowPlayingPanel(playlistManager, iconModel, userPreferences, settingsManager, tunerManager, detailTabsVisible, visibilityListener);
         mMapPanel = new MapPanel(mapService, playlistManager.getAliasModel(), iconModel, settingsManager);
-        mTunerManagerPanel = new TunerViewPanel(tunerManager, userPreferences);
+        mTunerManagerPanel = new TunerViewPanel(tunerManager, userPreferences, visibilityListener);
 
         init();
     }

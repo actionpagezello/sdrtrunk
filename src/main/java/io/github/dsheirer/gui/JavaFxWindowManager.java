@@ -208,7 +208,7 @@ public class JavaFxWindowManager extends Application
             createJFXPanel();
             Scene scene = new Scene(getRecordingViewer(), 1100, 800);
             mRecordingViewerStage = new Stage();
-            mRecordingViewerStage.setTitle("sdrtrunk - Message Recording Viewer (.bits)");
+            mRecordingViewerStage.setTitle("sdrtrunk - .bits Viewer");
             mRecordingViewerStage.setScene(scene);
             mUserPreferences.getJavaFxPreferences().monitor(mRecordingViewerStage, STAGE_MONITOR_KEY_RECORDING_VIEWER);
         }
