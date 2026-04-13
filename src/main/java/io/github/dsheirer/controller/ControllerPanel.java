@@ -93,6 +93,15 @@ public class ControllerPanel extends JPanel
     /**
      * Now playing panel.
      */
+
+    /**
+     * Audio panel.
+     */
+    public AudioPanel getAudioPanel()
+    {
+        return mAudioPanel;
+    }
+
     public NowPlayingPanel getNowPlayingPanel()
     {
         return mNowPlayingPanel;
@@ -111,7 +120,7 @@ public class ControllerPanel extends JPanel
         mCardPanel.add(mTunerManagerPanel, "tuners");
 
         add(mCardPanel, BorderLayout.CENTER);
-        add(mAudioPanel, BorderLayout.NORTH);
+        // AudioPanel moved to SDRTrunk.java
     }
 
     public void addView(String id, java.awt.Component view) {
