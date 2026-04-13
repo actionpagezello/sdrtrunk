@@ -118,9 +118,9 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
     public void onToggleSpectrum() {
         mSpectrumDisabled = !mSpectrumDisabled;
         if (mSpectrumDisabled || (!mCurrentViewId.equals("now_playing") && !mCurrentViewId.equals("tuners"))) {
-            mMainContentPanel.remove(mSpectralPanel);
+            mTopContentPanel.remove(mSpectralPanel);
         } else {
-            mMainContentPanel.add(mSpectralPanel, BorderLayout.NORTH);
+            mTopContentPanel.add(mSpectralPanel, BorderLayout.CENTER);
         }
         mMainContentPanel.revalidate();
         mMainContentPanel.repaint();
@@ -176,6 +176,7 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
     private SpectralDisplayPanel mSpectralPanel;
     private JFrame mMainGui;
     private JPanel mMainContentPanel;
+    private JPanel mTopContentPanel;
     private JavaFxWindowManager mJavaFxWindowManager;
     private UserPreferences mUserPreferences = new UserPreferences();
     private TunerManager mTunerManager;
@@ -258,9 +259,9 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
                     mCurrentViewId = id;
 
                     if (!mSpectrumDisabled && (id.equals("now_playing") || id.equals("tuners"))) {
-                        mMainContentPanel.add(mSpectralPanel, BorderLayout.NORTH);
+                        mTopContentPanel.add(mSpectralPanel, BorderLayout.CENTER);
                     } else {
-                        mMainContentPanel.remove(mSpectralPanel);
+                        mTopContentPanel.remove(mSpectralPanel);
                     }
 
                     mControllerPanel.showView(id);
@@ -486,7 +487,10 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
             mMainGui.setSize(new Dimension(1280, 800));
         }
         mMainContentPanel = new JPanel(new BorderLayout());
-        mMainContentPanel.add(mSpectralPanel, BorderLayout.NORTH);
+        mTopContentPanel = new JPanel(new BorderLayout());
+        mTopContentPanel.add(mControllerPanel.getAudioPanel(), BorderLayout.NORTH);
+        mTopContentPanel.add(mSpectralPanel, BorderLayout.CENTER);
+        mMainContentPanel.add(mTopContentPanel, BorderLayout.NORTH);
         mMainContentPanel.add(mControllerPanel, BorderLayout.CENTER);
 
         mBroadcastStatusVisible = mPreferences.getBoolean(PREFERENCE_BROADCAST_STATUS_VISIBLE, false);
