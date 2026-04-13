@@ -55,7 +55,7 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckBox;
+import org.controlsfx.control.ToggleSwitch;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -100,7 +100,7 @@ public class SystemTalkgroupSelectionEditor extends GridPane
     private Button mImportAllTalkgroupsButton;
     private Label mPlaceholderLabel;
     private ProgressIndicator mProgressIndicator;
-    private CheckBox mEncryptedAsDoNotMonitorCheckBox;
+    private ToggleSwitch mEncryptedAsDoNotMonitorSwitch;
 
     public SystemTalkgroupSelectionEditor(UserPreferences userPreferences, PlaylistManager playlistManager)
     {
@@ -132,9 +132,9 @@ public class SystemTalkgroupSelectionEditor extends GridPane
         GridPane.setConstraints(listBox, 0, row);
         getChildren().add(listBox);
 
-        GridPane.setConstraints(getEncryptedAsDoNotMonitorCheckBox(), 1, row);
-        GridPane.setHalignment(getEncryptedAsDoNotMonitorCheckBox(), HPos.CENTER);
-        getChildren().add(getEncryptedAsDoNotMonitorCheckBox());
+        GridPane.setConstraints(getEncryptedAsDoNotMonitorSwitch(), 1, row);
+        GridPane.setHalignment(getEncryptedAsDoNotMonitorSwitch(), HPos.CENTER);
+        getChildren().add(getEncryptedAsDoNotMonitorSwitch());
 
         HBox searchBox = new HBox();
         searchBox.setSpacing(5);
@@ -189,20 +189,20 @@ public class SystemTalkgroupSelectionEditor extends GridPane
         setLoading(true);
     }
 
-    private CheckBox getEncryptedAsDoNotMonitorCheckBox()
+    private ToggleSwitch getEncryptedAsDoNotMonitorSwitch()
     {
-        if(mEncryptedAsDoNotMonitorCheckBox == null)
+        if(mEncryptedAsDoNotMonitorSwitch == null)
         {
-            mEncryptedAsDoNotMonitorCheckBox = new CheckBox("Set Encrypted Talkgroups To Muted");
-            mEncryptedAsDoNotMonitorCheckBox.setDisable(true);
-            mEncryptedAsDoNotMonitorCheckBox.selectedProperty().set(mUserPreferences.getRadioReferencePreference()
+            mEncryptedAsDoNotMonitorSwitch = new ToggleSwitch("Set Encrypted Talkgroups To Muted");
+            mEncryptedAsDoNotMonitorSwitch.setDisable(true);
+            mEncryptedAsDoNotMonitorSwitch.selectedProperty().set(mUserPreferences.getRadioReferencePreference()
                 .isEncryptedTalkgroupDoNotMonitor());
-            mEncryptedAsDoNotMonitorCheckBox.selectedProperty()
+            mEncryptedAsDoNotMonitorSwitch.selectedProperty()
                 .addListener((observable, oldValue, newValue) -> mUserPreferences.getRadioReferencePreference()
-                    .setEncryptedTalkgroupDoNotMonitor(mEncryptedAsDoNotMonitorCheckBox.isSelected()));
+                    .setEncryptedTalkgroupDoNotMonitor(mEncryptedAsDoNotMonitorSwitch.isSelected()));
         }
 
-        return mEncryptedAsDoNotMonitorCheckBox;
+        return mEncryptedAsDoNotMonitorSwitch;
     }
 
     private void setLoading(boolean loading)
@@ -280,7 +280,7 @@ public class SystemTalkgroupSelectionEditor extends GridPane
         //If the protocol is supported then enable the talkgroup import controls
         boolean supported = getRadioReferenceDecoder().hasSupportedProtocol(getCurrentSystem());
         getImportAllTalkgroupsButton().setDisable(!supported);
-        getEncryptedAsDoNotMonitorCheckBox().setDisable(!supported);
+        getEncryptedAsDoNotMonitorSwitch().setDisable(!supported);
         setLoading(false);
     }
 
@@ -359,7 +359,7 @@ public class SystemTalkgroupSelectionEditor extends GridPane
             Alias alias = getRadioReferenceDecoder().createAlias(talkgroup, getCurrentSystem(),
                     getAliasListNameComboBox().getSelectionModel().getSelectedItem(), group);
 
-            if(getEncryptedAsDoNotMonitorCheckBox().selectedProperty().get() &&
+            if(getEncryptedAsDoNotMonitorSwitch().selectedProperty().get() &&
                     TalkgroupEncryption.lookup(talkgroup.getEncryptionState()) == TalkgroupEncryption.FULL)
             {
                 int priority = io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR;
@@ -634,7 +634,7 @@ public class SystemTalkgroupSelectionEditor extends GridPane
                     getTalkgroupEditor().setTalkgroup((selected != null ? selected.getTalkgroup() : null),
                         getCurrentSystem(), getRadioReferenceDecoder(), (selected != null ? selected.getAlias() : null),
                         aliasListName, (talkgroupCategory != null ? talkgroupCategory.getName() : null),
-                        getEncryptedAsDoNotMonitorCheckBox().selectedProperty().get());
+                        getEncryptedAsDoNotMonitorSwitch().selectedProperty().get());
                 });
             mTalkgroupFilteredList = new FilteredList<>(mTalkgroupList);
             SortedList<AliasedTalkgroup> sortedList = new SortedList<>(mTalkgroupFilteredList);

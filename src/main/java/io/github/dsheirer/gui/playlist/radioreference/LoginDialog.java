@@ -34,7 +34,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckBox;
+import org.controlsfx.control.ToggleSwitch;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
@@ -64,8 +64,8 @@ public class LoginDialog extends Dialog<AuthorizationInformation>
     private PasswordField mPasswordField;
     private TextField mPasswordText;
     private GridPane mGridPane;
-    private CheckBox mShowPasswordCheckBox;
-    private CheckBox mStoreLoginCheckBox;
+    private ToggleSwitch mShowPasswordSwitch;
+    private ToggleSwitch mStoreLoginSwitch;
     private Button mTestConnectionButton;
     private IconNode mTestPassIcon;
     private IconNode mTestFailIcon;
@@ -100,13 +100,13 @@ public class LoginDialog extends Dialog<AuthorizationInformation>
 
     private AuthorizationInformation getAuthorizationInformation()
     {
-        boolean store = getStoreLoginCheckBox().isSelected();
+        boolean store = getStoreLoginSwitch().isSelected();
         String username = getUserNameText().getText();
         String password = getPasswordField().isVisible() ? getPasswordField().getText() : getPasswordText().getText();
 
         if(store)
         {
-            mUserPreferences.getRadioReferencePreference().setStoreCredentials(getStoreLoginCheckBox().isSelected());
+            mUserPreferences.getRadioReferencePreference().setStoreCredentials(getStoreLoginSwitch().isSelected());
             mUserPreferences.getRadioReferencePreference().setUserName(username);
             mUserPreferences.getRadioReferencePreference().setPassword(password);
         }
@@ -153,11 +153,11 @@ public class LoginDialog extends Dialog<AuthorizationInformation>
             GridPane.setConstraints(getPasswordField(), 1, 1);
             mGridPane.getChildren().add(getPasswordField());
 
-            GridPane.setConstraints(getShowPasswordCheckBox(), 2, 1);
-            mGridPane.getChildren().add(getShowPasswordCheckBox());
+            GridPane.setConstraints(getShowPasswordSwitch(), 2, 1);
+            mGridPane.getChildren().add(getShowPasswordSwitch());
 
-            GridPane.setConstraints(getStoreLoginCheckBox(), 1, 2);
-            mGridPane.getChildren().add(getStoreLoginCheckBox());
+            GridPane.setConstraints(getStoreLoginSwitch(), 1, 2);
+            mGridPane.getChildren().add(getStoreLoginSwitch());
 
             GridPane.setHalignment(getTestConnectionButton(), HPos.CENTER);
             GridPane.setConstraints(getTestConnectionButton(), 1, 4);
@@ -224,49 +224,42 @@ public class LoginDialog extends Dialog<AuthorizationInformation>
     /**
      * Show (or mask) the password entry field
      */
-    private CheckBox getShowPasswordCheckBox()
+    private ToggleSwitch getShowPasswordSwitch()
     {
-        if(mShowPasswordCheckBox == null)
+        if(mShowPasswordSwitch == null)
         {
-            mShowPasswordCheckBox = new CheckBox("Show");
-            mShowPasswordCheckBox.setSelected(mUserPreferences.getRadioReferencePreference().getShowPassword());
-            mShowPasswordCheckBox.setOnAction(new EventHandler<ActionEvent>()
-            {
-                @Override
-                public void handle(ActionEvent event)
+            mShowPasswordSwitch = new ToggleSwitch("Show");
+            mShowPasswordSwitch.setSelected(mUserPreferences.getRadioReferencePreference().getShowPassword());
+            mShowPasswordSwitch.selectedProperty().addListener((observable, oldValue, newValue) -> {
+                boolean show = newValue;
+
+                getPasswordText().setVisible(show);
+                getPasswordField().setVisible(!show);
+
+                if(show)
                 {
-                    boolean show = mShowPasswordCheckBox.isSelected();
-
-                    getPasswordText().setVisible(show);
-                    getPasswordField().setVisible(!show);
-
-                    //Transfer the password from the previously visible entry control
-                    if(show)
-                    {
-                        getPasswordText().setText(getPasswordField().getText());
-                    }
-                    else
-                    {
-                        getPasswordField().setText(getPasswordText().getText());
-                    }
-
-                    mUserPreferences.getRadioReferencePreference().setShowPassword(show);
+                    getPasswordText().setText(getPasswordField().getText());
                 }
+                else
+                {
+                    getPasswordField().setText(getPasswordText().getText());
+                }
+
+                mUserPreferences.getRadioReferencePreference().setShowPassword(show);
             });
         }
 
-        return mShowPasswordCheckBox;
+        return mShowPasswordSwitch;
     }
-
-    private CheckBox getStoreLoginCheckBox()
+    private ToggleSwitch getStoreLoginSwitch()
     {
-        if(mStoreLoginCheckBox == null)
+        if(mStoreLoginSwitch == null)
         {
-            mStoreLoginCheckBox = new CheckBox("Store Login Credentials");
-            mStoreLoginCheckBox.setSelected(mUserPreferences.getRadioReferencePreference().isStoreCredentials());
+            mStoreLoginSwitch = new ToggleSwitch("Store Login Credentials");
+            mStoreLoginSwitch.setSelected(mUserPreferences.getRadioReferencePreference().isStoreCredentials());
         }
 
-        return mStoreLoginCheckBox;
+        return mStoreLoginSwitch;
     }
 
     private Button getTestConnectionButton()

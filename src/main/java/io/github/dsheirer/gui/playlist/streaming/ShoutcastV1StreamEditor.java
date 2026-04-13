@@ -159,8 +159,8 @@ public class ShoutcastV1StreamEditor extends AbstractStreamEditor<ShoutcastV1Con
             mEditorPane.getChildren().add(getMaskedPasswordTextField());
             GridPane.setConstraints(getUnMaskedPasswordTextField(), 1, 3);
             mEditorPane.getChildren().add(getUnMaskedPasswordTextField());
-            GridPane.setConstraints(getShowPasswordCheckBox(), 2, 3);
-            mEditorPane.getChildren().add(getShowPasswordCheckBox());
+            GridPane.setConstraints(getShowPasswordSwitch(), 2, 3);
+            mEditorPane.getChildren().add(getShowPasswordSwitch());
 
             Label maxAgeLabel = new Label("Max Recording Age (seconds)");
             GridPane.setHalignment(maxAgeLabel, HPos.RIGHT);

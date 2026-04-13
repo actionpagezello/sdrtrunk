@@ -116,7 +116,7 @@ public class StreamingEditor extends SplitPane
         editorBox.getChildren().addAll(tableAndLabelBox, buttonsBox);
         editorBox.setPrefHeight(50);
 
-        setOrientation(Orientation.VERTICAL);
+        setOrientation(Orientation.HORIZONTAL);
         getItems().addAll(editorBox, getTabPane());
     }
 
@@ -284,6 +284,7 @@ public class StreamingEditor extends SplitPane
         {
             mTabPane = new TabPane();
             mTabPane.setMaxHeight(Double.MAX_VALUE);
+            mTabPane.setPadding(new Insets(16, 16, 16, 16));
             mTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
             mTabPane.getTabs().addAll(getConfigurationTab(), getAliasTab());
         }

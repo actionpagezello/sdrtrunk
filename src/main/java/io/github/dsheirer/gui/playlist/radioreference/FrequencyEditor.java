@@ -20,6 +20,7 @@
 package io.github.dsheirer.gui.playlist.radioreference;
 
 import io.github.dsheirer.controller.channel.Channel;
+import org.controlsfx.control.ToggleSwitch;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.playlist.channel.ViewChannelRequest;
 import io.github.dsheirer.module.decode.DecoderFactory;
@@ -48,7 +49,6 @@ import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.TextField;
@@ -77,7 +77,7 @@ public class FrequencyEditor extends VBox
     private TextField mDecoderTextField;
     private Button mCreateButton;
     private Label mChannelCreatedLabel;
-    private CheckBox mShowCreatedChannelCheckBox;
+    private ToggleSwitch mShowCreatedChannelSwitch;
     private ModeDecoderType mModeDecoderType;
     private long mFrequency;
 
@@ -179,8 +179,8 @@ public class FrequencyEditor extends VBox
         GridPane.setConstraints(getDecoderTextField(), 1, row);
         gridPane.getChildren().add(getDecoderTextField());
 
-        GridPane.setConstraints(getShowCreatedChannelCheckBox(), 1, ++row);
-        gridPane.getChildren().add(getShowCreatedChannelCheckBox());
+        GridPane.setConstraints(getShowCreatedChannelSwitch(), 1, ++row);
+        gridPane.getChildren().add(getShowCreatedChannelSwitch());
 
         GridPane.setHgrow(getCreateButton(), Priority.ALWAYS);
         GridPane.setMargin(getCreateButton(), new Insets(10,0,0,0));
@@ -223,7 +223,7 @@ public class FrequencyEditor extends VBox
             getSiteTextField().setDisable(true);
             getNameTextField().setDisable(true);
             getCreateButton().setDisable(true);
-            getShowCreatedChannelCheckBox().setDisable(true);
+            getShowCreatedChannelSwitch().setDisable(true);
         }
     }
 
@@ -262,7 +262,7 @@ public class FrequencyEditor extends VBox
                             getSiteTextField().setDisable(disable);
                             getNameTextField().setDisable(disable);
                             getCreateButton().setDisable(disable);
-                            getShowCreatedChannelCheckBox().setDisable(disable);
+                            getShowCreatedChannelSwitch().setDisable(disable);
 
                             if(mModeDecoderType.hasDecoderType())
                             {
@@ -335,20 +335,20 @@ public class FrequencyEditor extends VBox
         return mToneTextField;
     }
 
-    private CheckBox getShowCreatedChannelCheckBox()
+    private ToggleSwitch getShowCreatedChannelSwitch()
     {
-        if(mShowCreatedChannelCheckBox == null)
+        if(mShowCreatedChannelSwitch == null)
         {
             boolean show = mUserPreferences.getRadioReferencePreference().getShowChannelEditor(mLevel);
-            mShowCreatedChannelCheckBox = new CheckBox("View Channel Editor After Create");
-            mShowCreatedChannelCheckBox.setDisable(true);
-            mShowCreatedChannelCheckBox.selectedProperty().set(show);
-            mShowCreatedChannelCheckBox.selectedProperty()
+            mShowCreatedChannelSwitch = new ToggleSwitch("View Channel Editor After Create");
+            mShowCreatedChannelSwitch.setDisable(true);
+            mShowCreatedChannelSwitch.selectedProperty().set(show);
+            mShowCreatedChannelSwitch.selectedProperty()
                 .addListener((observable, oldValue, newValue) -> mUserPreferences.getRadioReferencePreference()
                     .setShowChannelEditor(newValue, mLevel));
         }
 
-        return mShowCreatedChannelCheckBox;
+        return mShowCreatedChannelSwitch;
     }
 
     private Label getChannelCreatedLabel()
@@ -378,7 +378,7 @@ public class FrequencyEditor extends VBox
                     getCreateButton().setDisable(true);
                     mPlaylistManager.getChannelModel().addChannel(channel);
 
-                    if(getShowCreatedChannelCheckBox().selectedProperty().get())
+                    if(getShowCreatedChannelSwitch().selectedProperty().get())
                     {
                         MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(channel));
                     }

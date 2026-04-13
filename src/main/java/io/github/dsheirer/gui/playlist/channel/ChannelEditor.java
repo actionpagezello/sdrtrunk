@@ -117,12 +117,12 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
         channelsBox.getChildren().addAll(getChannelTableView(), getButtonBox());
 
         VBox topBox = new VBox();
-        topBox.setPadding(new Insets(10,10,10,10));
+        topBox.setPadding(new Insets(10, 10, 10, 10));
         topBox.setSpacing(10);
         VBox.setVgrow(channelsBox, Priority.ALWAYS);
         topBox.getChildren().addAll(getSearchAndViewBox(), channelsBox);
 
-        setOrientation(Orientation.VERTICAL);
+        setOrientation(Orientation.HORIZONTAL);
         getItems().addAll(topBox, getChannelConfigurationEditor());
     }
 
@@ -319,6 +319,7 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
         {
             mChannelConfigurationEditor = mUnknownConfigurationEditor;
             mChannelConfigurationEditor.setMaxWidth(Double.MAX_VALUE);
+            mChannelConfigurationEditor.setPadding(new Insets(16, 16, 16, 16));
         }
 
         return mChannelConfigurationEditor;

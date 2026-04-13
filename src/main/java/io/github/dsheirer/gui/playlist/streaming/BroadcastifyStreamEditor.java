@@ -156,8 +156,8 @@ public class BroadcastifyStreamEditor extends AbstractStreamEditor<BroadcastifyF
             mEditorPane.getChildren().add(getMaskedPasswordTextField());
             GridPane.setConstraints(getUnMaskedPasswordTextField(), 3, 3);
             mEditorPane.getChildren().add(getUnMaskedPasswordTextField());
-            GridPane.setConstraints(getShowPasswordCheckBox(), 4, 3);
-            mEditorPane.getChildren().add(getShowPasswordCheckBox());
+            GridPane.setConstraints(getShowPasswordSwitch(), 4, 3);
+            mEditorPane.getChildren().add(getShowPasswordSwitch());
 
             Label maxAgeLabel = new Label("Max Recording Age (seconds)");
             GridPane.setHalignment(maxAgeLabel, HPos.RIGHT);

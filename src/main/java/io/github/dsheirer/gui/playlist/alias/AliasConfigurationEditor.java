@@ -118,10 +118,11 @@ public class AliasConfigurationEditor extends SplitPane implements IAliasListRef
         leftBox.getChildren().addAll(getSearchAndListSelectionBox(), getAliasTableView());
 
         HBox topBox = new HBox();
+
         HBox.setHgrow(leftBox, Priority.ALWAYS);
         topBox.getChildren().addAll(leftBox, getButtonBox());
 
-        setOrientation(Orientation.VERTICAL);
+        setOrientation(Orientation.HORIZONTAL);
         mCurrentEditor = getAliasItemEditor();
         getItems().addAll(topBox, getAliasItemEditor());
     }
@@ -228,6 +229,7 @@ public class AliasConfigurationEditor extends SplitPane implements IAliasListRef
         if(mAliasItemEditor == null)
         {
             mAliasItemEditor = new AliasItemEditor(mPlaylistManager, mUserPreferences);
+            mAliasItemEditor.setPadding(new Insets(16, 16, 16, 16));
         }
 
         return mAliasItemEditor;

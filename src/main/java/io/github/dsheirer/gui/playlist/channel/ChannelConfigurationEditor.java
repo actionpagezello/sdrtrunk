@@ -51,7 +51,7 @@ import javafx.geometry.Insets;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckBox;
+import org.controlsfx.control.ToggleSwitch;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -355,16 +355,16 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
                         label.getStyleClass().add("content");
                         label.setWrapText(true);
 
-                        CheckBox checkBox = new CheckBox("Don't Show This Again");
-                        checkBox.setOnAction(event1 -> {
-                            boolean dontShowAgain = checkBox.isSelected();
+                        ToggleSwitch toggleSwitch = new ToggleSwitch("Don't Show This Again");
+                        toggleSwitch.selectedProperty().addListener((observable2, oldValue2, newValue2) -> {
+                            boolean dontShowAgain = newValue2;
                             mUserPreferences.getJmbeLibraryPreference().setAlertIfMissingLibraryRequired(!dontShowAgain);
                         });
 
                         VBox contentBox = new VBox();
                         contentBox.setPrefWidth(360);
                         contentBox.setSpacing(10);
-                        contentBox.getChildren().addAll(label, checkBox);
+                        contentBox.getChildren().addAll(label, toggleSwitch);
                         alert.getDialogPane().setContent(contentBox);
                         alert.initOwner(getPlayButton().getScene().getWindow());
                         Optional<ButtonType> optionalButtonType = alert.showAndWait();

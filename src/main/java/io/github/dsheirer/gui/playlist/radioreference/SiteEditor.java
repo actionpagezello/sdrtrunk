@@ -60,7 +60,7 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckBox;
+import org.controlsfx.control.ToggleSwitch;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -109,7 +109,7 @@ public class SiteEditor extends GridPane
     private TextField mSystemTextField;
     private TextField mSiteTextField;
     private TextField mNameTextField;
-    private CheckBox mGoToChannelEditorCheckBox;
+    private ToggleSwitch mGoToChannelEditorSwitch;
     private Label mProtocolNotSupportedLabel;
     private RadioReferenceDecoder mRadioReferenceDecoder;
     private EnrichedSite mCurrentSite;
@@ -218,7 +218,7 @@ public class SiteEditor extends GridPane
         HBox createBox = new HBox();
         createBox.setAlignment(Pos.CENTER_LEFT);
         createBox.setSpacing(10);
-        createBox.getChildren().addAll(getCreateChannelConfigurationButton(), getGoToChannelEditorCheckBox());
+        createBox.getChildren().addAll(getCreateChannelConfigurationButton(), getGoToChannelEditorSwitch());
         GridPane.setConstraints(createBox, 2, ++row);
         getChildren().addAll(createBox);
 
@@ -343,12 +343,12 @@ public class SiteEditor extends GridPane
         getSiteTextField().setDisable(disable || !supported);
         getNameTextField().setDisable(disable || !supported);
         getCreateChannelConfigurationButton().setDisable(disable || !supported);
-        getGoToChannelEditorCheckBox().setDisable(disable || !supported);
+        getGoToChannelEditorSwitch().setDisable(disable || !supported);
         getAliasListNameComboBox().setDisable(disable || !supported);
         getNewAliasListButton().setDisable(disable || !supported);
 
         getCreateChannelConfigurationButton().setVisible(false);
-        getGoToChannelEditorCheckBox().setVisible(false);
+        getGoToChannelEditorSwitch().setVisible(false);
         getProtocolNotSupportedLabel().setVisible(false);
 
         if(site != null)
@@ -397,7 +397,7 @@ public class SiteEditor extends GridPane
                 }
 
                 getCreateChannelConfigurationButton().setVisible(true);
-                getGoToChannelEditorCheckBox().setVisible(true);
+                getGoToChannelEditorSwitch().setVisible(true);
                 getSystemTextField().setText(system.getName());
                 getSiteTextField().setText(mCurrentSite.getCountyName());
                 getNameTextField().setText("Control");
@@ -530,7 +530,7 @@ public class SiteEditor extends GridPane
             }
         }
 
-        if(getGoToChannelEditorCheckBox().isSelected() && gotoChannel != null)
+        if(getGoToChannelEditorSwitch().isSelected() && gotoChannel != null)
         {
             MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(gotoChannel));
         }
@@ -595,7 +595,7 @@ public class SiteEditor extends GridPane
 
             mPlaylistManager.getChannelModel().addChannel(channel);
 
-            if(getGoToChannelEditorCheckBox().isSelected())
+            if(getGoToChannelEditorSwitch().isSelected())
             {
                 MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(channel));
             }
@@ -672,7 +672,7 @@ public class SiteEditor extends GridPane
 
                 mPlaylistManager.getChannelModel().addChannel(channel);
 
-                if(getGoToChannelEditorCheckBox().isSelected())
+                if(getGoToChannelEditorSwitch().isSelected())
                 {
                     MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(channel));
                 }
@@ -700,7 +700,7 @@ public class SiteEditor extends GridPane
                     mPlaylistManager.getChannelModel().addChannel(channel);
                 }
 
-                if(getGoToChannelEditorCheckBox().isSelected() && gotoChannel != null)
+                if(getGoToChannelEditorSwitch().isSelected() && gotoChannel != null)
                 {
                     MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(gotoChannel));
                 }
@@ -774,7 +774,7 @@ public class SiteEditor extends GridPane
 
                 mPlaylistManager.getChannelModel().addChannel(channel);
 
-                if(getGoToChannelEditorCheckBox().isSelected())
+                if(getGoToChannelEditorSwitch().isSelected())
                 {
                     MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(channel));
                 }
@@ -803,7 +803,7 @@ public class SiteEditor extends GridPane
                     mPlaylistManager.getChannelModel().addChannel(channel);
                 }
 
-                if(getGoToChannelEditorCheckBox().isSelected() && gotoChannel != null)
+                if(getGoToChannelEditorSwitch().isSelected() && gotoChannel != null)
                 {
                     MyEventBus.getGlobalEventBus().post(new ViewChannelRequest(gotoChannel));
                 }
@@ -1180,21 +1180,21 @@ public class SiteEditor extends GridPane
         return mCreateChannelConfigurationButton;
     }
 
-    private CheckBox getGoToChannelEditorCheckBox()
+    private ToggleSwitch getGoToChannelEditorSwitch()
     {
-        if(mGoToChannelEditorCheckBox == null)
+        if(mGoToChannelEditorSwitch == null)
         {
-            mGoToChannelEditorCheckBox = new CheckBox("Go To Channel Editor");
-            mGoToChannelEditorCheckBox.setDisable(true);
-            mGoToChannelEditorCheckBox.setVisible(false);
-            mGoToChannelEditorCheckBox.setSelected(mUserPreferences.getRadioReferencePreference()
+            mGoToChannelEditorSwitch = new ToggleSwitch("Go To Channel Editor");
+            mGoToChannelEditorSwitch.setDisable(true);
+            mGoToChannelEditorSwitch.setVisible(false);
+            mGoToChannelEditorSwitch.setSelected(mUserPreferences.getRadioReferencePreference()
                 .isCreateAndShowChannelEditor());
-            mGoToChannelEditorCheckBox.selectedProperty()
+            mGoToChannelEditorSwitch.selectedProperty()
                 .addListener((observable, oldValue, newValue) -> mUserPreferences.getRadioReferencePreference()
                     .setCreateAndShowChannelEditor(newValue));
         }
 
-        return mGoToChannelEditorCheckBox;
+        return mGoToChannelEditorSwitch;
     }
 
     public class SiteFrequencyListCell extends ListCell<SiteFrequency>

@@ -25,10 +25,10 @@ package io.github.dsheirer.gui.playlist.streaming;
 import io.github.dsheirer.audio.broadcast.BroadcastConfiguration;
 import io.github.dsheirer.gui.control.IntegerTextField;
 import io.github.dsheirer.playlist.PlaylistManager;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
+import org.controlsfx.control.ToggleSwitch;
 
 /**
  * Base class for broadcast configuration editors.
@@ -38,7 +38,7 @@ public abstract class AbstractStreamEditor<T extends BroadcastConfiguration> ext
     private TextField mHostTextField;
     private TextField mUnMaskedPasswordTextField;
     private PasswordField mMaskedPasswordTextField;
-    private CheckBox mShowPasswordCheckBox;
+    private ToggleSwitch mShowPasswordSwitch;
     private IntegerTextField mPortTextField;
     private IntegerTextField mDelayTextField;
     private IntegerTextField mMaxAgeTextField;
@@ -125,7 +125,7 @@ public abstract class AbstractStreamEditor<T extends BroadcastConfiguration> ext
         {
             mUnMaskedPasswordTextField = new TextField();
             mUnMaskedPasswordTextField.setDisable(true);
-            mUnMaskedPasswordTextField.visibleProperty().bind(getShowPasswordCheckBox().selectedProperty());
+            mUnMaskedPasswordTextField.visibleProperty().bind(getShowPasswordSwitch().selectedProperty());
             mUnMaskedPasswordTextField.textProperty().bindBidirectional(getMaskedPasswordTextField().textProperty());
         }
 
@@ -138,21 +138,21 @@ public abstract class AbstractStreamEditor<T extends BroadcastConfiguration> ext
         {
             mMaskedPasswordTextField = new PasswordField();
             mMaskedPasswordTextField.setDisable(true);
-            mMaskedPasswordTextField.visibleProperty().bind(getShowPasswordCheckBox().selectedProperty().not());
+            mMaskedPasswordTextField.visibleProperty().bind(getShowPasswordSwitch().selectedProperty().not());
             mMaskedPasswordTextField.textProperty().addListener(mEditorModificationListener);
         }
 
         return mMaskedPasswordTextField;
     }
 
-    protected CheckBox getShowPasswordCheckBox()
+    protected ToggleSwitch getShowPasswordSwitch()
     {
-        if(mShowPasswordCheckBox == null)
+        if(mShowPasswordSwitch == null)
         {
-            mShowPasswordCheckBox = new CheckBox("Show");
+            mShowPasswordSwitch = new ToggleSwitch("Show");
         }
 
-        return mShowPasswordCheckBox;
+        return mShowPasswordSwitch;
     }
 
     protected IntegerTextField getPortTextField()
