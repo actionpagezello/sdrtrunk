@@ -114,7 +114,6 @@ public class SidebarPanel extends JPanel {
         private boolean mExpanded = false;
         private List<SubItem> mSubItems = new ArrayList<>();
         private JPanel mView;
-            private JLabel mTextLabel;
         private JLabel mIconLabel;
         private JLabel mTextLabel;
 
