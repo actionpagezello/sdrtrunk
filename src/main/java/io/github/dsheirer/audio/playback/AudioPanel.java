@@ -31,20 +31,19 @@ import java.awt.Color;
 import java.awt.EventQueue;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import javax.swing.UIManager;
 import jiconfont.icons.font_awesome.FontAwesome;
 import jiconfont.swing.IconFontSwing;
 import net.miginfocom.swing.MigLayout;
 
 import javax.sound.sampled.FloatControl;
 import javax.swing.Icon;
-import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JSlider;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import javax.swing.BorderFactory;
 
 /**
@@ -52,8 +51,6 @@ import javax.swing.BorderFactory;
  */
 public class AudioPanel extends JPanel implements Listener<AudioEvent>
 {
-    private static final ImageIcon MUTED_ICON = IconModel.getScaledIcon("images/audio_muted.png", 20);
-    private static final ImageIcon UNMUTED_ICON = IconModel.getScaledIcon("images/audio_unmuted.png", 20);
     private final AliasModel mAliasModel;
     private final AudioPlaybackManager mAudioPlaybackManager;
     private final IconModel mIconModel;
@@ -292,17 +289,27 @@ public class AudioPanel extends JPanel implements Listener<AudioEvent>
 
         public MuteButton()
         {
-            setIcon(UNMUTED_ICON);
+            updateIcons();
             setBorderPainted(false);
             getAccessibleContext().setAccessibleName("Mute");
             addActionListener(e -> {
                 mMuted = !mMuted;
                 mAudioPlaybackManager.getAudioOutput().setMuted(mMuted);
                 EventQueue.invokeLater(() -> {
-                    setIcon(mMuted ? MUTED_ICON : UNMUTED_ICON);
+                    updateIcons();
                     getAccessibleContext().setAccessibleName(mMuted ? "Unmute" : "Mute");
                 });
             });
+        }
+
+        private void updateIcons() {
+            Color fg = UIManager.getColor("Label.foreground");
+            if (fg == null) fg = Color.BLACK;
+
+            Icon muted = IconFontSwing.buildIcon(FontAwesome.VOLUME_OFF, 20, fg);
+            Icon unmuted = IconFontSwing.buildIcon(FontAwesome.VOLUME_UP, 20, fg);
+
+            setIcon(mMuted ? muted : unmuted);
         }
     }
 }
