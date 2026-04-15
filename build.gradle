@@ -48,6 +48,7 @@ plugins {
     id 'java'
     id 'idea'
     id 'org.beryx.runtime' version '2.0.1'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
 }
 
 repositories {
@@ -59,9 +60,15 @@ repositories {
 version = project.findProperty('projectVersion')
 
 //Java 24 is required for this version of the Project Panama preview/incubator feature
+javafx {
+    version = '23.0.2'
+    modules = [ 'javafx.controls', 'javafx.fxml', 'javafx.swing', 'javafx.graphics', 'javafx.base' ]
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(23)
+        vendor = JvmVendorSpec.AZUL
     }
 }
 
@@ -150,7 +157,7 @@ def jvmArgsWindows =
          '--enable-native-access=ALL-UNNAMED', //Suppress unsafe warnings for FFM API Foreign Memory calls
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
+         // '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '-Xmx6g',                         //Set max heap size to 6GB
          '-Dsun.java2d.d3d=true',          //Hardware Acceleration Direct3D
          '-Dsun.java2d.opengl=True',       //Hardware Acceleration OpenGL
@@ -164,7 +171,7 @@ def jvmArgsLinux =
          '--add-modules=jdk.incubator.vector',   //Needed while Project Panama API is still in incubator
          '--enable-preview', //Project Panama Vector & Foreign Function APIs remain in incubator
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
+         // '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--enable-native-access=ALL-UNNAMED', //SDRPlay API library path
          '-Xmx6g']                         //Set max heap size to 6GB
