@@ -61,7 +61,7 @@ version = project.findProperty('projectVersion')
 //Java 24 is required for this version of the Project Panama preview/incubator feature
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(23)
     }
 }
 
