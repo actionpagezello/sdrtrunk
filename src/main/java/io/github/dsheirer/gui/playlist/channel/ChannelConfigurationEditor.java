@@ -63,6 +63,8 @@ import javafx.scene.control.TextInputDialog;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import jiconfont.icons.font_awesome.FontAwesome;
@@ -523,6 +525,27 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
             mTextFieldPane.setVgap(10);
             mTextFieldPane.setHgap(10);
 
+            ColumnConstraints cc0 = new ColumnConstraints();
+            cc0.setMinWidth(Region.USE_PREF_SIZE);
+
+            ColumnConstraints cc1 = new ColumnConstraints();
+            cc1.setHgrow(Priority.ALWAYS);
+
+            ColumnConstraints cc2 = new ColumnConstraints();
+            cc2.setMinWidth(Region.USE_PREF_SIZE);
+
+            ColumnConstraints cc3 = new ColumnConstraints();
+            cc3.setMinWidth(Region.USE_PREF_SIZE);
+
+            ColumnConstraints cc4 = new ColumnConstraints();
+            cc4.setMinWidth(Region.USE_PREF_SIZE);
+
+
+            ColumnConstraints cc5 = new ColumnConstraints();
+            cc5.setMinWidth(Region.USE_PREF_SIZE);
+            mTextFieldPane.getColumnConstraints().addAll(cc0, cc1, cc2, cc3, cc4, cc5);
+
+
             int row = 0;
 
             Label systemLabel = new Label("System");
@@ -687,6 +710,7 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
         {
             mButtonBox = new VBox();
             mButtonBox.setSpacing(10);
+            mButtonBox.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
             mButtonBox.getChildren().addAll(getSaveButton(), getResetButton());
         }
 
