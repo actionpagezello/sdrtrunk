@@ -43,6 +43,7 @@ public enum AliasIDType
     UNIT_STATUS("Unit Status"),
     TALKGROUP("Talkgroup"),
     TALKGROUP_RANGE("Talkgroup Range"),
+    TWO_TONE_DETECTOR("Two Tone Paging"),
 
     //Legacy identifier types - no longer used
     FLEETSYNC("Fleetsync"),

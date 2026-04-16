@@ -48,6 +48,7 @@ import io.github.dsheirer.alias.id.talkgroup.StreamAsTalkgroup;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.alias.id.talkgroup.TalkgroupRange;
 import io.github.dsheirer.alias.id.tone.TonesID;
+import io.github.dsheirer.alias.id.twotone.TwoToneDetectorID;
 import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -81,7 +82,8 @@ import javafx.util.Callback;
     @JsonSubTypes.Type(value = TonesID.class, name = "tones"),
     @JsonSubTypes.Type(value = UserStatusID.class, name = "statusID"),
     @JsonSubTypes.Type(value = UnitStatusID.class, name = "unitStatusID"),
-    @JsonSubTypes.Type(value = UniqueID.class, name = "uniqueID")
+    @JsonSubTypes.Type(value = UniqueID.class, name = "uniqueID"),
+    @JsonSubTypes.Type(value = TwoToneDetectorID.class, name = "twoToneDetector")
 })
 @JacksonXmlRootElement(localName = "id")
 public abstract class AliasID

@@ -25,6 +25,7 @@ import io.github.dsheirer.alias.action.AliasAction;
 import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.AliasIDType;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
+import io.github.dsheirer.alias.id.twotone.TwoToneDetectorID;
 import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.alias.id.record.Record;
 import io.github.dsheirer.alias.id.talkgroup.StreamAsTalkgroup;
@@ -739,6 +740,83 @@ public class Alias
         {
             removeAliasID(aliasID);
         }
+    }
+    /**
+     * List of two tone detectors specified for this alias.
+     */
+    @JsonIgnore
+    public Set<TwoToneDetectorID> getTwoToneDetectors()
+    {
+        Set<TwoToneDetectorID> twoToneDetectors = new TreeSet<>();
+
+        for(AliasID id : mAliasIDs)
+        {
+            if(id.getType() == AliasIDType.TWO_TONE_DETECTOR)
+            {
+                twoToneDetectors.add((TwoToneDetectorID)id);
+            }
+        }
+
+        return twoToneDetectors;
+    }
+
+    /**
+     * Indicates if this alias contains a two tone detector alias id with the given name.
+     */
+    public boolean hasTwoToneDetector(String detectorName)
+    {
+        for(AliasID id : mAliasIDs)
+        {
+            if(id instanceof TwoToneDetectorID)
+            {
+                TwoToneDetectorID detectorId = (TwoToneDetectorID)id;
+
+                if(detectorId.getDetectorName() != null && detectorId.getDetectorName().contentEquals(detectorName))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Removes any two tone detector(s) that match the argument
+     */
+    public void removeTwoToneDetector(String detectorName)
+    {
+        Iterator<AliasID> iterator = mAliasIDs.iterator();
+
+        while(iterator.hasNext())
+        {
+            AliasID aliasID = iterator.next();
+
+            if(aliasID instanceof TwoToneDetectorID &&
+                ((TwoToneDetectorID)aliasID).getDetectorName().contentEquals(detectorName))
+            {
+                iterator.remove();
+            }
+        }
+    }
+
+    /**
+     * Removes (clears) all two tone detectors from this alias
+     */
+    public void removeAllTwoToneDetectors()
+    {
+        Iterator<AliasID> iterator = mAliasIDs.iterator();
+
+        while(iterator.hasNext())
+        {
+            AliasID aliasID = iterator.next();
+
+            if(aliasID instanceof TwoToneDetectorID)
+            {
+                iterator.remove();
+            }
+        }
+
     }
 
     /**

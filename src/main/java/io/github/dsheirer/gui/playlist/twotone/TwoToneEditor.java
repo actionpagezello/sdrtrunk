@@ -13,6 +13,12 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.util.converter.NumberStringConverter;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
+import io.github.dsheirer.audio.broadcast.BroadcastConfiguration;
+import io.github.dsheirer.audio.broadcast.BroadcastServerType;
+import javafx.collections.ListChangeListener;
+
 
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
@@ -24,6 +30,7 @@ public class TwoToneEditor extends VBox
     private final PlaylistManager mPlaylistManager;
     private TableView<TwoToneConfiguration> mTableView;
     private ObservableList<TwoToneConfiguration> mObservableConfigs;
+    private TwoToneAliasSelectionEditor mAliasEditor;
 
     public TwoToneEditor(PlaylistManager playlistManager)
     {
@@ -57,7 +64,14 @@ public class TwoToneEditor extends VBox
         TextField aliasField = new TextField();
         TextField toneAField = new TextField();
         TextField toneBField = new TextField();
-        TextField zelloField = new TextField();
+        ComboBox<String> zelloField = new ComboBox<>();
+        for (BroadcastConfiguration bc : mPlaylistManager.getBroadcastModel().getBroadcastConfigurations()) {
+            if (bc.getBroadcastServerType() == BroadcastServerType.ZELLO_WORK || bc.getBroadcastServerType() == BroadcastServerType.ZELLO) {
+                if (bc.getName() != null) {
+                    zelloField.getItems().add(bc.getName());
+                }
+            }
+        }
 
         CheckBox mqttCheck = new CheckBox("Enable MQTT Publish");
         TextField topicField = new TextField();
@@ -140,10 +154,13 @@ public class TwoToneEditor extends VBox
         editorGrid.add(alertToneCombo, 1, 8);
         editorGrid.add(previewBtn, 2, 8);
 
+
         mTableView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if(mAliasEditor != null) mAliasEditor.setTwoToneConfiguration(newVal);
+
             if (oldVal != null) {
                 aliasField.textProperty().unbindBidirectional(oldVal.aliasProperty());
-                zelloField.textProperty().unbindBidirectional(oldVal.zelloChannelProperty());
+                zelloField.valueProperty().unbindBidirectional(oldVal.zelloChannelProperty());
                 mqttCheck.selectedProperty().unbindBidirectional(oldVal.enableMqttPublishProperty());
                 topicField.textProperty().unbindBidirectional(oldVal.mqttTopicProperty());
                 payloadArea.textProperty().unbindBidirectional(oldVal.mqttPayloadProperty());
@@ -159,7 +176,7 @@ public class TwoToneEditor extends VBox
                 aliasField.textProperty().bindBidirectional(newVal.aliasProperty());
                 toneAField.setText(String.valueOf(newVal.getToneA()));
                 toneBField.setText(String.valueOf(newVal.getToneB()));
-                zelloField.textProperty().bindBidirectional(newVal.zelloChannelProperty());
+                zelloField.valueProperty().bindBidirectional(newVal.zelloChannelProperty());
                 mqttCheck.selectedProperty().bindBidirectional(newVal.enableMqttPublishProperty());
                 topicField.textProperty().bindBidirectional(newVal.mqttTopicProperty());
                 payloadArea.textProperty().bindBidirectional(newVal.mqttPayloadProperty());
@@ -171,7 +188,7 @@ public class TwoToneEditor extends VBox
                 aliasField.clear();
                 toneAField.clear();
                 toneBField.clear();
-                zelloField.clear();
+                zelloField.getSelectionModel().clearSelection();
                 mqttCheck.setSelected(false);
                 topicField.clear();
                 payloadArea.clear();
@@ -220,7 +237,24 @@ public class TwoToneEditor extends VBox
         });
         btnBox.getChildren().addAll(addBtn, delBtn);
 
-        getChildren().addAll(new Label("Two Tone Paging Detectors"), mTableView, editorGrid, btnBox);
+
+        mAliasEditor = new TwoToneAliasSelectionEditor(mPlaylistManager);
+
+        TabPane tabPane = new TabPane();
+        Tab configTab = new Tab("Configuration");
+        configTab.setClosable(false);
+        VBox configBox = new VBox(10, editorGrid, btnBox);
+        configBox.setPadding(new Insets(10));
+        configTab.setContent(configBox);
+
+        Tab aliasTab = new Tab("Aliases");
+        aliasTab.setClosable(false);
+        aliasTab.setContent(mAliasEditor);
+
+        tabPane.getTabs().addAll(configTab, aliasTab);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+
+        getChildren().addAll(new Label("Two Tone Paging Detectors"), mTableView, tabPane);
     }
 
     private void syncToPlaylist() {

@@ -4,6 +4,8 @@ import io.github.dsheirer.dsp.filter.GoertzelFilter;
 import io.github.dsheirer.dsp.window.WindowType;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.playlist.PlaylistV2;
+import io.github.dsheirer.alias.Alias;
+import java.util.Collection;
 import io.github.dsheirer.playlist.TwoToneConfiguration;
 import io.github.dsheirer.playlist.TwoToneDiscoveryLog;
 import io.github.dsheirer.audio.broadcast.zello.ZelloBroadcaster;
@@ -155,11 +157,51 @@ public class TwoToneDetector
                     mCurrentToneBBlocks = 1;
                 }
 
+
                 // If B is held long enough, it's a confirmed sequence
                 if(mCurrentToneBBlocks >= MIN_TONE_BLOCKS)
                 {
-                    mLog.info("Two Tone Detected: {} (A:{} B:{})", config.getAlias(), config.getToneA(), config.getToneB());
-                    triggerAlert(config, segment);
+                    boolean shouldTrigger = true;
+                    // Check alias associations
+                    if (segment != null) {
+                        io.github.dsheirer.alias.AliasList aliasList = mPlaylistManager.getAliasModel().getAliasList(segment.getIdentifierCollection());
+                        boolean foundMapping = false;
+                        if (aliasList != null) {
+                            for (io.github.dsheirer.identifier.Identifier identifier : segment.getIdentifierCollection().getIdentifiers()) {
+                                java.util.List<Alias> aliases = aliasList.getAliases(identifier);
+                                if (aliases != null) {
+                                    for (Alias alias : aliases) {
+                                        if (alias.hasTwoToneDetector(config.getAlias())) {
+                                            foundMapping = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (foundMapping) break;
+                            }
+                        }
+
+                        // If we didn't find a mapping on the segment's aliases, we need to see if the config has ANY aliases at all.
+                        // If it has aliases configured but they didn't match, we skip.
+                        // If it has NO aliases configured, we trigger (global mode).
+                        if (!foundMapping) {
+                            boolean hasAnyMapping = false;
+                            for (Alias alias : mPlaylistManager.getAliasModel().aliasList()) {
+                                if (alias.hasTwoToneDetector(config.getAlias())) {
+                                    hasAnyMapping = true;
+                                    break;
+                                }
+                            }
+                            if (hasAnyMapping) {
+                                shouldTrigger = false;
+                            }
+                        }
+                    }
+
+                    if (shouldTrigger) {
+                        mLog.info("Two Tone Detected: {} (A:{} B:{})", config.getAlias(), config.getToneA(), config.getToneB());
+                        triggerAlert(config, segment);
+                    }
 
                     // Reset to avoid multiple triggers for the same continuous tone
                     mCurrentToneA = 0;
@@ -167,6 +209,7 @@ public class TwoToneDetector
                     mCurrentToneB = 0;
                     mCurrentToneBBlocks = 0;
                 }
+
             }
         }
 
