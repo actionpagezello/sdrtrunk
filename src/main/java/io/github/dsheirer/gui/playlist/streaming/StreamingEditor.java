@@ -116,7 +116,8 @@ public class StreamingEditor extends SplitPane
         editorBox.getChildren().addAll(tableAndLabelBox, buttonsBox);
         editorBox.setPrefHeight(50);
 
-        setOrientation(Orientation.HORIZONTAL);
+        setOrientation(Orientation.VERTICAL);
+
         getItems().addAll(editorBox, getTabPane());
     }
 

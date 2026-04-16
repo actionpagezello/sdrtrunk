@@ -123,7 +123,8 @@ public class AliasConfigurationEditor extends SplitPane implements IAliasListRef
         HBox.setHgrow(leftBox, Priority.ALWAYS);
         topBox.getChildren().addAll(leftBox, getButtonBox());
 
-        setOrientation(Orientation.HORIZONTAL);
+        setOrientation(Orientation.VERTICAL);
+
         mCurrentEditor = getAliasItemEditor();
         getItems().addAll(topBox, getAliasItemEditor());
     }

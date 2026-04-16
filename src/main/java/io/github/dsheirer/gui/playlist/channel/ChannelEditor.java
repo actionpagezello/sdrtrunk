@@ -122,7 +122,8 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
         VBox.setVgrow(channelsBox, Priority.ALWAYS);
         topBox.getChildren().addAll(getSearchAndViewBox(), channelsBox);
 
-        setOrientation(Orientation.HORIZONTAL);
+        setOrientation(Orientation.VERTICAL);
+
         getItems().addAll(topBox, getChannelConfigurationEditor());
     }
 
