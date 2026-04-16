@@ -7,6 +7,8 @@ import net.miginfocom.swing.MigLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import io.github.dsheirer.gui.help.HelpViewer;
+
 import javax.swing.JPopupMenu;
 import javax.swing.JMenuItem;
 import javax.swing.Timer;
@@ -96,6 +98,7 @@ public class SidebarPanel extends JPanel {
         mItems.add(new SidebarItem("Audio Recordings", FontAwesome.MICROPHONE, "audio_recordings", false));
         mItems.add(new SidebarItem(".bits Viewer", FontAwesome.FILE_CODE_O, "msg_viewer", true));
         mItems.add(new SidebarItem("User Preferences", FontAwesome.COGS, "user_prefs", true));
+        mItems.add(new SidebarItem("Help & Docs", FontAwesome.QUESTION_CIRCLE, "help_viewer", true));
 
         mItems.add(new SidebarItem("Exit", FontAwesome.SIGN_OUT, "exit", true));
     }

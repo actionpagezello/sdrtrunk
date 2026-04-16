@@ -1,51 +1,23 @@
-![Gradle Build](https://github.com/dsheirer/sdrtrunk/actions/workflows/gradle.yml/badge.svg)
-![Nightly Release](https://github.com/dsheirer/sdrtrunk/actions/workflows/nightly.yml/badge.svg)
+# sdrtrunk - Dispatch & Efficiency Edition
 
-# MacOS Tahoe 26.1 Users - Attention:
-Changes to USB support in Tahoe version 26.x cause sdrtrunk to fail to launch.  Do the following to install the latest libusb and create a symbolic link and then use the nightly build which includes an updated usb4java native library for Tahoe with ARM processor.  There may still be issue(s) with MacOS accessing your USB SDR tuners.
+Welcome to the modernized fork of **sdrtrunk**—a cross-platform Java application engineered for decoding, monitoring, recording, and streaming trunked mobile and related radio protocols using Software Defined Radios (SDR).
 
-```
-brew install libusb --HEAD
-cd /opt
-sudo mkdir local
-cd local
-sudo mkdir lib
-```
-Next, find where brew installed the libusb library, for example: ```/opt/homebrew/Cellar/libusb/HEAD-9ceaa52/lib/libusb-1.0.0.dylib```    Note: the folder "HEAD-9ceaa52" is the version stamp for HEAD when you installed from it.
+This fork is explicitly optimized for **modern, automated dispatch and operational efficiency**, taking the robust decoding engine of sdrtrunk and pairing it with a highly refined, context-aware user experience.
 
-Finally, create a symbolic link from the installed library to the place where usb4java is expecting to find libusb (/opt/local/lib/libusb-1.0.0.dylib)
+## Why this Fork?
+* **Automated Dispatch Intelligence:** Focused on streamlining the flow of mission-critical audio and data.
+* **Modern Efficiency:** Built to reduce cognitive load on operators with deeply integrated contextual help, streamlined configuration, and a modernized interface.
+* **In-App Knowledge Base:** Say goodbye to alt-tabbing to a wiki. An embedded, searchable technical documentation viewer brings the knowledge you need right to your fingertips.
+* **Deep OS Integration:** Utilizing modern Java and JNA for advanced desktop integration (e.g., native backdrops and theme syncing).
 
-```
-sudo ln -s /opt/homebrew/Cellar/libusb/HEAD-9ceaa52/lib/libusb-1.0.0.dylib /opt/local/lib/libusb-1.0.0.dylib
-```
-
-# sdrtrunk
-A cross-platform java application for decoding, monitoring, recording and streaming trunked mobile and related radio protocols using Software Defined Radios (SDR).
-
-* [Help/Wiki Home Page](https://github.com/DSheirer/sdrtrunk/wiki)
-* [Getting Started](https://github.com/DSheirer/sdrtrunk/wiki/Getting-Started)
-* [User's Manual](https://github.com/DSheirer/sdrtrunk/wiki/User-Manual)
-* [Download](https://github.com/DSheirer/sdrtrunk/releases)
-* [Support](https://github.com/DSheirer/sdrtrunk/wiki/Support)
-
-![sdrtrunk Application](https://github.com/DSheirer/sdrtrunk/wiki/images/sdrtrunk.png)
-**Figure 1:** sdrtrunk Application Screenshot
-
-## Download the Latest Release
-All release versions of sdrtrunk are available from the [releases](https://github.com/DSheirer/sdrtrunk/releases) tab.
-
-* **(alpha)** These versions are under development feature previews and likely to contain bugs and unexpected behavior.
-* **(beta)** These versions are currently being tested for bugs and functionality prior to final release.
-* **(final)** These versions have been tested and are the current release version.
-
-## Download Nightly Software Build
-The [nightly](https://github.com/DSheirer/sdrtrunk/releases/tag/nightly) release contains current builds of the software 
-for all supported operating systems.  This version of the software may contain bugs and may not run correctly.  However, 
-it let's you preview the most recent changes and fixes before the next software release.  **Always backup your 
-playlist(s) before you use the nightly builds.**  Note: the nightly release is updated each time code changes are 
-committed to the code base, so it's not really 'nightly' as much as it is 'current'.
+## Features
+* Comprehensive digital and analog trunking support (P25, DMR, etc.).
+* Automated audio recording, streaming, and metadata tagging.
+* Contextual DSP explanations and interactive configuration.
+* Fully searchable in-app Help Viewer.
 
 ## Minimum System Requirements
-* **Operating System:** Windows (~~32 or~~ 64-bit), Linux (~~32 or~~ 64-bit) or Mac (64-bit, 12.x or higher)
+* **Operating System:** Windows (64-bit), Linux (64-bit) or Mac (64-bit, 12.x or higher)
 * **CPU:** 4-core
-* **RAM:** 8GB or more (preferred).  Depending on usage, 4GB may be sufficient.
+* **RAM:** 8GB or more (preferred). Depending on usage, 4GB may be sufficient.
+* **Java:** Requires Java 23+ (automatically provisioned via Gradle Toolchains).

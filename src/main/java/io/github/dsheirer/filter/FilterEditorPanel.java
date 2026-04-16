@@ -20,6 +20,10 @@
 package io.github.dsheirer.filter;
 
 import java.awt.Component;
+import io.github.dsheirer.gui.help.HelpIconLabel;
+import javax.swing.JPanel;
+import java.awt.FlowLayout;
+import javax.swing.JLabel;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.EventObject;
@@ -70,7 +74,43 @@ public class FilterEditorPanel<T> extends JPanel
         mModel = new DefaultTreeModel(root);
         addFilterSet(mFilterSet, root);
 
-        mTree = new JTree(mModel);
+        mTree = new JTree(mModel) {
+            @Override
+            public String getToolTipText(java.awt.event.MouseEvent e) {
+                javax.swing.tree.TreePath path = getPathForLocation(e.getX(), e.getY());
+                if (path != null) {
+                    Object lastComponent = path.getLastPathComponent();
+                    if (lastComponent instanceof javax.swing.tree.DefaultMutableTreeNode) {
+                        Object userObject = ((javax.swing.tree.DefaultMutableTreeNode) lastComponent).getUserObject();
+                        if (userObject instanceof IFilter filter) {
+                            String filterName = filter.getName();
+                            String tooltipContent = "Controls the enabling of elements for this specific filter set.<br>Benefit: Instantly toggle related DSP components.";
+                            if (filterName.equals("De-emphasis Filter")) {
+                                tooltipContent = "Restores natural voice balance by reversing the pre-emphasis applied at the transmitter.<br>Benefit: Significantly reduces harsh high-frequency hiss.";
+                            } else if (filterName.equals("Decimation Filter")) {
+                                tooltipContent = "Reduces the sample rate of the signal to lower processing requirements.<br>Benefit: Vastly improves efficiency.";
+                            } else if (filterName.equals("Squaring Filter")) {
+                                tooltipContent = "Squares the input signal values.<br>Benefit: Useful in energy detection algorithms.";
+                            }
+                            return "<html><b>" + filterName + "</b><br>" + tooltipContent + "</html>";
+                        } else if (userObject instanceof FilterElement element) {
+                            String elementName = element.getName();
+                            String tooltipContent = "Filter configuration element.<br>Check documentation for specific DSP effect.";
+                            if (elementName.equals("De-emphasis Filter")) {
+                                tooltipContent = "Restores natural voice balance by reversing the pre-emphasis applied at the transmitter.<br>Benefit: Significantly reduces harsh high-frequency hiss.";
+                            } else if (elementName.equals("Decimation Filter")) {
+                                tooltipContent = "Reduces the sample rate of the signal to lower processing requirements.<br>Benefit: Vastly improves efficiency.";
+                            } else if (elementName.equals("Squaring Filter")) {
+                                tooltipContent = "Squares the input signal values.<br>Benefit: Useful in energy detection algorithms.";
+                            }
+                            return "<html><b>" + elementName + "</b><br>" + tooltipContent + "</html>";
+                        }
+                    }
+                }
+                return null;
+            }
+        };
+        javax.swing.ToolTipManager.sharedInstance().registerComponent(mTree);
         mTree.setShowsRootHandles(true);
         mTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
         mTree.setCellRenderer(new EditorTreeCellRenderer());
@@ -305,7 +345,46 @@ public class FilterEditorPanel<T> extends JPanel
                         checkBox.setBackground(getBackgroundNonSelectionColor());
                     }
 
-                    return checkBox;
+                    JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+                    panel.setBackground(checkBox.getBackground());
+                    panel.add(checkBox);
+
+                    String tooltipText = null;
+                    if(userObject instanceof IFilter filter) {
+                         String filterName = filter.getName();
+                         String tooltipContent = "Controls the enabling of elements for this specific filter set.<br>Benefit: Instantly toggle related DSP components.";
+
+                         if(filterName.equals("De-emphasis Filter")) {
+                             tooltipContent = "Restores natural voice balance by reversing the pre-emphasis applied at the transmitter.<br>Benefit: Significantly reduces harsh high-frequency hiss.";
+                         } else if(filterName.equals("Decimation Filter")) {
+                             tooltipContent = "Reduces the sample rate of the signal to lower processing requirements.<br>Benefit: Vastly improves efficiency.";
+                         } else if(filterName.equals("Squaring Filter")) {
+                             tooltipContent = "Squares the input signal values.<br>Benefit: Useful in energy detection algorithms.";
+                         }
+
+                         tooltipText = "<html><b>" + filterName + "</b><br>" + tooltipContent + "</html>";
+                    } else if(userObject instanceof FilterElement element) {
+                         String elementName = element.getName();
+                         String tooltipContent = "Filter configuration element.<br>Check documentation for specific DSP effect.";
+
+                         if(elementName.equals("De-emphasis Filter")) {
+                             tooltipContent = "Restores natural voice balance by reversing the pre-emphasis applied at the transmitter.<br>Benefit: Significantly reduces harsh high-frequency hiss.";
+                         } else if(elementName.equals("Decimation Filter")) {
+                             tooltipContent = "Reduces the sample rate of the signal to lower processing requirements.<br>Benefit: Vastly improves efficiency.";
+                         } else if(elementName.equals("Squaring Filter")) {
+                             tooltipContent = "Squares the input signal values.<br>Benefit: Useful in energy detection algorithms.";
+                         }
+
+                         tooltipText = "<html><b>" + elementName + "</b><br>" + tooltipContent + "</html>";
+                    }
+
+                    if(tooltipText != null) {
+                        HelpIconLabel helpIcon = new HelpIconLabel(tooltipText);
+                        helpIcon.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 5, 0, 0));
+                        panel.add(helpIcon);
+                    }
+
+                    return panel;
                 }
             }
 

@@ -48,6 +48,7 @@ import org.slf4j.LoggerFactory;
 import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import io.github.dsheirer.gui.help.HelpViewer;
 import javax.swing.JSplitPane;
 import javax.swing.JPanel;
 import javax.swing.JList;
@@ -118,6 +119,7 @@ public class ControllerPanel extends JPanel
         mCardPanel.add(mNowPlayingPanel, "now_playing");
         mCardPanel.add(mMapPanel, "map");
         mCardPanel.add(mTunerManagerPanel, "tuners");
+        mCardPanel.add(new HelpViewer(), "help_viewer");
 
         add(mCardPanel, BorderLayout.CENTER);
         // AudioPanel moved to SDRTrunk.java
