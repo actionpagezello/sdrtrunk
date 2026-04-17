@@ -1,4 +1,4 @@
-feat: use SVG icons for default IconManager options
+Fix icon manager UI
 
-- Change `IconModel.java` to use .svg file extensions for standard icons, maintaining the original filenames, except for extension.
-- Added `*.svg` to `IconManager.java`'s file chooser extensions.
+- Set table view column resize policy to remove extra column
+- Change Add button to directly open file chooser and name prompt dialog

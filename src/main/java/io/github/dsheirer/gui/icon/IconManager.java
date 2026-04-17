@@ -38,6 +38,9 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.control.TextInputDialog;
+import java.util.Optional;
+import java.nio.file.Files;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -210,6 +213,8 @@ public class IconManager extends Editor<Icon>
                 getEditButton().setDisable(newValue == null || newValue.getDefaultIcon() || newValue.getStandardIcon());
                 getSetAsDefaultButton().setDisable(newValue == null || newValue.getDefaultIcon());
             });
+            mIconTableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+            nameColumn.setMaxWidth( 1f * Integer.MAX_VALUE * 100 ); // Let it grow
         }
 
         return mIconTableView;
@@ -245,8 +250,35 @@ public class IconManager extends Editor<Icon>
             mAddButton.setMaxWidth(Double.MAX_VALUE);
             mAddButton.disableProperty().bind(getEditorPane().visibleProperty());
             mAddButton.setOnAction(event -> {
-                setItem(null);
-                showEditor(true);
+                FileChooser fileChooser = new FileChooser();
+                fileChooser.getExtensionFilters().addAll(
+                    new FileChooser.ExtensionFilter("Picture Files", "*.png", "*.svg", "*.tif", "*.tiff",
+                        "*.gif", "*.jpg", "*.jpeg"),
+                    new FileChooser.ExtensionFilter("All Files (*.*)", "*.*"));
+
+                File selected = fileChooser.showOpenDialog(mAddButton.getScene().getWindow());
+                if(selected != null) {
+                    TextInputDialog dialog = new TextInputDialog();
+                    dialog.setTitle("New Icon");
+                    dialog.setHeaderText("Add New Icon");
+                    dialog.setContentText("Please enter a friendly name for the icon:");
+
+                    Optional<String> result = dialog.showAndWait();
+                    if (result.isPresent() && !result.get().trim().isEmpty()) {
+                        String name = result.get().trim();
+                        Icon icon = new Icon();
+                        icon.setName(name);
+                        icon.setPath(selected.getAbsolutePath());
+                        if(icon.getFxImage() != null && icon.getFxImage().getException() != null) {
+                            Alert alert = new Alert(Alert.AlertType.ERROR, "Unable to load icon image from selected file.", ButtonType.OK);
+                            alert.setHeaderText("Invalid image file");
+                            alert.setTitle("Add Icon");
+                            alert.showAndWait();
+                        } else {
+                            mIconModel.addIcon(icon);
+                        }
+                    }
+                }
             });
         }
 
