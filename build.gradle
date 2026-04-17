@@ -160,9 +160,9 @@ def jvmArgsWindows =
 
          // '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '-Xmx6g',                         //Set max heap size to 6GB
-         '-Dsun.java2d.d3d=true',          //Hardware Acceleration Direct3D
-         '-Dsun.java2d.opengl=True',       //Hardware Acceleration OpenGL
-         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
+         "-Dsun.java2d.d3d=true",          //Hardware Acceleration Direct3D
+         "-Dsun.java2d.opengl=True",       //Hardware Acceleration OpenGL
+         "-Djava.library.path=c:/Program Files/SDRplay/API/x64"] //SDRPlay API library path
 
 /**
  * JVM Arguments for running the application on Linux.
