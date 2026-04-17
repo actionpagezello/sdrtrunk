@@ -27,6 +27,13 @@ import javafx.geometry.Orientation;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Spinner;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.ListCell;
+import javafx.scene.layout.Region;
+import javafx.util.StringConverter;
+import java.lang.management.ManagementFactory;
+import java.util.ArrayList;
+import java.util.List;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -45,7 +52,7 @@ public class ApplicationPreferenceEditor extends HBox
     private Label mAutoStartTimeoutLabel;
     private Spinner<Integer> mTimeoutSpinner;
     private Label mMemoryLimitLabel;
-    private Spinner<Integer> mMemorySpinner;
+    private ComboBox<MemoryOption> mMemoryComboBox;
     private Label mMemoryWarningLabel;
     private ToggleSwitch mAutomaticDiagnosticMonitoringToggle;
 
@@ -97,9 +104,8 @@ public class ApplicationPreferenceEditor extends HBox
             mEditorPane.add(separator2, 0, ++row, 3, 1);
 
             mEditorPane.add(getMemoryLimitLabel(), 0, ++row, 2, 1);
-            GridPane.setHalignment(getMemorySpinner(), HPos.RIGHT);
-            mEditorPane.add(getMemorySpinner(), 0, ++row);
-            mEditorPane.add(new Label("GB"), 1, row);
+            GridPane.setHalignment(getMemoryComboBox(), HPos.RIGHT);
+            mEditorPane.add(getMemoryComboBox(), 0, ++row, 2, 1);
 
             GridPane.setHalignment(getMemoryWarningLabel(), HPos.RIGHT);
             mEditorPane.add(getMemoryWarningLabel(), 0, ++row, 3, 1);
@@ -164,15 +170,105 @@ public class ApplicationPreferenceEditor extends HBox
         return mMemoryLimitLabel;
     }
 
-    private Spinner<Integer> getMemorySpinner()
-    {
-        if(mMemorySpinner == null)
-        {
-            mMemorySpinner = new Spinner<>(1, 64, mApplicationPreference.getAllocatedMemory(), 1);
-            mMemorySpinner.valueProperty().addListener((observable, oldValue, newValue) -> mApplicationPreference.setAllocatedMemory(newValue));
+
+    public static class MemoryOption {
+        private final int value;
+        private final String label;
+
+        public MemoryOption(int value, String label) {
+            this.value = value;
+            this.label = label;
         }
 
-        return mMemorySpinner;
+        public int getValue() {
+            return value;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (obj == null || getClass() != obj.getClass()) return false;
+            MemoryOption that = (MemoryOption) obj;
+            return value == that.value;
+        }
+
+        @Override
+        public int hashCode() {
+            return Integer.hashCode(value);
+        }
+    }
+
+    private ComboBox<MemoryOption> getMemoryComboBox()
+    {
+        if(mMemoryComboBox == null)
+        {
+            mMemoryComboBox = new ComboBox<>();
+            mMemoryComboBox.setMinWidth(Region.USE_PREF_SIZE);
+
+            long maxMemoryBytes = ((com.sun.management.OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean()).getTotalMemorySize();
+            long systemMaxMemoryGb = Math.round(maxMemoryBytes / (1024.0 * 1024.0 * 1024.0));
+            long maxAllowed = Math.min(systemMaxMemoryGb, 32);
+
+            List<MemoryOption> options = new ArrayList<>();
+            int[] powersOfTwo = {2, 4, 8, 16, 32};
+
+            for (int gb : powersOfTwo) {
+                if (gb <= maxAllowed) {
+                    String label = gb + " GB";
+                    if (gb == 2) {
+                        label += " - Recommended for 1 tuner";
+                    } else if (gb == 4) {
+                        label += " - Recommended for 2-3 tuners";
+                    } else if (gb >= 8) {
+                        label += " - Recommended for 4+ tuners";
+                    }
+                    options.add(new MemoryOption(gb, label));
+                }
+            }
+
+            // In case maxAllowed is less than 2GB or not a power of 2, add it if missing and sensible
+            if (options.isEmpty() || maxAllowed < 2) {
+                 options.add(new MemoryOption((int) Math.max(1, maxAllowed), Math.max(1, maxAllowed) + " GB"));
+            } else if (!options.stream().anyMatch(opt -> opt.getValue() == maxAllowed) && maxAllowed > options.get(options.size() - 1).getValue()) {
+                 options.add(new MemoryOption((int) maxAllowed, maxAllowed + " GB"));
+            }
+
+            mMemoryComboBox.getItems().addAll(options);
+
+            int currentMemory = mApplicationPreference.getAllocatedMemory();
+            MemoryOption currentOption = new MemoryOption(currentMemory, currentMemory + " GB");
+
+            if (!mMemoryComboBox.getItems().contains(currentOption)) {
+                // Insert it in sorted order
+                int index = 0;
+                for (int i = 0; i < options.size(); i++) {
+                    if (currentMemory < options.get(i).getValue()) {
+                        break;
+                    }
+                    index++;
+                }
+                mMemoryComboBox.getItems().add(index, currentOption);
+            }
+
+            mMemoryComboBox.getSelectionModel().select(currentOption);
+
+            mMemoryComboBox.valueProperty().addListener((observable, oldValue, newValue) -> {
+                if (newValue != null) {
+                    mApplicationPreference.setAllocatedMemory(newValue.getValue());
+                }
+            });
+        }
+
+        return mMemoryComboBox;
     }
 
     private Label getMemoryWarningLabel()
