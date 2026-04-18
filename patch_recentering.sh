@@ -1,2 +1,0 @@
-#!/bin/bash
-sed -i '/sampleRateConfigurable.setSampleRateInHz(bestRate);/a \                long newCenterFreq = getCenterFrequency(tunerChannels, mTunerController.getFrequency());\n                if (newCenterFreq != mTunerController.getFrequency() \&\& newCenterFreq != 0) {\n                    mTunerController.setFrequency(newCenterFreq);\n                }' ./src/main/java/io/github/dsheirer/source/tuner/manager/PolyphaseChannelSourceManager.java

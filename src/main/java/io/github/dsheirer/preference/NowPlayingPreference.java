@@ -36,6 +36,9 @@ public class NowPlayingPreference
     // Keys
     private static final String KEY_EVENT_HISTORY_SIZE    = "now.playing.event.history.size";
     private static final String KEY_MESSAGE_HISTORY_SIZE  = "now.playing.message.history.size";
+    private static final String KEY_WIDGET_VISIBLE_PREFIX = "now.playing.widget.visible.";
+    private static final String KEY_WIDGET_MINIMIZED_PREFIX = "now.playing.widget.minimized.";
+    private static final String KEY_WIDGET_ORDER_PREFIX = "now.playing.widget.order.";
 
     // Filter keys — one per top-level filter name stored as a boolean (enabled/disabled).
     // We persist a map of "filter name → enabled" as individual preference entries.
@@ -112,5 +115,39 @@ public class NowPlayingPreference
     {
         // Replace characters not valid in Preferences keys
         return KEY_FILTER_PREFIX + filterName.replaceAll("[^a-zA-Z0-9._\\-]", "_");
+    }
+
+    // -------------------------------------------------------------------------
+    // Widget States
+    // -------------------------------------------------------------------------
+
+    public boolean isWidgetVisible(String widgetId, boolean defaultValue)
+    {
+        return PREFS.getBoolean(KEY_WIDGET_VISIBLE_PREFIX + widgetId, defaultValue);
+    }
+
+    public void setWidgetVisible(String widgetId, boolean visible)
+    {
+        PREFS.putBoolean(KEY_WIDGET_VISIBLE_PREFIX + widgetId, visible);
+    }
+
+    public boolean isWidgetMinimized(String widgetId, boolean defaultValue)
+    {
+        return PREFS.getBoolean(KEY_WIDGET_MINIMIZED_PREFIX + widgetId, defaultValue);
+    }
+
+    public void setWidgetMinimized(String widgetId, boolean minimized)
+    {
+        PREFS.putBoolean(KEY_WIDGET_MINIMIZED_PREFIX + widgetId, minimized);
+    }
+
+    public int getWidgetOrder(String widgetId, int defaultOrder)
+    {
+        return PREFS.getInt(KEY_WIDGET_ORDER_PREFIX + widgetId, defaultOrder);
+    }
+
+    public void setWidgetOrder(String widgetId, int order)
+    {
+        PREFS.putInt(KEY_WIDGET_ORDER_PREFIX + widgetId, order);
     }
 }

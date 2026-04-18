@@ -18,13 +18,15 @@
  */
 package io.github.dsheirer.channel.metadata;
 
-import com.jidesoft.swing.JideSplitPane;
 import com.jidesoft.swing.JideTabbedPane;
 import io.github.dsheirer.channel.details.ChannelDetailPanel;
 import io.github.dsheirer.gui.channel.ChannelSpectrumPanel;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.module.decode.event.DecodeEventPanel;
 import io.github.dsheirer.module.decode.event.MessageActivityPanel;
+import io.github.dsheirer.gui.widget.Widget;
+import io.github.dsheirer.gui.widget.WidgetContainer;
+import io.github.dsheirer.preference.NowPlayingPreference;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.settings.SettingsManager;
@@ -33,8 +35,11 @@ import java.awt.Color;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JPanel;
-import javax.swing.JToggleButton;
+import javax.swing.JButton;
 import javax.swing.JToolBar;
+import javax.swing.JScrollPane;
+import javax.swing.JPopupMenu;
+import javax.swing.JCheckBoxMenuItem;
 import io.github.dsheirer.gui.VisibilityListener;
 
 import javax.swing.event.ChangeListener;
@@ -53,12 +58,15 @@ public class NowPlayingPanel extends JPanel
     private final MessageActivityPanel mMessageActivityPanel;
     private final ChannelSpectrumPanel mChannelSpectrumSquelchPanel;
     private JideTabbedPane mTabbedPane;
-    private JideSplitPane mSplitPane;
-    private boolean mDetailTabsVisible;
     private javax.swing.JComponent mBroadcastStatusPanel;
-    private boolean mBroadcastStatusVisible = false;
+    private javax.swing.JComponent mResourceStatusPanel;
+    private javax.swing.JComponent mSpectralPanel;
+
     private VisibilityListener mVisibilityListener;
     private ChangeListener mTabbedPaneChangeListener;
+    private WidgetContainer mWidgetContainer;
+    private JScrollPane mScrollPane;
+    private NowPlayingPreference mNowPlayingPreference;
 
     /**
      * GUI panel that combines the currently decoding channels metadata table and viewers for channel details,
@@ -73,7 +81,7 @@ public class NowPlayingPanel extends JPanel
         mMessageActivityPanel = new MessageActivityPanel(userPreferences);
         mChannelMetadataPanel = new ChannelMetadataPanel(playlistManager, iconModel, userPreferences, tunerManager);
         mChannelSpectrumSquelchPanel = new ChannelSpectrumPanel(playlistManager, settingsManager);
-        mDetailTabsVisible = detailTabsVisible;
+        mNowPlayingPreference = new NowPlayingPreference();
 
         init();
     }
@@ -89,45 +97,39 @@ public class NowPlayingPanel extends JPanel
         }
     }
 
-    /**
-     * Change the visibility of the channel details tabs panel.
-     * @param visible true to show or false to hide.
-     */
-    public void setBroadcastStatusPanel(javax.swing.JComponent panel) {
-        mBroadcastStatusPanel = panel;
+    public void setComponents(javax.swing.JComponent spectralPanel, javax.swing.JComponent broadcastStatusPanel, javax.swing.JComponent resourceStatusPanel) {
+        mSpectralPanel = spectralPanel;
+        mBroadcastStatusPanel = broadcastStatusPanel;
+        mResourceStatusPanel = resourceStatusPanel;
+
+        setupWidgets();
+    }
+
+
+
+
+
+    public void setResourceStatusPanelVisible(boolean visible) {
+        if (mWidgetContainer != null) {
+            mWidgetContainer.setWidgetVisible("resource", visible);
+        }
     }
 
     public void setBroadcastStatusPanelVisible(boolean visible) {
-        if (visible ^ mBroadcastStatusVisible) {
-            mBroadcastStatusVisible = visible;
-            if (mBroadcastStatusVisible && mBroadcastStatusPanel != null) {
-                add(mBroadcastStatusPanel, "wrap, growx, spanx");
-            } else if (mBroadcastStatusPanel != null) {
-                remove(mBroadcastStatusPanel);
-            }
-            revalidate();
-            repaint();
+        if (mWidgetContainer != null) {
+            mWidgetContainer.setWidgetVisible("streaming", visible);
         }
     }
 
-    public void setDetailTabsVisible(boolean visible)
-    {
-        //Only adjust if there is a change in state
-        if(visible ^ mDetailTabsVisible)
-        {
-            mDetailTabsVisible = visible;
-
-            if(mDetailTabsVisible)
-            {
-                getSplitPane().add(getTabbedPane());
-            }
-            else
-            {
-                getSplitPane().remove(getTabbedPane());
-            }
-
-            revalidate();
+    public void setDetailTabsVisible(boolean visible) {
+        if (mWidgetContainer != null) {
+            mWidgetContainer.setWidgetVisible("details", visible);
         }
+    }
+
+    public void setBroadcastStatusPanel(javax.swing.JComponent panel) {
+        // Kept for backward compatibility if called elsewhere, actual injection happens in setComponents
+        mBroadcastStatusPanel = panel;
     }
 
     private JideTabbedPane getTabbedPane()
@@ -150,20 +152,6 @@ public class NowPlayingPanel extends JPanel
         return mTabbedPane;
     }
 
-    /**
-     * Split pane for channels table and channel details tabs.
-     */
-    private JideSplitPane getSplitPane()
-    {
-        if(mSplitPane == null)
-        {
-            mSplitPane = new JideSplitPane(JideSplitPane.VERTICAL_SPLIT);
-            mSplitPane.setShowGripper(true);
-        }
-
-        return mSplitPane;
-    }
-
     private void init()
     {
         setLayout( new MigLayout( "insets 0 0 0 0", "[grow,fill]", "[][grow,fill][]") );
@@ -171,45 +159,73 @@ public class NowPlayingPanel extends JPanel
         JToolBar toolBar = new JToolBar();
         toolBar.setFloatable(false);
 
-        JToggleButton specBtn = new JToggleButton("Spectrum/Waterfall", IconFontSwing.buildIcon(FontAwesome.PLAY, 14, Color.BLACK));
-        specBtn.addActionListener(e -> {
-            if(mVisibilityListener != null) mVisibilityListener.onToggleSpectrum();
+        JButton manageWidgetsBtn = new JButton("Manage Widgets", IconFontSwing.buildIcon(FontAwesome.COG, 14, Color.BLACK));
+        manageWidgetsBtn.addActionListener(e -> {
+            showManageWidgetsPopup(manageWidgetsBtn);
         });
 
-        JToggleButton detailsBtn = new JToggleButton("Channel Details", IconFontSwing.buildIcon(FontAwesome.LIST, 14, Color.BLACK));
-        detailsBtn.addActionListener(e -> {
-            if(mVisibilityListener != null) mVisibilityListener.onToggleDetails();
-        });
-
-        JToggleButton streamBtn = new JToggleButton("Streaming Status", IconFontSwing.buildIcon(FontAwesome.VOLUME_UP, 14, Color.BLACK));
-        streamBtn.addActionListener(e -> {
-            if(mVisibilityListener != null) mVisibilityListener.onToggleStreaming();
-        });
-
-        JToggleButton resourceBtn = new JToggleButton("Resource Status", IconFontSwing.buildIcon(FontAwesome.MAP, 14, Color.BLACK));
-        resourceBtn.addActionListener(e -> {
-            if(mVisibilityListener != null) mVisibilityListener.onToggleResource();
-        });
-
-        toolBar.add(new JLabel("View Options: "));
-        toolBar.add(specBtn);
-        toolBar.add(detailsBtn);
-        toolBar.add(streamBtn);
-        toolBar.add(resourceBtn);
-
+        toolBar.add(manageWidgetsBtn);
         add(toolBar, "wrap");
 
-        getSplitPane().add(mChannelMetadataPanel);
-
-        if(mDetailTabsVisible)
-        {
-            getSplitPane().add(getTabbedPane());
-        }
-
-        add(getSplitPane(), "grow, wrap");
         mChannelMetadataPanel.addProcessingChainSelectionListener(mChannelDetailPanel);
         mChannelMetadataPanel.addProcessingChainSelectionListener(mDecodeEventPanel);
         mChannelMetadataPanel.addProcessingChainSelectionListener(mMessageActivityPanel);
         mChannelMetadataPanel.addProcessingChainSelectionListener(mChannelSpectrumSquelchPanel);
+
+        mWidgetContainer = new WidgetContainer(mNowPlayingPreference);
+        mScrollPane = new JScrollPane(mWidgetContainer);
+        mScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        mScrollPane.setBorder(null);
+        add(mScrollPane, "grow, wrap");
+    }
+
+    private void setupWidgets() {
+        mWidgetContainer.removeAll();
+
+        if (mSpectralPanel != null) {
+            Widget spectrumWidget = new Widget("spectrum", "Spectrum/Waterfall", mSpectralPanel, mWidgetContainer, 150);
+            mWidgetContainer.addWidget(spectrumWidget, false);
+        }
+
+        if (mChannelMetadataPanel != null) {
+            Widget channelTableWidget = new Widget("channel_table", "Channel Table", mChannelMetadataPanel, mWidgetContainer, 150);
+            mWidgetContainer.addWidget(channelTableWidget, false);
+        }
+
+        if (getTabbedPane() != null) {
+            Widget detailsWidget = new Widget("details", "Channel Details", getTabbedPane(), mWidgetContainer, 200);
+            mWidgetContainer.addWidget(detailsWidget, false);
+        }
+
+        if (mBroadcastStatusPanel != null) {
+            Widget streamingWidget = new Widget("streaming", "Streaming Status", mBroadcastStatusPanel, mWidgetContainer, 70);
+            mWidgetContainer.addWidget(streamingWidget, false);
+        }
+
+        if (mResourceStatusPanel != null) {
+            Widget resourceWidget = new Widget("resource", "Resource Status", mResourceStatusPanel, mWidgetContainer, 70);
+            mWidgetContainer.addWidget(resourceWidget, true); // Pinned to bottom
+        }
+
+        mWidgetContainer.layoutWidgets("resource");
+    }
+
+    private void showManageWidgetsPopup(JButton source) {
+        JPopupMenu popup = new JPopupMenu();
+
+        if (mSpectralPanel != null) addPopupItem(popup, "Spectrum/Waterfall", "spectrum");
+        if (mChannelMetadataPanel != null) addPopupItem(popup, "Channel Table", "channel_table");
+        if (getTabbedPane() != null) addPopupItem(popup, "Channel Details", "details");
+        if (mBroadcastStatusPanel != null) addPopupItem(popup, "Streaming Status", "streaming");
+        if (mResourceStatusPanel != null) addPopupItem(popup, "Resource Status", "resource");
+
+        popup.show(source, 0, source.getHeight());
+    }
+
+    private void addPopupItem(JPopupMenu popup, String label, String widgetId) {
+        JCheckBoxMenuItem item = new JCheckBoxMenuItem(label);
+        item.setSelected(mNowPlayingPreference.isWidgetVisible(widgetId, true));
+        item.addActionListener(e -> mWidgetContainer.setWidgetVisible(widgetId, item.isSelected()));
+        popup.add(item);
     }
 }
