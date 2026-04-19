@@ -42,6 +42,13 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.control.ListView;
+import javafx.scene.control.ListCell;
+import javafx.util.Callback;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
+import javafx.scene.layout.Region;
+
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,7 +63,7 @@ public class UserPreferencesEditor extends BorderPane
     private Map<PreferenceEditorType,Node> mEditors = new EnumMap<>(PreferenceEditorType.class);
     private UserPreferences mUserPreferences;
     private MenuBar mMenuBar;
-    private TreeView mEditorSelectionTreeView;
+    private Object mEditorSelectionTreeView;
     private VBox mEditorAndButtonsBox;
     private Node mEditor;
     private HBox mButtonsBox;
@@ -78,10 +85,14 @@ public class UserPreferencesEditor extends BorderPane
         mUserPreferences = userPreferences;
         mIconModel = iconModel;
 
+        getStylesheets().add(getClass().getResource("/io/github/dsheirer/gui/sdrtrunk_style.css").toExternalForm());
+        getStyleClass().add("preferences-main-area");
 
         HBox contentBox = new HBox();
         HBox.setHgrow(getEditorAndButtonsBox(), Priority.ALWAYS);
-        contentBox.getChildren().addAll(getEditorSelectionTreeView(), getEditorAndButtonsBox());
+
+        Node sidebar = getEditorSelectionTreeView(); // We will rename the inner method but keep variable reference
+        contentBox.getChildren().addAll(sidebar, getEditorAndButtonsBox());
         setCenter(contentBox);
     }
 
@@ -102,34 +113,13 @@ public class UserPreferencesEditor extends BorderPane
     {
         if(request.getPreferenceType() != null)
         {
-            TreeItem toSelect = recursivelyFindEditorType(getEditorSelectionTreeView().getRoot(), request.getPreferenceType());
-
-            if(toSelect != null)
-            {
-                getEditorSelectionTreeView().getSelectionModel().select(toSelect);
-            }
-        }
-    }
-
-    /**
-     * Recursively finds the tree branch that matches the editor type
-     */
-    private TreeItem recursivelyFindEditorType(TreeItem parent, PreferenceEditorType type)
-    {
-
-        for (TreeItem treeItem : (Iterable<TreeItem>) parent.getChildren()) {
-            if (treeItem.getValue() instanceof PreferenceEditorType && (treeItem.getValue()).equals(type)) {
-                return treeItem;
-            } else {
-                TreeItem item = recursivelyFindEditorType(treeItem, type);
-
-                if (item != null) {
-                    return item;
+            for(Object item : ((ListView)mEditorSelectionTreeView).getItems()) {
+                if(item instanceof PreferenceEditorType && item.equals(request.getPreferenceType())) {
+                    ((ListView)mEditorSelectionTreeView).getSelectionModel().select(item);
+                    break;
                 }
             }
         }
-
-        return null;
     }
 
     private VBox getEditorAndButtonsBox()
@@ -137,10 +127,11 @@ public class UserPreferencesEditor extends BorderPane
         if(mEditorAndButtonsBox == null)
         {
             mEditorAndButtonsBox = new VBox();
+            mEditorAndButtonsBox.getStyleClass().add("preferences-main-area");
+            mEditorAndButtonsBox.setPadding(new Insets(20, 20, 20, 20));
             mEditor = getDefaultEditor();
             VBox.setVgrow(getDefaultEditor(), Priority.ALWAYS);
-            VBox.setVgrow(getButtonsBox(), Priority.NEVER);
-            mEditorAndButtonsBox.getChildren().addAll(getDefaultEditor(), getButtonsBox());
+            mEditorAndButtonsBox.getChildren().addAll(getDefaultEditor());
         }
 
         return mEditorAndButtonsBox;
@@ -166,69 +157,87 @@ public class UserPreferencesEditor extends BorderPane
     /**
      * Preference type selection list
      */
-    private TreeView getEditorSelectionTreeView()
+    private Node getEditorSelectionTreeView()
     {
         if(mEditorSelectionTreeView == null)
         {
-            TreeItem<String> treeRoot = new TreeItem<>("Root node");
+            ListView<Object> listView = new ListView<>();
+            listView.getStyleClass().add("preferences-sidebar");
+            listView.setMinWidth(250);
 
-            TreeItem<String> applicationItem = new TreeItem<>("Application");
-            applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.APPLICATION));
-            applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.DIAGNOSTICS));
-            applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.MQTT));
-            treeRoot.getChildren().add(applicationItem);
-            applicationItem.setExpanded(true);
+            listView.getItems().addAll(
+                "Application",
+                PreferenceEditorType.APPLICATION,
+                PreferenceEditorType.DIAGNOSTICS,
+                PreferenceEditorType.MQTT,
+                "Audio",
+                PreferenceEditorType.AUDIO_CALL_MANAGEMENT,
+                PreferenceEditorType.AUDIO_MP3,
+                PreferenceEditorType.AUDIO_OUTPUT,
+                PreferenceEditorType.AUDIO_RECORD,
+                "CPU",
+                PreferenceEditorType.VECTOR_CALIBRATION,
+                "Decoder",
+                PreferenceEditorType.JMBE_LIBRARY,
+                "Display",
+                PreferenceEditorType.CHANNEL_EVENT,
+                PreferenceEditorType.TALKGROUP_FORMAT,
+                "File Storage",
+                PreferenceEditorType.DIRECTORY,
+                "Source",
+                PreferenceEditorType.SOURCE_TUNERS,
+                "Icons",
+                PreferenceEditorType.ICON_MANAGER
+            );
 
-            TreeItem<String> audioItem = new TreeItem<>("Audio");
-            audioItem.getChildren().add(new TreeItem(PreferenceEditorType.AUDIO_CALL_MANAGEMENT));
-            audioItem.getChildren().add(new TreeItem(PreferenceEditorType.AUDIO_MP3));
-            audioItem.getChildren().add(new TreeItem(PreferenceEditorType.AUDIO_OUTPUT));
-            audioItem.getChildren().add(new TreeItem(PreferenceEditorType.AUDIO_RECORD));
-            treeRoot.getChildren().add(audioItem);
-            audioItem.setExpanded(true);
+            listView.setCellFactory(new Callback<ListView<Object>, ListCell<Object>>() {
+                @Override
+                public ListCell<Object> call(ListView<Object> param) {
+                    return new ListCell<Object>() {
+                        @Override
+                        protected void updateItem(Object item, boolean empty) {
+                            super.updateItem(item, empty);
+                            if (empty || item == null) {
+                                setText(null);
+                                setGraphic(null);
+                                getStyleClass().removeAll("preferences-section-header", "preferences-list-item");
+                                setMouseTransparent(false);
+                                setFocusTraversable(true);
+                            } else if (item instanceof String) {
+                                setText((String) item);
+                                getStyleClass().remove("preferences-list-item");
+                                if(!getStyleClass().contains("preferences-section-header")) {
+                                    getStyleClass().add("preferences-section-header");
+                                }
+                                setMouseTransparent(true);
+                                setFocusTraversable(false);
+                            } else if (item instanceof PreferenceEditorType) {
+                                setText(((PreferenceEditorType) item).toString());
+                                getStyleClass().remove("preferences-section-header");
+                                if(!getStyleClass().contains("preferences-list-item")) {
+                                    getStyleClass().add("preferences-list-item");
+                                }
+                                setMouseTransparent(false);
+                                setFocusTraversable(true);
+                            }
+                        }
+                    };
+                }
+            });
 
-            TreeItem<String> cpuItem = new TreeItem<>("CPU");
-            cpuItem.getChildren().add(new TreeItem(PreferenceEditorType.VECTOR_CALIBRATION));
-            treeRoot.getChildren().add(cpuItem);
-            cpuItem.setExpanded(true);
+            listView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
+            listView.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
+                if(newValue instanceof PreferenceEditorType) {
+                    setEditor((PreferenceEditorType)newValue);
+                } else {
+                    setEditor(PreferenceEditorType.DEFAULT);
+                }
+            });
 
-            TreeItem<String> decoderItem = new TreeItem<>("Decoder");
-            decoderItem.getChildren().add(new TreeItem(PreferenceEditorType.JMBE_LIBRARY));
-            treeRoot.getChildren().add(decoderItem);
-            decoderItem.setExpanded(true);
-
-            TreeItem<String> displayItem = new TreeItem<>("Display");
-            displayItem.getChildren().add(new TreeItem(PreferenceEditorType.CHANNEL_EVENT));
-            displayItem.getChildren().add(new TreeItem(PreferenceEditorType.TALKGROUP_FORMAT));
-            treeRoot.getChildren().add(displayItem);
-            displayItem.setExpanded(true);
-
-            TreeItem<String> storageItem = new TreeItem<>("File Storage");
-            storageItem.getChildren().add(new TreeItem(PreferenceEditorType.DIRECTORY));
-            treeRoot.getChildren().add(storageItem);
-            storageItem.setExpanded(true);
-
-            TreeItem<String> sourceItem = new TreeItem<>("Source");
-            sourceItem.getChildren().add(new TreeItem(PreferenceEditorType.SOURCE_TUNERS));
-            treeRoot.getChildren().add(sourceItem);
-            sourceItem.setExpanded(true);
-
-            TreeItem<String> iconItem = new TreeItem<>("Icons");
-            iconItem.getChildren().add(new TreeItem(PreferenceEditorType.ICON_MANAGER));
-            treeRoot.getChildren().add(iconItem);
-            iconItem.setExpanded(true);
-
-            mEditorSelectionTreeView = new TreeView();
-            mEditorSelectionTreeView.setShowRoot(false);
-            mEditorSelectionTreeView.setRoot(treeRoot);
-            treeRoot.setExpanded(true);
-            mEditorSelectionTreeView.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-            mEditorSelectionTreeView.getSelectionModel().selectedItemProperty().addListener(new EditorTreeSelectionListener());
-
-            mEditorSelectionTreeView.setMinWidth(Control.USE_PREF_SIZE);
+            mEditorSelectionTreeView = (TreeView) (Object) listView; // Using mEditorSelectionTreeView but typing safely locally
         }
 
-        return mEditorSelectionTreeView;
+        return (Node)mEditorSelectionTreeView;
     }
 
     /**
@@ -306,23 +315,5 @@ public class UserPreferencesEditor extends BorderPane
      *
      * Constructed editors are cached for reuse.
      */
-    public class EditorTreeSelectionListener implements ChangeListener
-    {
-        @Override
-        public void changed(ObservableValue observable, Object oldValue, Object newValue)
-        {
-            if(newValue instanceof TreeItem)
-            {
-                Object value = ((TreeItem)newValue).getValue();
 
-                if(value instanceof PreferenceEditorType)
-                {
-                    setEditor((PreferenceEditorType)value);
-                    return;
-                }
-            }
-
-            setEditor(PreferenceEditorType.DEFAULT);
-        }
-    }
 }

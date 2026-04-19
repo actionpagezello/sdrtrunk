@@ -74,9 +74,9 @@ public class IconManager extends Editor<Icon>
     private Button mFileButton;
     private TextField mFilePathTextField;
     private TextField mNameTextField;
-    private TitledPane mContentTitledPane;
-    private TitledPane mEditorTitledPane;
-    private Accordion mAccordion;
+
+
+
 
     /**
      * Constructs an instance
@@ -87,47 +87,52 @@ public class IconManager extends Editor<Icon>
         getChildren().addAll(getAccordion());
     }
 
-    private Accordion getAccordion()
+    private VBox getAccordion()
     {
-        if(mAccordion == null)
-        {
-            mAccordion = new Accordion();
-            mAccordion.getPanes().addAll(getContentTitledPane(), getEditorTitledPane());
-            mAccordion.setExpandedPane(getContentTitledPane());
-        }
-
-        return mAccordion;
+        // Renamed from Accordion but keeping method name to avoid extensive refactoring right now
+        VBox container = new VBox(10);
+        container.getStyleClass().add("preferences-main-area");
+        container.getChildren().addAll(getContentTitledPane(), getEditorTitledPane());
+        return container;
     }
 
-    private TitledPane getContentTitledPane()
+    private VBox mContentTitledPane;
+    private VBox getContentTitledPane() // Retaining method name
     {
-        if(mContentTitledPane == null)
-        {
-            mContentTitledPane = new TitledPane();
-            mContentTitledPane.setCollapsible(false);
-            VBox buttonsBox = new VBox();
-            buttonsBox.setSpacing(10);
-            buttonsBox.setPadding(new Insets(10,10,10,10));
-            buttonsBox.getChildren().addAll(getAddButton(), getEditButton(), getDeleteButton(), getSetAsDefaultButton());
+        if(mContentTitledPane != null) return mContentTitledPane;
+        VBox container = new VBox();
+        mContentTitledPane = container;
+        container.getStyleClass().add("preferences-card");
+        container.setSpacing(10);
 
-            HBox.setHgrow(getIconTableView(), Priority.ALWAYS);
-            HBox contentBox = new HBox();
-            contentBox.setPadding(new Insets(0,0,0,0));
-            contentBox.getChildren().addAll(getIconTableView(), buttonsBox);
-            mContentTitledPane.setContent(contentBox);
-        }
+        HBox toolbar = new HBox(10);
+        toolbar.getStyleClass().add("context-toolbar");
 
-        return mContentTitledPane;
+        getAddButton().getStyleClass().add("flat-button");
+        getEditButton().getStyleClass().add("flat-button");
+        getDeleteButton().getStyleClass().add("flat-button");
+        getSetAsDefaultButton().getStyleClass().add("flat-button");
+
+        toolbar.getChildren().addAll(getAddButton(), getEditButton(), getDeleteButton(), getSetAsDefaultButton());
+
+        getIconTableView().getStyleClass().add("preferences-table");
+        VBox.setVgrow(getIconTableView(), Priority.ALWAYS);
+
+        container.getChildren().addAll(toolbar, getIconTableView());
+
+        return container;
     }
 
-    private TitledPane getEditorTitledPane()
+    private VBox mEditorTitledPane;
+    private VBox getEditorTitledPane()
     {
         if(mEditorTitledPane == null)
         {
-            mEditorTitledPane = new TitledPane();
-            mEditorTitledPane.setDisable(true);
-            mEditorTitledPane.setExpanded(false);
-            mEditorTitledPane.setContent(getEditorPane());
+            mEditorTitledPane = new VBox();
+            mEditorTitledPane.getStyleClass().add("preferences-card");
+            mEditorTitledPane.getChildren().add(getEditorPane());
+            mEditorTitledPane.visibleProperty().bind(getEditorPane().visibleProperty());
+            mEditorTitledPane.managedProperty().bind(getEditorPane().visibleProperty());
         }
 
         return mEditorTitledPane;
@@ -222,23 +227,14 @@ public class IconManager extends Editor<Icon>
 
     private void showEditor(boolean show)
     {
+        getEditorPane().setVisible(show);
         if(show)
         {
-            getEditorTitledPane().setText("Add or Edit an Icon");
-            getEditorTitledPane().setDisable(false);
-            getContentTitledPane().setCollapsible(true);
-            getAccordion().setExpandedPane(getEditorTitledPane());
-            getEditorTitledPane().setCollapsible(false);
             getContentTitledPane().setDisable(true);
         }
         else
         {
-            getEditorTitledPane().setText(null);
             getContentTitledPane().setDisable(false);
-            getEditorTitledPane().setCollapsible(true);
-            getAccordion().setExpandedPane(getContentTitledPane());
-            getContentTitledPane().setCollapsible(false);
-            getEditorTitledPane().setDisable(true);
         }
     }
 
