@@ -35,6 +35,7 @@ import java.awt.Color;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JPanel;
+import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JToolBar;
 import javax.swing.JScrollPane;
@@ -159,11 +160,13 @@ public class NowPlayingPanel extends JPanel
         JToolBar toolBar = new JToolBar();
         toolBar.setFloatable(false);
 
-        JButton manageWidgetsBtn = new JButton("Manage Widgets", IconFontSwing.buildIcon(FontAwesome.COG, 14, Color.BLACK));
+        JButton manageWidgetsBtn = new JButton(IconFontSwing.buildIcon(FontAwesome.COG, 14, Color.BLACK));
+        manageWidgetsBtn.setToolTipText("Manage Widgets");
         manageWidgetsBtn.addActionListener(e -> {
             showManageWidgetsPopup(manageWidgetsBtn);
         });
 
+        toolBar.add(Box.createHorizontalGlue());
         toolBar.add(manageWidgetsBtn);
         add(toolBar, "wrap");
 
