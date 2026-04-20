@@ -20,6 +20,7 @@
 package io.github.dsheirer.gui.playlist.streaming;
 
 import io.github.dsheirer.audio.broadcast.BroadcastServerType;
+import io.github.dsheirer.gui.playlist.streaming.IAmRespondingEditor;
 import io.github.dsheirer.playlist.PlaylistManager;
 
 /**
@@ -58,6 +59,8 @@ public class StreamEditorFactory
                 return new ZelloEditor(playlistManager);
             case ZELLO:
                 return new ZelloConsumerEditor(playlistManager);
+            case IAMRESPONDING:
+                return new IAmRespondingEditor(playlistManager);
             default:
                 return new UnknownStreamEditor(playlistManager);
         }
