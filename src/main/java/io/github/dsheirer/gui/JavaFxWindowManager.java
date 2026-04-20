@@ -131,6 +131,7 @@ public class JavaFxWindowManager extends Application
         if(mStatusPanel == null)
         {
             mStatusPanel = new JFXPanel();
+            mStatusPanel.setPreferredSize(new java.awt.Dimension(0, 30));
 
             //JFXPanel has to be populated on the FX event thread
             Platform.runLater(() -> {

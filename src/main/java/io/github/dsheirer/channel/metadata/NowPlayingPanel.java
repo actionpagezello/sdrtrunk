@@ -206,7 +206,7 @@ public class NowPlayingPanel extends JPanel
         }
 
         if (mResourceStatusPanel != null) {
-            Widget resourceWidget = new Widget("resource", "Resource Status", mResourceStatusPanel, mWidgetContainer, 70);
+            Widget resourceWidget = new Widget("resource", "Resource Status", mResourceStatusPanel, mWidgetContainer, 30);
             mWidgetContainer.addWidget(resourceWidget, true); // Pinned to bottom
         }
 
