@@ -85,7 +85,7 @@ public class UserPreferencesEditor extends BorderPane
         mUserPreferences = userPreferences;
         mIconModel = iconModel;
 
-        getStylesheets().add(getClass().getResource("/io/github/dsheirer/gui/sdrtrunk_style.css").toExternalForm());
+        getStylesheets().add(getClass().getResource("/sdrtrunk_style.css").toExternalForm());
         getStyleClass().add("preferences-main-area");
 
         HBox contentBox = new HBox();
