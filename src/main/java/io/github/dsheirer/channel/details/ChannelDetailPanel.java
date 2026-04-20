@@ -94,7 +94,8 @@ public class ChannelDetailPanel extends JPanel implements Listener<ProcessingCha
         mDetailTextPane = new JTextArea(EMPTY_DETAILS);
         DefaultCaret caret = (DefaultCaret)mDetailTextPane.getCaret();
         caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
-        add(new JScrollPane(mDetailTextPane));
+
+        add(new JScrollPane(mDetailTextPane), "grow");
     }
 
     private static final DecimalFormat FREQUENCY_FORMAT = new DecimalFormat("#.00000");

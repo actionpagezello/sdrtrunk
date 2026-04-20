@@ -160,10 +160,11 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         //Add a table column width monitor to store/restore column widths, order, and sort state
         mTableColumnMonitor = new JTableColumnWidthMonitor(mUserPreferences, mTable, TABLE_PREFERENCE_KEY);
 
+        mTable.setFillsViewportHeight(true);
         JScrollPane scrollPane = new JScrollPane(mTable, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
             JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
-        add(scrollPane);
+        add(scrollPane, "grow");
 
         setColors();
     }

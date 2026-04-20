@@ -79,9 +79,10 @@ public class BroadcastStatusPanel extends JPanel
         mTable.getColumnModel().getColumn(BroadcastModel.COLUMN_BROADCAST_SERVER_TYPE).setCellRenderer(new ServerTypeRenderer());
         mColumnWidthMonitor = new JTableColumnWidthMonitor(mUserPreferences, mTable, mPreferenceKey);
 
+        mTable.setFillsViewportHeight(true);
         mScrollPane = new JScrollPane(mTable);
 
-        add(mScrollPane);
+        add(mScrollPane, "grow");
     }
 
     public class ServerTypeRenderer extends DefaultTableCellRenderer
