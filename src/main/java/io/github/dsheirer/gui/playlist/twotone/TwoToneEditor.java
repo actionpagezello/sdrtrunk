@@ -12,6 +12,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.application.Platform;
 import javafx.util.converter.NumberStringConverter;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -24,14 +25,44 @@ import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
 import java.net.URL;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 public class TwoToneEditor extends VBox
 {
+    public static final double[] MOTOROLA_QCII = {
+            330.5, 349.0, 368.5, 389.0, 410.6, 433.7, 457.9, 483.5, 510.5, 539.0,
+            569.1, 600.9, 634.5, 669.9, 707.3, 746.8, 788.5, 832.5, 879.0, 928.1,
+            321.7, 339.6, 358.6, 378.6, 399.8, 422.1, 445.7, 470.5, 496.8, 1092.4,
+            524.6, 553.9, 584.8, 617.4, 651.9, 688.3, 726.8, 767.4, 810.2, 855.5,
+            903.2, 953.7, 1006.9, 1063.2, 1122.5, 1185.2, 1251.4, 1321.2, 1395.0, 1472.9,
+            1555.2, 1642.4, 1733.7, 1830.5, 1930.2, 2036.0, 2149.2, 2268.6, 2395.0, 2528.5
+    };
+
+    public static final double[] PLECTRON = {
+            282.2, 294.7, 307.8, 321.4, 335.6, 350.5, 366.0, 382.0, 399.2, 416.9,
+            435.3, 454.6, 474.8, 495.8, 517.8, 540.7, 564.7, 589.7, 615.8, 643.0,
+            672.0, 701.0, 732.0, 765.0, 799.0, 834.0, 871.0, 910.0, 950.0, 992.0,
+            1036.0, 1082.0, 1130.0, 1180.0, 1232.0, 1287.0, 1344.0, 1403.0, 1465.0,
+            1530.0, 1598.0, 1669.0, 1743.0, 1820.0, 1901.0, 1985.0, 2073.0, 2164.0,
+            2260.0, 2361.0, 2465.0, 2575.0, 2688.0, 2807.0, 2932.0, 3062.0
+    };
+
+    private static final List<String> STANDARD_FREQUENCIES;
+
+    static {
+        Set<Double> allFreqs = new TreeSet<>();
+        for (double d : MOTOROLA_QCII) allFreqs.add(d);
+        for (double d : PLECTRON) allFreqs.add(d);
+        STANDARD_FREQUENCIES = allFreqs.stream().map(String::valueOf).collect(Collectors.toList());
+    }
+
     private final PlaylistManager mPlaylistManager;
     private TableView<TwoToneConfiguration> mTableView;
     private ObservableList<TwoToneConfiguration> mObservableConfigs;
     private TwoToneAliasSelectionEditor mAliasEditor;
-
     public TwoToneEditor(PlaylistManager playlistManager)
     {
         mPlaylistManager = playlistManager;
@@ -65,8 +96,46 @@ public class TwoToneEditor extends VBox
         ComboBox<String> typeSelector = new ComboBox<>();
         typeSelector.getItems().addAll("A/B Tones", "Long A Tone Only");
         typeSelector.getSelectionModel().select(0);
-        TextField toneAField = new TextField();
-        TextField toneBField = new TextField();
+        ComboBox<String> toneAField = new ComboBox<>();
+        toneAField.setEditable(true);
+        toneAField.getItems().addAll(STANDARD_FREQUENCIES);
+        ComboBox<String> toneBField = new ComboBox<>();
+        toneBField.setEditable(true);
+        toneBField.getItems().addAll(STANDARD_FREQUENCIES);
+
+        javafx.beans.value.ChangeListener<String> filterListenerA = (obs, oldValue, newValue) -> {
+            if (newValue == null) return;
+            List<String> filtered = STANDARD_FREQUENCIES.stream()
+                    .filter(f -> f.startsWith(newValue))
+                    .collect(Collectors.toList());
+            Platform.runLater(() -> {
+                if (filtered.equals(toneAField.getItems())) return;
+                String text = toneAField.getEditor().getText();
+                int caret = toneAField.getEditor().getCaretPosition();
+                toneAField.getItems().setAll(filtered);
+                toneAField.getEditor().setText(text);
+                toneAField.getEditor().positionCaret(caret);
+                if (!filtered.isEmpty() && toneAField.isFocused()) toneAField.show();
+            });
+        };
+        toneAField.getEditor().textProperty().addListener(filterListenerA);
+
+        javafx.beans.value.ChangeListener<String> filterListenerB = (obs, oldValue, newValue) -> {
+            if (newValue == null) return;
+            List<String> filtered = STANDARD_FREQUENCIES.stream()
+                    .filter(f -> f.startsWith(newValue))
+                    .collect(Collectors.toList());
+            Platform.runLater(() -> {
+                if (filtered.equals(toneBField.getItems())) return;
+                String text = toneBField.getEditor().getText();
+                int caret = toneBField.getEditor().getCaretPosition();
+                toneBField.getItems().setAll(filtered);
+                toneBField.getEditor().setText(text);
+                toneBField.getEditor().positionCaret(caret);
+                if (!filtered.isEmpty() && toneBField.isFocused()) toneBField.show();
+            });
+        };
+        toneBField.getEditor().textProperty().addListener(filterListenerB);
         ComboBox<String> zelloField = new ComboBox<>();
         for (BroadcastConfiguration bc : mPlaylistManager.getBroadcastModel().getBroadcastConfigurations()) {
             if (bc.getBroadcastServerType() == BroadcastServerType.ZELLO_WORK || bc.getBroadcastServerType() == BroadcastServerType.ZELLO) {
@@ -103,7 +172,7 @@ public class TwoToneEditor extends VBox
                 boolean isLong = newVal.equals("Long A Tone Only");
                 sel.setLongATone(isLong);
                 if (isLong) {
-                    toneBField.clear();
+                    toneBField.getEditor().clear();
                     sel.setToneB(0.0);
                 }
             }
@@ -190,8 +259,16 @@ public class TwoToneEditor extends VBox
                 templateField.textProperty().unbindBidirectional(oldVal.templateProperty());
                 textMessageCheck.selectedProperty().unbindBidirectional(oldVal.enableZelloTextMessageProperty());
 
-                oldVal.setToneA(toneAField.getText().isEmpty() ? 0 : Double.parseDouble(toneAField.getText()));
-                oldVal.setToneB(toneBField.getText().isEmpty() ? 0 : Double.parseDouble(toneBField.getText()));
+                try {
+                    oldVal.setToneA(toneAField.getEditor().getText().isEmpty() ? 0 : Double.parseDouble(toneAField.getEditor().getText()));
+                } catch (NumberFormatException e) {
+                    oldVal.setToneA(0.0);
+                }
+                try {
+                    oldVal.setToneB(toneBField.getEditor().getText().isEmpty() ? 0 : Double.parseDouble(toneBField.getEditor().getText()));
+                } catch (NumberFormatException e) {
+                    oldVal.setToneB(0.0);
+                }
             }
             if (newVal != null) {
                 aliasField.textProperty().bindBidirectional(newVal.aliasProperty());
@@ -200,11 +277,14 @@ public class TwoToneEditor extends VBox
                 } else {
                     typeSelector.getSelectionModel().select("A/B Tones");
                 }
-                toneAField.setText(String.valueOf(newVal.getToneA()));
+                toneAField.getEditor().setText(String.valueOf(newVal.getToneA()));
+                toneAField.setValue(String.valueOf(newVal.getToneA()));
                 if (newVal.getToneB() == 0.0) {
-                    toneBField.setText("");
+                    toneBField.getEditor().setText("");
+                    toneBField.setValue(null);
                 } else {
-                    toneBField.setText(String.valueOf(newVal.getToneB()));
+                    toneBField.getEditor().setText(String.valueOf(newVal.getToneB()));
+                    toneBField.setValue(String.valueOf(newVal.getToneB()));
                 }
                 zelloField.valueProperty().bindBidirectional(newVal.zelloChannelProperty());
                 mqttCheck.selectedProperty().bindBidirectional(newVal.enableMqttPublishProperty());
@@ -216,8 +296,10 @@ public class TwoToneEditor extends VBox
                 textMessageCheck.selectedProperty().bindBidirectional(newVal.enableZelloTextMessageProperty());
             } else {
                 aliasField.clear();
-                toneAField.clear();
-                toneBField.clear();
+                toneAField.getEditor().clear();
+                toneAField.setValue(null);
+                toneBField.getEditor().clear();
+                toneBField.setValue(null);
                 typeSelector.getSelectionModel().select("A/B Tones");
                 zelloField.getSelectionModel().clearSelection();
                 mqttCheck.setSelected(false);
@@ -235,13 +317,13 @@ public class TwoToneEditor extends VBox
         aliasField.textProperty().addListener((obs, o, n) -> updatePreview.run());
         templateField.textProperty().addListener((obs, o, n) -> updatePreview.run());
 
-        toneAField.textProperty().addListener((obs, o, n) -> {
+        toneAField.getEditor().textProperty().addListener((obs, o, n) -> {
             TwoToneConfiguration sel = mTableView.getSelectionModel().getSelectedItem();
             if (sel != null && !n.isEmpty()) {
                 try { sel.setToneA(Double.parseDouble(n)); } catch (Exception ignored) {}
             }
         });
-        toneBField.textProperty().addListener((obs, o, n) -> {
+        toneBField.getEditor().textProperty().addListener((obs, o, n) -> {
             TwoToneConfiguration sel = mTableView.getSelectionModel().getSelectedItem();
             if (sel != null && !n.isEmpty()) {
                 try { sel.setToneB(Double.parseDouble(n)); } catch (Exception ignored) {}
