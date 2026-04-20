@@ -38,6 +38,9 @@ import net.miginfocom.swing.MigLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jiconfont.icons.font_awesome.FontAwesome;
+import jiconfont.swing.IconFontSwing;
+import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JMenuItem;
 import javax.swing.JPanel;
@@ -100,12 +103,28 @@ public class TunerViewPanel extends JPanel
         JToolBar toolBar = new JToolBar();
         toolBar.setFloatable(false);
 
-        JToggleButton specBtn = new JToggleButton("Spectrum/Waterfall");
-        specBtn.addActionListener(e -> {
-            if(mVisibilityListener != null) mVisibilityListener.onToggleSpectrum();
+        JButton manageBtn = new JButton(IconFontSwing.buildIcon(FontAwesome.COG, 14, Color.BLACK));
+        manageBtn.setToolTipText("Settings");
+        manageBtn.addActionListener(e -> {
+            JPopupMenu popup = new JPopupMenu();
+
+            JMenuItem specItem = new JMenuItem("Toggle Spectrum/Waterfall");
+            specItem.addActionListener(evt -> {
+                if(mVisibilityListener != null) mVisibilityListener.onToggleSpectrum();
+            });
+            popup.add(specItem);
+
+            JMenuItem resourceItem = new JMenuItem("Toggle Resource Status");
+            resourceItem.addActionListener(evt -> {
+                if(mVisibilityListener != null) mVisibilityListener.onToggleResource();
+            });
+            popup.add(resourceItem);
+
+            popup.show(manageBtn, 0, manageBtn.getHeight());
         });
 
-        toolBar.add(specBtn);
+        toolBar.add(Box.createHorizontalGlue());
+        toolBar.add(manageBtn);
         add(toolBar, "wrap");
 
         mRowSorter = new TableRowSorter<>(mDiscoveredTunerModel);
