@@ -25,7 +25,7 @@ public class Widget extends JPanel {
         mContainer = container;
         mMinHeight = minHeight;
 
-        setLayout(new MigLayout("insets 0, fillx", "[grow,fill]", "[]0[grow,fill]"));
+        setLayout(new MigLayout("insets 0, fillx, hidemode 3", "[grow,fill]", "[]0[grow,fill]"));
         setBorder(BorderFactory.createLineBorder(UIManager.getColor("Component.borderColor"), 1));
 
         mHeaderPanel = new JPanel(new MigLayout("insets 2 5 2 2, fillx", "[grow][]", "[]"));
