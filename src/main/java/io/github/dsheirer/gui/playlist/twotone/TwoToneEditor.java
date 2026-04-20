@@ -165,15 +165,15 @@ public class TwoToneEditor extends VBox
         previewBox.visibleProperty().bind(textMessageCheck.selectedProperty());
         previewBox.managedProperty().bind(textMessageCheck.selectedProperty());
 
-        editorGrid.add(textMessageCheck, 0, 4);
-        editorGrid.add(textMessageInfo, 1, 4);
-        editorGrid.add(new Label("Message Template:"), 0, 5);
-        editorGrid.add(templateField, 1, 5);
-        editorGrid.add(previewBox, 1, 6);
-        editorGrid.add(zelloAlertCheck, 0, 7, 2, 1);
-        editorGrid.add(new Label("Alert Tone File:"), 0, 8);
-        editorGrid.add(alertToneCombo, 1, 8);
-        editorGrid.add(previewBtn, 2, 8);
+        editorGrid.add(textMessageCheck, 0, 5);
+        editorGrid.add(textMessageInfo, 1, 5);
+        editorGrid.add(new Label("Message Template:"), 0, 6);
+        editorGrid.add(templateField, 1, 6);
+        editorGrid.add(previewBox, 1, 7);
+        editorGrid.add(zelloAlertCheck, 0, 8, 2, 1);
+        editorGrid.add(new Label("Alert Tone File:"), 0, 9);
+        editorGrid.add(alertToneCombo, 1, 9);
+        editorGrid.add(previewBtn, 2, 9);
 
 
         mTableView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
