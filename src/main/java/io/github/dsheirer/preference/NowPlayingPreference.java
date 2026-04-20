@@ -39,6 +39,7 @@ public class NowPlayingPreference
     private static final String KEY_WIDGET_VISIBLE_PREFIX = "now.playing.widget.visible.";
     private static final String KEY_WIDGET_MINIMIZED_PREFIX = "now.playing.widget.minimized.";
     private static final String KEY_WIDGET_ORDER_PREFIX = "now.playing.widget.order.";
+    private static final String KEY_WIDGET_HEIGHT_PREFIX = "now.playing.widget.height.";
 
     // Filter keys — one per top-level filter name stored as a boolean (enabled/disabled).
     // We persist a map of "filter name → enabled" as individual preference entries.
@@ -149,5 +150,15 @@ public class NowPlayingPreference
     public void setWidgetOrder(String widgetId, int order)
     {
         PREFS.putInt(KEY_WIDGET_ORDER_PREFIX + widgetId, order);
+    }
+
+    public int getWidgetHeight(String widgetId, int defaultHeight)
+    {
+        return PREFS.getInt(KEY_WIDGET_HEIGHT_PREFIX + widgetId, defaultHeight);
+    }
+
+    public void setWidgetHeight(String widgetId, int height)
+    {
+        PREFS.putInt(KEY_WIDGET_HEIGHT_PREFIX + widgetId, height);
     }
 }

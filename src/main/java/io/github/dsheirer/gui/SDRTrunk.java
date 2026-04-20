@@ -117,10 +117,13 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
     @Override
     public void onToggleSpectrum() {
         mSpectrumDisabled = !mSpectrumDisabled;
-        if (mSpectrumDisabled || (!mCurrentViewId.equals("now_playing") && !mCurrentViewId.equals("tuners"))) {
+        if (mSpectrumDisabled || (mCurrentViewId != null && !mCurrentViewId.equals("now_playing") && !mCurrentViewId.equals("tuners"))) {
             mTopContentPanel.remove(mSpectralPanel);
-        } else {
+        } else if (mCurrentViewId != null && mCurrentViewId.equals("tuners")) {
             mTopContentPanel.add(mSpectralPanel, BorderLayout.CENTER);
+        }
+        if (mCurrentViewId != null && mCurrentViewId.equals("now_playing")) {
+            mControllerPanel.getNowPlayingPanel().setComponents(!mSpectrumDisabled ? mSpectralPanel : null, getBroadcastStatusPanel(), getResourceStatusPanel());
         }
         mMainContentPanel.revalidate();
         mMainContentPanel.repaint();
