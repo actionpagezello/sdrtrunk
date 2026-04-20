@@ -25,6 +25,10 @@ public class WidgetContainer extends JPanel {
         setLayout(new MigLayout("wrap 1, insets 0, fillx, gapy 2", "[grow,fill]"));
     }
 
+    public NowPlayingPreference getPreference() {
+        return mPreference;
+    }
+
     public void removeAll() {
         super.removeAll();
         mWidgets.clear();
@@ -71,11 +75,12 @@ public class WidgetContainer extends JPanel {
                 // Add a drop indicator placeholder
                 JPanel indicator = new JPanel();
                 indicator.setBackground(UIManager.getColor("Component.focusColor"));
-                indicator.setPreferredSize(new Dimension(0, 4));
+                indicator.setPreferredSize(new Dimension(0, 6));
+                indicator.setBorder(BorderFactory.createLineBorder(UIManager.getColor("Component.focusColor"), 2));
                 add(indicator, "growx, wrap");
             }
 
-            if (w.isVisible() && w != mDraggingWidget) {
+            if (w.isVisible()) {
                 add(w, "growx");
             }
         }
@@ -118,6 +123,7 @@ public class WidgetContainer extends JPanel {
             public void mousePressed(MouseEvent e) {
                 mDraggingWidget = widget;
                 mDragStartY = e.getY();
+                widget.setDragging(true);
             }
 
             @Override
@@ -175,6 +181,9 @@ public class WidgetContainer extends JPanel {
                     }
                 }
 
+                if (mDraggingWidget != null) {
+                    mDraggingWidget.setDragging(false);
+                }
                 mDraggingWidget = null;
                 mDropIndex = -1;
                 rebuildLayout();
