@@ -48,6 +48,7 @@ import javafx.util.Callback;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.layout.Region;
+import javafx.application.Platform;
 
 import javafx.stage.Stage;
 import org.slf4j.Logger;
@@ -94,6 +95,11 @@ public class UserPreferencesEditor extends BorderPane
         Node sidebar = getEditorSelectionTreeView(); // We will rename the inner method but keep variable reference
         contentBox.getChildren().addAll(sidebar, getEditorAndButtonsBox());
         setCenter(contentBox);
+
+        // Automatically select the first item (e.g., Application) if nothing is selected
+        if (((ListView)mEditorSelectionTreeView).getSelectionModel().getSelectedItem() == null) {
+            Platform.runLater(() -> ((ListView)mEditorSelectionTreeView).getSelectionModel().select(PreferenceEditorType.APPLICATION));
+        }
     }
 
     private UserPreferences getUserPreferences()
@@ -234,7 +240,7 @@ public class UserPreferencesEditor extends BorderPane
                 }
             });
 
-            mEditorSelectionTreeView = (TreeView) (Object) listView; // Using mEditorSelectionTreeView but typing safely locally
+            mEditorSelectionTreeView = listView; // Using mEditorSelectionTreeView but typing safely locally
         }
 
         return (Node)mEditorSelectionTreeView;
