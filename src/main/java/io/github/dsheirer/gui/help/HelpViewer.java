@@ -93,6 +93,8 @@ public class HelpViewer extends JPanel {
 
 
     private void createNodes(DefaultMutableTreeNode root) {
+        root.add(new DefaultMutableTreeNode("What's New"));
+
         DefaultMutableTreeNode dspNode = new DefaultMutableTreeNode("DSP Filters");
         dspNode.add(new DefaultMutableTreeNode("De-emphasis Filter"));
         dspNode.add(new DefaultMutableTreeNode("Squaring Filter"));
@@ -128,6 +130,30 @@ public class HelpViewer extends JPanel {
         String markdown = "# " + topic + "\n\n";
 
         switch (topic) {
+            case "What's New":
+                markdown += "This edition is a specialized Dispatch & Efficiency fork of the original SDRTrunk software. It includes features and enhancements designed specifically for automated dispatch and operator efficiency.\n\n";
+                markdown += "### 📡 Streaming & Integrations\n";
+                markdown += "* **Zello Streaming:** Directly stream dispatch audio to Zello with automatic reconnection and detailed troubleshooting logs.\n";
+                markdown += "* **ThinLine Radio Support:** Built-in streaming directly to ThinLine Radio with out-of-the-box debug logging.\n";
+                markdown += "* **Rdio Scanner Improvements:** Enhanced integration with Rdio Scanner to easily manage API keys and verify audio streams.\n\n";
+                markdown += "### 🎧 Audio Quality & Tuning\n";
+                markdown += "* **Analog Hiss Reduction:** New background noise and hiss reduction filters for NBFM (analog) channels.\n";
+                markdown += "* **Anti-Clipping:** Audio filters tuned by default to prevent loud transmissions from distorting.\n";
+                markdown += "* **P25 Audio Enhancements:** Specialized tuning for clearer digital audio on complex P25 systems.\n";
+                markdown += "* **Virtual Audio Cable (VAC) Routing:** Route specific radio aliases directly to Virtual Audio Cables for external application use.\n\n";
+                markdown += "### 🎛️ Advanced Filtering & Control\n";
+                markdown += "* **Ignore Unwanted Talkgroups:** Option to ignore talkgroups not saved in your alias list.\n";
+                markdown += "* **CTCSS / DCS / NAC Filtering:** Filter out unwanted analog or digital interference using specific tones and codes.\n";
+                markdown += "* **P25 NAC Override:** Advanced control for overriding and filtering P25 system NAC codes.\n\n";
+                markdown += "### 💻 User Interface Improvements\n";
+                markdown += "* **Persistent Layouts:** Channels tab remembers column widths and sorting after restarts.\n";
+                markdown += "* **Alphabetical Sorting:** Alias list can now be sorted alphabetically.\n";
+                markdown += "* **Mute/Unmute from Waterfall:** Quickly mute/unmute audio directly from the spectral waterfall display.\n";
+                markdown += "* **Radio Reference Import:** Streamlined process for importing radio system data.\n\n";
+                markdown += "### 🛠️ System & Diagnostics\n";
+                markdown += "* **Live Diagnostics Panel:** New \"Diagnostics (Logging)\" settings panel to toggle detailed troubleshooting logs on the fly.\n";
+                markdown += "* **Hardware & Decoding Fixes:** Various stability fixes for DMR decoding and SDR hardware tuning.\n";
+                break;
             case "De-emphasis Filter":
                 markdown += "**Purpose:** Restores natural voice balance by reversing the pre-emphasis applied at the transmitter. Pre-emphasis boosts high frequencies before transmission to overcome noise.\n\n";
                 markdown += "**Benefit:** Significantly reduces harsh high-frequency hiss, making dispatch audio much easier to listen to for extended periods, reducing operator fatigue.\n\n";
