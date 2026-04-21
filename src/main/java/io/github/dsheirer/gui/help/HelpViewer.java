@@ -121,6 +121,18 @@ public class HelpViewer extends JPanel {
         systemNode.add(new DefaultMutableTreeNode("Aliases"));
         systemNode.add(new DefaultMutableTreeNode("Playlists"));
         root.add(systemNode);
+
+        DefaultMutableTreeNode applicationPagesNode = new DefaultMutableTreeNode("Application Pages");
+        applicationPagesNode.add(new DefaultMutableTreeNode("Now Playing"));
+        applicationPagesNode.add(new DefaultMutableTreeNode("Map"));
+        applicationPagesNode.add(new DefaultMutableTreeNode("Playlist Editor"));
+        applicationPagesNode.add(new DefaultMutableTreeNode("Tuners"));
+        applicationPagesNode.add(new DefaultMutableTreeNode("Logs"));
+        applicationPagesNode.add(new DefaultMutableTreeNode("Audio Recordings"));
+        applicationPagesNode.add(new DefaultMutableTreeNode(".bits Viewer"));
+        applicationPagesNode.add(new DefaultMutableTreeNode("User Preferences"));
+        applicationPagesNode.add(new DefaultMutableTreeNode("Help & Docs"));
+        root.add(applicationPagesNode);
     }
 
 
@@ -210,6 +222,88 @@ public class HelpViewer extends JPanel {
                 markdown += "**Purpose:** Organizes channels, aliases, and system settings into easily loadable configuration files.\n\n";
                 markdown += "**Benefit:** Allows quickly switching between different monitoring setups, locations, or configurations without reconfiguring the software from scratch.\n\n";
                 markdown += "**Usage:** Create and switch playlists using the Playlist Editor.";
+                break;
+            case "Now Playing":
+                markdown += "**Purpose:** Displays currently active calls and provides controls to manage live audio playback.\n\n";
+                markdown += "**Benefit:** Gives operators a real-time overview of system activity, allowing them to instantly see who is transmitting and quickly manage playback priorities.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Navigate to the 'Now Playing' tab from the sidebar.\n";
+                markdown += "2. View active calls in the main window. Information like Talkgroup, Alias, and frequency will be displayed.\n";
+                markdown += "3. Use the playback controls (Play, Pause, Mute, Volume) to manage the audio stream.\n";
+                markdown += "4. If available, click on a call to view deeper metadata or lock onto it.";
+                break;
+            case "Map":
+                markdown += "**Purpose:** Provides a geographical visualization of radio assets, towers, and users, provided GPS data is available from the network.\n\n";
+                markdown += "**Benefit:** Essential for tracking mobile units and understanding the spatial distribution of radio activity during operations.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Open the 'Map' tab from the sidebar.\n";
+                markdown += "2. Zoom and pan around the map using your mouse.\n";
+                markdown += "3. Click on map markers to view specific details about a transmitting unit or system site.\n";
+                markdown += "4. Ensure that location services or GPS decoding is properly configured in your playlist for markers to appear.";
+                break;
+            case "Playlist Editor":
+                markdown += "**Purpose:** The central hub for configuring systems, channels, and aliases.\n\n";
+                markdown += "**Benefit:** Allows you to define exactly what the application monitors, how it decodes signals, and how it labels the traffic.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Open the 'Playlist Editor' from the sidebar.\n";
+                markdown += "2. Use the 'Channels' tab to add new radio systems or control channels.\n";
+                markdown += "3. Use the 'Aliases' tab to map numerical IDs (like Talkgroups) to human-readable names and assign actions like recording.\n";
+                markdown += "4. Click 'Save' to apply your configuration. Your current playlist acts as the master configuration for the receiver.";
+                break;
+            case "Tuners":
+                markdown += "**Purpose:** Manages the connected Software Defined Radio (SDR) hardware devices.\n\n";
+                markdown += "**Benefit:** Gives you direct control over hardware settings like gain, sample rate, and frequency calibration to ensure optimal signal reception.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Click 'Tuners' in the sidebar to view connected SDR devices.\n";
+                markdown += "2. Select a tuner to view its detailed settings and real-time spectrum/waterfall display.\n";
+                markdown += "3. Adjust the Gain slider to optimize the signal. You want the signal peaks clearly visible above the noise floor but without clipping.\n";
+                markdown += "4. Adjust the Sample Rate if you need to monitor a wider or narrower swath of spectrum.\n";
+                markdown += "5. If the tuned frequency is slightly off, adjust the PPM correction.";
+                break;
+            case "Logs":
+                markdown += "**Purpose:** Displays system messages, errors, and operational events generated by the application.\n\n";
+                markdown += "**Benefit:** Crucial for troubleshooting decoding issues, hardware problems, or configuration errors.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Open the 'Logs' tab from the sidebar.\n";
+                markdown += "2. Review the chronological list of events. Warnings and Errors will typically be highlighted.\n";
+                markdown += "3. If you encounter an issue, copy the relevant log text to provide context when asking for support or submitting a bug report.\n";
+                markdown += "4. Use filtering options (if available) to narrow down the log output to specific subsystems.";
+                break;
+            case "Audio Recordings":
+                markdown += "**Purpose:** A built-in library manager for browsing and playing back past audio recordings captured by the application.\n\n";
+                markdown += "**Benefit:** Quickly find and review specific calls for auditing or record-keeping without needing external audio players.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Navigate to the 'Audio Recordings' tab.\n";
+                markdown += "2. Browse the list of recorded files, typically organized by date, system, or talkgroup.\n";
+                markdown += "3. Double-click a file or use the integrated playback controls to listen to the recording.\n";
+                markdown += "4. Note: Recordings must be explicitly enabled via Aliases in the Playlist Editor for files to appear here.";
+                break;
+            case ".bits Viewer":
+                markdown += "**Purpose:** A specialized tool for viewing low-level digital symbol data (.bits files) captured during decoding.\n\n";
+                markdown += "**Benefit:** Intended for advanced users and developers to analyze raw digital protocols and troubleshoot decoder performance.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Open the '.bits Viewer' from the sidebar.\n";
+                markdown += "2. Load a `.bits` file previously captured by the application.\n";
+                markdown += "3. Examine the bitstream data. This is typically used in conjunction with protocol specifications to verify correct framing and payload extraction.";
+                break;
+            case "User Preferences":
+                markdown += "**Purpose:** Configures global application settings that apply across all playlists and sessions.\n\n";
+                markdown += "**Benefit:** Customize the application's appearance, audio device routing, default storage locations, and performance limits to suit your environment.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Click 'User Preferences' in the sidebar.\n";
+                markdown += "2. Navigate through the categories (e.g., Audio, Display, Paths).\n";
+                markdown += "3. **Audio:** Select your preferred output device for speakers or headphones.\n";
+                markdown += "4. **Paths:** Define where recordings and playlists are saved on your hard drive.\n";
+                markdown += "5. Changes here are saved automatically and persist across application restarts.";
+                break;
+            case "Help & Docs":
+                markdown += "**Purpose:** The integrated knowledge base you are currently viewing.\n\n";
+                markdown += "**Benefit:** Provides immediate, offline access to documentation, how-to guides, and technical explanations without leaving the application.\n\n";
+                markdown += "**How To:**\n";
+                markdown += "1. Open 'Help & Docs' from the sidebar at any time.\n";
+                markdown += "2. Use the navigation tree on the left to browse topics by category.\n";
+                markdown += "3. Use the Search bar at the top left to quickly find information on a specific term or feature.\n";
+                markdown += "4. The main content pane displays the selected topic in readable formatting.";
                 break;
             default:
                 markdown += "Detailed documentation for this topic is being migrated from the legacy wiki.";
