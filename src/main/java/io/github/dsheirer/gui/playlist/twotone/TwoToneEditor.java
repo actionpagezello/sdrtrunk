@@ -12,6 +12,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.Region;
 import javafx.application.Platform;
 import javafx.util.converter.NumberStringConverter;
 import javafx.scene.control.Tab;
@@ -86,7 +87,7 @@ public class TwoToneEditor extends VBox
         mqttCol.setCellValueFactory(new PropertyValueFactory<>("enableMqttPublish"));
 
         mTableView.getColumns().addAll(aliasCol, toneACol, toneBCol, mqttCol);
-        VBox.setVgrow(mTableView, Priority.ALWAYS);
+
 
         GridPane editorGrid = new GridPane();
         editorGrid.setHgap(10);
@@ -330,17 +331,33 @@ public class TwoToneEditor extends VBox
             }
         });
 
-        HBox btnBox = new HBox(10);
-        Button addBtn = new Button("Add");
-        addBtn.setOnAction(e -> {
+        // Save button for the configuration tab
+        HBox configBtnBox = new HBox(10);
+        Button saveBtn = new Button("Save");
+        saveBtn.setOnAction(e -> {
+            mPlaylistManager.schedulePlaylistSave();
+        });
+        configBtnBox.getChildren().addAll(saveBtn);
+
+        // Table buttons (right of the table)
+        VBox tableBtnBox = new VBox(5);
+        tableBtnBox.setMinWidth(Region.USE_PREF_SIZE);
+
+        MenuButton newBtn = new MenuButton("New");
+        newBtn.setMaxWidth(Double.MAX_VALUE);
+        MenuItem newDetectorItem = new MenuItem("Detector");
+        newDetectorItem.setOnAction(e -> {
             TwoToneConfiguration conf = new TwoToneConfiguration();
             conf.setAlias("New Detector");
             mObservableConfigs.add(conf);
             syncToPlaylist();
             mTableView.getSelectionModel().select(conf);
+            mTableView.scrollTo(conf);
         });
+        newBtn.getItems().add(newDetectorItem);
 
         Button delBtn = new Button("Delete");
+        delBtn.setMaxWidth(Double.MAX_VALUE);
         delBtn.setOnAction(e -> {
             TwoToneConfiguration sel = mTableView.getSelectionModel().getSelectedItem();
             if (sel != null) {
@@ -348,7 +365,33 @@ public class TwoToneEditor extends VBox
                 syncToPlaylist();
             }
         });
-        btnBox.getChildren().addAll(addBtn, delBtn);
+
+        Button cloneBtn = new Button("Clone");
+        cloneBtn.setMaxWidth(Double.MAX_VALUE);
+        cloneBtn.setOnAction(e -> {
+            TwoToneConfiguration sel = mTableView.getSelectionModel().getSelectedItem();
+            if (sel != null) {
+                TwoToneConfiguration copy = sel.copyOf();
+                copy.setAlias(copy.getAlias() + " (Copy)");
+                mObservableConfigs.add(copy);
+                syncToPlaylist();
+                mTableView.getSelectionModel().select(copy);
+                mTableView.scrollTo(copy);
+            }
+        });
+
+        Button refreshBtn = new Button("Refresh");
+        refreshBtn.setMaxWidth(Double.MAX_VALUE);
+        refreshBtn.setOnAction(e -> {
+            mObservableConfigs.setAll(mPlaylistManager.getCurrentPlaylist().getTwoToneConfigurations());
+        });
+
+        tableBtnBox.getChildren().addAll(newBtn, cloneBtn, delBtn, refreshBtn);
+
+        HBox tableAndButtonsBox = new HBox(10);
+        HBox.setHgrow(mTableView, Priority.ALWAYS);
+        tableAndButtonsBox.getChildren().addAll(mTableView, tableBtnBox);
+        VBox.setVgrow(tableAndButtonsBox, Priority.ALWAYS);
 
 
         mAliasEditor = new TwoToneAliasSelectionEditor(mPlaylistManager);
@@ -356,7 +399,7 @@ public class TwoToneEditor extends VBox
         TabPane tabPane = new TabPane();
         Tab configTab = new Tab("Configuration");
         configTab.setClosable(false);
-        VBox configBox = new VBox(10, editorGrid, btnBox);
+        VBox configBox = new VBox(10, editorGrid, configBtnBox);
         configBox.setPadding(new Insets(10));
         configTab.setContent(configBox);
 
@@ -367,7 +410,7 @@ public class TwoToneEditor extends VBox
         tabPane.getTabs().addAll(configTab, aliasTab);
         VBox.setVgrow(tabPane, Priority.ALWAYS);
 
-        getChildren().addAll(new Label("Two Tone Paging Detectors"), mTableView, tabPane);
+        getChildren().addAll(new Label("Two Tone Paging Detectors"), tableAndButtonsBox, tabPane);
     }
 
     private void syncToPlaylist() {
