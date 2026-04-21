@@ -40,6 +40,7 @@ import io.github.dsheirer.gui.preference.calibration.CalibrationDialog;
 import io.github.dsheirer.gui.viewer.ViewRecordingViewerRequest;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.log.ApplicationLog;
+import io.github.dsheirer.log.TwoToneLog;
 import io.github.dsheirer.map.MapService;
 import io.github.dsheirer.module.log.EventLogManager;
 import io.github.dsheirer.monitor.DiagnosticMonitor;
@@ -184,6 +185,7 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
     private UserPreferences mUserPreferences = new UserPreferences();
     private TunerManager mTunerManager;
     private ApplicationLog mApplicationLog;
+    private TwoToneLog mTwoToneLog;
     private ResourceMonitor mResourceMonitor;
     private JFXPanel mResourceStatusPanel;
 
@@ -208,6 +210,9 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
 
         mApplicationLog = new ApplicationLog(mUserPreferences);
         mApplicationLog.start();
+
+        mTwoToneLog = new TwoToneLog(mUserPreferences);
+        mTwoToneLog.start();
 
         //Note: invoke this early in the application lifecycle, before the TunerManager causes the sdrplay classes
         //to be loaded since the jextract auto-generated code attempts to load the library by name and that can fail
@@ -536,6 +541,7 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
         mTunerManager.stop();
         mLog.info("Shutdown complete.");
         mApplicationLog.stop();
+        mTwoToneLog.stop();
     }
 
     /**

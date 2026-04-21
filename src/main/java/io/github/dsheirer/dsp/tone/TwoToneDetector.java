@@ -213,7 +213,7 @@ public class TwoToneDetector
         {
             // Placeholder for FFT unknown peak detection logic
             // E.g. finding a 600Hz tone that isn't mapped
-            // logDiscovery(600.0, 700.0);
+            // logDiscovery(600.0, 700.0, segment);
         }
     }
 
@@ -260,6 +260,15 @@ public class TwoToneDetector
         if (shouldTrigger) {
             mLog.info("Two Tone Detected: {} (A:{} B:{})", config.getAlias(), config.getToneA(), config.getToneB());
             triggerAlert(config, segment);
+
+            String channel = "Unknown";
+            if(segment != null) {
+                io.github.dsheirer.identifier.Identifier id = segment.getIdentifierCollection().getIdentifier(io.github.dsheirer.identifier.IdentifierClass.CONFIGURATION, io.github.dsheirer.identifier.Form.CHANNEL, io.github.dsheirer.identifier.Role.ANY);
+                if (id instanceof io.github.dsheirer.identifier.configuration.ChannelNameConfigurationIdentifier) {
+                    channel = ((io.github.dsheirer.identifier.configuration.ChannelNameConfigurationIdentifier)id).getValue();
+                }
+            }
+            org.slf4j.LoggerFactory.getLogger(io.github.dsheirer.log.TwoToneLog.LOGGER_NAME).info("[Channel: {}] [Alias: {}] - [{}]", channel, config.getAlias(), config.getAlias());
         }
     }
 
@@ -304,9 +313,17 @@ public class TwoToneDetector
         }
     }
 
-    private void logDiscovery(double toneA, double toneB)
+    private void logDiscovery(double toneA, double toneB, AudioSegment segment)
     {
         DISCOVERY_LOG.add(new TwoToneDiscoveryLog(toneA, toneB));
+        String channel = "Unknown";
+        if(segment != null) {
+            io.github.dsheirer.identifier.Identifier id = segment.getIdentifierCollection().getIdentifier(io.github.dsheirer.identifier.IdentifierClass.CONFIGURATION, io.github.dsheirer.identifier.Form.CHANNEL, io.github.dsheirer.identifier.Role.ANY);
+            if (id instanceof io.github.dsheirer.identifier.configuration.ChannelNameConfigurationIdentifier) {
+                channel = ((io.github.dsheirer.identifier.configuration.ChannelNameConfigurationIdentifier)id).getValue();
+            }
+        }
+        org.slf4j.LoggerFactory.getLogger(io.github.dsheirer.log.TwoToneLog.LOGGER_NAME).info("[Channel: {}] - [Unknown]", channel);
     }
 
     public void dispose()
