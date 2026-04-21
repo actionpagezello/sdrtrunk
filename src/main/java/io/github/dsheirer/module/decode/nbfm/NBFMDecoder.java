@@ -122,7 +122,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
     // VoxSend audio filter chain (low-pass, de-emphasis, bass boost, voice enhancement, noise gate)
     private NBFMAudioFilters mAudioFilters;
-    private AudioBufferManager mAudioBufferManager = new AudioBufferManager();
+    private AudioBufferManager mAudioBufferManager;
     private AIAudioOptimizer mAIAudioOptimizer;
     private final DecodeConfigNBFM mNBFMConfig;
 
@@ -131,13 +131,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      *
      * @param config to setup the NBFM decoder and noise squelch control.
      */
-    public NBFMDecoder(DecodeConfigNBFM config, UserPreferences userPreferences)
+    public NBFMDecoder(String channelName, DecodeConfigNBFM config, UserPreferences userPreferences)
     {
         super(config);
 
         //Save config reference for audio filter initialization (deferred until sample rate is known)
         mNBFMConfig = config;
         mAIAudioOptimizer = new AIAudioOptimizer(userPreferences);
+        mAudioBufferManager = new AudioBufferManager(userPreferences, channelName);
 
         //Save channel bandwidth to setup channel baseband filter.
         mChannelBandwidth = config.getBandwidth().getValue();
