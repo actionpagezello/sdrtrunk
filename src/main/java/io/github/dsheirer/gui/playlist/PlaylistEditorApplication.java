@@ -52,7 +52,12 @@ public class PlaylistEditorApplication extends Application
         mPlaylistManager = new PlaylistManager(mUserPreferences, mTunerManager, aliasModel, eventLogManager, new IconModel());
 
         mPlaylistManager.init();
-        mJavaFxWindowManager = new JavaFxWindowManager(mUserPreferences, mTunerManager, mPlaylistManager);
+        mJavaFxWindowManager = new JavaFxWindowManager(mUserPreferences, mTunerManager, mPlaylistManager, new io.github.dsheirer.gui.SidebarPanel.SidebarListener() {
+            @Override
+            public void onItemSelected(String id) {}
+            @Override
+            public void onActionRequested(String id) {}
+        });
     }
 
     @Override

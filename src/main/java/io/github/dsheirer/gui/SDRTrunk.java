@@ -113,7 +113,7 @@ import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import javax.swing.plaf.metal.MetalLookAndFeel;
 
-public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.VisibilityListener
+public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.VisibilityListener, io.github.dsheirer.gui.SidebarPanel.SidebarListener
 {
     @Override
     public void onToggleSpectrum() {
@@ -253,49 +253,10 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
 
         if(!headless)
         {
-            mJavaFxWindowManager = new JavaFxWindowManager(mUserPreferences, mTunerManager, mPlaylistManager);
+            mJavaFxWindowManager = new JavaFxWindowManager(mUserPreferences, mTunerManager, mPlaylistManager, this);
 
             // Add Sidebar
-            SidebarPanel sidebar = new SidebarPanel(new SidebarPanel.SidebarListener() {
-                @Override
-                public void onItemSelected(String id) {
-                    if (id.equals("exit")) {
-                        processShutdown();
-                        System.exit(0);
-                        return;
-                    }
-                    mCurrentViewId = id;
-
-                    if (id.equals("now_playing")) {
-                        mTopContentPanel.remove(mSpectralPanel);
-                        mControllerPanel.setResourcePanelVisible(false);
-                        // Pass null for spectrum if disabled
-                        mControllerPanel.getNowPlayingPanel().setComponents(!mSpectrumDisabled ? mSpectralPanel : null, getBroadcastStatusPanel(), getResourceStatusPanel());
-                    } else if (id.equals("tuners") && !mSpectrumDisabled) {
-                        mTopContentPanel.add(mSpectralPanel, BorderLayout.CENTER);
-                        mControllerPanel.setResourcePanelVisible(mResourceStatusVisible);
-                    } else {
-                        mTopContentPanel.remove(mSpectralPanel);
-                        mControllerPanel.setResourcePanelVisible(false);
-                    }
-
-                    mControllerPanel.showView(id);
-
-                    mMainContentPanel.revalidate();
-                    mMainContentPanel.repaint();
-                }
-
-                @Override
-                public void onActionRequested(String actionId) {
-                    if (actionId.equals("audio_recordings")) {
-                        try {
-                            java.awt.Desktop.getDesktop().open(mUserPreferences.getDirectoryPreference().getDirectoryRecording().toFile());
-                        } catch (Exception ex) {
-                            mLog.error("Error opening audio recordings directory", ex);
-                        }
-                    }
-                }
-            });
+            SidebarPanel sidebar = new SidebarPanel(this);
             mMainGui.add(sidebar, BorderLayout.WEST);
         }
 
@@ -782,4 +743,44 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
         System.setProperty("sun.java2d.opengl", "true");
         new SDRTrunk();
     }
+
+    @Override
+    public void onItemSelected(String id) {
+        if (id.equals("exit")) {
+            processShutdown();
+            System.exit(0);
+            return;
+        }
+        mCurrentViewId = id;
+
+        if (id.equals("now_playing")) {
+            mTopContentPanel.remove(mSpectralPanel);
+            mControllerPanel.setResourcePanelVisible(false);
+            // Pass null for spectrum if disabled
+            mControllerPanel.getNowPlayingPanel().setComponents(!mSpectrumDisabled ? mSpectralPanel : null, getBroadcastStatusPanel(), getResourceStatusPanel());
+        } else if (id.equals("tuners") && !mSpectrumDisabled) {
+            mTopContentPanel.add(mSpectralPanel, BorderLayout.CENTER);
+            mControllerPanel.setResourcePanelVisible(mResourceStatusVisible);
+        } else {
+            mTopContentPanel.remove(mSpectralPanel);
+            mControllerPanel.setResourcePanelVisible(false);
+        }
+
+        mControllerPanel.showView(id);
+
+        mMainContentPanel.revalidate();
+        mMainContentPanel.repaint();
+    }
+
+    @Override
+    public void onActionRequested(String actionId) {
+        if (actionId.equals("audio_recordings")) {
+            try {
+                java.awt.Desktop.getDesktop().open(mUserPreferences.getDirectoryPreference().getDirectoryRecording().toFile());
+            } catch (Exception ex) {
+                mLog.error("Error opening audio recordings directory", ex);
+            }
+        }
+    }
+
 }

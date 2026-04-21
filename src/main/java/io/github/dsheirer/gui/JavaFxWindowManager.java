@@ -92,16 +92,18 @@ public class JavaFxWindowManager extends Application
     private Stage mPlaylistStage;
     private Stage mUserPreferencesStage;
     private Stage mRecordingViewerStage;
+    private io.github.dsheirer.gui.SidebarPanel.SidebarListener mVisibilityListener;
     private JFXPanel mStatusPanel;
 
     /**
      * Constructs an instance.  Note: this constructor is used for Swing applications.
      */
-    public JavaFxWindowManager(UserPreferences userPreferences, TunerManager tunerManager, PlaylistManager playlistManager)
+    public JavaFxWindowManager(UserPreferences userPreferences, TunerManager tunerManager, PlaylistManager playlistManager, io.github.dsheirer.gui.SidebarPanel.SidebarListener visibilityListener)
     {
         mUserPreferences = userPreferences;
         mTunerManager = tunerManager;
         mPlaylistManager = playlistManager;
+        mVisibilityListener = visibilityListener;
 
         setup();
     }
@@ -118,6 +120,12 @@ public class JavaFxWindowManager extends Application
         mTunerManager.start();
         mPlaylistManager = new PlaylistManager(mUserPreferences, mTunerManager, aliasModel, eventLogManager, new IconModel());
         mPlaylistManager.init();
+        mVisibilityListener = new io.github.dsheirer.gui.SidebarPanel.SidebarListener() {
+            @Override
+            public void onItemSelected(String id) {}
+            @Override
+            public void onActionRequested(String id) {}
+        };
         setup();
     }
 
@@ -340,7 +348,7 @@ public class JavaFxWindowManager extends Application
         execute(() -> {
             try
             {
-                restoreStage(getPlaylistStage());
+                javax.swing.SwingUtilities.invokeLater(() -> mVisibilityListener.onItemSelected("playlist_editor"));
                 getPlaylistEditor().process(request);
             }
             catch(Throwable t)
@@ -388,7 +396,7 @@ public class JavaFxWindowManager extends Application
     public void process(final ViewUserPreferenceEditorRequest request)
     {
         execute(() -> {
-            restoreStage(getUserPreferencesStage());
+            javax.swing.SwingUtilities.invokeLater(() -> mVisibilityListener.onItemSelected("user_prefs"));
             getUserPreferencesEditor().process(request);
         });
     }
@@ -448,7 +456,7 @@ public class JavaFxWindowManager extends Application
     @Subscribe
     public void process(final ViewRecordingViewerRequest request)
     {
-        execute(() -> restoreStage(getRecordingViewerStage()));
+        javax.swing.SwingUtilities.invokeLater(() -> mVisibilityListener.onItemSelected("msg_viewer"));
     }
 
     /**
