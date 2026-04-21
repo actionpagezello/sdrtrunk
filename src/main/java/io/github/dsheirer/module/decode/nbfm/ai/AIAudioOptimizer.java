@@ -46,7 +46,7 @@ public class AIAudioOptimizer {
             // "inlineData": {"mimeType": "audio/mp3", "data": "..."}
 
             String promptText = "Analyze this NBFM radio audio. Return JSON with recommended settings. " +
-                "Adjust hissReductionEnabled (boolean), hissReductionDb (float), lowPassEnabled (boolean), lowPassCutoff (float), and agcEnabled (boolean) based on SNR and voice clarity. " +
+                "Adjust hissReductionEnabled (boolean), hissReductionDb (float), hissReductionCorner (double), lowPassEnabled (boolean), lowPassCutoff (float), deemphasisEnabled (boolean), bassBoostEnabled (boolean), bassBoostDb (float), agcEnabled (boolean), agcTargetLevel (float), noiseGateEnabled (boolean), noiseGateThreshold (float), noiseGateReduction (float), and agcMaxGain (float) based on SNR and voice clarity. " +
                 "Provide a brief plain-English explanation for the adjustments in an 'explanation' field.";
 
             String jsonPayload = "{" +
@@ -75,16 +75,34 @@ public class AIAudioOptimizer {
             // Mocked Parsed Values
             boolean hissReductionEnabled = true;
             float hissReductionDb = 15.0f;
+            double hissReductionCorner = 2500.0;
             boolean lowPassEnabled = true;
             double lowPassCutoff = 3500.0;
+            boolean deemphasisEnabled = true;
+            boolean bassBoostEnabled = true;
+            float bassBoostDb = 3.0f;
             boolean agcEnabled = true;
+            float agcTargetLevel = -12.0f;
+            boolean noiseGateEnabled = true;
+            float noiseGateThreshold = 10.0f;
+            float noiseGateReduction = 0.9f;
+            float agcMaxGain = 12.0f;
             String explanation = "Suppressed high-frequency hiss for better voice clarity.";
 
             config.setHissReductionEnabled(hissReductionEnabled);
             config.setHissReductionDb(hissReductionDb);
+            config.setHissReductionCornerHz(hissReductionCorner);
             config.setLowPassEnabled(lowPassEnabled);
             config.setLowPassCutoff(lowPassCutoff);
+            config.setDeemphasisEnabled(deemphasisEnabled);
+            config.setBassBoostEnabled(bassBoostEnabled);
+            config.setBassBoostDb(bassBoostDb);
             config.setAgcEnabled(agcEnabled);
+            config.setAgcTargetLevel(agcTargetLevel);
+            config.setNoiseGateEnabled(noiseGateEnabled);
+            config.setNoiseGateThreshold(noiseGateThreshold);
+            config.setNoiseGateReduction(noiseGateReduction);
+            config.setAgcMaxGain(agcMaxGain);
 
             // Plain-English Logging
             mLog.info("AI Optimization Applied: " + explanation);

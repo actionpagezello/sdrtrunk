@@ -65,6 +65,9 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
+import javafx.animation.Timeline;
+import javafx.animation.KeyFrame;
+import javafx.util.Duration;
 import org.controlsfx.control.SegmentedButton;
 import org.controlsfx.control.ToggleSwitch;
 
@@ -126,6 +129,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private Label mHoldTimeLabel;
     private javafx.scene.control.Button mAnalyzeButton;
     private Label mAnalyzeStatusLabel;
+    private Timeline mAiPollingTimeline;
 
     private boolean mLoadingConfiguration = false;
 
@@ -135,6 +139,15 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private final TalkgroupValueChangeListener mTalkgroupValueChangeListener = new TalkgroupValueChangeListener();
     private final IntegerFormatter mDecimalFormatter = new IntegerFormatter(1, 65535);
     private final HexFormatter mHexFormatter = new HexFormatter(1, 65535);
+
+    @Override
+    public void setItem(io.github.dsheirer.controller.channel.Channel item)
+    {
+        super.setItem(item);
+        if(mAiPollingTimeline != null) {
+            mAiPollingTimeline.play();
+        }
+    }
 
     /**
      * Constructs an instance
@@ -374,6 +387,28 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             VBox contentBox = new VBox(10);
             contentBox.setPadding(new Insets(10,10,10,10));
 
+            // Analyze section (helps user find optimal threshold)
+            GridPane analyzePane = new GridPane();
+            analyzePane.setHgap(10);
+            analyzePane.setVgap(5);
+            analyzePane.setPadding(new Insets(5,0,10,0));
+
+            mAnalyzeButton = new javafx.scene.control.Button("AI Enhance");
+            mAnalyzeButton.setTooltip(new Tooltip("Listen to audio for 5-10 seconds and suggest optimal threshold\nMake sure transmissions are active!"));
+            mAnalyzeButton.setStyle("-fx-font-weight: bold;");
+            mAnalyzeButton.setOnAction(e -> handleAnalyzeClick());
+            mAnalyzeButton.setDisable(true); // Disable initially
+            GridPane.setConstraints(mAnalyzeButton, 0, 0);
+            analyzePane.getChildren().add(mAnalyzeButton);
+
+            mAnalyzeStatusLabel = new Label("Waiting for transmissions...");
+            mAnalyzeStatusLabel.setStyle("-fx-text-fill: #666;");
+            GridPane.setConstraints(mAnalyzeStatusLabel, 1, 0);
+            analyzePane.getChildren().add(mAnalyzeStatusLabel);
+
+            contentBox.getChildren().add(analyzePane);
+            contentBox.getChildren().add(new Separator());
+
             // 1. Low-pass filter
             contentBox.getChildren().add(createLowPassSection());
             contentBox.getChildren().add(new Separator());
@@ -402,6 +437,24 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             contentBox.getChildren().add(createInputGainSection());
 
             mAudioFiltersPane.setContent(contentBox);
+
+            mAiPollingTimeline = new Timeline(new KeyFrame(Duration.seconds(2), e -> {
+                if (getItem() != null && getItem().getName() != null) {
+                    int count = io.github.dsheirer.module.decode.nbfm.ai.AudioBufferManager.getBufferedEventCount(mUserPreferences, getItem().getName());
+                    if (count < 5) {
+                        mAnalyzeButton.setDisable(true);
+                        mAnalyzeStatusLabel.setText(count + "/5 transmissions. At least 5 required prior to using AI enhance.");
+                        mAnalyzeStatusLabel.setStyle("-fx-text-fill: #666;");
+                    } else {
+                        if (mSquelchEnabledSwitch.isSelected()) {
+                            mAnalyzeButton.setDisable(false);
+                        }
+                        mAnalyzeStatusLabel.setText("Ready for AI optimization.");
+                        mAnalyzeStatusLabel.setStyle("-fx-text-fill: #009900;");
+                    }
+                }
+            }));
+            mAiPollingTimeline.setCycleCount(Timeline.INDEFINITE);
         }
         return mAudioFiltersPane;
     }
@@ -777,27 +830,15 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
                 mSquelchThresholdSlider.setDisable(!val);
                 mSquelchReductionSlider.setDisable(!val);
                 mHoldTimeSlider.setDisable(!val);
-                mAnalyzeButton.setDisable(!val);
+                if (!val) {
+                    mAnalyzeButton.setDisable(true);
+                } else if (getItem() != null && io.github.dsheirer.module.decode.nbfm.ai.AudioBufferManager.getBufferedEventCount(mUserPreferences, getItem().getName()) >= 5) {
+                    mAnalyzeButton.setDisable(false);
+                }
             }
         });
 
         // Analyze section (helps user find optimal threshold)
-        GridPane analyzePane = new GridPane();
-        analyzePane.setHgap(10);
-        analyzePane.setVgap(5);
-        analyzePane.setPadding(new Insets(5,0,10,0));
-
-        mAnalyzeButton = new javafx.scene.control.Button("AI Enhance");
-        mAnalyzeButton.setTooltip(new Tooltip("Listen to audio for 5-10 seconds and suggest optimal threshold\nMake sure transmissions are active!"));
-        mAnalyzeButton.setStyle("-fx-font-weight: bold;");
-        mAnalyzeButton.setOnAction(e -> handleAnalyzeClick());
-        GridPane.setConstraints(mAnalyzeButton, 0, 0);
-        analyzePane.getChildren().add(mAnalyzeButton);
-
-        mAnalyzeStatusLabel = new Label("Click 'Analyze' while transmissions are active");
-        mAnalyzeStatusLabel.setStyle("-fx-text-fill: #666;");
-        GridPane.setConstraints(mAnalyzeStatusLabel, 1, 0);
-        analyzePane.getChildren().add(mAnalyzeStatusLabel);
 
         GridPane controlsPane = new GridPane();
         controlsPane.setHgap(10);
@@ -881,7 +922,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         GridPane.setConstraints(mHoldTimeLabel, 2, 2);
         controlsPane.getChildren().add(mHoldTimeLabel);
 
-        section.getChildren().addAll(title, mSquelchEnabledSwitch, analyzePane, controlsPane);
+        section.getChildren().addAll(title, mSquelchEnabledSwitch, controlsPane);
         return section;
     }
 
@@ -1371,15 +1412,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             new Thread(() -> {
                 try {
                     io.github.dsheirer.module.decode.nbfm.ai.AIAudioOptimizer optimizer = new io.github.dsheirer.module.decode.nbfm.ai.AIAudioOptimizer(mUserPreferences);
-                    java.util.List<java.util.List<float[]>> events = new java.util.ArrayList<>();
-                    events.add(new java.util.ArrayList<>());
+                    io.github.dsheirer.module.decode.nbfm.ai.AudioBufferManager bufferManager = new io.github.dsheirer.module.decode.nbfm.ai.AudioBufferManager(mUserPreferences, getItem().getName());
+                    java.util.List<java.util.List<float[]>> events = bufferManager.getBufferedEvents();
+
                     optimizer.optimize(config, events);
                     javafx.application.Platform.runLater(() -> {
                         mAnalyzeStatusLabel.setText("\u2705 AI Optimization Applied.");
                         mAnalyzeStatusLabel.setStyle("-fx-text-fill: #009900; -fx-font-weight: bold;");
                         mAnalyzeButton.setText("AI Enhance");
-                        mVoiceEnhanceEnabledSwitch.setSelected(config.isAgcEnabled());
-                        mVoiceEnhanceSlider.setValue(config.getAgcTargetLevel());
+                        loadAudioFilterConfiguration(config);
+
                         modifiedProperty().set(true);
                     });
                 } catch (Exception e) {

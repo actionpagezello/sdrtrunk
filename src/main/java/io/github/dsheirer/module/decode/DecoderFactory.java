@@ -452,7 +452,7 @@ public class DecoderFactory
 
         DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)decodeConfig;
         NBFMDecoderState decoderState = new NBFMDecoderState(channel.getName(), decodeConfigNBFM);
-        NBFMDecoder decoder = new NBFMDecoder(decodeConfigNBFM, mUserPreferences);
+        NBFMDecoder decoder = new NBFMDecoder(channel.getName(), decodeConfigNBFM, mUserPreferences);
         decoder.setDecoderState(decoderState);
         modules.add(decoder);
         modules.add(decoderState);
