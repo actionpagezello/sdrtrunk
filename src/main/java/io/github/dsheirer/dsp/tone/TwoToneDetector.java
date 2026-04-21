@@ -274,18 +274,33 @@ public class TwoToneDetector
 
     private void triggerAlert(TwoToneConfiguration config, AudioSegment segment)
     {
-        String template = (config.getTemplate() != null && !config.getTemplate().isEmpty()) ? config.getTemplate() : "Dispatch Received: %ALIAS%";
-        String text = template.replace("%ALIAS%", config.getAlias() != null ? config.getAlias() : "Unknown");
+        String template = (config.getTemplate() != null && !config.getTemplate().isEmpty()) ? config.getTemplate() : "Dispatch Received: {Alias}";
+
+        String alias = config.getAlias() != null ? config.getAlias() : "Unknown";
+        String channel = "Unknown";
+        String frequency = "Unknown";
+
+        if (segment != null) {
+            Identifier chId = segment.getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL, Role.ANY);
+            if (chId instanceof io.github.dsheirer.identifier.configuration.ChannelNameConfigurationIdentifier) {
+                channel = ((io.github.dsheirer.identifier.configuration.ChannelNameConfigurationIdentifier)chId).getValue();
+            }
+            Identifier freqId = segment.getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL_FREQUENCY, Role.ANY);
+            if (freqId instanceof FrequencyConfigurationIdentifier) {
+                frequency = String.valueOf(((FrequencyConfigurationIdentifier)freqId).getValue());
+            }
+        }
+
+        String timestamp = String.valueOf(System.currentTimeMillis());
+
+        String text = template.replace("%ALIAS%", alias)
+                              .replace("{Alias}", alias)
+                              .replace("{Channel Name}", channel)
+                              .replace("{Frequency}", frequency)
+                              .replace("{Timestamp}", timestamp);
 
 
         if (config.isEnableMqttPublish()) {
-            String frequency = "unknown";
-            if (segment != null) {
-                Identifier id = segment.getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL_FREQUENCY, Role.ANY);
-                if (id instanceof FrequencyConfigurationIdentifier) {
-                    frequency = String.valueOf(((FrequencyConfigurationIdentifier)id).getValue());
-                }
-            }
             String payload = config.getMqttPayload() != null ? config.getMqttPayload() : "";
             payload = payload.replace("[DetectorName]", config.getAlias() != null ? config.getAlias() : "Unknown");
             payload = payload.replace("[Timestamp]", String.valueOf(System.currentTimeMillis()));

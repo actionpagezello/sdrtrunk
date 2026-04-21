@@ -190,6 +190,9 @@ public class TwoToneEditor extends VBox
         CheckBox textMessageCheck = new CheckBox("Enable Text Message");
         Label textMessageInfo = new Label("Messages are sent to the Zello Channel.");
         textMessageInfo.setStyle("-fx-font-size: 10px; -fx-text-fill: gray;");
+        Label fieldsInfo = new Label("Available Fields: {Alias}, {Channel Name}, {Frequency}, {Timestamp}");
+        fieldsInfo.setStyle("-fx-font-size: 10px; -fx-text-fill: gray;");
+
         TextField templateField = new TextField();
 
         HBox previewBox = new HBox(5);
@@ -199,9 +202,18 @@ public class TwoToneEditor extends VBox
         previewBox.getChildren().addAll(previewLabel, previewText);
 
         Runnable updatePreview = () -> {
-            String template = templateField.getText() != null && !templateField.getText().isEmpty() ? templateField.getText() : "Dispatch Received: %ALIAS%";
+            String template = templateField.getText() != null && !templateField.getText().isEmpty() ? templateField.getText() : "Dispatch Received: {Alias}";
             String alias = aliasField.getText() != null && !aliasField.getText().isEmpty() ? aliasField.getText() : "Unknown";
-            previewText.setText(template.replace("%ALIAS%", alias));
+            String channel = zelloField.getValue() != null && !zelloField.getValue().isEmpty() ? zelloField.getValue() : "Unknown";
+            String freq = "154.145";
+            String timestamp = String.valueOf(System.currentTimeMillis());
+
+            String preview = template.replace("%ALIAS%", alias)
+                                     .replace("{Alias}", alias)
+                                     .replace("{Channel Name}", channel)
+                                     .replace("{Frequency}", freq)
+                                     .replace("{Timestamp}", timestamp);
+            previewText.setText(preview);
         };
 
         CheckBox zelloAlertCheck = new CheckBox("Enable Zello Alert Tone");
@@ -234,16 +246,19 @@ public class TwoToneEditor extends VBox
         templateField.disableProperty().bind(textMessageCheck.selectedProperty().not());
         previewBox.visibleProperty().bind(textMessageCheck.selectedProperty());
         previewBox.managedProperty().bind(textMessageCheck.selectedProperty());
+        fieldsInfo.visibleProperty().bind(textMessageCheck.selectedProperty());
+        fieldsInfo.managedProperty().bind(textMessageCheck.selectedProperty());
 
         editorGrid.add(textMessageCheck, 0, 5);
         editorGrid.add(textMessageInfo, 1, 5);
         editorGrid.add(new Label("Message Template:"), 0, 6);
         editorGrid.add(templateField, 1, 6);
-        editorGrid.add(previewBox, 1, 7);
-        editorGrid.add(zelloAlertCheck, 0, 8, 2, 1);
-        editorGrid.add(new Label("Alert Tone File:"), 0, 9);
-        editorGrid.add(alertToneCombo, 1, 9);
-        editorGrid.add(previewBtn, 2, 9);
+        editorGrid.add(fieldsInfo, 1, 7);
+        editorGrid.add(previewBox, 1, 8);
+        editorGrid.add(zelloAlertCheck, 0, 9, 2, 1);
+        editorGrid.add(new Label("Alert Tone File:"), 0, 10);
+        editorGrid.add(alertToneCombo, 1, 10);
+        editorGrid.add(previewBtn, 2, 10);
 
 
         mTableView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
@@ -317,6 +332,7 @@ public class TwoToneEditor extends VBox
         // Basic double conversion listener
         aliasField.textProperty().addListener((obs, o, n) -> updatePreview.run());
         templateField.textProperty().addListener((obs, o, n) -> updatePreview.run());
+        zelloField.valueProperty().addListener((obs, o, n) -> updatePreview.run());
 
         toneAField.getEditor().textProperty().addListener((obs, o, n) -> {
             TwoToneConfiguration sel = mTableView.getSelectionModel().getSelectedItem();
