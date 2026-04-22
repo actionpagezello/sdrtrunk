@@ -45,6 +45,10 @@ public abstract class DecodeConfigP25 extends DecodeConfiguration
     private boolean mNacFilterEnabled = false;
     private int mTalkgroup = 0;
 
+    // 5-band graphic equalizer settings
+    private boolean mGraphicEQEnabled = false;
+    private double[] mGraphicEQBandGains = new double[]{0.0, 0.0, 0.0, 0.0, 0.0};
+
     public DecodeConfigP25()
     {
     }
@@ -168,5 +172,46 @@ public abstract class DecodeConfigP25 extends DecodeConfiguration
     public boolean hasTalkgroupOverride()
     {
         return mTalkgroup > 0;
+    }
+
+    /**
+     * Indicates if the 5-band graphic equalizer is enabled.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "graphic_eq_enabled")
+    public boolean isGraphicEQEnabled()
+    {
+        return mGraphicEQEnabled;
+    }
+
+    /**
+     * Sets the enabled state of the 5-band graphic equalizer.
+     */
+    public void setGraphicEQEnabled(boolean enabled)
+    {
+        mGraphicEQEnabled = enabled;
+    }
+
+    /**
+     * Gets the 5-band graphic equalizer band gains in dB.
+     * Array of 5 values corresponding to bands at 100 Hz, 400 Hz, 1 kHz, 2 kHz, 3.5 kHz.
+     */
+    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains")
+    @JacksonXmlProperty(localName = "gain")
+    public double[] getGraphicEQBandGains()
+    {
+        return mGraphicEQBandGains;
+    }
+
+    /**
+     * Sets the 5-band graphic equalizer band gains.
+     *
+     * @param gains array of 5 gain values in dB (-12 to +12)
+     */
+    public void setGraphicEQBandGains(double[] gains)
+    {
+        if(gains != null && gains.length == 5)
+        {
+            mGraphicEQBandGains = gains;
+        }
     }
 }

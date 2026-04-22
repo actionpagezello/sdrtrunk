@@ -22,6 +22,7 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.ImbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
@@ -40,11 +41,30 @@ public class P25P1AudioModule extends ImbeAudioModule
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
+    private GraphicEqualizer mGraphicEQ;
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
 
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
         super(userPreferences, aliasList);
+    }
+
+    /**
+     * Configures the 5-band graphic equalizer for this audio module.
+     *
+     * @param enabled true to enable the EQ
+     * @param bandGains array of 5 gain values in dB (-12 to +12)
+     */
+    public void setGraphicEQ(boolean enabled, double[] bandGains)
+    {
+        // IMBE audio is decoded at 8 kHz
+        mGraphicEQ = new GraphicEqualizer(8000.0);
+        mGraphicEQ.setEnabled(enabled);
+
+        if(bandGains != null)
+        {
+            mGraphicEQ.setBandGains(bandGains);
+        }
     }
 
     @Override
@@ -139,6 +159,12 @@ public class P25P1AudioModule extends ImbeAudioModule
             {
                 float[] audio = getAudioCodec().getAudio(frame);
                 audio = mGain.apply(audio);
+
+                if(mGraphicEQ != null && mGraphicEQ.isEnabled())
+                {
+                    mGraphicEQ.process(audio);
+                }
+
                 addAudio(audio);
             }
         }

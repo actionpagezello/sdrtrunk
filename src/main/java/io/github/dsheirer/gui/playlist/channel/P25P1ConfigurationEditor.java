@@ -19,6 +19,7 @@
 
 package io.github.dsheirer.gui.playlist.channel;
 
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.gui.playlist.eventlog.EventLogConfigurationEditor;
 import io.github.dsheirer.gui.playlist.record.RecordConfigurationEditor;
 import io.github.dsheirer.gui.playlist.source.FrequencyEditor;
@@ -43,8 +44,10 @@ import javafx.beans.value.ObservableValue;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.scene.control.Label;
+import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleButton;
@@ -78,6 +81,10 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private SegmentedButton mModulationSegmentedButton;
     private ToggleButton mC4FMToggleButton;
     private ToggleButton mLSMToggleButton;
+    private TitledPane mGraphicEQPane;
+    private ToggleSwitch mGraphicEQEnabledSwitch;
+    private Slider[] mEQBandSliders = new Slider[GraphicEqualizer.BAND_COUNT];
+    private TextField[] mEQBandFields = new TextField[GraphicEqualizer.BAND_COUNT];
 
     /**
      * Constructs an instance
@@ -91,6 +98,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
         getTitledPanesBox().getChildren().add(getSourcePane());
         getTitledPanesBox().getChildren().add(getDecoderPane());
+        getTitledPanesBox().getChildren().add(getGraphicEQPane());
         getTitledPanesBox().getChildren().add(getEventLogPane());
         getTitledPanesBox().getChildren().add(getRecordPane());
     }
@@ -215,6 +223,97 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         }
 
         return mRecordPane;
+    }
+
+    private TitledPane getGraphicEQPane()
+    {
+        if(mGraphicEQPane == null)
+        {
+            mGraphicEQPane = new TitledPane();
+            mGraphicEQPane.setText("5-Band Graphic Equalizer");
+            mGraphicEQPane.setExpanded(false);
+
+            VBox content = new VBox(10);
+            content.setPadding(new Insets(10, 10, 10, 10));
+
+            mGraphicEQEnabledSwitch = new ToggleSwitch("Enable Graphic Equalizer");
+            mGraphicEQEnabledSwitch.setTooltip(new Tooltip("Apply a 5-band graphic EQ to decoded P25 audio"));
+            mGraphicEQEnabledSwitch.selectedProperty().addListener((obs, old, val) -> {
+                modifiedProperty().set(true);
+                for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+                {
+                    mEQBandSliders[i].setDisable(!val);
+                    mEQBandFields[i].setDisable(!val);
+                }
+            });
+            content.getChildren().add(mGraphicEQEnabledSwitch);
+
+            GridPane gridPane = new GridPane();
+            gridPane.setHgap(10);
+            gridPane.setVgap(8);
+
+            for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+            {
+                final int band = i;
+
+                Label bandLabel = new Label(GraphicEqualizer.BAND_LABELS[i]);
+                GridPane.setHalignment(bandLabel, HPos.RIGHT);
+                GridPane.setConstraints(bandLabel, 0, i);
+                gridPane.getChildren().add(bandLabel);
+
+                mEQBandSliders[i] = new Slider(-12, 12, 0);
+                mEQBandSliders[i].setMajorTickUnit(6);
+                mEQBandSliders[i].setMinorTickCount(5);
+                mEQBandSliders[i].setShowTickMarks(true);
+                mEQBandSliders[i].setShowTickLabels(true);
+                mEQBandSliders[i].setPrefWidth(250);
+                mEQBandSliders[i].setDisable(true);
+                mEQBandSliders[i].setTooltip(new Tooltip(GraphicEqualizer.BAND_LABELS[i] +
+                    " band gain (-12 to +12 dB)"));
+                mEQBandSliders[i].valueProperty().addListener((obs, old, val) -> {
+                    mEQBandFields[band].setText(String.format("%+.1f dB", val.doubleValue()));
+                    modifiedProperty().set(true);
+                });
+                GridPane.setConstraints(mEQBandSliders[i], 1, i);
+                gridPane.getChildren().add(mEQBandSliders[i]);
+
+                mEQBandFields[i] = new TextField("+0.0 dB");
+                mEQBandFields[i].setPrefWidth(80);
+                mEQBandFields[i].setMaxWidth(80);
+                mEQBandFields[i].setDisable(true);
+                mEQBandFields[i].setOnAction(event -> commitEQBandField(band));
+                mEQBandFields[i].focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                    if(!isFocused) commitEQBandField(band);
+                });
+                GridPane.setConstraints(mEQBandFields[i], 2, i);
+                gridPane.getChildren().add(mEQBandFields[i]);
+            }
+
+            content.getChildren().add(gridPane);
+            mGraphicEQPane.setContent(content);
+        }
+
+        return mGraphicEQPane;
+    }
+
+    /**
+     * Commits the text field value to the corresponding EQ band slider.
+     */
+    private void commitEQBandField(int band)
+    {
+        try
+        {
+            String text = mEQBandFields[band].getText().trim()
+                .replace("dB", "").replace("+", "").trim();
+            double value = Double.parseDouble(text);
+            value = Math.max(-12, Math.min(12, value));
+            mEQBandSliders[band].setValue(value);
+            mEQBandFields[band].setText(String.format("%+.1f dB", value));
+        }
+        catch(NumberFormatException e)
+        {
+            mEQBandFields[band].setText(String.format("%+.1f dB", mEQBandSliders[band].getValue()));
+        }
     }
 
     private SourceConfigurationEditor getSourceConfigurationEditor()
@@ -449,6 +548,18 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
                 getC4FMToggleButton().setSelected(false);
                 getLSMToggleButton().setSelected(true);
             }
+
+            // Load graphic EQ settings
+            mGraphicEQEnabledSwitch.setSelected(decodeConfig.isGraphicEQEnabled());
+            double[] gains = decodeConfig.getGraphicEQBandGains();
+            for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+            {
+                double gain = (gains != null && i < gains.length) ? gains[i] : 0.0;
+                mEQBandSliders[i].setValue(gain);
+                mEQBandFields[i].setText(String.format("%+.1f dB", gain));
+                mEQBandSliders[i].setDisable(!decodeConfig.isGraphicEQEnabled());
+                mEQBandFields[i].setDisable(!decodeConfig.isGraphicEQEnabled());
+            }
         }
         else
         {
@@ -458,6 +569,16 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getNacFilterButton().setSelected(false);
             getNacTextField().setText("");
             getTalkgroupTextField().setText("");
+
+            // Disable EQ
+            mGraphicEQEnabledSwitch.setSelected(false);
+            for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+            {
+                mEQBandSliders[i].setValue(0);
+                mEQBandFields[i].setText("+0.0 dB");
+                mEQBandSliders[i].setDisable(true);
+                mEQBandFields[i].setDisable(true);
+            }
         }
     }
 
@@ -538,6 +659,15 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
                 }
             }
         }
+
+        // Save graphic EQ settings
+        config.setGraphicEQEnabled(mGraphicEQEnabledSwitch.isSelected());
+        double[] gains = new double[GraphicEqualizer.BAND_COUNT];
+        for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+        {
+            gains[i] = mEQBandSliders[i].getValue();
+        }
+        config.setGraphicEQBandGains(gains);
 
         getItem().setDecodeConfiguration(config);
     }

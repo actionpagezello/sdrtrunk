@@ -61,7 +61,7 @@ public class NBFMAudioFilters
     private float mBassBoostA1, mBassBoostA2;
 
     // Hiss reduction (high-shelf filter above 2 kHz) - cuts high-frequency hiss
-    private boolean mHissReductionEnabled = false;
+    private boolean mHissReductionEnabled = true;
     private float mHissReductionDb = -6.0f;  // -12 to 0 dB (negative = cut)
     private double mHissReductionCornerHz = 2000.0;  // Shelf corner frequency
     private float mHissX1 = 0, mHissX2 = 0;
@@ -94,8 +94,8 @@ public class NBFMAudioFilters
     
     // Enable flags
     private boolean mLowPassEnabled = true;
-    private boolean mDeemphasisEnabled = true;
-    private boolean mVoiceEnhanceEnabled = true;
+    private boolean mDeemphasisEnabled = false;
+    private boolean mVoiceEnhanceEnabled = false;
     private boolean mSquelchEnabled = false;  // Off by default - existing squelch handles this
     
     // Audio level analyzer (for "Analyze" button)
@@ -116,11 +116,11 @@ public class NBFMAudioFilters
         
         // Set defaults (Vox-Send values)
         setInputGain(1.0f);                   // No boost by default
-        setLowPassCutoff(3400.0);             // 3400 Hz
+        setLowPassCutoff(2800.0);             // 2800 Hz
         setDeemphasisTimeConstant(75.0);      // 75μs North America
-        setVoiceEnhancement(0.3f);            // 30% boost
+        setVoiceEnhancement(0.0f);            // Off by default
         setBassBoost(0.0f);                   // 0 dB (off by default)
-        setHissReductionDb(-6.0f);            // -6 dB high-shelf (off by default)
+        setHissReductionDb(-6.0f);            // -6 dB high-shelf (on by default)
         setSquelchThreshold(4.0f);            // 4% threshold
         setSquelchReduction(0.8f);            // 80% reduction
         setHoldTime(500);                     // 500ms hold time

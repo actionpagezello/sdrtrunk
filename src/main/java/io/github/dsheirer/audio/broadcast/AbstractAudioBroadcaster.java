@@ -20,6 +20,7 @@
 package io.github.dsheirer.audio.broadcast;
 
 import io.github.dsheirer.sample.Listener;
+import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -76,20 +77,34 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     }
 
     /**
-     * Sets or changes the broadcast state
+     * Sets or changes the broadcast state.  Property updates are dispatched to the JavaFX
+     * Application Thread to prevent SortedList corruption when called from background threads
+     * (e.g., WebSocket callbacks, ForkJoinPool tasks).
      */
     public void setBroadcastState(BroadcastState broadcastState)
     {
-        if(broadcastState == BroadcastState.CONNECTED)
+        Runnable update = () -> {
+            if(broadcastState == BroadcastState.CONNECTED)
+            {
+                mLastBadBroadcastState.setValue(null);
+                mLastErrorDetail.setValue(null);
+            }
+            else if(broadcastState.isErrorState() || broadcastState.isWarningState())
+            {
+                mLastBadBroadcastState.setValue(broadcastState);
+            }
+            mBroadcastState.setValue(broadcastState);
+        };
+
+        if(Platform.isFxApplicationThread())
         {
-            mLastBadBroadcastState.setValue(null);
-            mLastErrorDetail.setValue(null);
+            update.run();
         }
-        else if(broadcastState.isErrorState() || broadcastState.isWarningState())
+        else
         {
-            mLastBadBroadcastState.setValue(broadcastState);
+            Platform.runLater(update);
         }
-        mBroadcastState.setValue(broadcastState);
+
         broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STATE_CHANGE));
     }
 
@@ -111,11 +126,20 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     }
 
     /**
-     * Sets a detailed error description for display in the streaming table
+     * Sets a detailed error description for display in the streaming table.
+     * Property update is dispatched to the JavaFX Application Thread to prevent
+     * SortedList corruption when called from background threads.
      */
     public void setLastErrorDetail(String detail)
     {
-        mLastErrorDetail.setValue(detail);
+        if(Platform.isFxApplicationThread())
+        {
+            mLastErrorDetail.setValue(detail);
+        }
+        else
+        {
+            Platform.runLater(() -> mLastErrorDetail.setValue(detail));
+        }
     }
 
     /**

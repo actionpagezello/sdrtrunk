@@ -54,8 +54,8 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     // VOXSEND AUDIO FILTER CONFIGURATION
     private boolean mDeemphasisEnabled = false;
     private double mDeemphasisTimeConstant = 75.0; // microseconds
-    private boolean mLowPassEnabled = false;
-    private double mLowPassCutoff = 3400.0; // Hz
+    private boolean mLowPassEnabled = true;
+    private double mLowPassCutoff = 2800.0; // Hz
     private boolean mBassBoostEnabled = false;
     private float mBassBoostDb = 0.0f; // 0 to +12 dB
     private boolean mNoiseGateEnabled = false;
@@ -67,7 +67,7 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     private float mAgcMaxGain = 24.0f; // dB (stores input gain)
 
     // Hiss reduction (high-shelf filter above corner frequency)
-    private boolean mHissReductionEnabled = false;
+    private boolean mHissReductionEnabled = true;
     private float mHissReductionDb = -6.0f; // -12 to 0 dB (shelf cut)
     private double mHissReductionCornerHz = 2000.0; // Shelf pivot frequency
 
@@ -87,7 +87,7 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     @Override
     protected Bandwidth getDefaultBandwidth()
     {
-        return Bandwidth.BW_12_5;
+        return Bandwidth.BW_7_5;
     }
 
     /**

@@ -99,34 +99,35 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private ToggleSwitch mSquelchTailEnabledSwitch;
     private Spinner<Integer> mTailRemovalSpinner;
     private Spinner<Integer> mHeadRemovalSpinner;
+    private Spinner<Integer> mAudioHangtimeSpinner;
 
     // Audio Filters (VoxSend Chain) UI
     private TitledPane mAudioFiltersPane;
     private Slider mInputGainSlider;
-    private Label mInputGainLabel;
+    private TextField mInputGainField;
     private ToggleSwitch mLowPassEnabledSwitch;
     private Slider mLowPassCutoffSlider;
-    private Label mLowPassCutoffLabel;
+    private TextField mLowPassCutoffField;
     private ToggleSwitch mDeemphasisEnabledSwitch;
     private ComboBox<String> mDeemphasisTimeConstantCombo;
     private ToggleSwitch mVoiceEnhanceEnabledSwitch;
     private Slider mVoiceEnhanceSlider;
-    private Label mVoiceEnhanceLabel;
+    private TextField mVoiceEnhanceField;
     private ToggleSwitch mBassBoostEnabledSwitch;
     private Slider mBassBoostSlider;
-    private Label mBassBoostLabel;
+    private TextField mBassBoostField;
     private ToggleSwitch mHissReductionEnabledSwitch;
     private Slider mHissReductionDbSlider;
-    private Label mHissReductionDbLabel;
+    private TextField mHissReductionDbField;
     private Slider mHissReductionCornerSlider;
-    private Label mHissReductionCornerLabel;
+    private TextField mHissReductionCornerField;
     private ToggleSwitch mSquelchEnabledSwitch;
     private Slider mSquelchThresholdSlider;
-    private Label mSquelchThresholdLabel;
+    private TextField mSquelchThresholdField;
     private Slider mSquelchReductionSlider;
-    private Label mSquelchReductionLabel;
+    private TextField mSquelchReductionField;
     private Slider mHoldTimeSlider;
-    private Label mHoldTimeLabel;
+    private TextField mHoldTimeField;
     private javafx.scene.control.Button mAnalyzeButton;
     private Label mAnalyzeStatusLabel;
     private Timeline mAiPollingTimeline;
@@ -370,6 +371,25 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(mHeadRemovalSpinner, 3, 1);
             gridPane.getChildren().add(mHeadRemovalSpinner);
 
+            Label hangtimeLabel = new Label("Audio Hangtime (ms)");
+            hangtimeLabel.setTooltip(new Tooltip("Delay before closing audio segment after transmission ends.\n" +
+                    "Prevents cutting off the end of audio in ThinLine/Zello streams.\n" +
+                    "0 = immediate close (default), 100-300 = recommended for streaming"));
+            GridPane.setHalignment(hangtimeLabel, HPos.RIGHT);
+            GridPane.setConstraints(hangtimeLabel, 0, 2);
+            gridPane.getChildren().add(hangtimeLabel);
+
+            mAudioHangtimeSpinner = new Spinner<>(0, 2000, 0, 50);
+            mAudioHangtimeSpinner.setEditable(true);
+            mAudioHangtimeSpinner.setPrefWidth(100);
+            mAudioHangtimeSpinner.setTooltip(new Tooltip("Delay before closing audio segment (ms).\n" +
+                    "Prevents audio cutoff at end of transmissions.\n" +
+                    "0 = instant close, 100-300 = recommended for streaming"));
+            mAudioHangtimeSpinner.getValueFactory().valueProperty()
+                    .addListener((obs, ov, nv) -> modifiedProperty().set(true));
+            GridPane.setConstraints(mAudioHangtimeSpinner, 1, 2);
+            gridPane.getChildren().add(mAudioHangtimeSpinner);
+
             mSquelchTailPane.setContent(gridPane);
         }
         return mSquelchTailPane;
@@ -508,6 +528,70 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         return mRecordPane;
     }
 
+    /**
+     * Creates a styled TextField that syncs bidirectionally with a Slider.
+     * When the user presses Enter or the field loses focus, the parsed value updates the slider.
+     *
+     * @param slider The slider to sync with
+     * @param defaultText Initial display text
+     * @param suffix Unit suffix (e.g. " Hz", " dB", "%", " ms")
+     * @param format printf format for the numeric value (e.g. "%.0f", "%.1f")
+     */
+    private TextField createSliderTextField(Slider slider, String defaultText, String suffix, String format)
+    {
+        TextField field = new TextField(defaultText);
+        field.setPrefWidth(90);
+        field.setMaxWidth(90);
+        field.setStyle("-fx-font-size: 11px;");
+
+        // Commit on Enter key
+        field.setOnAction(event -> {
+            commitTextFieldToSlider(field, slider, suffix, format);
+        });
+
+        // Commit on focus loss
+        field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            if(!isFocused)
+            {
+                commitTextFieldToSlider(field, slider, suffix, format);
+            }
+        });
+
+        return field;
+    }
+
+    /**
+     * Parses the numeric value from a text field and updates the associated slider.
+     */
+    private void commitTextFieldToSlider(TextField field, Slider slider, String suffix, String format)
+    {
+        try
+        {
+            String text = field.getText().trim();
+            // Strip suffix and common symbols
+            text = text.replace(suffix.trim(), "").replace("+", "").replace("x", "").replace("(", "").trim();
+            // Handle "1.0x (0.0 dB)" format for gain field
+            if(text.contains(" "))
+            {
+                text = text.split("\\s+")[0];
+            }
+            double value = Double.parseDouble(text);
+            value = Math.max(slider.getMin(), Math.min(slider.getMax(), value));
+            slider.setValue(value);
+            // Re-format the display to be consistent
+            field.setText(String.format(format, value) + suffix);
+            if(!mLoadingConfiguration)
+            {
+                modifiedProperty().set(true);
+            }
+        }
+        catch(NumberFormatException e)
+        {
+            // Revert to current slider value on parse failure
+            field.setText(String.format(format, slider.getValue()) + suffix);
+        }
+    }
+
     private VBox createInputGainSection()
     {
         VBox section = new VBox(5);
@@ -532,7 +616,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mInputGainSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mInputGainLabel.setText(String.format("%.1fx (%.1f dB)", val.floatValue(),
+                mInputGainField.setText(String.format("%.1fx (%.1f dB)", val.floatValue(),
                     20.0 * Math.log10(val.doubleValue())));
                 modifiedProperty().set(true);
             }
@@ -540,9 +624,26 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         GridPane.setConstraints(mInputGainSlider, 1, 0);
         controlsPane.getChildren().add(mInputGainSlider);
 
-        mInputGainLabel = new Label("1.0x (0.0 dB)");
-        GridPane.setConstraints(mInputGainLabel, 2, 0);
-        controlsPane.getChildren().add(mInputGainLabel);
+        mInputGainField = new TextField("1.0x (0.0 dB)");
+        mInputGainField.setPrefWidth(120);
+        mInputGainField.setMaxWidth(120);
+        mInputGainField.setStyle("-fx-font-size: 11px;");
+        mInputGainField.setOnAction(event -> {
+            commitTextFieldToSlider(mInputGainField, mInputGainSlider, "x", "%.1f");
+            // Re-format with dB display
+            double v = mInputGainSlider.getValue();
+            mInputGainField.setText(String.format("%.1fx (%.1f dB)", v, 20.0 * Math.log10(v)));
+        });
+        mInputGainField.focusedProperty().addListener((obs2, wasFocused, isFocused) -> {
+            if(!isFocused)
+            {
+                commitTextFieldToSlider(mInputGainField, mInputGainSlider, "x", "%.1f");
+                double v = mInputGainSlider.getValue();
+                mInputGainField.setText(String.format("%.1fx (%.1f dB)", v, 20.0 * Math.log10(v)));
+            }
+        });
+        GridPane.setConstraints(mInputGainField, 2, 0);
+        controlsPane.getChildren().add(mInputGainField);
 
         section.getChildren().addAll(title, controlsPane);
         return section;
@@ -572,26 +673,26 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         GridPane.setConstraints(cutoffLabel, 0, 0);
         controlsPane.getChildren().add(cutoffLabel);
 
-        mLowPassCutoffSlider = new Slider(2500, 4000, 3400);
+        mLowPassCutoffSlider = new Slider(2500, 4000, 2800);
         mLowPassCutoffSlider.setMajorTickUnit(500);
         mLowPassCutoffSlider.setMinorTickCount(4);
         mLowPassCutoffSlider.setShowTickMarks(true);
         mLowPassCutoffSlider.setShowTickLabels(true);
         mLowPassCutoffSlider.setPrefWidth(300);
-        mLowPassCutoffSlider.setTooltip(new Tooltip("Higher = brighter\nLower = less noise\nDefault: 3400 Hz"));
+        mLowPassCutoffSlider.setTooltip(new Tooltip("Higher = brighter\nLower = less noise\nDefault: 2800 Hz"));
         mLowPassCutoffSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mLowPassCutoffLabel.setText(val.intValue() + " Hz");
+                mLowPassCutoffField.setText(val.intValue() + " Hz");
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mLowPassCutoffSlider, 1, 0);
         controlsPane.getChildren().add(mLowPassCutoffSlider);
 
-        mLowPassCutoffLabel = new Label("3400 Hz");
-        GridPane.setConstraints(mLowPassCutoffLabel, 2, 0);
-        controlsPane.getChildren().add(mLowPassCutoffLabel);
+        mLowPassCutoffField = createSliderTextField(mLowPassCutoffSlider, "2800 Hz", " Hz", "%.0f");
+        GridPane.setConstraints(mLowPassCutoffField, 2, 0);
+        controlsPane.getChildren().add(mLowPassCutoffField);
 
         section.getChildren().addAll(title, mLowPassEnabledSwitch, controlsPane);
         return section;
@@ -658,26 +759,26 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         GridPane.setConstraints(amountLabel, 0, 0);
         controlsPane.getChildren().add(amountLabel);
 
-        mVoiceEnhanceSlider = new Slider(0, 100, 30);
+        mVoiceEnhanceSlider = new Slider(0, 100, 0);
         mVoiceEnhanceSlider.setMajorTickUnit(25);
         mVoiceEnhanceSlider.setMinorTickCount(4);
         mVoiceEnhanceSlider.setShowTickMarks(true);
         mVoiceEnhanceSlider.setShowTickLabels(true);
         mVoiceEnhanceSlider.setPrefWidth(300);
-        mVoiceEnhanceSlider.setTooltip(new Tooltip("Boost speech presence\n0% = off, 100% = max clarity\nDefault: 30%"));
+        mVoiceEnhanceSlider.setTooltip(new Tooltip("Boost speech presence\n0% = off, 100% = max clarity\nDefault: 0%"));
         mVoiceEnhanceSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mVoiceEnhanceLabel.setText(val.intValue() + "%");
+                mVoiceEnhanceField.setText(val.intValue() + "%");
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mVoiceEnhanceSlider, 1, 0);
         controlsPane.getChildren().add(mVoiceEnhanceSlider);
 
-        mVoiceEnhanceLabel = new Label("30%");
-        GridPane.setConstraints(mVoiceEnhanceLabel, 2, 0);
-        controlsPane.getChildren().add(mVoiceEnhanceLabel);
+        mVoiceEnhanceField = createSliderTextField(mVoiceEnhanceSlider, "0%", "%", "%.0f");
+        GridPane.setConstraints(mVoiceEnhanceField, 2, 0);
+        controlsPane.getChildren().add(mVoiceEnhanceField);
 
         section.getChildren().addAll(title, mVoiceEnhanceEnabledSwitch, controlsPane);
         return section;
@@ -717,16 +818,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mBassBoostSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mBassBoostLabel.setText(String.format("+%.1f dB", val.doubleValue()));
+                mBassBoostField.setText(String.format("+%.1f dB", val.doubleValue()));
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mBassBoostSlider, 1, 0);
         controlsPane.getChildren().add(mBassBoostSlider);
 
-        mBassBoostLabel = new Label("+0.0 dB");
-        GridPane.setConstraints(mBassBoostLabel, 2, 0);
-        controlsPane.getChildren().add(mBassBoostLabel);
+        mBassBoostField = createSliderTextField(mBassBoostSlider, "+0.0 dB", " dB", "+%.1f");
+        GridPane.setConstraints(mBassBoostField, 2, 0);
+        controlsPane.getChildren().add(mBassBoostField);
 
         section.getChildren().addAll(title, mBassBoostEnabledSwitch, controlsPane);
         return section;
@@ -772,16 +873,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mHissReductionDbSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mHissReductionDbLabel.setText(String.format("%.1f dB", val.doubleValue()));
+                mHissReductionDbField.setText(String.format("%.1f dB", val.doubleValue()));
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mHissReductionDbSlider, 1, 0);
         controlsPane.getChildren().add(mHissReductionDbSlider);
 
-        mHissReductionDbLabel = new Label("-6.0 dB");
-        GridPane.setConstraints(mHissReductionDbLabel, 2, 0);
-        controlsPane.getChildren().add(mHissReductionDbLabel);
+        mHissReductionDbField = createSliderTextField(mHissReductionDbSlider, "-6.0 dB", " dB", "%.1f");
+        GridPane.setConstraints(mHissReductionDbField, 2, 0);
+        controlsPane.getChildren().add(mHissReductionDbField);
 
         // Row 1: Corner frequency
         Label cornerLabel = new Label("Corner Freq:");
@@ -800,16 +901,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mHissReductionCornerSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mHissReductionCornerLabel.setText(String.format("%.0f Hz", val.doubleValue()));
+                mHissReductionCornerField.setText(String.format("%.0f Hz", val.doubleValue()));
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mHissReductionCornerSlider, 1, 1);
         controlsPane.getChildren().add(mHissReductionCornerSlider);
 
-        mHissReductionCornerLabel = new Label("2000 Hz");
-        GridPane.setConstraints(mHissReductionCornerLabel, 2, 1);
-        controlsPane.getChildren().add(mHissReductionCornerLabel);
+        mHissReductionCornerField = createSliderTextField(mHissReductionCornerSlider, "2000 Hz", " Hz", "%.0f");
+        GridPane.setConstraints(mHissReductionCornerField, 2, 1);
+        controlsPane.getChildren().add(mHissReductionCornerField);
 
         section.getChildren().addAll(title, mHissReductionEnabledSwitch, controlsPane);
         return section;
@@ -859,16 +960,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mSquelchThresholdSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mSquelchThresholdLabel.setText(String.format("%.1f%%", val.doubleValue()));
+                mSquelchThresholdField.setText(String.format("%.1f%%", val.doubleValue()));
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mSquelchThresholdSlider, 1, 0);
         controlsPane.getChildren().add(mSquelchThresholdSlider);
 
-        mSquelchThresholdLabel = new Label("4.0%");
-        GridPane.setConstraints(mSquelchThresholdLabel, 2, 0);
-        controlsPane.getChildren().add(mSquelchThresholdLabel);
+        mSquelchThresholdField = createSliderTextField(mSquelchThresholdSlider, "4.0%", "%", "%.1f");
+        GridPane.setConstraints(mSquelchThresholdField, 2, 0);
+        controlsPane.getChildren().add(mSquelchThresholdField);
 
         // Reduction: 0-100%
         Label reductionLabel = new Label("Reduction:");
@@ -885,16 +986,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mSquelchReductionSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mSquelchReductionLabel.setText(val.intValue() + "%");
+                mSquelchReductionField.setText(val.intValue() + "%");
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mSquelchReductionSlider, 1, 1);
         controlsPane.getChildren().add(mSquelchReductionSlider);
 
-        mSquelchReductionLabel = new Label("80%");
-        GridPane.setConstraints(mSquelchReductionLabel, 2, 1);
-        controlsPane.getChildren().add(mSquelchReductionLabel);
+        mSquelchReductionField = createSliderTextField(mSquelchReductionSlider, "80%", "%", "%.0f");
+        GridPane.setConstraints(mSquelchReductionField, 2, 1);
+        controlsPane.getChildren().add(mSquelchReductionField);
 
         // Hold Time (Delay): 0-1000ms
         Label holdLabel = new Label("Delay (Hold Time):");
@@ -911,16 +1012,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mHoldTimeSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
-                mHoldTimeLabel.setText(val.intValue() + " ms");
+                mHoldTimeField.setText(val.intValue() + " ms");
                 modifiedProperty().set(true);
             }
         });
         GridPane.setConstraints(mHoldTimeSlider, 1, 2);
         controlsPane.getChildren().add(mHoldTimeSlider);
 
-        mHoldTimeLabel = new Label("500 ms");
-        GridPane.setConstraints(mHoldTimeLabel, 2, 2);
-        controlsPane.getChildren().add(mHoldTimeLabel);
+        mHoldTimeField = createSliderTextField(mHoldTimeSlider, "500 ms", " ms", "%.0f");
+        GridPane.setConstraints(mHoldTimeField, 2, 2);
+        controlsPane.getChildren().add(mHoldTimeField);
 
         section.getChildren().addAll(title, mSquelchEnabledSwitch, controlsPane);
         return section;
@@ -1019,7 +1120,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
                     DecodeConfigNBFM.Bandwidth bandwidth = config.getBandwidth();
                     if(bandwidth == null)
                     {
-                        bandwidth = DecodeConfigNBFM.Bandwidth.BW_12_5;
+                        bandwidth = DecodeConfigNBFM.Bandwidth.BW_7_5;
                     }
 
                     for(Toggle toggle: getBandwidthButton().getToggleGroup().getToggles())
@@ -1117,7 +1218,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             getBandwidthButton().setDisable(false);
             DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)config;
             final DecodeConfigNBFM.Bandwidth bandwidth = (decodeConfigNBFM.getBandwidth() != null ?
-                    decodeConfigNBFM.getBandwidth() : DecodeConfigNBFM.Bandwidth.BW_12_5);
+                    decodeConfigNBFM.getBandwidth() : DecodeConfigNBFM.Bandwidth.BW_7_5);
 
             for(Toggle toggle: getBandwidthButton().getToggleGroup().getToggles())
             {
@@ -1167,6 +1268,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             mSquelchTailEnabledSwitch.setSelected(decodeConfigNBFM.isSquelchTailRemovalEnabled());
             mTailRemovalSpinner.getValueFactory().setValue(decodeConfigNBFM.getSquelchTailRemovalMs());
             mHeadRemovalSpinner.getValueFactory().setValue(decodeConfigNBFM.getSquelchHeadRemovalMs());
+            mAudioHangtimeSpinner.getValueFactory().setValue(decodeConfigNBFM.getAudioHangtimeMs());
 
             // Load audio filter settings
             loadAudioFilterConfiguration(decodeConfigNBFM);
@@ -1220,7 +1322,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             config = new DecodeConfigNBFM();
         }
 
-        DecodeConfigNBFM.Bandwidth bandwidth = DecodeConfigNBFM.Bandwidth.BW_12_5;
+        DecodeConfigNBFM.Bandwidth bandwidth = DecodeConfigNBFM.Bandwidth.BW_7_5;
 
         if(getBandwidthButton().getToggleGroup().getSelectedToggle() != null)
         {
@@ -1265,6 +1367,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         config.setSquelchTailRemovalEnabled(mSquelchTailEnabledSwitch.isSelected());
         config.setSquelchTailRemovalMs(mTailRemovalSpinner.getValue());
         config.setSquelchHeadRemovalMs(mHeadRemovalSpinner.getValue());
+        config.setAudioHangtimeMs(mAudioHangtimeSpinner.getValue());
 
         // Save audio filter settings
         saveAudioFilterConfiguration(config);
@@ -1277,13 +1380,13 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         // Input Gain (map from AGC max gain)
         float inputGain = (float)Math.pow(10.0, config.getAgcMaxGain() / 40.0);
         mInputGainSlider.setValue(inputGain);
-        mInputGainLabel.setText(String.format("%.1fx (%.1f dB)", inputGain,
+        mInputGainField.setText(String.format("%.1fx (%.1f dB)", inputGain,
             20.0 * Math.log10(inputGain)));
 
         // Low-pass
         mLowPassEnabledSwitch.setSelected(config.isLowPassEnabled());
         mLowPassCutoffSlider.setValue(config.getLowPassCutoff());
-        mLowPassCutoffLabel.setText((int)config.getLowPassCutoff() + " Hz");
+        mLowPassCutoffField.setText((int)config.getLowPassCutoff() + " Hz");
         mLowPassCutoffSlider.setDisable(!config.isLowPassEnabled());
 
         // De-emphasis
@@ -1299,24 +1402,24 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         float voiceAmount = ((targetLevel + 30.0f) / 24.0f) * 100.0f;
         voiceAmount = Math.max(0, Math.min(100, voiceAmount));
         mVoiceEnhanceSlider.setValue(voiceAmount);
-        mVoiceEnhanceLabel.setText((int)voiceAmount + "%");
+        mVoiceEnhanceField.setText((int)voiceAmount + "%");
         mVoiceEnhanceSlider.setDisable(!config.isAgcEnabled());
 
         // Bass Boost
         mBassBoostEnabledSwitch.setSelected(config.isBassBoostEnabled());
         float bassBoostDb = config.getBassBoostDb();
         mBassBoostSlider.setValue(bassBoostDb);
-        mBassBoostLabel.setText(String.format("+%.1f dB", bassBoostDb));
+        mBassBoostField.setText(String.format("+%.1f dB", bassBoostDb));
         mBassBoostSlider.setDisable(!config.isBassBoostEnabled());
 
         // Hiss Reduction
         mHissReductionEnabledSwitch.setSelected(config.isHissReductionEnabled());
         float hissDb = config.getHissReductionDb();
         mHissReductionDbSlider.setValue(hissDb);
-        mHissReductionDbLabel.setText(String.format("%.1f dB", hissDb));
+        mHissReductionDbField.setText(String.format("%.1f dB", hissDb));
         double hissCorner = config.getHissReductionCornerHz();
         mHissReductionCornerSlider.setValue(hissCorner);
-        mHissReductionCornerLabel.setText(String.format("%.0f Hz", hissCorner));
+        mHissReductionCornerField.setText(String.format("%.0f Hz", hissCorner));
         mHissReductionDbSlider.setDisable(!config.isHissReductionEnabled());
         mHissReductionCornerSlider.setDisable(!config.isHissReductionEnabled());
 
@@ -1326,16 +1429,16 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         // Threshold is stored as percentage (0-100%)
         float thresholdPercent = config.getNoiseGateThreshold();
         mSquelchThresholdSlider.setValue(thresholdPercent);
-        mSquelchThresholdLabel.setText(String.format("%.1f%%", thresholdPercent));
+        mSquelchThresholdField.setText(String.format("%.1f%%", thresholdPercent));
 
         // Reduction
         mSquelchReductionSlider.setValue(config.getNoiseGateReduction() * 100.0f);
-        mSquelchReductionLabel.setText((int)(config.getNoiseGateReduction() * 100.0f) + "%");
+        mSquelchReductionField.setText((int)(config.getNoiseGateReduction() * 100.0f) + "%");
 
         // Hold time
         int holdTime = config.getNoiseGateHoldTime();
         mHoldTimeSlider.setValue(holdTime);
-        mHoldTimeLabel.setText(holdTime + " ms");
+        mHoldTimeField.setText(holdTime + " ms");
 
         // Disable controls if squelch is off
         boolean squelchEnabled = config.isNoiseGateEnabled();
