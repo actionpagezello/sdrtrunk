@@ -775,13 +775,6 @@ public class SDRTrunk implements Listener<TunerEvent>, io.github.dsheirer.gui.Vi
 
     @Override
     public void onActionRequested(String actionId) {
-        if (actionId.equals("audio_recordings")) {
-            try {
-                java.awt.Desktop.getDesktop().open(mUserPreferences.getDirectoryPreference().getDirectoryRecording().toFile());
-            } catch (Exception ex) {
-                mLog.error("Error opening audio recordings directory", ex);
-            }
-        }
     }
 
 }
