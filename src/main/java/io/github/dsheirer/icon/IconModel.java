@@ -442,7 +442,7 @@ public class IconModel
             mStandardIcons.add(defaultIcon);
             mStandardIcons.setDefaultIcon(defaultIcon.getName());
 
-            mStandardIcons.add(new Icon("Ambulance", "images/Ambulance.png"));
+            mStandardIcons.add(new Icon("Ambulance", "images/ambulance.svg"));
             mStandardIcons.add(new Icon("Block Truck", "images/concrete_block_truck.svg"));
             mStandardIcons.add(new Icon("CWID", "images/CWID.svg"));
             mStandardIcons.add(new Icon("Dispatcher", "images/dispatcher.svg"));
@@ -450,9 +450,9 @@ public class IconModel
             mStandardIcons.add(new Icon("Fire Truck", "images/fire_truck.png"));
             mStandardIcons.add(new Icon("Garbage Truck", "images/garbage_truck.svg"));
             mStandardIcons.add(new Icon("Loader", "images/loader.png"));
-            mStandardIcons.add(new Icon("Police", "images/thinlineradio.svg"));
+            mStandardIcons.add(new Icon("Police", "images/police.svg"));
             mStandardIcons.add(new Icon("Propane Truck", "images/propane_truck.svg"));
-            mStandardIcons.add(new Icon("Rescue Truck", "images/ambulance (1).svg"));
+            mStandardIcons.add(new Icon("Rescue Truck", "images/rescue_truck.svg"));
             mStandardIcons.add(new Icon("School Bus", "images/school_bus.svg"));
             mStandardIcons.add(new Icon("Taxi", "images/taxi.svg"));
             mStandardIcons.add(new Icon("Train", "images/train.svg"));
