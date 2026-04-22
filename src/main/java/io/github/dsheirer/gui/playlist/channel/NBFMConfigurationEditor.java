@@ -120,8 +120,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private ToggleSwitch mLowPassEnabledSwitch;
     private Slider mLowPassCutoffSlider;
     private TextField mLowPassCutoffField;
-    private ToggleSwitch mDeemphasisEnabledSwitch;
-    private ComboBox<String> mDeemphasisTimeConstantCombo;
+    // De-emphasis removed from UI — config fields preserved for backward compatibility
     private ToggleSwitch mVoiceEnhanceEnabledSwitch;
     private Slider mVoiceEnhanceSlider;
     private TextField mVoiceEnhanceField;
@@ -384,12 +383,12 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(mHeadRemovalSpinner, 3, 1);
             gridPane.getChildren().add(mHeadRemovalSpinner);
 
-            Label hangtimeLabel = new Label("Audio Hangtime (ms)");
+            Label hangtimeLabel = new Label("Hangtime (ms)");
             hangtimeLabel.setTooltip(new Tooltip("Delay before closing audio segment after transmission ends.\n" +
                     "Prevents cutting off the end of audio in ThinLine/Zello streams.\n" +
                     "0 = immediate close (default), 100-300 = recommended for streaming"));
             GridPane.setHalignment(hangtimeLabel, HPos.RIGHT);
-            GridPane.setConstraints(hangtimeLabel, 0, 2);
+            GridPane.setConstraints(hangtimeLabel, 4, 1);
             gridPane.getChildren().add(hangtimeLabel);
 
             mAudioHangtimeSpinner = new Spinner<>(0, 2000, 0, 50);
@@ -400,7 +399,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
                     "0 = instant close, 100-300 = recommended for streaming"));
             mAudioHangtimeSpinner.getValueFactory().valueProperty()
                     .addListener((obs, ov, nv) -> modifiedProperty().set(true));
-            GridPane.setConstraints(mAudioHangtimeSpinner, 1, 2);
+            GridPane.setConstraints(mAudioHangtimeSpinner, 5, 1);
             gridPane.getChildren().add(mAudioHangtimeSpinner);
 
             mSquelchTailPane.setContent(gridPane);
@@ -455,23 +454,19 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             contentBox.getChildren().add(createLowPassSection());
             contentBox.getChildren().add(new Separator());
 
-            // 2. De-emphasis
-            contentBox.getChildren().add(createDeemphasisSection());
-            contentBox.getChildren().add(new Separator());
-
-            // 3. Hiss Reduction (high-shelf cut)
+            // 2. Hiss Reduction (high-shelf cut)
             contentBox.getChildren().add(createHissReductionSection());
             contentBox.getChildren().add(new Separator());
 
-            // 4. Bass Boost
+            // 3. Bass Boost
             contentBox.getChildren().add(createBassBoostSection());
             contentBox.getChildren().add(new Separator());
 
-            // 5. Voice Enhancement
+            // 4. Voice Enhancement
             contentBox.getChildren().add(createVoiceEnhanceSection());
             contentBox.getChildren().add(new Separator());
 
-            // 6. Intelligent Squelch
+            // 5. Intelligent Squelch
             contentBox.getChildren().add(createSquelchSection());
             contentBox.getChildren().add(new Separator());
 
@@ -732,47 +727,10 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         return section;
     }
 
-    private VBox createDeemphasisSection()
-    {
-        VBox section = new VBox(5);
-        Label title = new Label("2. FM De-emphasis");
-        title.setFont(Font.font(null, FontWeight.BOLD, 12));
-
-        mDeemphasisEnabledSwitch = new ToggleSwitch("Enable De-emphasis");
-        mDeemphasisEnabledSwitch.setTooltip(new Tooltip("Correct FM pre-emphasis from transmitter"));
-        mDeemphasisEnabledSwitch.selectedProperty().addListener((obs, old, val) -> {
-            if(!mLoadingConfiguration)
-            {
-                modifiedProperty().set(true);
-                mDeemphasisTimeConstantCombo.setDisable(!val);
-            }
-        });
-
-        GridPane controlsPane = new GridPane();
-        controlsPane.setHgap(10);
-        controlsPane.setVgap(5);
-
-        Label tcLabel = new Label("Time Constant:");
-        GridPane.setConstraints(tcLabel, 0, 0);
-        controlsPane.getChildren().add(tcLabel);
-
-        mDeemphasisTimeConstantCombo = new ComboBox<>();
-        mDeemphasisTimeConstantCombo.getItems().addAll("75 μs (North America)", "50 μs (Europe)");
-        mDeemphasisTimeConstantCombo.setTooltip(new Tooltip("75μs for North America, 50μs for Europe"));
-        mDeemphasisTimeConstantCombo.setOnAction(e -> {
-            if(!mLoadingConfiguration) modifiedProperty().set(true);
-        });
-        GridPane.setConstraints(mDeemphasisTimeConstantCombo, 1, 0);
-        controlsPane.getChildren().add(mDeemphasisTimeConstantCombo);
-
-        section.getChildren().addAll(title, mDeemphasisEnabledSwitch, controlsPane);
-        return section;
-    }
-
     private VBox createVoiceEnhanceSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("5. Voice Enhancement");
+        Label title = new Label("4. Voice Enhancement");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mVoiceEnhanceEnabledSwitch = new ToggleSwitch("Enable Voice Enhancement");
@@ -821,7 +779,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createBassBoostSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("4. Bass Boost");
+        Label title = new Label("3. Bass Boost");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mBassBoostEnabledSwitch = new ToggleSwitch("Enable Bass Boost");
@@ -870,13 +828,13 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createHissReductionSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("3. Hiss Reduction");
+        Label title = new Label("2. Hiss Reduction");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mHissReductionEnabledSwitch = new ToggleSwitch("Enable Hiss Reduction");
         mHissReductionEnabledSwitch.setTooltip(new Tooltip(
                 "High-shelf cut above corner frequency to reduce FM hiss.\n" +
-                "Stacks with Low-Pass Filter and De-emphasis."));
+                "Stacks with Low-Pass Filter."));
         mHissReductionEnabledSwitch.selectedProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
@@ -953,7 +911,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private VBox createSquelchSection()
     {
         VBox section = new VBox(5);
-        Label title = new Label("6. Squelch / Noise Gate");
+        Label title = new Label("5. Squelch / Noise Gate");
         title.setFont(Font.font(null, FontWeight.BOLD, 12));
 
         mSquelchEnabledSwitch = new ToggleSwitch("Enable Squelch/Noise Gate");
@@ -1423,12 +1381,6 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mLowPassCutoffField.setText((int)config.getLowPassCutoff() + " Hz");
         mLowPassCutoffSlider.setDisable(!config.isLowPassEnabled());
 
-        // De-emphasis
-        mDeemphasisEnabledSwitch.setSelected(config.isDeemphasisEnabled());
-        double tc = config.getDeemphasisTimeConstant();
-        mDeemphasisTimeConstantCombo.setValue(tc == 75.0 ? "75 μs (North America)" : "50 μs (Europe)");
-        mDeemphasisTimeConstantCombo.setDisable(!config.isDeemphasisEnabled());
-
         // Voice Enhancement - load from AGC target level
         mVoiceEnhanceEnabledSwitch.setSelected(config.isAgcEnabled());
         // Map -30 to -6 dB range back to 0-100%
@@ -1486,8 +1438,6 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         mInputGainSlider.setValue(1.0);
         mLowPassEnabledSwitch.setSelected(false);
         mLowPassCutoffSlider.setDisable(true);
-        mDeemphasisEnabledSwitch.setSelected(false);
-        mDeemphasisTimeConstantCombo.setDisable(true);
         mVoiceEnhanceEnabledSwitch.setSelected(false);
         mVoiceEnhanceSlider.setDisable(true);
         mHissReductionEnabledSwitch.setSelected(false);
@@ -1511,11 +1461,6 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         config.setLowPassCutoff(mLowPassCutoffSlider.getValue());
 
         // De-emphasis
-        config.setDeemphasisEnabled(mDeemphasisEnabledSwitch.isSelected());
-        String selected = mDeemphasisTimeConstantCombo.getValue();
-        double tc = (selected != null && selected.startsWith("75")) ? 75.0 : 50.0;
-        config.setDeemphasisTimeConstant(tc);
-
         // Voice Enhancement - store amount as AGC target level
         config.setAgcEnabled(mVoiceEnhanceEnabledSwitch.isSelected());
         float voiceAmount = (float)mVoiceEnhanceSlider.getValue();
