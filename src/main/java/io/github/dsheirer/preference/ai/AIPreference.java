@@ -9,6 +9,7 @@ public class AIPreference extends Preference {
     public static final String PREFERENCE_NAME = "AI";
     public static final String KEY_GEMINI_API_KEY = "gemini.api.key";
     public static final String KEY_AI_ENABLED = "ai.enabled";
+    public static final String KEY_GEMINI_MODEL = "gemini.model";
 
     private Preferences mPreferences = Preferences.userNodeForPackage(AIPreference.class);
 
@@ -36,6 +37,15 @@ public class AIPreference extends Preference {
 
     public void setGeminiApiKey(String apiKey) {
         mPreferences.put(KEY_GEMINI_API_KEY, apiKey);
+        notifyPreferenceUpdated();
+    }
+
+    public String getGeminiModel() {
+        return mPreferences.get(KEY_GEMINI_MODEL, "models/gemini-1.5-flash");
+    }
+
+    public void setGeminiModel(String model) {
+        mPreferences.put(KEY_GEMINI_MODEL, model);
         notifyPreferenceUpdated();
     }
 }

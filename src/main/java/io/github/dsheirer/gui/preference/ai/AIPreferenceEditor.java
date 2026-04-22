@@ -6,6 +6,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Button;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.Hyperlink;
+import javafx.scene.control.ComboBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.HBox;
 import org.controlsfx.control.ToggleSwitch;
@@ -16,6 +17,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 
 public class AIPreferenceEditor extends VBox {
 
@@ -45,6 +49,18 @@ public class AIPreferenceEditor extends VBox {
 
         Button testButton = new Button("Test");
         Label testResultLabel = new Label("");
+
+        Label modelLabel = new Label("Gemini Model:");
+        ComboBox<String> modelComboBox = new ComboBox<>();
+        modelComboBox.setEditable(true);
+        modelComboBox.setValue(mUserPreferences.getAIPreference().getGeminiModel());
+        modelComboBox.valueProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue != null) {
+                mUserPreferences.getAIPreference().setGeminiModel(newValue);
+            }
+        });
+        HBox modelBox = new HBox(10, modelLabel, modelComboBox);
+        modelBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
 
         Hyperlink apiKeyLink = new Hyperlink("Get a Gemini API Key here");
         apiKeyLink.setOnAction(e -> {
@@ -80,6 +96,25 @@ public class AIPreferenceEditor extends VBox {
                         Platform.runLater(() -> {
                             if (response.statusCode() == 200) {
                                 testResultLabel.setText("Test passed");
+                                try {
+                                    ObjectMapper mapper = new ObjectMapper();
+                                    JsonNode root = mapper.readTree(response.body());
+                                    JsonNode models = root.get("models");
+                                    if (models != null && models.isArray()) {
+                                        modelComboBox.getItems().clear();
+                                        for (JsonNode model : models) {
+                                            JsonNode nameNode = model.get("name");
+                                            if (nameNode != null) {
+                                                modelComboBox.getItems().add(nameNode.asText());
+                                            }
+                                        }
+                                        if (!modelComboBox.getItems().contains(modelComboBox.getValue()) && !modelComboBox.getItems().isEmpty()) {
+                                            modelComboBox.setValue(modelComboBox.getItems().get(0));
+                                        }
+                                    }
+                                } catch (Exception ex) {
+                                    testResultLabel.setText("Test passed, but failed to parse models.");
+                                }
                             } else {
                                 testResultLabel.setText("Test failed: " + response.statusCode());
                             }
@@ -93,7 +128,7 @@ public class AIPreferenceEditor extends VBox {
         HBox apiKeyBox = new HBox(10, apiKeyLabel, apiKeyField, testButton, testResultLabel);
         apiKeyBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
 
-        VBox settingsBox = new VBox(10, explanationLabel, apiKeyBox, apiKeyLink);
+        VBox settingsBox = new VBox(10, explanationLabel, apiKeyBox, modelBox, apiKeyLink);
         settingsBox.visibleProperty().bind(enableAiSwitch.selectedProperty());
         settingsBox.managedProperty().bind(enableAiSwitch.selectedProperty());
 

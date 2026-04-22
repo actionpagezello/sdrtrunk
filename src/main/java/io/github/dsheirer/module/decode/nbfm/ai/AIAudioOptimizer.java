@@ -34,8 +34,10 @@ public class AIAudioOptimizer {
 
         try {
             // First try gemini-1.5-pro, if it fails due to billing/access, we could theoretically fall back to flash
-            String model = "gemini-1.5-pro";
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+            String model = mUserPreferences.getAIPreference().getGeminiModel();
+            // The user preference has 'models/' prefix like 'models/gemini-1.5-flash'. We need to handle that or use the model as is.
+            // In URL it usually goes "https://generativelanguage.googleapis.com/v1beta/" + model + ":generateContent"
+            String url = "https://generativelanguage.googleapis.com/v1beta/" + model + ":generateContent?key=" + apiKey;
 
             String promptText = "Analyze this NBFM radio audio. Return JSON with recommended settings. " +
                 "Adjust hissReductionEnabled (boolean), hissReductionDb (float), hissReductionCorner (double), lowPassEnabled (boolean), lowPassCutoff (float), deemphasisEnabled (boolean), bassBoostEnabled (boolean), bassBoostDb (float), agcEnabled (boolean), agcTargetLevel (float), noiseGateEnabled (boolean), noiseGateThreshold (float), noiseGateReduction (float), and agcMaxGain (float) based on SNR and voice clarity. " +
