@@ -46,6 +46,9 @@ import java.util.Objects;
 @JacksonXmlRootElement(localName = "icon")
 public class Icon implements Comparable<Icon>
 {
+    static {
+        System.setProperty("com.ctc.wstx.maxAttributeSize", "10000000");
+    }
     private final static Logger mLog = LoggerFactory.getLogger(Icon.class);
     private static final int ICON_HEIGHT_JAVAFX = 16;
     private StringProperty mName = new SimpleStringProperty();
