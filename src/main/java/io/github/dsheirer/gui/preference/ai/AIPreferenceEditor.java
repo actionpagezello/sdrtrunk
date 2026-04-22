@@ -36,6 +36,13 @@ public class AIPreferenceEditor extends VBox {
         Label explanationLabel = new Label("If turned on, the application will save the last 5 audio files from each channel on the computer’s hard drive (to allow for review of audio).");
         explanationLabel.setWrapText(true);
 
+        ToggleSwitch enableLogAnalysisSwitch = new ToggleSwitch("Intelligent Log Analysis");
+        enableLogAnalysisSwitch.setSelected(mUserPreferences.getAIPreference().isAILogAnalysisEnabled());
+        enableLogAnalysisSwitch.selectedProperty().addListener((observable, oldValue, newValue) -> {
+            mUserPreferences.getAIPreference().setAILogAnalysisEnabled(newValue);
+        });
+        Label logExplanationLabel = new Label("Translates cryptic stack traces and warning logs into plain-English explanations with actionable fixes.");
+
         Label apiKeyLabel = new Label("Gemini API Key:");
         PasswordField apiKeyField = new PasswordField();
         apiKeyField.setText(mUserPreferences.getAIPreference().getGeminiApiKey());
@@ -93,7 +100,7 @@ public class AIPreferenceEditor extends VBox {
         HBox apiKeyBox = new HBox(10, apiKeyLabel, apiKeyField, testButton, testResultLabel);
         apiKeyBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
 
-        VBox settingsBox = new VBox(10, explanationLabel, apiKeyBox, apiKeyLink);
+        VBox settingsBox = new VBox(10, explanationLabel, enableLogAnalysisSwitch, logExplanationLabel, apiKeyBox, apiKeyLink);
         settingsBox.visibleProperty().bind(enableAiSwitch.selectedProperty());
         settingsBox.managedProperty().bind(enableAiSwitch.selectedProperty());
 

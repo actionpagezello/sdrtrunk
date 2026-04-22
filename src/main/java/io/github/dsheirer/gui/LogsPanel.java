@@ -2,6 +2,7 @@ package io.github.dsheirer.gui;
 
 import io.github.dsheirer.gui.log.LogFile;
 import io.github.dsheirer.gui.log.LogFileTableModel;
+import io.github.dsheirer.module.log.ai.AILogAnalyzer;
 import io.github.dsheirer.preference.UserPreferences;
 
 import javax.swing.*;
@@ -13,12 +14,18 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.PatternSyntaxException;
+import java.io.IOException;
+import java.nio.file.Files;
+import io.github.dsheirer.module.log.ai.AILogAnalyzer;
+
 
 public class LogsPanel extends JPanel {
 
@@ -39,6 +46,10 @@ public class LogsPanel extends JPanel {
     private JTextField mAppSearchField;
     private JTextField mEventSearchField;
     private JTextField mTwoToneSearchField;
+    private JTabbedPane mTabbedPane;
+    private JButton mAnalyzeBtn;
+
+
 
     public LogsPanel(UserPreferences userPreferences) {
         mUserPreferences = userPreferences;
@@ -66,20 +77,121 @@ public class LogsPanel extends JPanel {
         mEventSearchField = createSearchField(mEventSorter);
         mTwoToneSearchField = createSearchField(mTwoToneSorter);
 
-        JTabbedPane tabbedPane = new JTabbedPane();
-        tabbedPane.addTab("Application Logs", createTabPanel(mAppTable, mAppSearchField));
-        tabbedPane.addTab("Channel Event Logs", createTabPanel(mEventTable, mEventSearchField));
-        tabbedPane.addTab("Two-Tone Logs", createTabPanel(mTwoToneTable, mTwoToneSearchField));
+        mTabbedPane = new JTabbedPane();
+        mTabbedPane.addTab("Application Logs", createTabPanel(mAppTable, mAppSearchField));
+        mTabbedPane.addTab("Channel Event Logs", createTabPanel(mEventTable, mEventSearchField));
+        mTabbedPane.addTab("Two-Tone Logs", createTabPanel(mTwoToneTable, mTwoToneSearchField));
 
         JButton refreshBtn = new JButton("Refresh");
         refreshBtn.addActionListener(e -> loadLogs());
 
+                mAnalyzeBtn = new JButton("Analyze Error");
+        mAnalyzeBtn.addActionListener(e -> analyzeSelectedLog());
+
+        updateAnalyzeButtonState();
+        mAppTable.getSelectionModel().addListSelectionListener(e -> updateAnalyzeButtonState());
+        mEventTable.getSelectionModel().addListSelectionListener(e -> updateAnalyzeButtonState());
+        mTwoToneTable.getSelectionModel().addListSelectionListener(e -> updateAnalyzeButtonState());
+        mTabbedPane.addChangeListener(e -> updateAnalyzeButtonState());
+
         JPanel btnPanel = new JPanel();
         btnPanel.add(refreshBtn);
+        btnPanel.add(mAnalyzeBtn);
 
         add(new JLabel("Double-click a log file to open it in your text editor", JLabel.CENTER), BorderLayout.NORTH);
-        add(tabbedPane, BorderLayout.CENTER);
+        add(mTabbedPane, BorderLayout.CENTER);
         add(btnPanel, BorderLayout.SOUTH);
+    }
+
+
+    private void updateAnalyzeButtonState() {
+        boolean aiEnabled = mUserPreferences.getAIPreference().isAIEnabled() && mUserPreferences.getAIPreference().isAILogAnalysisEnabled();
+        boolean hasApiKey = !mUserPreferences.getAIPreference().getGeminiApiKey().trim().isEmpty();
+        boolean hasSelection = getSelectedLogFile() != null;
+
+        mAnalyzeBtn.setEnabled(aiEnabled && hasApiKey && hasSelection);
+
+        if (!aiEnabled) {
+            mAnalyzeBtn.setToolTipText("Enable AI and Log Analysis in User Preferences.");
+        } else if (!hasApiKey) {
+            mAnalyzeBtn.setToolTipText("Gemini API Key is missing in User Preferences.");
+        } else if (!hasSelection) {
+            mAnalyzeBtn.setToolTipText("Select a log file to analyze.");
+        } else {
+            mAnalyzeBtn.setToolTipText("Analyze selected log file using AI.");
+        }
+    }
+
+    private LogFile getSelectedLogFile() {
+        int selectedIndex = mTabbedPane.getSelectedIndex();
+        if (selectedIndex == 0) {
+            return getLogFileFromTable(mAppTable, mAppListModel);
+        } else if (selectedIndex == 1) {
+            return getLogFileFromTable(mEventTable, mEventListModel);
+        } else if (selectedIndex == 2) {
+            return getLogFileFromTable(mTwoToneTable, mTwoToneListModel);
+        }
+        return null;
+    }
+
+    private LogFile getLogFileFromTable(JTable table, LogFileTableModel model) {
+        int viewRow = table.getSelectedRow();
+        if (viewRow != -1) {
+            int modelRow = table.convertRowIndexToModel(viewRow);
+            return model.getLogFileAt(modelRow);
+        }
+        return null;
+    }
+
+    private void analyzeSelectedLog() {
+        LogFile logFile = getSelectedLogFile();
+        if (logFile == null || !logFile.getFile().exists()) {
+            return;
+        }
+
+        mAnalyzeBtn.setEnabled(false);
+        mAnalyzeBtn.setText("Analyzing...");
+
+        SwingWorker<String, Void> worker = new SwingWorker<>() {
+            @Override
+            protected String doInBackground() throws Exception {
+                // Read last N lines or all if small
+                String content;
+                try {
+                    List<String> lines = Files.readAllLines(logFile.getFile().toPath());
+                    int maxLines = 500; // avoid huge payload
+                    if (lines.size() > maxLines) {
+                        lines = lines.subList(lines.size() - maxLines, lines.size());
+                    }
+                    content = String.join("\n", lines);
+                } catch (IOException e) {
+                    return "Error reading log file: " + e.getMessage();
+                }
+
+                AILogAnalyzer analyzer = new AILogAnalyzer(mUserPreferences);
+                return analyzer.analyze(content);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    String result = get();
+                    JTextArea textArea = new JTextArea(result);
+                    textArea.setEditable(false);
+                    textArea.setLineWrap(true);
+                    textArea.setWrapStyleWord(true);
+                    JScrollPane scrollPane = new JScrollPane(textArea);
+                    scrollPane.setPreferredSize(new Dimension(600, 400));
+                    JOptionPane.showMessageDialog(LogsPanel.this, scrollPane, "AI Log Analysis", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(LogsPanel.this, "Error analyzing log:\n" + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                } finally {
+                    mAnalyzeBtn.setText("Analyze Error");
+                    updateAnalyzeButtonState();
+                }
+            }
+        };
+        worker.execute();
     }
 
     private JTable createLogTable(LogFileTableModel model) {
