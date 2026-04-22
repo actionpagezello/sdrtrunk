@@ -542,40 +542,53 @@ public class JavaFxWindowManager extends Application
         launch(args);
     }
 
+    private JFXPanel mPlaylistEditorPanel;
+    private JFXPanel mIconManagerPanel;
+    private JFXPanel mUserPreferencesEditorPanel;
+    private JFXPanel mRecordingViewerPanel;
+
     public JFXPanel getPlaylistEditorPanel() {
-        JFXPanel panel = new JFXPanel();
-        execute(() -> {
-            Scene scene = new Scene(getPlaylistEditor(), 1000, 750);
-            panel.setScene(scene);
-        });
-        return panel;
+        if (mPlaylistEditorPanel == null) {
+            mPlaylistEditorPanel = new JFXPanel();
+            execute(() -> {
+                Scene scene = new Scene(getPlaylistEditor(), 1000, 750);
+                mPlaylistEditorPanel.setScene(scene);
+            });
+        }
+        return mPlaylistEditorPanel;
     }
 
     public JFXPanel getIconManagerPanel() {
-        JFXPanel panel = new JFXPanel();
-        execute(() -> {
-            Scene scene = new Scene(getIconManager(), 500, 500);
-            panel.setScene(scene);
-        });
-        return panel;
+        if (mIconManagerPanel == null) {
+            mIconManagerPanel = new JFXPanel();
+            execute(() -> {
+                Scene scene = new Scene(getIconManager(), 500, 500);
+                mIconManagerPanel.setScene(scene);
+            });
+        }
+        return mIconManagerPanel;
     }
 
     public JFXPanel getUserPreferencesEditorPanel() {
-        JFXPanel panel = new JFXPanel();
-        execute(() -> {
-            Scene scene = new Scene(getUserPreferencesEditor(), 900, 500);
-            panel.setScene(scene);
-        });
-        return panel;
+        if (mUserPreferencesEditorPanel == null) {
+            mUserPreferencesEditorPanel = new JFXPanel();
+            execute(() -> {
+                Scene scene = new Scene(getUserPreferencesEditor(), 900, 500);
+                mUserPreferencesEditorPanel.setScene(scene);
+            });
+        }
+        return mUserPreferencesEditorPanel;
     }
 
     public JFXPanel getRecordingViewerPanel() {
-        JFXPanel panel = new JFXPanel();
-        execute(() -> {
-            Scene scene = new Scene(getRecordingViewer(), 1100, 800);
-            panel.setScene(scene);
-        });
-        return panel;
+        if (mRecordingViewerPanel == null) {
+            mRecordingViewerPanel = new JFXPanel();
+            execute(() -> {
+                Scene scene = new Scene(getRecordingViewer(), 1100, 800);
+                mRecordingViewerPanel.setScene(scene);
+            });
+        }
+        return mRecordingViewerPanel;
     }
 
 }
