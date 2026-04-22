@@ -110,6 +110,12 @@ public class NowPlayingPanel extends JPanel
 
 
 
+    public void setSpectralPanelVisible(boolean visible) {
+        if (mWidgetContainer != null) {
+            mWidgetContainer.setWidgetVisible("spectrum", visible);
+        }
+    }
+
     public void setResourceStatusPanelVisible(boolean visible) {
         if (mWidgetContainer != null) {
             mWidgetContainer.setWidgetVisible("resource", visible);
@@ -183,6 +189,9 @@ public class NowPlayingPanel extends JPanel
     }
 
     private void setupWidgets() {
+        if (mWidgetContainer.getComponentCount() > 0) {
+            return;
+        }
         mWidgetContainer.removeAll();
 
         if (mSpectralPanel != null) {
