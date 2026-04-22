@@ -37,6 +37,7 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.settings.SettingsManager;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.ui.TunerViewPanel;
+import io.github.dsheirer.gui.recordings.AudioRecordingsPanel;
 import java.awt.Color;
 import java.awt.Dimension;
 import jiconfont.icons.font_awesome.FontAwesome;
@@ -71,6 +72,7 @@ public class ControllerPanel extends JPanel
     private NowPlayingPanel mNowPlayingPanel;
     private MapPanel mMapPanel;
     private TunerViewPanel mTunerManagerPanel;
+    private AudioRecordingsPanel mAudioRecordingsPanel;
 
     private JSplitPane mSplitPane;
     private JPanel mCardPanel;
@@ -87,6 +89,7 @@ public class ControllerPanel extends JPanel
         mNowPlayingPanel = new NowPlayingPanel(playlistManager, iconModel, userPreferences, settingsManager, tunerManager, detailTabsVisible, visibilityListener);
         mMapPanel = new MapPanel(mapService, playlistManager.getAliasModel(), iconModel, settingsManager);
         mTunerManagerPanel = new TunerViewPanel(tunerManager, userPreferences, visibilityListener);
+        mAudioRecordingsPanel = new AudioRecordingsPanel(userPreferences);
 
         init();
     }
@@ -119,6 +122,7 @@ public class ControllerPanel extends JPanel
         mCardPanel.add(mNowPlayingPanel, "now_playing");
         mCardPanel.add(mMapPanel, "map");
         mCardPanel.add(mTunerManagerPanel, "tuners");
+        mCardPanel.add(mAudioRecordingsPanel, "audio_recordings");
         mCardPanel.add(new HelpViewer(), "help_viewer");
 
         add(mCardPanel, BorderLayout.CENTER);

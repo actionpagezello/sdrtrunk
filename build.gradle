@@ -62,7 +62,7 @@ version = project.findProperty('projectVersion')
 //Java 24 is required for this version of the Project Panama preview/incubator feature
 javafx {
     version = '23.0.2'
-    modules = [ 'javafx.controls', 'javafx.fxml', 'javafx.swing', 'javafx.graphics', 'javafx.base' ]
+    modules = [ 'javafx.controls', 'javafx.fxml', 'javafx.swing', 'javafx.graphics', 'javafx.base', 'javafx.media' ]
 }
 
 java {
