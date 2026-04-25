@@ -4,6 +4,8 @@ import io.github.dsheirer.gui.log.LogFile;
 import io.github.dsheirer.gui.log.LogFileTableModel;
 import io.github.dsheirer.module.log.ai.AILogAnalyzer;
 import io.github.dsheirer.preference.UserPreferences;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -22,10 +24,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.PatternSyntaxException;
-import io.github.dsheirer.module.log.ai.AILogAnalyzer;
 
 
 public class LogsPanel extends JPanel {
+    private static final Logger mLog = LoggerFactory.getLogger(LogsPanel.class);
 
     private java.util.Timer mHealthTimer;
 
@@ -280,7 +282,7 @@ public class LogsPanel extends JPanel {
             try {
                 Desktop.getDesktop().open(logFile);
             } catch (Exception ex) {
-                ex.printStackTrace();
+                mLog.error("Error opening log file: {}", logFile.getAbsolutePath(), ex);
             }
         }
     }
