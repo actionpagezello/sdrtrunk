@@ -85,6 +85,11 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
     private static final long KICKED_BACKOFF_MS = 60000;
     private static final int MAX_KICKED_RETRIES = 5;
 
+    /** Client-side keepalive interval — sends a keepalive command to detect dead connections */
+    private static final long KEEPALIVE_INTERVAL_MS = 30000;
+    /** Consecutive missed keepalive acks before declaring the connection dead */
+    private static final int KEEPALIVE_MISSED_ACK_THRESHOLD = 3;
+
     /** Default minimum gap (ms) between stop_stream and next start_stream. */
     private static final long DEFAULT_STREAM_GUARD_MS = 500;
 
@@ -101,6 +106,9 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
     private final AtomicInteger mSequence = new AtomicInteger(1);
     private final AtomicInteger mKickedCount = new AtomicInteger(0);
     private ScheduledFuture<?> mReconnectFuture;
+    private ScheduledFuture<?> mKeepaliveFuture;
+    private volatile boolean mKeepaliveAwaitingAck = false;
+    private volatile int mKeepaliveMissedAcks = 0;
 
     /**
      * Session epoch — increments on every WebSocket reconnect. Stream operations
@@ -172,6 +180,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
     public void stop()
     {
         mStopped.set(true);
+        stopKeepalive();
         if(mRelaxationFuture != null) { mRelaxationFuture.cancel(false); mRelaxationFuture = null; }
         if(mStreamActive.get()) doStopRealTimeStream();
         if(mReconnectFuture != null) { mReconnectFuture.cancel(true); mReconnectFuture = null; }
@@ -611,6 +620,98 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
     }
 
     // ========================================================================
+    // Client-Side Keepalive
+    // ========================================================================
+
+    /**
+     * Starts the client-side keepalive timer. Sends a keepalive command every
+     * {@link #KEEPALIVE_INTERVAL_MS} to proactively detect dead connections
+     * (e.g. silent NAT timeout, network change without TCP RST). If the server
+     * fails to ack {@link #KEEPALIVE_MISSED_ACK_THRESHOLD} consecutive keepalives,
+     * the connection is declared dead and reconnection is triggered.
+     *
+     * This mirrors the approach used by the official Zello JS SDK.
+     */
+    private void startKeepalive()
+    {
+        stopKeepalive();
+        mKeepaliveAwaitingAck = false;
+        mKeepaliveMissedAcks = 0;
+        mKeepaliveFuture = ThreadPool.SCHEDULED.scheduleAtFixedRate(
+            this::keepaliveTick, KEEPALIVE_INTERVAL_MS, KEEPALIVE_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void stopKeepalive()
+    {
+        if(mKeepaliveFuture != null)
+        {
+            mKeepaliveFuture.cancel(false);
+            mKeepaliveFuture = null;
+        }
+    }
+
+    private void keepaliveTick()
+    {
+        if(mWebSocket == null || !mConnected.get())
+        {
+            return;
+        }
+
+        if(mKeepaliveAwaitingAck)
+        {
+            mKeepaliveMissedAcks++;
+            mLog.debug("{}Keepalive ack missed ({}/{})", ch(), mKeepaliveMissedAcks, KEEPALIVE_MISSED_ACK_THRESHOLD);
+        }
+
+        if(mKeepaliveMissedAcks >= KEEPALIVE_MISSED_ACK_THRESHOLD)
+        {
+            mLog.warn("{}Keepalive timeout — {} consecutive missed acks, reconnecting", ch(), mKeepaliveMissedAcks);
+            stopKeepalive();
+            mConnected.set(false);
+            mChannelOnline.set(false);
+            mStreamActive.set(false);
+            mCurrentStreamId.set(-1);
+            // Abort the dead WebSocket so connectWebSocket() starts fresh
+            if(mWebSocket != null)
+            {
+                try { mWebSocket.abort(); } catch(Exception e) { /* ignore */ }
+                mWebSocket = null;
+            }
+            setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+            setLastErrorDetail("Keepalive timeout — connection dead");
+            scheduleReconnect();
+            return;
+        }
+
+        // Send keepalive command
+        try
+        {
+            mKeepaliveAwaitingAck = true;
+            JsonObject cmd = new JsonObject();
+            cmd.addProperty("command", "keepalive");
+            int seq = mSequence.getAndIncrement();
+            cmd.addProperty("seq", seq);
+            mPendingCommands.put(seq, "keepalive");
+            mWebSocket.sendText(mGson.toJson(cmd), true);
+        }
+        catch(Exception e)
+        {
+            mLog.warn("{}Keepalive send failed: {}", ch(), e.getMessage());
+            mKeepaliveMissedAcks++;
+        }
+    }
+
+    /**
+     * Called when a keepalive ack is received from the server. Resets the
+     * missed-ack counter so the connection is considered healthy.
+     */
+    private void handleKeepaliveAck()
+    {
+        mKeepaliveAwaitingAck = false;
+        mKeepaliveMissedAcks = 0;
+    }
+
+    // ========================================================================
     // Zello Protocol
     // ========================================================================
 
@@ -742,6 +843,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         public CompletionStage<?> onClose(WebSocket ws, int code, String reason)
         {
             mLog.info("{}Zello disconnected (code={} {})", ch(), code, reason);
+            stopKeepalive();
             mConnected.set(false);
             mChannelOnline.set(false);
             // Always reset stream state on disconnect — prevents stale stream IDs
@@ -764,6 +866,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         public void onError(WebSocket ws, Throwable error)
         {
             mLog.error("{}Zello WebSocket error: {}", ch(), error.getMessage());
+            stopKeepalive();
             mConnected.set(false);
             mChannelOnline.set(false);
             // Reset stream state on error — same as onClose
@@ -846,6 +949,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                             if(!mChannelOnline.getAndSet(true))
                             {
                                 setBroadcastState(BroadcastState.CONNECTED);
+                                startKeepalive();
                                 mLog.info("{}Zello connected", ch());
                             }
                         }
@@ -902,7 +1006,13 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                 // Clean up pending command tracking on any successful response with seq
                 if(json.has("seq") && json.has("success") && json.get("success").getAsBoolean())
                 {
-                    mPendingCommands.remove(json.get("seq").getAsInt());
+                    int ackSeq = json.get("seq").getAsInt();
+                    String ackCmd = mPendingCommands.remove(ackSeq);
+                    // Handle keepalive ack — reset missed-ack counter
+                    if("keepalive".equals(ackCmd))
+                    {
+                        handleKeepaliveAck();
+                    }
                 }
 
                 if(json.has("stream_id") && json.has("success"))
