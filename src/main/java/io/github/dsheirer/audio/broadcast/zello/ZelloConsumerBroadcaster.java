@@ -666,20 +666,15 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
             return;
         }
 
-        // Send keepalive command
+        // Send WebSocket-level ping (Zello Consumer doesn't support the JSON keepalive command)
         try
         {
             mKeepaliveAwaitingAck = true;
-            JsonObject cmd = new JsonObject();
-            cmd.addProperty("command", "keepalive");
-            int seq = mSequence.getAndIncrement();
-            cmd.addProperty("seq", seq);
-            mPendingCommands.put(seq, "keepalive");
-            mWebSocket.sendText(mGson.toJson(cmd), true);
+            mWebSocket.sendPing(ByteBuffer.allocate(0));
         }
         catch(Exception e)
         {
-            mLog.warn("{}Keepalive send failed: {}", ch(), e.getMessage());
+            mLog.warn("{}Keepalive ping send failed: {}", ch(), e.getMessage());
             mKeepaliveMissedAcks++;
         }
     }
@@ -827,7 +822,18 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         @Override
         public CompletionStage<?> onPing(WebSocket ws, ByteBuffer msg)
         {
+            // Server ping is proof of life — reset keepalive counter
+            handleKeepaliveAck();
             ws.sendPong(msg);
+            ws.request(1);
+            return null;
+        }
+
+        @Override
+        public CompletionStage<?> onPong(WebSocket ws, ByteBuffer msg)
+        {
+            // Response to our client-side ping — connection is alive
+            handleKeepaliveAck();
             ws.request(1);
             return null;
         }
@@ -1012,13 +1018,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
                 // Clean up pending command tracking on any successful response with seq
                 if(json.has("seq") && json.has("success") && json.get("success").getAsBoolean())
                 {
-                    int ackSeq = json.get("seq").getAsInt();
-                    String ackCmd = mPendingCommands.remove(ackSeq);
-                    // Handle keepalive ack — reset missed-ack counter
-                    if("keepalive".equals(ackCmd))
-                    {
-                        handleKeepaliveAck();
-                    }
+                    mPendingCommands.remove(json.get("seq").getAsInt());
                 }
 
                 if(json.has("stream_id") && json.has("success"))
