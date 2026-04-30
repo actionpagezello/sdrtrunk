@@ -75,7 +75,7 @@ public class AudioSegment implements Listener<IdentifierUpdateNotification>
     private ObservableSet<BroadcastChannel> mBroadcastChannels = FXCollections.observableSet(new HashSet<>());
     private MutableIdentifierCollection mIdentifierCollection = new MutableIdentifierCollection();
     private Broadcaster<IdentifierUpdateNotification> mIdentifierUpdateNotificationBroadcaster = new Broadcaster<>();
-    private List<float[]> mAudioBuffers = new CopyOnWriteArrayList();
+    private List<float[]> mAudioBuffers = new CopyOnWriteArrayList<>();
     private AtomicInteger mConsumerCount = new AtomicInteger();
     private AliasList mAliasList;
     private long mStartTimestamp = System.currentTimeMillis();

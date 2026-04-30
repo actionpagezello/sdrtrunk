@@ -39,18 +39,21 @@ public class Settings
     private List<TunerConfiguration> mTunerConfiguration = new ArrayList<TunerConfiguration>();
 
     //No longer used
-    private List<RecordingConfiguration> mRecordingConfigurations = new ArrayList<RecordingConfiguration>();
+    @SuppressWarnings("deprecation")
+    private List<RecordingConfiguration> mRecordingConfigurations = new ArrayList<>();
 
     public Settings()
     {
     }
 
     @JacksonXmlProperty(isAttribute = false, localName = "recording_configuration")
+    @SuppressWarnings("deprecation")
     public List<RecordingConfiguration> getRecordingConfigurations()
     {
         return Collections.emptyList();
     }
 
+    @SuppressWarnings("deprecation")
     public void setRecordingConfigurations(List<RecordingConfiguration> configs)
     {
     }

@@ -144,7 +144,7 @@ def os = org.gradle.nativeplatform.platform.internal.DefaultNativePlatform.curre
  */
 tasks.withType(JavaCompile) {
     options.compilerArgs.add("--enable-preview") //Project Panama Vector API is still in incubator
-    options.compilerArgs.add("--add-modules=jdk.incubator.vector") //Project Panama Vector API is still in incubator
+    options.compilerArgs.add("--add-modules=jdk.incubator.vector")
 }
 
 /**
@@ -204,14 +204,14 @@ test {
 tasks.named('distZip') {
     dependsOn compileWindowsWrapper
     into("${project.name}-${project.version}") {
-        from("${project.buildDir}/sdrtrunk.exe")
+        from("${layout.buildDirectory.get().asFile}/sdrtrunk.exe")
     }
 }
 
 tasks.named('distTar') {
     dependsOn compileWindowsWrapper
     into("${project.name}-${project.version}") {
-        from("${project.buildDir}/sdrtrunk.exe")
+        from("${layout.buildDirectory.get().asFile}/sdrtrunk.exe")
     }
 }
 
@@ -472,7 +472,7 @@ tasks.register('archiveVersion', Copy) {
 // Compile the wrapper executable for Windows
 task compileWindowsWrapper {
     doLast {
-        file(project.buildDir).mkdirs()
+        layout.buildDirectory.get().asFile.mkdirs()
         file('wrapper.c').text = '''
 #include <windows.h>
 #include <stdio.h>
@@ -495,7 +495,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 '''
         def compiler = System.properties.getProperty("os.name").toLowerCase().contains("win") ? 'gcc' : 'x86_64-w64-mingw32-gcc'
         try {
-            def process = new ProcessBuilder(compiler, '-o', "${project.buildDir}/sdrtrunk.exe", 'wrapper.c', '-mwindows').start()
+            def process = new ProcessBuilder(compiler, '-o', "${layout.buildDirectory.get().asFile}/sdrtrunk.exe", 'wrapper.c', '-mwindows').start()
             process.waitFor()
             if (process.exitValue() != 0) {
                 println "Warning: compiler returned non-zero exit code: ${process.exitValue()}"
@@ -521,7 +521,7 @@ afterEvaluate {
                 t.doFirst {
                     def imageDir = t.extension.imageDir.get().asFile
                     copy {
-                        from "${project.buildDir}/sdrtrunk.exe"
+                        from "${layout.buildDirectory.get().asFile}/sdrtrunk.exe"
                         into imageDir
                     }
                 }
