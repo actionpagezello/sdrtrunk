@@ -470,16 +470,9 @@ tasks.register('archiveVersion', Copy) {
 }
 
 // Compile the wrapper executable for Windows
-task compileWindowsWrapper(type: Exec) {
-    doFirst {
+task compileWindowsWrapper {
+    doLast {
         file(project.buildDir).mkdirs()
-    }
-    if (System.properties.getProperty("os.name").toLowerCase().contains("win")) {
-        commandLine 'gcc', '-o', "${project.buildDir}/sdrtrunk.exe", 'wrapper.c', '-mwindows'
-    } else {
-        commandLine 'x86_64-w64-mingw32-gcc', '-o', "${project.buildDir}/sdrtrunk.exe", 'wrapper.c', '-mwindows'
-    }
-    doFirst {
         file('wrapper.c').text = '''
 #include <windows.h>
 #include <stdio.h>
@@ -500,6 +493,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     return 0;
 }
 '''
+        def compiler = System.properties.getProperty("os.name").toLowerCase().contains("win") ? 'gcc' : 'x86_64-w64-mingw32-gcc'
+        try {
+            def process = new ProcessBuilder(compiler, '-o', "${project.buildDir}/sdrtrunk.exe", 'wrapper.c', '-mwindows').start()
+            process.waitFor()
+            if (process.exitValue() != 0) {
+                println "Warning: compiler returned non-zero exit code: ${process.exitValue()}"
+            }
+        } catch (Exception e) {
+            println "Warning: compiler failed to build sdrtrunk.exe: ${e.message}"
+        }
     }
 }
 
