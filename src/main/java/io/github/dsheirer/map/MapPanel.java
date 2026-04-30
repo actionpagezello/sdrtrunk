@@ -83,8 +83,6 @@ public class MapPanel extends JPanel implements IPlottableUpdateListener
     private JCheckBox mCenterOnSelectedCheckBox;
     private PlottableEntityHistory mFollowedTrack;
     private JComboBox<Integer> mTrackHistoryLengthComboBox;
-    private JSpinner mMapZoomSpinner;
-    private SpinnerNumberModel mMapZoomSpinnerModel;
     private JTable mTrackHistoryTable;
     private JLabel mSelectedTrackSystemLabel;
     private final TrackHistoryModel EMPTY_HISTORY = new TrackHistoryModel();
@@ -337,30 +335,6 @@ public class MapPanel extends JPanel implements IPlottableUpdateListener
         }
 
         return mTrackHistoryTable;
-    }
-
-    /**
-     * Map zoom level combo box
-     */
-    private JSpinner getMapZoomSpinner()
-    {
-        if(mMapZoomSpinner == null)
-        {
-            mMapZoomSpinnerModel = new SpinnerNumberModel(2, ZOOM_MINIMUM, ZOOM_MAXIMUM, 1);
-            mMapZoomSpinnerModel.addChangeListener(new ChangeListener()
-            {
-                @Override
-                public void stateChanged(ChangeEvent e)
-                {
-                    Number number = mMapZoomSpinnerModel.getNumber();
-                    mMapViewer.setZoom(number.intValue());
-                }
-            });
-
-            mMapZoomSpinner = new JSpinner(mMapZoomSpinnerModel);
-        }
-
-        return mMapZoomSpinner;
     }
 
     /**
@@ -657,7 +631,7 @@ public class MapPanel extends JPanel implements IPlottableUpdateListener
             MapViewSetting view = mSettingsManager.getSettingsModel().getMapViewSetting("Default", syracuse, zoom);
 
             mMapViewer.setAddressLocation(view.getGeoPosition());
-            mMapZoomSpinnerModel.setValue(view.getZoom());
+            mMapViewer.setZoom(view.getZoom());
 
             /**
              * Add a mouse adapter for panning and scrolling
@@ -689,12 +663,12 @@ public class MapPanel extends JPanel implements IPlottableUpdateListener
      */
     public void adjustZoom(int adjustment)
     {
-        Number currentZoom = mMapZoomSpinnerModel.getNumber();
-        int updatedZoom = currentZoom.intValue() + adjustment;
+        int currentZoom = getMapViewer().getZoom();
+        int updatedZoom = currentZoom + adjustment;
 
         if(ZOOM_MINIMUM <= updatedZoom && updatedZoom <= ZOOM_MAXIMUM)
         {
-            mMapZoomSpinnerModel.setValue(currentZoom.intValue() + adjustment);
+            getMapViewer().setZoom(updatedZoom);
         }
     }
 
