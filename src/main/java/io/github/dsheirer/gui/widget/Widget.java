@@ -32,7 +32,7 @@ public class Widget extends JPanel {
         mMinHeight = minHeight;
 
         setOpaque(false);
-        setLayout(new MigLayout("insets 0, fillx, hidemode 3", "[grow,fill]", "[]0[grow,fill]0[]"));
+        setLayout(new MigLayout("insets 0, fillx, hidemode 3", "[grow,fill]", "[]0[grow,fill]0[4!]"));
         setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
 
         mHeaderPanel = new JPanel(new MigLayout("insets 2 5 2 2, fillx", "[grow][]", "[]"));
@@ -99,7 +99,7 @@ public class Widget extends JPanel {
         };
         mResizeHandle.addMouseListener(resizeAdapter);
         mResizeHandle.addMouseMotionListener(resizeAdapter);
-        add(mResizeHandle, "growx");
+        add(mResizeHandle, "growx, h 4!");
     }
 
     private JButton createHeaderButton() {
