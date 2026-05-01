@@ -81,12 +81,12 @@ public class SidebarPanel extends JPanel {
         mItems.add(new SidebarItem("Map", FontAwesome.MAP, "map", true));
 
         SidebarItem playlistEditorItem = new SidebarItem("Playlist Editor", FontAwesome.LIST, "playlist_editor", false);
-        playlistEditorItem.addSubItem("Playlists", "playlist_playlists");
         playlistEditorItem.addSubItem("Channels", "playlist_channels");
         playlistEditorItem.addSubItem("Aliases", "playlist_aliases");
         playlistEditorItem.addSubItem("Streaming", "playlist_streaming");
         playlistEditorItem.addSubItem("Radio Reference", "playlist_radioreference");
         playlistEditorItem.addSubItem("Two Tones", "playlist_twotones");
+        playlistEditorItem.addSubItem("Playlists", "playlist_playlists");
         mItems.add(playlistEditorItem);
 
         mItems.add(new SidebarItem("Tuners", FontAwesome.SLIDERS, "tuners", true));
@@ -228,7 +228,11 @@ public class SidebarPanel extends JPanel {
                         if (mCollapsed) {
                             showPopupMenu(mView);
                         } else {
-                            mExpanded = !mExpanded;
+                            boolean wasExpanded = mExpanded;
+                            mExpanded = !wasExpanded;
+                            if (!wasExpanded && !mSubItems.isEmpty()) {
+                                mListener.onItemSelected(mSubItems.get(0).getId());
+                            }
                             SidebarPanel.this.render();
                             SidebarPanel.this.revalidate();
                             SidebarPanel.this.repaint();
