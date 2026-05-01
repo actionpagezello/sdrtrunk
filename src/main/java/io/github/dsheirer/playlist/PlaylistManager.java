@@ -440,6 +440,14 @@ public class PlaylistManager implements Listener<ChannelEvent>
     }
 
     /**
+     * User preferences
+     */
+    public UserPreferences getUserPreferences()
+    {
+        return mUserPreferences;
+    }
+
+    /**
      * Channel event listener method.  Monitors channel events for events that indicate that the playlist has changed
      * and queues automatic playlist saving.
      */

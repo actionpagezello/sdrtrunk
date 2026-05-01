@@ -66,6 +66,7 @@ public class FxTableColumnMonitor
     private boolean mRestoring = false;
 
     private ChangeListener<Number> mWidthListener = (obs, oldVal, newVal) -> scheduleSave();
+    private ChangeListener<Boolean> mVisibilityListener = (obs, oldVal, newVal) -> scheduleSave();
     private ListChangeListener<TableColumn<?, ?>> mColumnOrderListener = change -> {
         if(!mRestoring)
         {
