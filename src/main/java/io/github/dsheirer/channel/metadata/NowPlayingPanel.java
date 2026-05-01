@@ -35,6 +35,8 @@ import java.awt.Color;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JPanel;
+import java.awt.Cursor;
+import java.awt.Insets;
 import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JToolBar;
@@ -68,6 +70,7 @@ public class NowPlayingPanel extends JPanel
     private WidgetContainer mWidgetContainer;
     private JScrollPane mScrollPane;
     private NowPlayingPreference mNowPlayingPreference;
+    private JButton mManageWidgetsBtn;
 
     /**
      * GUI panel that combines the currently decoding channels metadata table and viewers for channel details,
@@ -164,24 +167,25 @@ public class NowPlayingPanel extends JPanel
         return mTabbedPane;
     }
 
+    public JButton getManageWidgetsButton() {
+        if (mManageWidgetsBtn == null) {
+            mManageWidgetsBtn = new JButton(IconFontSwing.buildIcon(FontAwesome.COG, 14, Color.BLACK));
+            mManageWidgetsBtn.setToolTipText("Manage Widgets");
+            mManageWidgetsBtn.getAccessibleContext().setAccessibleName("Manage Widgets");
+            mManageWidgetsBtn.getAccessibleContext().setAccessibleDescription("Opens a menu to manage visible widgets");
+            mManageWidgetsBtn.addActionListener(e -> showManageWidgetsPopup(mManageWidgetsBtn));
+            mManageWidgetsBtn.setFocusPainted(false);
+            mManageWidgetsBtn.setContentAreaFilled(false);
+            mManageWidgetsBtn.setBorderPainted(false);
+            mManageWidgetsBtn.setMargin(new Insets(0, 4, 0, 4));
+            mManageWidgetsBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+        return mManageWidgetsBtn;
+    }
+
     private void init()
     {
-        setLayout( new MigLayout( "insets 0 0 0 0", "[grow,fill]", "[][grow,fill][]") );
-
-        JToolBar toolBar = new JToolBar();
-        toolBar.setFloatable(false);
-
-        JButton manageWidgetsBtn = new JButton(IconFontSwing.buildIcon(FontAwesome.COG, 14, Color.BLACK));
-        manageWidgetsBtn.setToolTipText("Manage Widgets");
-        manageWidgetsBtn.getAccessibleContext().setAccessibleName("Manage Widgets");
-        manageWidgetsBtn.getAccessibleContext().setAccessibleDescription("Opens a menu to manage visible widgets");
-        manageWidgetsBtn.addActionListener(e -> {
-            showManageWidgetsPopup(manageWidgetsBtn);
-        });
-
-        toolBar.add(Box.createHorizontalGlue());
-        toolBar.add(manageWidgetsBtn);
-        add(toolBar, "wrap");
+        setLayout( new MigLayout( "insets 0 0 0 0", "[grow,fill]", "[grow,fill][]") );
 
         mChannelMetadataPanel.addProcessingChainSelectionListener(mChannelDetailPanel);
         mChannelMetadataPanel.addProcessingChainSelectionListener(mDecodeEventPanel);

@@ -91,6 +91,8 @@ public class ControllerPanel extends JPanel
         mTunerManagerPanel = new TunerViewPanel(tunerManager, userPreferences, visibilityListener);
         mAudioRecordingsPanel = new AudioRecordingsPanel(userPreferences, playlistManager);
 
+        mAudioPanel.setManageWidgetsButton(mNowPlayingPanel.getManageWidgetsButton());
+
         init();
     }
 
@@ -134,6 +136,7 @@ public class ControllerPanel extends JPanel
     }
 
     public void showView(String id) {
+        mNowPlayingPanel.getManageWidgetsButton().setVisible("now_playing".equals(id));
         mCardLayout.show(mCardPanel, id);
     }
 

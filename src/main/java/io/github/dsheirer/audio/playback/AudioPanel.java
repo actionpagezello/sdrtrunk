@@ -84,14 +84,14 @@ public class AudioPanel extends JPanel implements Listener<AudioEvent>
      */
     private void init()
     {
-        setLayout(new MigLayout("insets 2 5 2 5", "[]5[grow,fill]", "[fill]0[]"));
+        setLayout(new MigLayout("insets 2 5 2 5", "[]5[grow,fill]5[]", "[fill]0[]"));
         setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, UIManager.getColor("Component.borderColor") != null ? UIManager.getColor("Component.borderColor") : Color.LIGHT_GRAY));
         setBackground(UIManager.getColor("Panel.background"));
         mMuteButton = new MuteButton();
         mMuteButton.setBackground(getBackground());
-        add(mMuteButton);
+        add(mMuteButton, "cell 0 0");
         mAudioChannelsPanel = new AudioChannelsPanel(mIconModel, mUserPreferences, mSettingsManager, mAudioPlaybackManager, mAliasModel);
-        add(mAudioChannelsPanel);
+        add(mAudioChannelsPanel, "cell 1 0, growx");
         addMouseListener(new MouseSelectionListener());
     }
 
@@ -110,7 +110,7 @@ public class AudioPanel extends JPanel implements Listener<AudioEvent>
                     remove(mAudioChannelsPanel);
                     mAudioChannelsPanel.dispose();
                     mAudioChannelsPanel = new AudioChannelsPanel(mIconModel, mUserPreferences, mSettingsManager, mAudioPlaybackManager, mAliasModel);
-                    add(mAudioChannelsPanel);
+                    add(mAudioChannelsPanel, "cell 1 0, growx");
                     mAudioChannelsPanel.repaint();
                     revalidate();
                     repaint();
@@ -283,6 +283,13 @@ public class AudioPanel extends JPanel implements Listener<AudioEvent>
      * Mute button to mute all audio output channels exposed by the audio
      * controller
      */
+    public void setManageWidgetsButton(JButton button)
+    {
+        add(button, "cell 2 0, aligny center");
+        revalidate();
+        repaint();
+    }
+
     public class MuteButton extends JButton
     {
         private boolean mMuted = false;
