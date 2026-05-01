@@ -133,8 +133,14 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
         actionBox.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
         actionBox.getChildren().addAll(getPlayButton(), getResetButton(), getSaveButton());
 
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox headerBox = new HBox(headerLabel, spacer, actionBox);
+        headerBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
         VBox.setVgrow(getTabPane(), Priority.ALWAYS);
-        inspectorCard.getChildren().addAll(headerLabel, getTextFieldPane(), getTabPane(), actionBox);
+        inspectorCard.getChildren().addAll(headerBox, getTextFieldPane(), getTabPane());
 
         getChildren().add(inspectorCard);
     }
