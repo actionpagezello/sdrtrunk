@@ -22,6 +22,7 @@ import com.google.common.eventbus.Subscribe;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.channel.metadata.ChannelMetadata;
+import io.github.dsheirer.record.wave.ActivityRecordingEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelConfigurationChangeNotification;
@@ -131,6 +132,15 @@ public class SingleChannelState extends AbstractChannelState implements IDecoder
 
             mStateMachine.setFadeTimeoutBufferMilliseconds(fadeTimeoutSeconds * 1000);
         }
+    }
+
+    /**
+     * Receives activity-triggered recording state changes from the inter-module EventBus.
+     */
+    @Subscribe
+    public void activityRecordingEvent(ActivityRecordingEvent event)
+    {
+        mChannelMetadata.setActivityRecording(event.isRecording());
     }
 
     /**

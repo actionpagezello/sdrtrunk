@@ -51,10 +51,17 @@ public class MDCMessage extends Message
     private CorrectedBinaryMessage mMessage;
     private MDC1200Identifier mFromIdentifier;
     private List<Identifier> mIdentifiers;
+    private boolean mValid;
 
     public MDCMessage(CorrectedBinaryMessage message)
     {
+        this(message, true);
+    }
+
+    public MDCMessage(CorrectedBinaryMessage message, boolean valid)
+    {
         mMessage = message;
+        mValid = valid;
     }
 
     public CorrectedBinaryMessage getMessage()
@@ -86,8 +93,7 @@ public class MDCMessage extends Message
 
     public boolean isValid()
     {
-        //TODO: add CRC and/or convolution decoding/repair
-        return true;
+        return mValid;
     }
 
     public PacketType getPacketType()

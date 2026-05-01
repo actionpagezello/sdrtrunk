@@ -73,6 +73,22 @@ public class SyncPatternMatcher
     }
 
     /**
+     * Constructs a pattern matcher with explicit pattern length. Use this for sync patterns whose
+     * MSB is zero — the single-arg long constructor derives the mask from the sync value and
+     * cannot preserve leading zero bits.
+     *
+     * @param sync pattern value, right-aligned in the long
+     * @param lengthBits number of significant bits in the sync pattern (leading zeros included)
+     * @param softModeErrorThreshold maximum bit errors tolerated in soft-match mode
+     */
+    public SyncPatternMatcher(long sync, int lengthBits, int softModeErrorThreshold)
+    {
+        mSync = sync;
+        mMask = (lengthBits >= 64) ? -1L : (1L << lengthBits) - 1L;
+        mSoftModeErrorThreshold = softModeErrorThreshold;
+    }
+
+    /**
      * Generates an all ones mask corresponding to the sync pattern
      */
     private static long getMask(long sync)
@@ -120,6 +136,16 @@ public class SyncPatternMatcher
         {
             return (mBits == mSync);
         }
+    }
+
+    /**
+     * Number of bit-position mismatches between the currently-shifted-in bit stream window and the
+     * sync pattern, within the mask. Useful for diagnostics and for reporting soft-match error
+     * counts to downstream consumers.
+     */
+    public int getBitErrorCount()
+    {
+        return Long.bitCount((mBits ^ mSync) & mMask);
     }
 
     /**

@@ -62,7 +62,13 @@ public enum RecorderType
     /**
      * Traffic channel MBE Audio Codec frames
      */
-    TRAFFIC_MBE_CALL_SEQUENCE("Traffic Channel MBE Audio CODEC Frames (.mbe)");
+    TRAFFIC_MBE_CALL_SEQUENCE("Traffic Channel MBE Audio CODEC Frames (.mbe)"),
+
+    /**
+     * Activity-triggered baseband recording -- records complex I/Q samples only when RF signal
+     * energy exceeds the squelch threshold, with a pre-trigger buffer and post-activity hold.
+     */
+    ACTIVITY_BASEBAND("Activity-Triggered Baseband I/Q (.wav)");
 
     private String mDisplayString;
 

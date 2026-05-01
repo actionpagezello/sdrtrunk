@@ -67,6 +67,13 @@ public class MDCDecoderState extends DecoderState
         {
             MDCMessage mdc = (MDCMessage)message;
 
+            //Reject FEC/CRC-invalid messages so sync falsing from soft matching doesn't produce
+            //phantom decode events or stray identifiers.
+            if(!mdc.isValid())
+            {
+                return;
+            }
+
             mIdents.add(mdc.getFromIdentifier());
 
             if(mdc.isEmergency())

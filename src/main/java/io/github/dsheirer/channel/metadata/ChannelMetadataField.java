@@ -29,6 +29,7 @@ public enum ChannelMetadataField
     DECODER_CHANNEL_NAME,
     DECODER_STATE,
     DECODER_TYPE,
+    ACTIVITY_RECORDING,
     USER_FROM,
     USER_TO;
 }

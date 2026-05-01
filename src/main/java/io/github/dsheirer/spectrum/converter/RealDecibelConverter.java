@@ -1,17 +1,10 @@
 package io.github.dsheirer.spectrum.converter;
 
-import org.apache.commons.math3.util.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class RealDecibelConverter extends DFTResultsConverter
 {
-	private static final Logger mLog = LoggerFactory.getLogger( RealDecibelConverter.class );
-
-	public RealDecibelConverter()
-	{
-	}
-	
 	/**
 	 * Converts the output of the JTransforms FloatFFT_1D.realForward()
 	 * calculation into a normalized power spectrum in decibels, per description
@@ -22,7 +15,7 @@ public class RealDecibelConverter extends DFTResultsConverter
 	@Override
     public void receive( float[] results )
     {
-		float dftBinSizeScalor = 1.0f / (float)results.length;
+		float dftBinSizeScalor = 1.0f / results.length;
 		
 		float[] processed = new float[ results.length / 4 ];
 
@@ -32,7 +25,7 @@ public class RealDecibelConverter extends DFTResultsConverter
 		{
 			index = x * 2;
 			
-			processed[ x ] = 20.0f * (float) FastMath.log10(
+			processed[ x ] = 20.0f * (float) Math.log10(
 				( ( results[ index ] * results[ index ] ) + 
 				  ( results[ index + 1 ] * results[ index + 1 ] ) ) * dftBinSizeScalor );
 		}

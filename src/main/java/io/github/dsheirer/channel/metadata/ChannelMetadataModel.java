@@ -242,6 +242,7 @@ public class ChannelMetadataModel extends AbstractTableModel implements IChannel
     {
         switch(columnIndex)
         {
+            case COLUMN_DECODER_STATE:
             case COLUMN_USER_FROM:
             case COLUMN_USER_TO:
                 return ChannelMetadata.class;
@@ -258,14 +259,14 @@ public class ChannelMetadataModel extends AbstractTableModel implements IChannel
     @Override
     public Object getValueAt(int rowIndex, int columnIndex)
     {
-        if(rowIndex < mChannelMetadata.size())
+        if(rowIndex <= mChannelMetadata.size())
         {
             ChannelMetadata channelMetadata = mChannelMetadata.get(rowIndex);
 
             switch(columnIndex)
             {
                 case COLUMN_DECODER_STATE:
-                    return channelMetadata.getChannelStateIdentifier();
+                    return channelMetadata;
                 case COLUMN_DECODER_TYPE:
                     return channelMetadata.getDecoderTypeConfigurationIdentifier();
                 case COLUMN_DECODER_LOGICAL_CHANNEL_NAME:
@@ -326,11 +327,6 @@ public class ChannelMetadataModel extends AbstractTableModel implements IChannel
                 @Override
                 public void run()
                 {
-                    if(rowIndex < 0 || rowIndex >= mChannelMetadata.size())
-                    {
-                        return;
-                    }
-
                     switch(channelMetadataField)
                     {
                         case CONFIGURATION_CHANNEL:
@@ -345,6 +341,7 @@ public class ChannelMetadataModel extends AbstractTableModel implements IChannel
                         case DECODER_TYPE:
                             fireTableCellUpdated(rowIndex, COLUMN_DECODER_TYPE);
                             break;
+                        case ACTIVITY_RECORDING:
                         case DECODER_STATE:
                             fireTableCellUpdated(rowIndex, COLUMN_DECODER_STATE);
                             break;

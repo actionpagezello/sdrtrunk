@@ -28,11 +28,11 @@ import io.github.dsheirer.record.config.RecordConfiguration;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
+import javafx.scene.control.Spinner;
+import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
-import javafx.scene.layout.Priority;
-import javafx.geometry.Pos;
 import org.controlsfx.control.ToggleSwitch;
 
 import java.util.ArrayList;
@@ -46,34 +46,59 @@ import java.util.List;
 public class RecordConfigurationEditor extends Editor<RecordConfiguration>
 {
     private List<RecorderControl> mControls = new ArrayList<>();
+    private ToggleSwitch mActivityToggle;
+    private Spinner<Integer> mThresholdSpinner;
+    private Label mThresholdLabel;
 
     public RecordConfigurationEditor(Collection<RecorderType> types)
     {
-        setPadding(new Insets(20, 20, 20, 20));
-
-        Label groupHeader = new Label("Recording Options");
-        groupHeader.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #8E8E93; -fx-padding: 0 0 8 16;");
-
-        VBox formGroup = new VBox();
-        formGroup.getStyleClass().add("hig-form-group");
-
-        int i = 0;
         for(RecorderType type: types)
         {
             RecorderControl control = new RecorderControl(type);
             mControls.add(control);
-            formGroup.getChildren().add(control);
-
-            if (i < types.size() - 1) {
-                HBox divider = new HBox();
-                divider.setStyle("-fx-border-color: transparent transparent #E5E5EA transparent; -fx-border-width: 0 0 1 0;");
-                VBox.setMargin(divider, new Insets(0, 0, 0, 16));
-                formGroup.getChildren().add(divider);
-            }
-            i++;
+            getChildren().add(control);
         }
 
-        getChildren().addAll(groupHeader, formGroup);
+        // Activity-triggered recording section
+        getChildren().add(new Separator());
+
+        mActivityToggle = new ToggleSwitch();
+        mActivityToggle.setDisable(true);
+        mActivityToggle.selectedProperty().addListener((observable, oldValue, newValue) -> {
+            modifiedProperty().set(true);
+            updateThresholdVisibility(newValue);
+        });
+
+        GridPane activityPane = new GridPane();
+        activityPane.setPadding(new Insets(5, 5, 5, 0));
+        activityPane.setHgap(10);
+        GridPane.setConstraints(mActivityToggle, 0, 0);
+        activityPane.getChildren().add(mActivityToggle);
+        Label activityLabel = new Label("Activity-Triggered Baseband Recording");
+        GridPane.setHalignment(activityLabel, HPos.LEFT);
+        GridPane.setConstraints(activityLabel, 1, 0);
+        activityPane.getChildren().add(activityLabel);
+        getChildren().add(activityPane);
+
+        mThresholdLabel = new Label("Squelch Threshold (dB):");
+        mThresholdSpinner = new Spinner<>(new SpinnerValueFactory.IntegerSpinnerValueFactory(-100, -30, -70, 1));
+        mThresholdSpinner.setEditable(true);
+        mThresholdSpinner.setPrefWidth(80);
+        mThresholdSpinner.valueProperty().addListener((obs, oldVal, newVal) -> modifiedProperty().set(true));
+
+        HBox thresholdBox = new HBox(10, mThresholdLabel, mThresholdSpinner);
+        thresholdBox.setPadding(new Insets(0, 5, 5, 25));
+        getChildren().add(thresholdBox);
+
+        updateThresholdVisibility(false);
+    }
+
+    private void updateThresholdVisibility(boolean visible)
+    {
+        mThresholdLabel.setVisible(visible);
+        mThresholdLabel.setManaged(visible);
+        mThresholdSpinner.setVisible(visible);
+        mThresholdSpinner.setManaged(visible);
     }
 
     @Override
@@ -91,6 +116,11 @@ public class RecordConfigurationEditor extends Editor<RecordConfiguration>
             control.getToggleSwitch().setDisable(false);
             control.getToggleSwitch().setSelected(item.getRecorders().contains(control.getRecorderType()));
         }
+
+        mActivityToggle.setDisable(false);
+        mActivityToggle.setSelected(item.isActivityTriggeredRecording());
+        mThresholdSpinner.getValueFactory().setValue(Math.round(item.getActivitySquelchThreshold()));
+        updateThresholdVisibility(item.isActivityTriggeredRecording());
 
         modifiedProperty().set(false);
     }
@@ -115,6 +145,13 @@ public class RecordConfigurationEditor extends Editor<RecordConfiguration>
             }
         }
 
+        config.setActivityTriggeredRecording(mActivityToggle.isSelected());
+
+        if(mActivityToggle.isSelected())
+        {
+            config.setActivitySquelchThreshold(mThresholdSpinner.getValue().floatValue());
+        }
+
         setItem(config);
     }
 
@@ -124,7 +161,7 @@ public class RecordConfigurationEditor extends Editor<RecordConfiguration>
 
     }
 
-    public class RecorderControl extends HBox
+    public class RecorderControl extends GridPane
     {
         private RecorderType mRecorderType;
         private ToggleSwitch mToggleSwitch;
@@ -132,16 +169,17 @@ public class RecordConfigurationEditor extends Editor<RecordConfiguration>
         public RecorderControl(RecorderType type)
         {
             mRecorderType = type;
-            getStyleClass().add("hig-form-row");
-            setAlignment(Pos.CENTER_LEFT);
+
+            setPadding(new Insets(5,5,5,0));
+            setHgap(10);
+
+            GridPane.setConstraints(getToggleSwitch(), 0, 0);
+            getChildren().add(getToggleSwitch());
 
             Label label = new Label(mRecorderType.getDisplayString());
-            label.getStyleClass().add("hig-form-label");
-
-            HBox spacer = new HBox();
-            HBox.setHgrow(spacer, Priority.ALWAYS);
-
-            getChildren().addAll(label, spacer, getToggleSwitch());
+            GridPane.setHalignment(label, HPos.LEFT);
+            GridPane.setConstraints(label, 1, 0);
+            getChildren().add(label);
         }
 
         private ToggleSwitch getToggleSwitch()

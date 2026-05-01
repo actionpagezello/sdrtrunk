@@ -26,6 +26,7 @@ import io.github.dsheirer.module.decode.p25.audio.P25P1CallSequenceRecorder;
 import io.github.dsheirer.module.decode.p25.audio.P25P2CallSequenceRecorder;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.record.binary.BinaryRecorder;
+import io.github.dsheirer.record.wave.ActivityTriggeredWaveRecorder;
 import io.github.dsheirer.record.wave.ComplexSamplesWaveRecorder;
 import io.github.dsheirer.record.wave.IRecordingStatusListener;
 import io.github.dsheirer.record.wave.NativeBufferWaveRecorder;
@@ -133,6 +134,16 @@ public class RecorderFactory
                     }
                     break;
             }
+        }
+
+        // Activity-triggered baseband recording (independent of RecorderType list)
+        if(channel.getRecordConfiguration().isActivityTriggeredRecording())
+        {
+            long frequency = getFrequency(channel);
+            float threshold = channel.getRecordConfiguration().getActivitySquelchThreshold();
+            Path recordingDir = getRecordingBasePath(userPreferences);
+            recorderModules.add(new ActivityTriggeredWaveRecorder(BASEBAND_SAMPLE_RATE,
+                    channel.toString(), frequency, threshold, recordingDir));
         }
 
         return recorderModules;

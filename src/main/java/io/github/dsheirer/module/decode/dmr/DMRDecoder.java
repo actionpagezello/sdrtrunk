@@ -102,7 +102,7 @@ public class DMRDecoder extends FeedbackDecoder implements IByteBufferProvider, 
     private RealFIRFilter mRRCFilterI;
     private RealFIRFilter mRRCFilterQ;
     private final PowerMonitor mPowerMonitor = new PowerMonitor();
-    private final CarrierOffsetProcessor mCarrierOffsetProcessor = new CarrierOffsetProcessor();
+    private final CarrierOffsetProcessor mCarrierOffsetProcessor = new CarrierOffsetProcessor(4800.0);
     private final DMRCarrierOffsetProcessor mDMRCarrierOffsetProcessor = new DMRCarrierOffsetProcessor();
 
     /**

@@ -62,6 +62,7 @@ public class ChannelMetadata implements Listener<IdentifierUpdateNotification>, 
     private Identifier mToIdentifier;
     private List<Alias> mToIdentifierAliases;
     private Integer mTimeslot;
+    private boolean mActivityRecording;
 
     private IChannelMetadataUpdateListener mIChannelMetadataUpdateListener;
     private AliasModel mAliasModel;
@@ -275,6 +276,23 @@ public class ChannelMetadata implements Listener<IdentifierUpdateNotification>, 
     public List<Alias> getToIdentifierAliases()
     {
         return mToIdentifierAliases;
+    }
+
+    /**
+     * Indicates if the activity-triggered recorder is actively writing to disk.
+     */
+    public boolean isActivityRecording()
+    {
+        return mActivityRecording;
+    }
+
+    /**
+     * Sets the activity-triggered recording state and broadcasts an update.
+     */
+    public void setActivityRecording(boolean recording)
+    {
+        mActivityRecording = recording;
+        broadcastUpdate(ChannelMetadataField.ACTIVITY_RECORDING);
     }
 
     /**

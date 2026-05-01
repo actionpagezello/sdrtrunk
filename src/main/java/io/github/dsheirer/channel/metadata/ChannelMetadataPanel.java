@@ -415,6 +415,9 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
     public class ColoredStateCellRenderer extends DefaultTableCellRenderer
     {
+        private static final Color RECORDING_BACKGROUND = new Color(200, 0, 0);
+        private static final Color RECORDING_FOREGROUND = Color.WHITE;
+
         public ColoredStateCellRenderer()
         {
             setHorizontalAlignment(SwingConstants.CENTER);
@@ -429,7 +432,54 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
             Color background = table.getBackground();
             Color foreground = table.getForeground();
 
-            if(value instanceof ChannelStateIdentifier)
+            if(value instanceof ChannelMetadata metadata)
+            {
+                ChannelStateIdentifier stateId = metadata.getChannelStateIdentifier();
+                boolean recording = metadata.isActivityRecording();
+
+                if(stateId != null)
+                {
+                    State state = stateId.getValue();
+
+                    if(recording && state == State.CALL)
+                    {
+                        label.setText("CALL/REC");
+                        background = mBackgroundColors.getOrDefault(State.CALL, table.getBackground());
+                        foreground = mForegroundColors.getOrDefault(State.CALL, table.getForeground());
+                    }
+                    else if(recording)
+                    {
+                        label.setText("RECORDING");
+                        background = RECORDING_BACKGROUND;
+                        foreground = RECORDING_FOREGROUND;
+                    }
+                    else
+                    {
+                        label.setText(state.getDisplayValue());
+
+                        if(mBackgroundColors.containsKey(state))
+                        {
+                            background = mBackgroundColors.get(state);
+                        }
+
+                        if(mForegroundColors.containsKey(state))
+                        {
+                            foreground = mForegroundColors.get(state);
+                        }
+                    }
+                }
+                else if(recording)
+                {
+                    label.setText("RECORDING");
+                    background = RECORDING_BACKGROUND;
+                    foreground = RECORDING_FOREGROUND;
+                }
+                else
+                {
+                    label.setText("----");
+                }
+            }
+            else if(value instanceof ChannelStateIdentifier)
             {
                 State state = ((ChannelStateIdentifier)value).getValue();
                 label.setText(state.getDisplayValue());

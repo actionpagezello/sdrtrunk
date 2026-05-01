@@ -18,23 +18,22 @@
  */
 package io.github.dsheirer.dsp.filter.channelizer.output;
 
+import io.github.dsheirer.dsp.filter.channelizer.ComplexPolyphaseChannelizerM2;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.source.heartbeat.HeartbeatManager;
 import io.github.dsheirer.util.Dispatcher;
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class ChannelOutputProcessor implements IPolyphaseChannelOutputProcessor
 {
-    private final static Logger mLog = LoggerFactory.getLogger(ChannelOutputProcessor.class);
+    private static final Logger mLog = LoggerFactory.getLogger(ChannelOutputProcessor.class);
 
-    private Dispatcher<List<float[]>> mChannelResultsDispatcher;
+    private Dispatcher<ComplexPolyphaseChannelizerM2.ChannelResultsBuffer> mChannelResultsDispatcher;
     private HeartbeatManager mHeartbeatManager;
     protected Listener<ComplexSamples> mComplexSamplesListener;
     private int mInputChannelCount;
-    private long mCurrentSampleTimestamp = System.currentTimeMillis();
 
     /**
      * Base class for polyphase channelizer output channel processing.  Provides built-in frequency translation
@@ -44,31 +43,26 @@ public abstract class ChannelOutputProcessor implements IPolyphaseChannelOutputP
      * @param heartbeatManager to receive pings on the dispatcher thread
      * @param threadName for the dispatcher
      */
-    public ChannelOutputProcessor(int inputChannelCount, HeartbeatManager heartbeatManager, String threadName)
+    protected ChannelOutputProcessor(int inputChannelCount, HeartbeatManager heartbeatManager, String threadName)
     {
         mInputChannelCount = inputChannelCount;
         //Process 1/10th of the sample rate per second at a rate of 20 times a second (200% of anticipated rate)
         mHeartbeatManager = heartbeatManager;
-        mChannelResultsDispatcher = new Dispatcher(threadName,50, mHeartbeatManager);
-        mChannelResultsDispatcher.setListener(floats -> {
+        mChannelResultsDispatcher = new Dispatcher<>(threadName,20, mHeartbeatManager);
+        mChannelResultsDispatcher.setListener(channelResultsBuffer -> {
             try
             {
-                process(floats);
+                process(channelResultsBuffer);
             }
-            catch(Throwable t)
+            catch(Exception e)
             {
-                mLog.error("Error processing channel results", t);
+                mLog.error("Error processing channel results", e);
+            }
+            finally
+            {
+                channelResultsBuffer.release();
             }
         });
-    }
-
-    /**
-     * Timestamp for the current series of samples.
-     * @return time in milliseconds to use with assembled complex sample buffers.
-     */
-    protected long getCurrentSampleTimestamp()
-    {
-        return mCurrentSampleTimestamp;
     }
 
     @Override
@@ -80,7 +74,7 @@ public abstract class ChannelOutputProcessor implements IPolyphaseChannelOutputP
     @Override
     public void stop()
     {
-        mChannelResultsDispatcher.stop();
+        mChannelResultsDispatcher.flushAndStop();
     }
 
     /**
@@ -103,21 +97,27 @@ public abstract class ChannelOutputProcessor implements IPolyphaseChannelOutputP
     }
 
     @Override
-    public void receiveChannelResults(List<float[]> channelResultsList, long timestamp)
+    public void receiveChannelResults(ComplexPolyphaseChannelizerM2.ChannelResultsBuffer channelResultsBuffer)
     {
-        mChannelResultsDispatcher.receive(channelResultsList);
-        mCurrentSampleTimestamp = timestamp;
+        if(mChannelResultsDispatcher.isRunning())
+        {
+            mChannelResultsDispatcher.receive(channelResultsBuffer);
+        }
+        else
+        {
+            channelResultsBuffer.release();
+        }
     }
 
     /**
      * Sub-class implementation to process one polyphase channelizer result array.
-     * @param channelResults to process
+     * @param channelResultsBuffer to process
      */
-    public abstract void process(List<float[]> channelResults);
+    public abstract void process(ComplexPolyphaseChannelizerM2.ChannelResultsBuffer channelResultsBuffer);
 
     @Override
     public int getInputChannelCount()
     {
-        return mInputChannelCount;
+        return getPolyphaseChannelIndexCount();
     }
 }

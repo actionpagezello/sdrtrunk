@@ -53,6 +53,31 @@ public class MessageFramer implements IBinarySymbolProcessor, Listener<Boolean>,
         mMessageLength = messageLength;
     }
 
+    /**
+     * Constructs a framer with soft sync matching. Allows the specified number of bit errors in
+     * the sync pattern match so that marginal signals can still frame a message. The downstream
+     * consumer is responsible for validating the framed message (e.g. via CRC or FEC).
+     *
+     * @param syncPattern to match on the bit stream
+     * @param messageLength total bits (including sync) per framed message
+     * @param softSyncBitErrorThreshold maximum bit errors tolerated in the sync pattern
+     */
+    public MessageFramer(boolean[] syncPattern, int messageLength, int softSyncBitErrorThreshold)
+    {
+        mSyncPattern = syncPattern;
+        long syncLong = 0L;
+        for(int i = 0; i < syncPattern.length; i++)
+        {
+            if(syncPattern[i])
+            {
+                syncLong |= 1L << (syncPattern.length - 1 - i);
+            }
+        }
+        mMatcher = new SyncPatternMatcher(syncLong, syncPattern.length, softSyncBitErrorThreshold);
+        mMatcher.setSoftMode(true);
+        mMessageLength = messageLength;
+    }
+
     public void reset()
     {
         for(MessageAssembler assembler : mMessageAssemblers)
@@ -102,7 +127,7 @@ public class MessageFramer implements IBinarySymbolProcessor, Listener<Boolean>,
             /* Notify any sync detect listener(s) */
             if(mSyncDetectListener != null)
             {
-                mSyncDetectListener.syncDetected(0);
+                mSyncDetectListener.syncDetected(mMatcher.getBitErrorCount());
             }
         }
     }
