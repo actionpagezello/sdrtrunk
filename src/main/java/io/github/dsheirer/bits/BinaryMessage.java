@@ -35,6 +35,7 @@ public class BinaryMessage extends BitSet
     private static final int[] CHARACTER_8_BIT = new int[]{0, 1, 2, 3, 4, 5, 6, 7};
     private static final String UTF_8 = "UTF-8";
     private static final String GB2312 = "GB2312";
+    private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
 
 
     /**
@@ -994,7 +995,19 @@ public class BinaryMessage extends BitSet
     public String getHex(IntField field)
     {
         int width = Math.ceilDiv(field.width(), 4);
-        return String.format("%0" + width + "X", getInt(field));
+        int value = getInt(field);
+        char[] buf = new char[Math.max(8, width)];
+        int charPos = buf.length;
+        do {
+            buf[--charPos] = HEX_ARRAY[value & 0x0F];
+            value >>>= 4;
+        } while (value != 0 && charPos > 0);
+
+        while (buf.length - charPos < width && charPos > 0) {
+            buf[--charPos] = '0';
+        }
+
+        return new String(buf, charPos, buf.length - charPos);
     }
 
     /**
@@ -1007,7 +1020,7 @@ public class BinaryMessage extends BitSet
     public String getNibbleAsHex(int startIndex)
     {
         int value = getNibble(startIndex);
-        return Integer.toHexString(value).toUpperCase();
+        return new String(new char[] { HEX_ARRAY[value & 0x0F] });
     }
 
     /**
@@ -1024,14 +1037,34 @@ public class BinaryMessage extends BitSet
         if(bits.length <= 32)
         {
             int value = getInt(bits);
+            char[] buf = new char[Math.max(8, digitDisplayCount)];
+            int charPos = buf.length;
+            do {
+                buf[--charPos] = HEX_ARRAY[value & 0x0F];
+                value >>>= 4;
+            } while (value != 0 && charPos > 0);
 
-            return String.format("%0" + digitDisplayCount + "X", value);
+            while (buf.length - charPos < digitDisplayCount && charPos > 0) {
+                buf[--charPos] = '0';
+            }
+
+            return new String(buf, charPos, buf.length - charPos);
         }
         else if(bits.length <= 64)
         {
             long value = getLong(bits);
+            char[] buf = new char[Math.max(16, digitDisplayCount)];
+            int charPos = buf.length;
+            do {
+                buf[--charPos] = HEX_ARRAY[(int)(value & 0x0F)];
+                value >>>= 4;
+            } while (value != 0 && charPos > 0);
 
-            return String.format("%0" + digitDisplayCount + "X", value);
+            while (buf.length - charPos < digitDisplayCount && charPos > 0) {
+                buf[--charPos] = '0';
+            }
+
+            return new String(buf, charPos, buf.length - charPos);
         }
         else
         {
@@ -1566,7 +1599,7 @@ public class BinaryMessage extends BitSet
         {
             int nibble = getNibble(offset);
             //This will parse digits 0-9 and anything higher will parse as hexadecimal A-F
-            sb.append(Integer.toHexString(nibble).toUpperCase());
+            sb.append(HEX_ARRAY[nibble & 0x0F]);
             offset += 4;
             count++;
         }
