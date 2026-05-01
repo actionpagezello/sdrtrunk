@@ -413,7 +413,10 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
             //This has to be done on the FX event thread when the playlist editor is constructed
             if(!GraphicsEnvironment.isHeadless())
             {
-                Platform.runLater(() -> channel.setProcessing(false));
+                Platform.runLater(() -> {
+                    channel.setProcessing(false);
+                    channel.activeTunerNameProperty().set("");
+                });
             }
 
             mChannelEventBroadcaster.broadcast(new ChannelEvent(channel,
@@ -544,6 +547,18 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
             try
             {
                 processingChain.start();
+
+                if (source instanceof io.github.dsheirer.source.tuner.channel.TunerChannelSource)
+                {
+                    io.github.dsheirer.source.tuner.channel.TunerChannelSource tcs = (io.github.dsheirer.source.tuner.channel.TunerChannelSource) source;
+                    // We need to find the tuner that owns this source
+                    for (io.github.dsheirer.source.tuner.manager.DiscoveredTuner dt : mTunerManager.getDiscoveredTunerModel().getAvailableTuners()) {
+                        if (dt.hasTuner() && dt.getTuner().getChannelSourceManager().getTunerChannels().contains(tcs.getTunerChannel())) {
+                            Platform.runLater(() -> channel.activeTunerNameProperty().set(dt.getTuner().getPreferredName()));
+                            break;
+                        }
+                    }
+                }
             }
             catch(Throwable t)
             {
@@ -651,6 +666,7 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
             if(GraphicsEnvironment.isHeadless())
             {
                 channel.setProcessing(false);
+                channel.activeTunerNameProperty().set("");
             }
             else
             {
@@ -664,6 +680,7 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
                         try
                         {
                             channel.setProcessing(false);
+                channel.activeTunerNameProperty().set("");
                         }
                         catch(Exception e)
                         {
@@ -675,6 +692,7 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
                 catch(IllegalStateException e)
                 {
                     channel.setProcessing(false);
+                channel.activeTunerNameProperty().set("");
                 }
             }
 

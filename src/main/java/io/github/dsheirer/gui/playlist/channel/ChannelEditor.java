@@ -48,6 +48,8 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
@@ -530,9 +532,60 @@ public class ChannelEditor extends javafx.scene.layout.BorderPane implements IFi
             });
             protocolColumn.setPrefWidth(100);
 
+
+            TableColumn<Channel, String> tunerColumn = new TableColumn<>("Tuner");
+            tunerColumn.setId("channelTable.tuner");
+            tunerColumn.setCellValueFactory(param -> param.getValue().activeTunerNameProperty());
+            tunerColumn.setPrefWidth(120);
+
+
+            TableColumn<Channel, String> talkgroupColumn = new TableColumn<>("Talkgroup");
+            talkgroupColumn.setId("channelTable.talkgroup");
+            talkgroupColumn.setCellValueFactory(param -> {
+                Channel channel = param.getValue();
+                if (channel != null && channel.getDecodeConfiguration() != null) {
+                    io.github.dsheirer.module.decode.config.DecodeConfiguration config = channel.getDecodeConfiguration();
+                    if (config instanceof io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM) {
+                        return new SimpleStringProperty(String.valueOf(((io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM)config).getTalkgroup()));
+                    } else if (config instanceof io.github.dsheirer.module.decode.analog.DecodeConfigAnalog) {
+                        return new SimpleStringProperty(String.valueOf(((io.github.dsheirer.module.decode.analog.DecodeConfigAnalog)config).getTalkgroup()));
+                    } else if (config instanceof io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25) {
+                        int tg = ((io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25)config).getTalkgroup();
+                        if (tg > 0) return new SimpleStringProperty(String.valueOf(tg));
+                    } else if (config instanceof io.github.dsheirer.module.decode.am.DecodeConfigAM) {
+                        return new SimpleStringProperty(String.valueOf(((io.github.dsheirer.module.decode.am.DecodeConfigAM)config).getTalkgroup()));
+                    }
+                }
+                return new SimpleStringProperty("");
+            });
+            talkgroupColumn.setPrefWidth(100);
+
             mChannelTableView.getColumns().addAll(systemColumn, siteColumn, nameColumn, frequencyColumn, protocolColumn,
-                playingColumn, autoStartColumn);
+                playingColumn, autoStartColumn, tunerColumn, talkgroupColumn);
             mChannelTableView.setPlaceholder(getPlaceholderLabel());
+
+            // Add column visibility context menu to column headers
+            ContextMenu columnMenu = new ContextMenu();
+            mChannelTableView.setOnContextMenuRequested(event -> {
+                Node node = event.getPickResult().getIntersectedNode();
+                while (node != null) {
+                    if (node.getStyleClass().contains("column-header")) {
+                        columnMenu.getItems().clear();
+                        for (TableColumn<?, ?> column : mChannelTableView.getColumns()) {
+                            javafx.scene.control.CheckMenuItem item = new javafx.scene.control.CheckMenuItem(column.getText());
+                            item.setSelected(column.isVisible());
+                            item.selectedProperty().bindBidirectional(column.visibleProperty());
+                            columnMenu.getItems().add(item);
+                        }
+                        columnMenu.show(mChannelTableView, event.getScreenX(), event.getScreenY());
+                        event.consume();
+                        return;
+                    }
+                    node = node.getParent();
+                }
+                columnMenu.hide();
+            });
+
 
             //Sorting and filtering for the table
             mChannelFilteredList = new FilteredList<>(mPlaylistManager.getChannelModel().channelList(), mChannelListFilter);

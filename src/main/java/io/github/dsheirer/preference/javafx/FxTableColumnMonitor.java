@@ -169,6 +169,20 @@ public class FxTableColumnMonitor
                 }
             }
 
+                        // Restore visibility
+            for(Map.Entry<String, TableColumn<?, ?>> entry : columnsById.entrySet())
+            {
+                String visibleStr = getStringPref(mKey + "." + entry.getKey() + KEY_VISIBLE);
+                if (visibleStr != null)
+                {
+                    entry.getValue().setVisible(Boolean.parseBoolean(visibleStr));
+                }
+                else
+                {
+                    entry.getValue().setVisible(true); // Default to visible
+                }
+            }
+
             // Restore widths
             for(Map.Entry<String, TableColumn<?, ?>> entry : columnsById.entrySet())
             {

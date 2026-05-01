@@ -83,6 +83,7 @@ public class Channel extends Configuration implements Listener<SourceEvent>
     private ObservableList<Long> mFrequencyList;
 
     private BooleanProperty mProcessing = new SimpleBooleanProperty();
+    private StringProperty mActiveTunerName = new SimpleStringProperty();
     private BooleanProperty mAutoStart = new SimpleBooleanProperty();
     private ObjectProperty<Integer> mAutoStartOrder = new SimpleObjectProperty<>();
     private boolean mSelected;
@@ -298,6 +299,14 @@ public class Channel extends Configuration implements Listener<SourceEvent>
     public BooleanProperty processingProperty()
     {
         return mProcessing;
+    }
+
+    /**
+     * Active tuner name property. Updated when the channel starts or stops processing.
+     */
+    public StringProperty activeTunerNameProperty()
+    {
+        return mActiveTunerName;
     }
 
     /**
@@ -798,7 +807,7 @@ public class Channel extends Configuration implements Listener<SourceEvent>
      */
     public static Callback<Channel,Observable[]> extractor()
     {
-        return (Channel c) -> new Observable[] {c.processingProperty(), c.nameProperty(), c.aliasListNameProperty(),
+        return (Channel c) -> new Observable[] {c.processingProperty(), c.activeTunerNameProperty(), c.nameProperty(), c.aliasListNameProperty(),
             c.autoStartOrderProperty(), c.autoStartProperty(), c.siteProperty(), c.systemProperty(),
             c.getFrequencyList()};
     }
