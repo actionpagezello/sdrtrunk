@@ -35,6 +35,7 @@ import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.identifier.Role;
+import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.event.filter.DecodeEventFilterSet;
 import io.github.dsheirer.preference.PreferenceType;
@@ -72,6 +73,36 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
     private JTable mTable;
     private JTableColumnWidthMonitor mTableColumnWidthMonitor;
     private DecodeEventModel mEventModel = new DecodeEventModel();
+    private DecodeEventModel mGlobalEventModel = new DecodeEventModel();
+    private ChannelProcessingManager mChannelProcessingManager;
+    private Listener<IDecodeEvent> mGlobalEventListener;
+
+    private class ActiveModelWrapper extends ClearableHistoryModel<IDecodeEvent> {
+        @Override
+        public void clear() {
+            mEventModel.clear();
+            mGlobalEventModel.clear();
+        }
+
+        @Override
+        public void setHistorySize(int size) {
+            super.setHistorySize(size);
+            mEventModel.setHistorySize(size);
+            mGlobalEventModel.setHistorySize(size);
+        }
+
+        @Override
+        public int getColumnCount() {
+            return 0;
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            return null;
+        }
+    }
+
+    private ActiveModelWrapper mActiveModelWrapper = new ActiveModelWrapper();
     private DecodeEventHistory mCurrentEventHistory;
     private JScrollPane mEmptyScroller;
     private IconModel mIconModel;
@@ -87,7 +118,7 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
      * View for call event table
      * @param iconModel to display alias icons in table rows
      */
-    public DecodeEventPanel(IconModel iconModel, UserPreferences userPreferences, AliasModel aliasModel)
+    public DecodeEventPanel(IconModel iconModel, UserPreferences userPreferences, AliasModel aliasModel, ChannelProcessingManager channelProcessingManager)
     {
         MyEventBus.getGlobalEventBus().register(this);
 
@@ -95,6 +126,11 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
         mIconModel = iconModel;
         mAliasModel = aliasModel;
         mUserPreferences = userPreferences;
+        mChannelProcessingManager = channelProcessingManager;
+
+        mGlobalEventListener = event -> mGlobalEventModel.receive(event);
+        mChannelProcessingManager.addDecodeEventListener(mGlobalEventListener);
+        mGlobalEventModel.setHistorySize(mUserPreferences.getNowPlayingPreference().getEventHistorySize());
         mTimestampCellRenderer = new TimestampCellRenderer();
         mTable = new JTable(mEventModel);
         mTable.setFillsViewportHeight(true);
@@ -106,8 +142,9 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
         NowPlayingPreference nowPlayingPreference = mUserPreferences.getNowPlayingPreference();
         restoreFilterStates(nowPlayingPreference);
 
+        mActiveModelWrapper.setHistorySize(nowPlayingPreference.getEventHistorySize());
         mHistoryManagementPanel = new HistoryManagementPanel<>(
-                mEventModel,
+                mActiveModelWrapper,
                 "Event Filter Editor",
                 nowPlayingPreference.getEventHistorySize(),
                 nowPlayingPreference::setEventHistorySize);
@@ -198,14 +235,21 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
                 mCurrentEventHistory = processingChain.getDecodeEventHistory();
                 mEventModel.clearAndSet(mCurrentEventHistory.getItems());
                 processingChain.getDecodeEventHistory().addListener(mEventModel);
+                mTable.setModel(mEventModel);
+                mTableRowSorter.setModel(mEventModel);
                 mHistoryManagementPanel.setEnabled(true);
             }
             else
             {
                 mCurrentEventHistory = null;
-                mEventModel.clearAndSet(Collections.emptyList());
-                mHistoryManagementPanel.setEnabled(false);
+                mTable.setModel(mGlobalEventModel);
+                mTableRowSorter.setModel(mGlobalEventModel);
+                mHistoryManagementPanel.setEnabled(true);
             }
+
+            updateCellRenderers();
+            mEventModel.fireTableDataChanged();
+            mGlobalEventModel.fireTableDataChanged();
         });
     }
 
