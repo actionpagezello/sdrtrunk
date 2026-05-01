@@ -65,8 +65,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.ColumnConstraints;
-import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
+import javafx.scene.control.ListView;
+import javafx.scene.layout.StackPane;
+import javafx.scene.control.SplitPane;
+import java.util.LinkedHashMap;
+import javafx.geometry.Orientation;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import jiconfont.icons.font_awesome.FontAwesome;
@@ -96,7 +99,10 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
     private Button mSaveButton;
     private Button mResetButton;
     private VBox mButtonBox;
-    private TabPane mTabPane;
+    private SplitPane mSplitPane;
+    private ListView<String> mSidebarList;
+    private StackPane mContentPane;
+    private java.util.Map<String, javafx.scene.Node> mConfigurationPanes = new LinkedHashMap<>();
 
     private ToggleSwitch mAutoStartSwitch;
     private Spinner<Integer> mAutoStartOrderSpinner;
@@ -139,8 +145,14 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
         HBox headerBox = new HBox(headerLabel, spacer, actionBox);
         headerBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
 
-        VBox.setVgrow(getTabPane(), Priority.ALWAYS);
-        inspectorCard.getChildren().addAll(headerBox, getTextFieldPane(), getTabPane());
+        VBox.setVgrow(getSplitPane(), Priority.ALWAYS);
+        inspectorCard.getChildren().addAll(headerBox, getSplitPane());
+
+        // Setup General Pane
+        javafx.scene.control.ScrollPane generalScroll = new javafx.scene.control.ScrollPane(getTextFieldPane());
+        generalScroll.setFitToWidth(true);
+        generalScroll.setFitToHeight(true);
+        addConfigurationPane("General", generalScroll);
 
         getChildren().add(inspectorCard);
     }
@@ -506,16 +518,52 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
         return mAutoStartOrderSpinner;
     }
 
-    protected TabPane getTabPane()
+    protected SplitPane getSplitPane()
     {
-        if(mTabPane == null)
+        if(mSplitPane == null)
         {
-            mTabPane = new TabPane();
-            mTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-            mTabPane.setMaxWidth(Double.MAX_VALUE);
+            mSplitPane = new SplitPane();
+            mSplitPane.setOrientation(Orientation.HORIZONTAL);
+            mSplitPane.getItems().addAll(getSidebarList(), getContentPane());
+            mSplitPane.setDividerPositions(0.2);
+            mSplitPane.setMaxWidth(Double.MAX_VALUE);
         }
+        return mSplitPane;
+    }
 
-        return mTabPane;
+    protected ListView<String> getSidebarList()
+    {
+        if(mSidebarList == null)
+        {
+            mSidebarList = new ListView<>();
+            mSidebarList.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
+                if (newValue != null && mConfigurationPanes.containsKey(newValue)) {
+                    getContentPane().getChildren().setAll(mConfigurationPanes.get(newValue));
+                }
+            });
+            mSidebarList.setMinWidth(150);
+            mSidebarList.setPrefWidth(200);
+        }
+        return mSidebarList;
+    }
+
+    protected StackPane getContentPane()
+    {
+        if(mContentPane == null)
+        {
+            mContentPane = new StackPane();
+            mContentPane.setPadding(new Insets(0, 0, 0, 10)); // Add some padding between list and content
+        }
+        return mContentPane;
+    }
+
+    protected void addConfigurationPane(String name, javafx.scene.Node content)
+    {
+        mConfigurationPanes.put(name, content);
+        getSidebarList().getItems().add(name);
+        if (getSidebarList().getSelectionModel().getSelectedItem() == null) {
+            getSidebarList().getSelectionModel().select(name);
+        }
     }
 
 

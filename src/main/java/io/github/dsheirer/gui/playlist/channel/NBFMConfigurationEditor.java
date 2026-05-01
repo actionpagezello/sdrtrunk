@@ -80,11 +80,11 @@ import javafx.scene.paint.Color;
  */
 public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 {
-    private Tab mAuxDecoderPane;
-    private Tab mDecoderPane;
-    private Tab mEventLogPane;
-    private Tab mRecordPane;
-    private Tab mSourcePane;
+    private javafx.scene.Node mAuxDecoderPane;
+    private javafx.scene.Node mDecoderPane;
+    private javafx.scene.Node mEventLogPane;
+    private javafx.scene.Node mRecordPane;
+    private javafx.scene.Node mSourcePane;
     private TextField mTalkgroupField;
     private ToggleSwitch mAudioFilterEnable;
     private TextFormatter<Integer> mTalkgroupTextFormatter;
@@ -92,21 +92,21 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private SegmentedButton mBandwidthButton;
 
     // CTCSS/DCS Tone Filter UI
-    private Tab mToneFilterPane;
+    private javafx.scene.Node mToneFilterPane;
     private ToggleSwitch mToneFilterEnabledSwitch;
     private ComboBox<ChannelToneFilter.ToneType> mToneTypeCombo;
     private ComboBox<CTCSSCode> mCtcssCodeCombo;
     private ComboBox<DCSCode> mDcsCodeCombo;
 
     // Squelch Tail Removal UI
-    private Tab mSquelchTailPane;
+    private javafx.scene.Node mSquelchTailPane;
     private ToggleSwitch mSquelchTailEnabledSwitch;
     private Spinner<Integer> mTailRemovalSpinner;
     private Spinner<Integer> mHeadRemovalSpinner;
     private Spinner<Integer> mAudioHangtimeSpinner;
 
     // Audio Filters UI
-    private Tab mAudioFiltersPane;
+    private javafx.scene.Node mAudioFiltersPane;
     private Slider mInputGainSlider;
     private TextField mInputGainField;
     private ToggleSwitch mLowPassEnabledSwitch;
@@ -153,14 +153,22 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
                                    UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
-        getTabPane().getTabs().add(getSourcePane());
-        getTabPane().getTabs().add(getDecoderPane());
-        getTabPane().getTabs().add(getToneFilterPane());
-        getTabPane().getTabs().add(getSquelchTailPane());
-        getTabPane().getTabs().add(getAudioFiltersPane());
-        getTabPane().getTabs().add(getAuxDecoderPane());
-        getTabPane().getTabs().add(getEventLogPane());
-        getTabPane().getTabs().add(getRecordPane());
+        // Could not find name for getSourcePane()
+        addConfigurationPane("Source", getSourcePane());
+        // Could not find name for getDecoderPane()
+        addConfigurationPane("Decoder", getDecoderPane());
+        // Could not find name for getToneFilterPane()
+        addConfigurationPane("Tone Filter", getToneFilterPane());
+        // Could not find name for getSquelchTailPane()
+        addConfigurationPane("Squelch Tail", getSquelchTailPane());
+        // Could not find name for getAudioFiltersPane()
+        addConfigurationPane("Audio Filters", getAudioFiltersPane());
+        // Could not find name for getAuxDecoderPane()
+        addConfigurationPane("Additional Decoders", getAuxDecoderPane());
+        // Could not find name for getEventLogPane()
+        addConfigurationPane("Logging", getEventLogPane());
+        // Could not find name for getRecordPane()
+        addConfigurationPane("Recording", getRecordPane());
     }
 
     @Override
@@ -169,29 +177,22 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         return DecoderType.NBFM;
     }
 
-    private Tab getSourcePane()
-    {
+    private javafx.scene.Node getSourcePane(){
         if(mSourcePane == null)
         {
-            mSourcePane = new Tab("Source");
             javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(getSourceConfigurationEditor());
             sp.setFitToWidth(true);
             sp.setFitToHeight(true);
-            mSourcePane.setContent(sp);
+            mSourcePane = sp;
 
         }
 
         return mSourcePane;
     }
 
-    private Tab getDecoderPane()
-    {
+    private javafx.scene.Node getDecoderPane(){
         if(mDecoderPane == null)
         {
-            mDecoderPane = new Tab();
-            mDecoderPane.setText("Decoder: NBFM");
-
-
             GridPane gridPane = new GridPane();
             gridPane.setPadding(new Insets(10,10,10,10));
             gridPane.setHgap(10);
@@ -219,31 +220,20 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             javafx.scene.control.ScrollPane mDecoderPaneSp = new javafx.scene.control.ScrollPane(gridPane);
             mDecoderPaneSp.setFitToWidth(true);
             mDecoderPaneSp.setFitToHeight(true);
-            mDecoderPane.setContent(mDecoderPaneSp);
+            mDecoderPane = mDecoderPaneSp;
 
             //Special handling - the pill button doesn't like to set a selected state if the pane is not expanded,
             //so detect when the pane is expanded and refresh the config view
-            mDecoderPane.selectedProperty().addListener((observable, oldValue, newValue) -> {
-                if(newValue)
-                {
-                    //Reset the config so the editor gets updated
-                    setDecoderConfiguration(getItem().getDecodeConfiguration());
-                }
-            });
+
         }
 
         return mDecoderPane;
     }
 
     // === Tone Filter (CTCSS / DCS) pane ===
-    private Tab getToneFilterPane()
-    {
+    private javafx.scene.Node getToneFilterPane(){
         if(mToneFilterPane == null)
         {
-            mToneFilterPane = new Tab();
-            mToneFilterPane.setText("Tone Filter (CTCSS / DCS)");
-
-
             GridPane gridPane = new GridPane();
             gridPane.setPadding(new Insets(10, 10, 10, 10));
             gridPane.setHgap(10);
@@ -305,7 +295,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             javafx.scene.control.ScrollPane mToneFilterPaneSp = new javafx.scene.control.ScrollPane(gridPane);
             mToneFilterPaneSp.setFitToWidth(true);
             mToneFilterPaneSp.setFitToHeight(true);
-            mToneFilterPane.setContent(mToneFilterPaneSp);
+            mToneFilterPane = mToneFilterPaneSp;
         }
         return mToneFilterPane;
     }
@@ -320,14 +310,9 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     }
 
     // === Squelch Tail Removal pane ===
-    private Tab getSquelchTailPane()
-    {
+    private javafx.scene.Node getSquelchTailPane(){
         if(mSquelchTailPane == null)
         {
-            mSquelchTailPane = new Tab();
-            mSquelchTailPane.setText("Squelch Tail Removal");
-
-
             GridPane gridPane = new GridPane();
             gridPane.setPadding(new Insets(10, 10, 10, 10));
             gridPane.setHgap(10);
@@ -394,20 +379,15 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             javafx.scene.control.ScrollPane mSquelchTailPaneSp = new javafx.scene.control.ScrollPane(gridPane);
             mSquelchTailPaneSp.setFitToWidth(true);
             mSquelchTailPaneSp.setFitToHeight(true);
-            mSquelchTailPane.setContent(mSquelchTailPaneSp);
+            mSquelchTailPane = mSquelchTailPaneSp;
         }
         return mSquelchTailPane;
     }
 
     // === Audio Filters pane ===
-    private Tab getAudioFiltersPane()
-    {
+    private javafx.scene.Node getAudioFiltersPane(){
         if(mAudioFiltersPane == null)
         {
-            mAudioFiltersPane = new Tab();
-            mAudioFiltersPane.setText("Audio Filters");
-
-
             VBox contentBox = new VBox(10);
             contentBox.setPadding(new Insets(10,10,10,10));
 
@@ -437,49 +417,40 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             javafx.scene.control.ScrollPane mAudioFiltersPaneSp = new javafx.scene.control.ScrollPane(contentBox);
             mAudioFiltersPaneSp.setFitToWidth(true);
             mAudioFiltersPaneSp.setFitToHeight(true);
-            mAudioFiltersPane.setContent(mAudioFiltersPaneSp);
+            mAudioFiltersPane = mAudioFiltersPaneSp;
         }
         return mAudioFiltersPane;
     }
 
-    private Tab getEventLogPane()
-    {
+    private javafx.scene.Node getEventLogPane(){
         if(mEventLogPane == null)
         {
-            mEventLogPane = new Tab("Logging");
             javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(getEventLogConfigurationEditor());
             sp.setFitToWidth(true);
             sp.setFitToHeight(true);
-            mEventLogPane.setContent(sp);
+            mEventLogPane = sp;
 
         }
 
         return mEventLogPane;
     }
 
-    private Tab getAuxDecoderPane()
-    {
+    private javafx.scene.Node getAuxDecoderPane(){
         if(mAuxDecoderPane == null)
         {
-            mAuxDecoderPane = new Tab("Additional Decoders");
             javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(getAuxDecoderConfigurationEditor());
             sp.setFitToWidth(true);
             sp.setFitToHeight(true);
-            mAuxDecoderPane.setContent(sp);
+            mAuxDecoderPane = sp;
 
         }
 
         return mAuxDecoderPane;
     }
 
-    private Tab getRecordPane()
-    {
+    private javafx.scene.Node getRecordPane(){
         if(mRecordPane == null)
         {
-            mRecordPane = new Tab();
-            mRecordPane.setText("Recording");
-
-
             GridPane gridPane = new GridPane();
             gridPane.setPadding(new Insets(10,10,10,10));
             gridPane.setHgap(10);
@@ -496,7 +467,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             javafx.scene.control.ScrollPane mRecordPaneSp = new javafx.scene.control.ScrollPane(gridPane);
             mRecordPaneSp.setFitToWidth(true);
             mRecordPaneSp.setFitToHeight(true);
-            mRecordPane.setContent(mRecordPaneSp);
+            mRecordPane = mRecordPaneSp;
         }
 
         return mRecordPane;

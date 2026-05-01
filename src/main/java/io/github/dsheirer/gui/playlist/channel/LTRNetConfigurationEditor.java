@@ -58,11 +58,11 @@ import org.slf4j.LoggerFactory;
 public class LTRNetConfigurationEditor extends ChannelConfigurationEditor
 {
     private final static Logger mLog = LoggerFactory.getLogger(LTRNetConfigurationEditor.class);
-    private Tab mAuxDecoderPane;
-    private Tab mDecoderPane;
-    private Tab mEventLogPane;
-    private Tab mRecordPane;
-    private Tab mSourcePane;
+    private javafx.scene.Node mAuxDecoderPane;
+    private javafx.scene.Node mDecoderPane;
+    private javafx.scene.Node mEventLogPane;
+    private javafx.scene.Node mRecordPane;
+    private javafx.scene.Node mSourcePane;
     private SegmentedButton mDirectionButton;
     private SourceConfigurationEditor mSourceConfigurationEditor;
     private AuxDecoderConfigurationEditor mAuxDecoderConfigurationEditor;
@@ -79,11 +79,16 @@ public class LTRNetConfigurationEditor extends ChannelConfigurationEditor
                                      UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
-        getTabPane().getTabs().add(getSourcePane());
-        getTabPane().getTabs().add(getDecoderPane());
-        getTabPane().getTabs().add(getAuxDecoderPane());
-        getTabPane().getTabs().add(getEventLogPane());
-        getTabPane().getTabs().add(getRecordPane());
+        // Could not find name for getSourcePane()
+        addConfigurationPane("Source", getSourcePane());
+        // Could not find name for getDecoderPane()
+        addConfigurationPane("Decoder", getDecoderPane());
+        // Could not find name for getAuxDecoderPane()
+        addConfigurationPane("Additional Decoders", getAuxDecoderPane());
+        // Could not find name for getEventLogPane()
+        addConfigurationPane("Logging", getEventLogPane());
+        // Could not find name for getRecordPane()
+        addConfigurationPane("Recording", getRecordPane());
     }
 
     @Override
@@ -92,58 +97,23 @@ public class LTRNetConfigurationEditor extends ChannelConfigurationEditor
         return DecoderType.LTR_NET;
     }
 
-    private Tab getSourcePane()
-    {
+    private javafx.scene.Node getSourcePane(){
         if(mSourcePane == null)
         {
-            mSourcePane = new Tab("Source");
             javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(getSourceConfigurationEditor());
             sp.setFitToWidth(true);
             sp.setFitToHeight(true);
-            mSourcePane.setContent(sp);
+            mSourcePane = sp;
 
         }
 
         return mSourcePane;
     }
 
-    private Tab getDecoderPane()
-    {
+    private javafx.scene.Node getDecoderPane(){
         if(mDecoderPane == null)
         {
-            mDecoderPane = new Tab();
-            mDecoderPane.setText("Decoder: LTR-Net");
 
-            mDecoderPane.selectedProperty().addListener((observable, oldValue, newValue) -> {
-                //There's a bug either in the toggle group or the segmented button where setting the toggle to selected
-                //when the control is hidden in a titled pane prevents the selection, so we have to select the toggle
-                //again when the pane is expanded.  This state is detected by a null selected toggle.
-                if(newValue)
-                {
-                    if(getDirectionButton().getToggleGroup().getSelectedToggle() == null)
-                    {
-                        if(getItem().getDecodeConfiguration() instanceof DecodeConfigLTRNet)
-                        {
-                            DecodeConfigLTRNet decodeConfig = (DecodeConfigLTRNet)getItem().getDecodeConfiguration();
-                            MessageDirection direction = decodeConfig.getMessageDirection();
-
-                            if(direction == null)
-                            {
-                                direction = MessageDirection.OSW;
-                            }
-
-                            //This will cause the modified property to trigger, so capture the modified state before
-                            //and re-apply after
-                            boolean modified = modifiedProperty().get();
-                            for(Toggle toggle: getDirectionButton().getToggleGroup().getToggles())
-                            {
-                                toggle.setSelected(toggle.getUserData() == direction);
-                            }
-                            modifiedProperty().set(modified);
-                        }
-                    }
-                }
-            });
 
             GridPane gridPane = new GridPane();
             gridPane.setPadding(new Insets(10,10,10,10));
@@ -164,50 +134,41 @@ public class LTRNetConfigurationEditor extends ChannelConfigurationEditor
             javafx.scene.control.ScrollPane mDecoderPaneSp = new javafx.scene.control.ScrollPane(gridPane);
             mDecoderPaneSp.setFitToWidth(true);
             mDecoderPaneSp.setFitToHeight(true);
-            mDecoderPane.setContent(mDecoderPaneSp);
+            mDecoderPane = mDecoderPaneSp;
         }
 
         return mDecoderPane;
     }
 
-    private Tab getEventLogPane()
-    {
+    private javafx.scene.Node getEventLogPane(){
         if(mEventLogPane == null)
         {
-            mEventLogPane = new Tab("Logging");
             javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(getEventLogConfigurationEditor());
             sp.setFitToWidth(true);
             sp.setFitToHeight(true);
-            mEventLogPane.setContent(sp);
+            mEventLogPane = sp;
 
         }
 
         return mEventLogPane;
     }
 
-    private Tab getAuxDecoderPane()
-    {
+    private javafx.scene.Node getAuxDecoderPane(){
         if(mAuxDecoderPane == null)
         {
-            mAuxDecoderPane = new Tab("Additional Decoders");
             javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(getAuxDecoderConfigurationEditor());
             sp.setFitToWidth(true);
             sp.setFitToHeight(true);
-            mAuxDecoderPane.setContent(sp);
+            mAuxDecoderPane = sp;
 
         }
 
         return mAuxDecoderPane;
     }
 
-    private Tab getRecordPane()
-    {
+    private javafx.scene.Node getRecordPane(){
         if(mRecordPane == null)
         {
-            mRecordPane = new Tab();
-            mRecordPane.setText("Recording");
-
-
             Label notice = new Label("Note: use aliases to control call audio recording");
             notice.setPadding(new Insets(10, 10, 0, 10));
 
@@ -217,7 +178,7 @@ public class LTRNetConfigurationEditor extends ChannelConfigurationEditor
             javafx.scene.control.ScrollPane mRecordPaneSp = new javafx.scene.control.ScrollPane(vBox);
             mRecordPaneSp.setFitToWidth(true);
             mRecordPaneSp.setFitToHeight(true);
-            mRecordPane.setContent(mRecordPaneSp);
+            mRecordPane = mRecordPaneSp;
         }
 
         return mRecordPane;

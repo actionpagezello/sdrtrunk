@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory;
 public class UnknownConfigurationEditor extends ChannelConfigurationEditor
 {
     private final static Logger mLog = LoggerFactory.getLogger(UnknownConfigurationEditor.class);
-    private Tab mDecoderPane;
+    private javafx.scene.Node mDecoderPane;
 
     /**
      * Constructs an instance
@@ -48,16 +48,16 @@ public class UnknownConfigurationEditor extends ChannelConfigurationEditor
                                       UserPreferences userPreferences, IFilterProcessor filterProcessor)
     {
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
-        getTabPane().getTabs().add(getDecoderPane());
+        // Could not find name for getDecoderPane()
+        addConfigurationPane("Decoder", getDecoderPane());
     }
 
-    private Tab getDecoderPane()
-    {
+    private javafx.scene.Node getDecoderPane(){
         if(mDecoderPane == null)
         {
-            mDecoderPane = new Tab();
-            mDecoderPane.setText("Decoder: Unknown Protocol");
-
+            javafx.scene.control.Label l = new javafx.scene.control.Label("Unknown Protocol");
+            l.getStyleClass().add("configuration-placeholder-text");
+            mDecoderPane = l;
             mDecoderPane.setDisable(true);
         }
 
