@@ -27,15 +27,15 @@ import java.util.EnumSet;
 public enum DecoderType
 {
     //Primary Decoders
-    AM("AM", "AM", Protocol.UNKNOWN),
-    DMR("DMR","DMR", Protocol.DMR),
-    LTR("LTR", "LTR", Protocol.LTR),
-    LTR_NET("LTR-Net", "LTR-Net", Protocol.LTR_NET),
-    MPT1327("MPT1327", "MPT1327", Protocol.MPT1327),
-    NBFM("NBFM", "NBFM", Protocol.NBFM),
-    PASSPORT("Passport", "Passport", Protocol.PASSPORT),
-    P25_PHASE1("P25 Phase 1", "P25-1", Protocol.APCO25),
-    P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2),
+    AM("AM", "AM", Protocol.UNKNOWN, "AM.svg"),
+    DMR("DMR","DMR", Protocol.DMR, "DMR.svg"),
+    LTR("LTR", "LTR", Protocol.LTR, "LTR.svg"),
+    LTR_NET("LTR-Net", "LTR-Net", Protocol.LTR_NET, "ltr-net.svg"),
+    MPT1327("MPT1327", "MPT1327", Protocol.MPT1327, "mpt1327.svg"),
+    NBFM("NBFM", "NBFM", Protocol.NBFM, "NBFM.svg"),
+    PASSPORT("Passport", "Passport", Protocol.PASSPORT, "Passport.svg"),
+    P25_PHASE1("P25 Phase 1", "P25-1", Protocol.APCO25, "P25-Phase1.svg"),
+    P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2, "P25-Phase2.svg"),
 
     //Auxiliary Decoders
     CTCSS("Continuous Tone-Coded Squelch (CTCSS)", "CTCSS", Protocol.CTCSS),
@@ -48,12 +48,19 @@ public enum DecoderType
     private String mDisplayString;
     private String mShortDisplayString;
     private Protocol mProtocol;
+    private String mIconName;
 
     DecoderType(String displayString, String shortDisplayString, Protocol protocol)
+    {
+        this(displayString, shortDisplayString, protocol, null);
+    }
+
+    DecoderType(String displayString, String shortDisplayString, Protocol protocol, String iconName)
     {
         mDisplayString = displayString;
         mShortDisplayString = shortDisplayString;
         mProtocol = protocol;
+        mIconName = iconName;
     }
 
     /**
@@ -106,6 +113,11 @@ public enum DecoderType
     public String getShortDisplayString()
     {
         return mShortDisplayString;
+    }
+
+    public String getIconName()
+    {
+        return mIconName;
     }
 
     @Override

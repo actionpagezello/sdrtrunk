@@ -494,9 +494,32 @@ public class ChannelEditor extends javafx.scene.layout.BorderPane implements IFi
             frequencyColumn.setCellValueFactory(new FrequencyCellValueFactory());
             frequencyColumn.setPrefWidth(100);
 
-            TableColumn protocolColumn = new TableColumn("Protocol");
+            TableColumn<Channel, String> protocolColumn = new TableColumn<>("Protocol");
             protocolColumn.setId("channelTable.protocol");
             protocolColumn.setCellValueFactory(new ProtocolCellValueFactory());
+            protocolColumn.setCellFactory(param -> new TableCell<Channel, String>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                        setGraphic(null);
+                    } else {
+                        setText(item);
+                        Channel channel = getTableView().getItems().get(getIndex());
+                        if (channel != null && channel.getDecodeConfiguration() != null && channel.getDecodeConfiguration().getDecoderType() != null && channel.getDecodeConfiguration().getDecoderType().getIconName() != null) {
+                            io.github.dsheirer.icon.Icon icon = mPlaylistManager.getIconModel().getIcon(channel.getDecodeConfiguration().getDecoderType().getIconName());
+                            if (icon != null && icon.getFxImage() != null) {
+                                setGraphic(new javafx.scene.image.ImageView(icon.getFxImage()));
+                            } else {
+                                setGraphic(null);
+                            }
+                        } else {
+                            setGraphic(null);
+                        }
+                    }
+                }
+            });
             protocolColumn.setPrefWidth(100);
 
             mChannelTableView.getColumns().addAll(systemColumn, siteColumn, nameColumn, frequencyColumn, protocolColumn,
@@ -640,6 +663,12 @@ public class ChannelEditor extends javafx.scene.layout.BorderPane implements IFi
         {
             setText(decoderType.getDisplayString());
             mDecoderType = decoderType;
+            if (decoderType.getIconName() != null) {
+                io.github.dsheirer.icon.Icon icon = mPlaylistManager.getIconModel().getIcon(decoderType.getIconName());
+                if (icon != null && icon.getFxImage() != null) {
+                    setGraphic(new javafx.scene.image.ImageView(icon.getFxImage()));
+                }
+            }
             setOnAction(event -> createNewChannel(mDecoderType));
         }
     }
@@ -652,11 +681,35 @@ public class ChannelEditor extends javafx.scene.layout.BorderPane implements IFi
         public NewP25P2ChannelMenu()
         {
             setText(DecoderType.P25_PHASE2.getDisplayString());
+            if (DecoderType.P25_PHASE2.getIconName() != null) {
+                io.github.dsheirer.icon.Icon icon = mPlaylistManager.getIconModel().getIcon(DecoderType.P25_PHASE2.getIconName());
+                if (icon != null && icon.getFxImage() != null) {
+                    setGraphic(new javafx.scene.image.ImageView(icon.getFxImage()));
+                }
+            }
             MenuItem trunkedP1 = new MenuItem("Trunked System - FDMA Phase 1 Control Channel");
+            if (DecoderType.P25_PHASE1.getIconName() != null) {
+                io.github.dsheirer.icon.Icon iconP1 = mPlaylistManager.getIconModel().getIcon(DecoderType.P25_PHASE1.getIconName());
+                if (iconP1 != null && iconP1.getFxImage() != null) {
+                    trunkedP1.setGraphic(new javafx.scene.image.ImageView(iconP1.getFxImage()));
+                }
+            }
             trunkedP1.setOnAction(event -> createNewChannel(DecoderType.P25_PHASE1));
             MenuItem trunkedP2 = new MenuItem("Trunked System - TDMA Phase 2 Control Channel");
+            if (DecoderType.P25_PHASE2.getIconName() != null) {
+                io.github.dsheirer.icon.Icon iconP2 = mPlaylistManager.getIconModel().getIcon(DecoderType.P25_PHASE2.getIconName());
+                if (iconP2 != null && iconP2.getFxImage() != null) {
+                    trunkedP2.setGraphic(new javafx.scene.image.ImageView(iconP2.getFxImage()));
+                }
+            }
             trunkedP2.setOnAction(event -> createNewChannel(DecoderType.P25_PHASE2));
             MenuItem channel = new MenuItem("Individual Phase 2 Channel");
+            if (DecoderType.P25_PHASE2.getIconName() != null) {
+                io.github.dsheirer.icon.Icon iconP2C = mPlaylistManager.getIconModel().getIcon(DecoderType.P25_PHASE2.getIconName());
+                if (iconP2C != null && iconP2C.getFxImage() != null) {
+                    channel.setGraphic(new javafx.scene.image.ImageView(iconP2C.getFxImage()));
+                }
+            }
             channel.setOnAction(event -> createNewChannel(DecoderType.P25_PHASE2));
             getItems().addAll(trunkedP1, trunkedP2, channel);
         }
