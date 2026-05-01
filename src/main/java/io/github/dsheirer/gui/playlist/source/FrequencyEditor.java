@@ -103,9 +103,9 @@ public class FrequencyEditor extends SourceConfigurationEditor<SourceConfigurati
         hBox.setSpacing(10);
         hBox.setAlignment(Pos.CENTER_LEFT);
 
-        Label label = new Label(mAllowMultipleFrequencies ? "Frequencies (MHz)" : "Frequency (MHz)");
+        Label label = new Label(mAllowMultipleFrequencies ? "Frequencies" : "Frequency");
         label.setAlignment(Pos.CENTER_LEFT);
-        hBox.getChildren().addAll(getFrequencyBoxContainer(), label);
+        hBox.getChildren().addAll(label, getFrequencyBoxContainer());
 
         Label preferredTunerLabel = new Label("Preferred Tuner");
         HBox tunerBox = new HBox();
@@ -485,7 +485,8 @@ public class FrequencyEditor extends SourceConfigurationEditor<SourceConfigurati
         public FrequencyBox(Buttons buttons)
         {
             setSpacing(10);
-            getChildren().add(getFrequencyField());
+            setAlignment(Pos.CENTER_LEFT);
+            getChildren().addAll(getFrequencyField(), new Label("MHz"));
 
             switch(buttons)
             {
