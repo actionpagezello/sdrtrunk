@@ -198,6 +198,7 @@ public class AliasItemEditor extends Editor<Alias>
         scrollPane.setFitToWidth(true);
         scrollPane.setFitToHeight(true);
         scrollPane.setContent(vbox);
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background-insets: 0; -fx-padding: 0;");
 
         HBox hbox = new HBox();
         hbox.setMaxWidth(Double.MAX_VALUE);
