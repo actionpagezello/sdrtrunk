@@ -44,6 +44,9 @@ import javax.swing.JScrollPane;
 import javax.swing.JPopupMenu;
 import javax.swing.JCheckBoxMenuItem;
 import io.github.dsheirer.gui.VisibilityListener;
+import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.module.ProcessingChain;
+import java.awt.EventQueue;
 
 import javax.swing.event.ChangeListener;
 import jiconfont.icons.font_awesome.FontAwesome;
@@ -53,7 +56,7 @@ import javax.swing.JLabel;
 /**
  * Swing panel for Now Playing channels table and channel details tab set.
  */
-public class NowPlayingPanel extends JPanel
+public class NowPlayingPanel extends JPanel implements Listener<ProcessingChain>
 {
     private final ChannelMetadataPanel mChannelMetadataPanel;
     private final ChannelDetailPanel mChannelDetailPanel;
@@ -81,7 +84,7 @@ public class NowPlayingPanel extends JPanel
     {
         mVisibilityListener = visibilityListener;
         mChannelDetailPanel = new ChannelDetailPanel(playlistManager.getChannelProcessingManager());
-        mDecodeEventPanel = new DecodeEventPanel(iconModel, userPreferences, playlistManager.getAliasModel());
+        mDecodeEventPanel = new DecodeEventPanel(iconModel, userPreferences, playlistManager.getAliasModel(), playlistManager.getChannelProcessingManager());
         mMessageActivityPanel = new MessageActivityPanel(userPreferences);
         mChannelMetadataPanel = new ChannelMetadataPanel(playlistManager, iconModel, userPreferences, tunerManager);
         mChannelSpectrumSquelchPanel = new ChannelSpectrumPanel(playlistManager, settingsManager);
@@ -93,6 +96,33 @@ public class NowPlayingPanel extends JPanel
     /**
      * Dispose method to clean up listeners
      */
+        @Override
+    public void receive(ProcessingChain processingChain) {
+        EventQueue.invokeLater(() -> {
+            JideTabbedPane pane = getTabbedPane();
+
+            if (processingChain == null) {
+                // Remove all tabs except Events
+                if (pane.indexOfComponent(mChannelDetailPanel) >= 0) {
+                    pane.remove(mChannelDetailPanel);
+                }
+                if (pane.indexOfComponent(mMessageActivityPanel) >= 0) {
+                    pane.remove(mMessageActivityPanel);
+                }
+                if (pane.indexOfComponent(mChannelSpectrumSquelchPanel) >= 0) {
+                    pane.remove(mChannelSpectrumSquelchPanel);
+                }
+            } else {
+                // Restore all tabs in correct order: Details, Events, Messages, Channel
+                pane.removeAll();
+                pane.addTab("Details", mChannelDetailPanel);
+                pane.addTab("Events", mDecodeEventPanel);
+                pane.addTab("Messages", mMessageActivityPanel);
+                pane.addTab("Channel", mChannelSpectrumSquelchPanel);
+            }
+        });
+    }
+
     public void dispose()
     {
         if(mTabbedPane != null && mTabbedPaneChangeListener != null)
@@ -191,6 +221,7 @@ public class NowPlayingPanel extends JPanel
         mChannelMetadataPanel.addProcessingChainSelectionListener(mDecodeEventPanel);
         mChannelMetadataPanel.addProcessingChainSelectionListener(mMessageActivityPanel);
         mChannelMetadataPanel.addProcessingChainSelectionListener(mChannelSpectrumSquelchPanel);
+        mChannelMetadataPanel.addProcessingChainSelectionListener(this);
 
         mWidgetContainer = new WidgetContainer(mNowPlayingPreference);
         mScrollPane = new JScrollPane(mWidgetContainer);
