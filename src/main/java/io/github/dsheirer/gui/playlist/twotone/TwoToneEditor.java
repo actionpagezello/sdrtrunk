@@ -31,7 +31,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
-public class TwoToneEditor extends SplitPane
+public class TwoToneEditor extends javafx.scene.layout.BorderPane
 {
     public static final double[] MOTOROLA_QCII = {
             330.5, 349.0, 368.5, 389.0, 410.6, 433.7, 457.9, 483.5, 510.5, 539.0,
@@ -359,9 +359,6 @@ public class TwoToneEditor extends SplitPane
         HBox.setHgrow(mTableView, Priority.ALWAYS);
         VBox.setVgrow(mTableView, Priority.ALWAYS);
 
-        HBox listToolbar = new HBox(5);
-        listToolbar.setPadding(new Insets(5, 0, 0, 0));
-
         MenuButton newBtn = new MenuButton("New");
         MenuItem newDetectorItem = new MenuItem("Detector");
         newDetectorItem.setOnAction(e -> {
@@ -401,8 +398,17 @@ public class TwoToneEditor extends SplitPane
             mObservableConfigs.setAll(mPlaylistManager.getCurrentPlaylist().getTwoToneConfigurations());
         });
 
-        listToolbar.getChildren().addAll(newBtn, cloneBtn, delBtn, refreshBtn);
-        leftPane.getChildren().addAll(new Label("Two Tone Paging Detectors"), mTableView, listToolbar);
+        HBox topToolbar = new HBox(15);
+        topToolbar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        topToolbar.getStyleClass().add("context-toolbar");
+        topToolbar.setPadding(new Insets(10, 10, 10, 10));
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        topToolbar.getChildren().addAll(spacer, newBtn, cloneBtn, delBtn, refreshBtn);
+        setTop(topToolbar);
+
+
+        leftPane.getChildren().addAll(new Label("Two Tone Paging Detectors"), mTableView);
 
         // Right Pane (Detail): Configuration Tabs -> TitledPanes
         VBox rightPane = new VBox(10);
@@ -452,8 +458,10 @@ public class TwoToneEditor extends SplitPane
         rightPane.getChildren().add(tabPane);
 
         // Add to SplitPane
-        getItems().addAll(leftPane, rightPane);
-        setDividerPositions(0.4);
+        SplitPane centerSplitPane = new SplitPane();
+        centerSplitPane.getItems().addAll(leftPane, rightPane);
+        centerSplitPane.setDividerPositions(0.4);
+        setCenter(centerSplitPane);
     }
     private void syncToPlaylist() {
         if (mPlaylistManager.getCurrentPlaylist() != null) {
