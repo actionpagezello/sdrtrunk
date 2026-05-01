@@ -77,6 +77,21 @@ public class IconModel
 
         IconSet standardIcons = getStandardIconSet();
 
+        // Migrate older standard icons to their new paths so they are recognized as standard icons
+        if (iconSet != null && iconSet.getIcons() != null) {
+            for (Icon icon : iconSet.getIcons()) {
+                if (icon.getPath() != null && icon.getPath().startsWith("images/")) {
+                    if ("Ambulance".equals(icon.getName())) {
+                        icon.setPath("images/ambulance_new.svg");
+                    } else if ("Police".equals(icon.getName())) {
+                        icon.setPath("images/police_car_new.svg");
+                    } else if ("Rescue Truck".equals(icon.getName())) {
+                        icon.setPath("images/rescue_truck_new.svg");
+                    }
+                }
+            }
+        }
+
         mIcons.addAll(iconSet.getIcons());
 
         for(Icon icon: mIcons)
