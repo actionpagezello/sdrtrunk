@@ -86,6 +86,9 @@ public class TwoToneEditor extends javafx.scene.layout.BorderPane
         mqttCol.setCellValueFactory(new PropertyValueFactory<>("enableMqttPublish"));
 
         mTableView.getColumns().addAll(aliasCol, toneACol, toneBCol, mqttCol);
+        mTableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        mTableView.setTableMenuButtonVisible(true);
+        new io.github.dsheirer.preference.javafx.FxTableColumnMonitor(mPlaylistManager.getUserPreferences(), mTableView, "twoToneTable");
 
 
         TextField aliasField = new TextField();

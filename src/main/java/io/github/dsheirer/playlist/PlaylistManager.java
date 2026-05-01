@@ -112,6 +112,15 @@ public class PlaylistManager implements Listener<ChannelEvent>
         mBroadcastModel = new BroadcastModel(mAliasModel, mIconModel, userPreferences);
         mRadioReference = new RadioReference(mUserPreferences);
 
+        initRemaining(eventLogManager);
+
+    }
+
+    public UserPreferences getUserPreferences() {
+        return mUserPreferences;
+    }
+
+    private void initRemaining(EventLogManager eventLogManager) {
         mChannelModel = new ChannelModel(mAliasModel);
         mChannelProcessingManager = new ChannelProcessingManager(mChannelMapModel, eventLogManager, mTunerManager,
             mAliasModel, mUserPreferences);        //Register the channel processing manager to receive global channel stop processing requests so that it can
