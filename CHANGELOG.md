@@ -5,6 +5,28 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-14.9.12] - 2026-05-29
+
+Zello architecture refactor and broadcast reliability release.
+
+### Added
+- `AbstractZelloBroadcaster` shared base class for Zello Work and Consumer real-time streaming.
+- `ZelloProtocolUtil` for shared Opus constants and Bridge error-code mapping.
+- `ZelloChannelConfiguration` interface for shared timing/channel settings.
+- Zello unit tests: `ZelloProtocolUtilTest`, `ZelloBroadcasterTimingTest`, `ZelloSessionEpochTest`.
+
+### Fixed
+- `BroadcastModel` startup stagger counter no longer grows unbounded across manual reconnects.
+- Separate reconnect-batch slot counter with 3s gap reset between reconnect waves.
+- Missing `break` in `BroadcastModel` aged-off/error table update switch.
+- Zello Consumer keepalive, channel-offline reconnect, and encoder shutdown aligned with Work.
+- Stream guard and pause time no longer block real-time audio threads (`Thread.sleep` removed).
+
+### Changed
+- `ZelloBroadcaster` and `ZelloConsumerBroadcaster` reduced to thin subclasses (~100 lines each).
+- Stream guard and pause use scheduled timers; `isRealTimeReady()` respects pending delays.
+- Successful Zello streams now increment parent `incrementStreamedAudioCount()` correctly.
+
 ## [0.6.2-ap-14.6] - 2026-04-11
 
 Runtime-diagnostics release. Adds per-category DEBUG toggles, persistent channel table sort,
@@ -56,6 +78,7 @@ and ThinLine Radio debug-by-default.
 - Audio pipeline tuning for Cambridge COMIRS P25 trunking system.
 - Rdio Scanner stream wiring and API-key reporting improvements.
 
+[0.6.2-ap-14.9.12]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.12
 [0.6.2-ap-14.6]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.6
 [0.6.2-ap-14.5]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.5
 [0.6.2-ap-14.4]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.4

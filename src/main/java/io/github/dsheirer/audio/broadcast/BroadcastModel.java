@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -67,6 +68,28 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
 
     public static final String[] COLUMN_NAMES = new String[]
         {"Stream Type", "Name", "Status", "Queued", "Streamed/Uploaded", "Aged Off", "Upload Error"};
+
+    /**
+     * Stagger delay between broadcaster startups to avoid overwhelming remote servers
+     * (e.g. Zello rate-limiting when many WebSocket connections open simultaneously).
+     */
+    private static final long STARTUP_STAGGER_MS = 1000;
+
+    /**
+     * Counter used to assign each broadcaster a startup slot when configurations are
+     * loaded as a batch. Slot N delays N * STARTUP_STAGGER_MS before connecting.
+     * Reset at the start of {@link #addBroadcastConfigurations}.
+     */
+    private final AtomicInteger mStartupSlot = new AtomicInteger(0);
+
+    /**
+     * Counter for staggered manual reconnects (CONFIGURATION_CHANGE). Resets when
+     * reconnects are more than RECONNECT_BATCH_GAP_MS apart so a single reconnect
+     * is not penalized by earlier startup slots.
+     */
+    private final AtomicInteger mReconnectSlot = new AtomicInteger(0);
+    private volatile long mLastReconnectSlotTime = 0;
+    private static final long RECONNECT_BATCH_GAP_MS = 3000;
 
     private ObservableList<ConfiguredBroadcast> mConfiguredBroadcasts =
         FXCollections.observableArrayList(ConfiguredBroadcast.extractor());
@@ -149,6 +172,7 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
      */
     public void addBroadcastConfigurations(List<BroadcastConfiguration> configurations)
     {
+        mStartupSlot.set(0);
         for(BroadcastConfiguration configuration : configurations)
         {
             addBroadcastConfiguration(configuration);
@@ -361,7 +385,20 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
                 }
 
                 broadcast(new BroadcastEvent(audioBroadcaster, BroadcastEvent.Event.BROADCASTER_ADD));
-                ThreadPool.CACHED.submit(audioBroadcaster::start);
+
+                // Stagger startup to avoid thundering-herd connections (e.g. Zello rate-limiting)
+                int slot = mStartupSlot.getAndIncrement();
+                long delay = slot * STARTUP_STAGGER_MS;
+                if(delay > 0)
+                {
+                    mLog.info("Staggering broadcaster [{}] startup by {}ms (slot {})",
+                        broadcastConfiguration.getName(), delay, slot);
+                    ThreadPool.SCHEDULED.schedule(audioBroadcaster::start, delay, TimeUnit.MILLISECONDS);
+                }
+                else
+                {
+                    ThreadPool.CACHED.submit(audioBroadcaster::start);
+                }
             }
         }
     }
@@ -490,12 +527,17 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
                     //Delete the broadcaster if it exists
                     deleteBroadcaster(configuredBroadcast);
 
-                    //If the configuration is enabled, create a new broadcaster after a brief delay
+                    //If the configuration is enabled, create a new broadcaster after a staggered delay.
+                    //The stagger counter ensures that multiple reconnects clicked in quick succession
+                    //don't all fire at once and overwhelm the remote server.
                     if(broadcastConfiguration.isEnabled())
                     {
-                        //Delay restarting the broadcaster to allow remote server time to cleanup
+                        int slot = allocateReconnectSlot();
+                        long delay = slot * STARTUP_STAGGER_MS;
+                        mLog.info("Scheduling reconnect for [{}] in {}ms (slot {})",
+                            broadcastConfiguration.getName(), delay, slot);
                         ThreadPool.SCHEDULED.schedule(new DelayedBroadcasterStartup(broadcastConfiguration),
-                            1, TimeUnit.SECONDS);
+                            delay, TimeUnit.MILLISECONDS);
                     }
 
                     int index = mConfiguredBroadcasts.indexOf(configuredBroadcast);
@@ -536,6 +578,7 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
                     {
                         fireTableCellUpdated(row, COLUMN_BROADCASTER_AGED_OFF_COUNT);
                     }
+                    break;
                 case BROADCASTER_ERROR_COUNT_CHANGE:
                     if(row >= 0)
                     {
@@ -735,6 +778,21 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
                 }
             }
         });
+    }
+
+    /**
+     * Returns the next reconnect slot, resetting the counter when reconnects are
+     * spaced apart so a lone manual reconnect is not delayed by prior startups.
+     */
+    private int allocateReconnectSlot()
+    {
+        long now = System.currentTimeMillis();
+        if(now - mLastReconnectSlotTime > RECONNECT_BATCH_GAP_MS)
+        {
+            mReconnectSlot.set(0);
+        }
+        mLastReconnectSlotTime = now;
+        return mReconnectSlot.getAndIncrement();
     }
 
     /**

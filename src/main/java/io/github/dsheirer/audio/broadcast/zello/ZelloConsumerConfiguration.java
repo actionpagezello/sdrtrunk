@@ -41,7 +41,7 @@ import javafx.beans.property.StringProperty;
  * - Password: Zello account password
  * - Auth Token: JWT authentication token (required for Zello Consumer)
  */
-public class ZelloConsumerConfiguration extends BroadcastConfiguration
+public class ZelloConsumerConfiguration extends BroadcastConfiguration implements ZelloChannelConfiguration
 {
     private static final String CONSUMER_WS_URL = "wss://zello.io/ws";
 

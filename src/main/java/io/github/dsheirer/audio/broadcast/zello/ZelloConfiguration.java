@@ -42,7 +42,7 @@ import javafx.beans.property.StringProperty;
  * - Username: Zello account username
  * - Password: Zello account password
  */
-public class ZelloConfiguration extends BroadcastConfiguration
+public class ZelloConfiguration extends BroadcastConfiguration implements ZelloChannelConfiguration
 {
     private StringProperty mNetworkName = new SimpleStringProperty();
     private StringProperty mChannel = new SimpleStringProperty();

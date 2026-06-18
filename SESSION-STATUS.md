@@ -1,20 +1,20 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-09
-Location: C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-09.zip
+## Current Build: ap-14.9.12
+Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.9.12.zip`
+
+Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.12\`
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
-- 15 feature branches pushed
 - Master branch has all features integrated
 
 ## Build Environment
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
-- Features path: C:\Users\Admin\projects\sdrtrunk-ap-features
-- Build command: .\gradlew runtimeZipCurrent
-- Version property: gradle.properties -> projectVersion=0.6.2-ap-09
-- 6GB heap (-Xmx6g in build.gradle jvmArgsWindows and jvmArgsLinux)
+- Build command: `.\gradlew runtimeZipCurrent`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.9.12`
+- 6GB heap (`-Xmx6g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Completed Features
 1. CTCSS channel-level filtering (full squelch, Goertzel detector)
@@ -26,77 +26,44 @@ Location: C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_
 7. Tone Filter UI pane in NBFMConfigurationEditor
 8. Mute/Unmute right-click + Show in Waterfall (16x zoom)
 9. Live alias editor refresh via AliasPriorityChangedEvent
-10. Zello Work streaming (auth token removed, console logging suppressed)
+10. Zello Work + Zello Consumer real-time streaming (Opus over WebSocket)
 11. Column width persistence (JTableColumnWidthMonitor)
 12. Column order persistence (added to JTableColumnWidthMonitor)
 13. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
-14. Debug logging cleanup (ChannelMetadataPanel)
+14. Diagnostics preferences panel with per-category DEBUG toggles
+15. FxTableColumnMonitor for Channels editor column/sort persistence
 
-## Bug Fixes in ap-09
-1. **ZelloBroadcaster "invalid stream id" fix** - Added session epoch tracking (mSessionEpoch) that
-   increments on every WebSocket reconnect. Stream operations capture the epoch at start and abort if
-   it changes, preventing start_stream commands and audio packets from being sent on a new connection
-   using stale session state. Also fixed onClose() and onError() to unconditionally reset mStreamActive
-   and mCurrentStreamId on any disconnect, eliminating stale stream IDs surviving across sessions.
-   Affected channels: Chelsea MA Police, Winthrop MA Police (and any other ZelloBroadcaster channel
-   with high traffic volume during WebSocket reconnects).
-   File: ZelloBroadcaster.java (mSessionEpoch, mStreamSessionEpoch, sendStartStream, encodeAndSendFrame,
-   onClose, onError, connectWebSocket)
+## Changes in ap-14.9.12
+1. **AbstractZelloBroadcaster refactor** — Shared base class for Zello Work and Consumer
+   broadcasters. Work/Consumer subclasses are thin hooks (~100 lines each). Shared protocol
+   helpers in `ZelloProtocolUtil.java` and `ZelloChannelConfiguration.java` interface.
+2. **Non-blocking stream guard and pause** — Removed `Thread.sleep` from real-time audio
+   paths. Guard/pause use scheduled timers; `isRealTimeReady()` reflects pending delays.
+3. **BroadcastModel startup stagger fix** — Separate reconnect slot counter resets between
+   batches so manual reconnects are not delayed by prior startup slots. Startup batch resets
+   on `addBroadcastConfigurations()`. Fixed missing `break` in aged-off table update switch.
+4. **Zello Consumer parity** — Keepalive try/catch wrapper, channel-offline reconnect, and
+   encoder shutdown timing aligned with Work broadcaster.
+5. **Zello unit tests** — `ZelloProtocolUtilTest`, `ZelloBroadcasterTimingTest`,
+   `ZelloSessionEpochTest` (10 tests, all passing).
 
-## Bug Fixes in ap-08
-1. **Mute now sticks across restarts** - ChannelAddListener now checks alias DO_NOT_MONITOR priority
-   at channel startup, not just mMutedChannelIds. Both alias-based and non-alias mute re-applied.
-   File: ChannelMetadataPanel.java (ChannelAddListener.receive)
-
-2. **Column sorting now works** - Added TableRowSorter to the Now Playing JTable with case-insensitive
-   comparators for string columns. Click column headers to sort ascending/descending.
-   File: ChannelMetadataPanel.java (init method)
-
-3. **Column sort state now saves** - JTableColumnWidthMonitor now persists and restores sort keys
-   (column + sort order) alongside column widths and order. Added RowSorterListener for change detection.
-   File: JTableColumnWidthMonitor.java (storeSortState, restoreSortState, SortListener)
-
-4. **Details tab shows channel configuration** - ChannelDetailPanel now shows a "Channel Configuration"
-   header with decoder type, frequency, and alias list name before the decoder state activity summary.
-   Provides useful context even when P25 network data hasn't been received yet.
-   File: ChannelDetailPanel.java (receive method)
-
-5. **P25 channels now show alias names** - Fixed AliasList.TalkgroupAliasList.getAlias() and
-   RadioAliasList.getAlias() to fall through from fully qualified map lookup to simple value and
-   range matching when the FQ map returns null. Previously returned null immediately for
-   FullyQualifiedTalkgroupIdentifier/FullyQualifiedRadioIdentifier without trying simpler matches.
-   File: AliasList.java (TalkgroupAliasList.getAlias, RadioAliasList.getAlias)
-
-6. **Listen toggle sync fixed** - Added mSuppressModification flag to AliasItemEditor that prevents
-   the toggle/combo change listeners from firing during @Subscribe AliasPriorityChangedEvent handling.
-   Eliminates race condition between programmatic UI updates and user-initiated changes.
-   File: AliasItemEditor.java (aliasPriorityChanged, getMonitorAudioToggleSwitch, getMonitorPriorityComboBox)
-
-## Key File Paths (replacement files -> source tree)
-- NBFMDecoder.java -> module/decode/nbfm/
-- DCSDetector.java -> module/decode/nbfm/ (NEW file)
-- NBFMConfigurationEditor.java -> gui/playlist/channel/
-- DecoderType.java -> module/decode/
-- AliasItemEditor.java -> gui/playlist/alias/
-- IdentifierEditorFactory.java -> gui/playlist/alias/identifier/
-- logback.xml -> src/main/resources/
-- AbstractAudioModule.java -> audio/
-- ChannelMetadataPanel.java -> channel/metadata/ (NOT gui/channel/)
-- AliasPriorityChangedEvent.java -> channel/metadata/ (NEW file)
-- TunerEvent.java -> source/tuner/
-- TunerSpectralDisplayManager.java -> source/tuner/ui/
-- ZelloBroadcaster.java -> audio/broadcast/zello/
+## Key Zello File Paths
+- AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (NEW — shared base)
+- ZelloProtocolUtil.java -> audio/broadcast/zello/ (NEW — constants + error mapping)
+- ZelloChannelConfiguration.java -> audio/broadcast/zello/ (NEW — shared config interface)
+- ZelloBroadcaster.java -> audio/broadcast/zello/ (Work — thin subclass)
+- ZelloConsumerBroadcaster.java -> audio/broadcast/zello/ (Consumer — thin subclass)
 - ZelloConfiguration.java -> audio/broadcast/zello/
-- JTableColumnWidthMonitor.java -> preference/swing/
-- AliasModel.java -> alias/
-- AliasList.java -> alias/
-- ChannelDetailPanel.java -> channel/details/
+- ZelloConsumerConfiguration.java -> audio/broadcast/zello/
+- BroadcastModel.java -> audio/broadcast/ (staggered broadcaster startup)
+
+## Test Commands
+```
+.\gradlew test --tests "io.github.dsheirer.audio.broadcast.zello.*"
+.\gradlew runtimeZipCurrent
+```
 
 ## IMPORTANT: ChannelMetadataPanel path
-The correct path is channel/metadata/ChannelMetadataPanel.java (package io.github.dsheirer.channel.metadata).
-It was incorrectly copied to gui/channel/ in ap-06 which caused mute/unmute and channel names to not work.
-Fixed in ap-07. The wrong file at gui/channel/ was deleted.
-
-## Friend's Features (already in source tree from previous commits)
-All 12 features from the friend are integrated in the source tree via previous git commits on master.
-They also have individual feature branches on the fork for PR submission.
+The correct path is `channel/metadata/ChannelMetadataPanel.java` (package `io.github.dsheirer.channel.metadata`).
+It was incorrectly copied to `gui/channel/` in ap-06 which caused mute/unmute and channel names to not work.
+Fixed in ap-07. The wrong file at `gui/channel/` was deleted.
