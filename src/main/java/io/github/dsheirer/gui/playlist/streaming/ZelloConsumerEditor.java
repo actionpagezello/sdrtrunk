@@ -101,9 +101,9 @@ public class ZelloConsumerEditor extends AbstractBroadcastEditor<ZelloConsumerCo
             getPasswordField().setText(null);
             getAuthTokenTextField().setText(null);
             getMaxAgeTextField().set(0);
-            getStreamGuardTextField().set(500);
+            getStreamGuardTextField().set(0);
             getPauseTimeTextField().set(0);
-            getRelaxationTimeTextField().set(0);
+            getRelaxationTimeTextField().set(700);
         }
 
         modifiedProperty().set(false);

@@ -5,6 +5,20 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-14.9.14] - 2026-06-18
+
+Zello streaming table UX and configuration editor alignment.
+
+### Fixed
+- Stream-level Zello API errors (`channel busy`, server `on_stream_stop`, etc.) no longer linger in
+  the streaming table error column while the broadcaster status is Connected.
+- Zello Work and Consumer editor empty-form defaults aligned with configuration class defaults
+  (`stream_guard_ms`, `pause_time_ms`, `relaxation_time_ms`).
+
+### Changed
+- Connection-level errors (handshake failure, timeout, kicked, channel offline) still display in the
+  error column; stream-level issues are logged but cleared from the UI during healthy sessions.
+
 ## [0.6.2-ap-14.9.13] - 2026-06-18
 
 Zello reconnect and rate-limit reliability release.
@@ -92,6 +106,7 @@ and ThinLine Radio debug-by-default.
 - Audio pipeline tuning for Cambridge COMIRS P25 trunking system.
 - Rdio Scanner stream wiring and API-key reporting improvements.
 
+[0.6.2-ap-14.9.14]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.14
 [0.6.2-ap-14.9.13]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.13
 [0.6.2-ap-14.9.12]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.12
 [0.6.2-ap-14.6]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.6

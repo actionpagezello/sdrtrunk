@@ -1,9 +1,9 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-14.9.13
-Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.9.13.zip`
+## Current Build: ap-14.9.14
+Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.9.14.zip`
 
-Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.13\`
+Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.14\`
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
@@ -13,7 +13,7 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.13\`
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.9.13`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.9.14`
 - 6GB heap (`-Xmx6g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Completed Features
@@ -32,6 +32,15 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.13\`
 13. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
 14. Diagnostics preferences panel with per-category DEBUG toggles
 15. FxTableColumnMonitor for Channels editor column/sort persistence
+
+## Changes in ap-14.9.14
+1. **Streaming table error column** — Stream-level Zello errors (`channel busy`, etc.) are cleared
+   while Connected so status and error text do not contradict each other. Connection-level problems
+   (handshake, timeout, kicked, offline) still show in the error column.
+2. **Editor defaults** — Empty Zello editor forms use the same timing defaults as the configuration
+   classes (`stream_guard_ms=0`, `pause_time_ms=0`, `relaxation_time_ms=700`). Per-channel tuning
+   unchanged — configure in the playlist as needed.
+3. **Tests** — `ZelloBroadcasterTimingTest` covers error clearing while connected and timing defaults.
 
 ## Changes in ap-14.9.13
 1. **Manual Reconnect fix** — Reconnect no longer reuses the cold-start `mStartupSlot` counter.

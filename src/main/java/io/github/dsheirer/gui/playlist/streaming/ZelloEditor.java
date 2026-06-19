@@ -98,9 +98,9 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
             getUsernameTextField().setText(null);
             getPasswordField().setText(null);
             getMaxAgeTextField().set(0);
-            getStreamGuardTextField().set(500);
+            getStreamGuardTextField().set(0);
             getPauseTimeTextField().set(0);
-            getRelaxationTimeTextField().set(0);
+            getRelaxationTimeTextField().set(700);
         }
 
         modifiedProperty().set(false);

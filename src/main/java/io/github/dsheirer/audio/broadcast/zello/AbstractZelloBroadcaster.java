@@ -132,6 +132,30 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         return config != null && config.getChannel() != null ? "[" + config.getChannel() + "] " : "";
     }
 
+    /**
+     * Sets error detail for connection, auth, or channel-offline problems. These change or reflect session health.
+     */
+    protected void setConnectionErrorDetail(String detail)
+    {
+        setLastErrorDetail(detail);
+    }
+
+    /**
+     * Updates error detail for stream-level API responses. Clears the error column while CONNECTED so status and
+     * error text do not contradict each other (e.g. channel busy during an otherwise healthy session).
+     */
+    protected void updateStreamErrorDetail(String detail)
+    {
+        if(getBroadcastState() == BroadcastState.CONNECTED)
+        {
+            setLastErrorDetail(null);
+        }
+        else if(detail != null)
+        {
+            setLastErrorDetail(detail);
+        }
+    }
+
     protected abstract String connectTargetLabel();
 
     protected abstract void onBeforeConnect();
@@ -366,6 +390,11 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 this::processAudioQueue, 10, 10, TimeUnit.MILLISECONDS);
         }
 
+        if(getBroadcastState() == BroadcastState.CONNECTED)
+        {
+            setLastErrorDetail(null);
+        }
+
         mLog.info("{}Zello stream started", ch());
     }
 
@@ -537,6 +566,10 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 mLastStreamStopTime = stopTime;
                 mPauseUntilTime = 0;
                 mStreamGuardUntilTime = guardMs > 0 ? stopTime + guardMs : 0;
+                if(getBroadcastState() == BroadcastState.CONNECTED)
+                {
+                    setLastErrorDetail(null);
+                }
                 maybeSchedulePendingStreamStart();
             }, pauseMs, TimeUnit.MILLISECONDS);
         }
@@ -574,7 +607,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 ch(), error, bridgeCode, seq, command);
         }
 
-        setLastErrorDetail("[" + bridgeCode + "] " + error);
+        updateStreamErrorDetail("[" + bridgeCode + "] " + error);
         mCurrentStreamId.set(-2);
         mStreamActive.set(false);
         mAudioQueue.clear();
@@ -791,7 +824,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 .exceptionally(ex ->
                 {
                     mLog.error("{}WebSocket connection failed: {}", ch(), ex.getMessage());
-                    setLastErrorDetail("WebSocket handshake failed");
+                    setConnectionErrorDetail("WebSocket handshake failed");
                     setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
                     mReconnecting.set(false);
                     scheduleReconnect();
@@ -837,7 +870,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             {
                 mLog.warn("{}Zello connection timeout — no channel status after {}s. Forcing reconnect.",
                     ch(), CONNECTION_TIMEOUT_MS / 1000);
-                setLastErrorDetail("Connection timeout (" + CONNECTION_TIMEOUT_MS / 1000 + "s)");
+                setConnectionErrorDetail("Connection timeout (" + CONNECTION_TIMEOUT_MS / 1000 + "s)");
                 disconnectWebSocket();
                 setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
                 scheduleReconnect();
@@ -962,7 +995,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 }
 
                 setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                setLastErrorDetail("Keepalive timeout — connection dead");
+                setConnectionErrorDetail("Keepalive timeout — connection dead");
                 scheduleReconnect();
                 return;
             }
@@ -1075,6 +1108,22 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     {
         mConnected.set(connected);
         mChannelOnline.set(channelOnline);
+    }
+
+    /**
+     * Test support — sets broadcast state without dispatching to the JavaFX thread.
+     */
+    protected void setBroadcastStateForTesting(BroadcastState state)
+    {
+        mBroadcastState.setValue(state);
+    }
+
+    /**
+     * Test support — sets last error detail without dispatching to the JavaFX thread.
+     */
+    protected void setLastErrorDetailForTesting(String detail)
+    {
+        mLastErrorDetail.setValue(detail);
     }
 
     /**
@@ -1254,7 +1303,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
                         mLog.debug("{}Zello [{}]: error=\"{}\" seq={} command={}",
                             ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");
-                        setLastErrorDetail("[" + bridgeCode + "] " + errorMsg +
+                        updateStreamErrorDetail("[" + bridgeCode + "] " + errorMsg +
                             (originCmd != null ? " — " + originCmd : ""));
                         mStreamActive.set(false);
                         mCurrentStreamId.set(-1);
@@ -1269,7 +1318,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
                     mLog.error("{}Zello [{}]: error=\"{}\" seq={} command={}",
                         ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");
-                    setLastErrorDetail("[" + bridgeCode + "] " + errorMsg);
+                    setConnectionErrorDetail("[" + bridgeCode + "] " + errorMsg);
                     setBroadcastState(BroadcastState.CONFIGURATION_ERROR);
                     return;
                 }
@@ -1312,7 +1361,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                                     mWebSocket = null;
                                 }
                                 setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                setLastErrorDetail("Channel offline (status=" + status + ")");
+                                setConnectionErrorDetail("Channel offline (status=" + status + ")");
                                 scheduleReconnect();
                             }
                         }
@@ -1323,7 +1372,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                         if(stoppedId > 0 && stoppedId == mCurrentStreamId.get())
                         {
                             mLog.info("{}Zello server stopped our stream (id={})", ch(), stoppedId);
-                            setLastErrorDetail("[3007] server stopped stream (id=" + stoppedId + ")");
+                            updateStreamErrorDetail("[3007] server stopped stream (id=" + stoppedId + ")");
                             mStreamActive.set(false);
                             mCurrentStreamId.set(-1);
                             mLastStreamStopTime = System.currentTimeMillis();
@@ -1341,7 +1390,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
                         if("kicked".equals(error))
                         {
-                            setLastErrorDetail("[3009] kicked");
+                            setConnectionErrorDetail("[3009] kicked");
                             mKicked.set(true);
                             mKickedCount.incrementAndGet();
                             mConnected.set(false);

@@ -21,17 +21,36 @@ package io.github.dsheirer.audio.broadcast.zello;
 
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.broadcast.BroadcastFormat;
+import io.github.dsheirer.audio.broadcast.BroadcastState;
 import io.github.dsheirer.audio.convert.InputAudioFormat;
 import io.github.dsheirer.audio.convert.MP3Setting;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import javafx.application.Platform;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ZelloBroadcasterTimingTest
 {
     private ZelloBroadcaster mBroadcaster;
+
+    @BeforeAll
+    public static void initJavaFx()
+    {
+        try
+        {
+            Platform.startup(() -> {});
+        }
+        catch(IllegalStateException ignored)
+        {
+        }
+    }
 
     @BeforeEach
     public void setup()
@@ -96,5 +115,33 @@ public class ZelloBroadcasterTimingTest
         ZelloConsumerBroadcaster consumer = new ZelloConsumerBroadcaster(config, InputAudioFormat.SR_8000,
             MP3Setting.getDefault(), new AliasModel());
         assertFalse(consumer.isKeepaliveAckCommand("keepalive"));
+    }
+
+    @Test
+    public void streamErrorDetailClearedWhileConnected() throws Exception
+    {
+        CountDownLatch latch = new CountDownLatch(1);
+        Platform.runLater(() -> {
+            mBroadcaster.setBroadcastStateForTesting(BroadcastState.CONNECTED);
+            mBroadcaster.setLastErrorDetailForTesting("[3008] channel busy");
+            mBroadcaster.updateStreamErrorDetail("[3008] channel busy");
+            latch.countDown();
+        });
+        assertTrue(latch.await(2, TimeUnit.SECONDS));
+        assertNull(mBroadcaster.getLastErrorDetail());
+    }
+
+    @Test
+    public void timingConfigurationDefaultsMatchBridge()
+    {
+        ZelloConfiguration config = new ZelloConfiguration(BroadcastFormat.MP3);
+        assertTrue(config.getStreamGuardMs() == 0);
+        assertTrue(config.getPauseTimeMs() == 0);
+        assertTrue(config.getRelaxationTimeMs() == 700);
+
+        ZelloConsumerConfiguration consumerConfig = new ZelloConsumerConfiguration(BroadcastFormat.MP3);
+        assertTrue(consumerConfig.getStreamGuardMs() == 0);
+        assertTrue(consumerConfig.getPauseTimeMs() == 0);
+        assertTrue(consumerConfig.getRelaxationTimeMs() == 700);
     }
 }

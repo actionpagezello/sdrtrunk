@@ -125,7 +125,7 @@ public class ZelloConsumerBroadcaster extends AbstractZelloBroadcaster<ZelloCons
         {
             mLog.warn("{}Refresh token rejected — retrying with full credentials", ch());
             mRefreshToken = null;
-            setLastErrorDetail("[" + bridgeCode + "] refresh_token expired, retrying");
+            updateStreamErrorDetail("[" + bridgeCode + "] refresh_token expired, retrying");
             sendLogon();
             return true;
         }
