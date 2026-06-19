@@ -50,9 +50,18 @@ public class ZelloProtocolUtilTest
     @Test
     public void isTransientStreamError()
     {
+        assertTrue(ZelloProtocolUtil.isTransientStreamError("channel busy"));
         assertTrue(ZelloProtocolUtil.isTransientStreamError("invalid stream id"));
         assertTrue(ZelloProtocolUtil.isTransientStreamError("failed to start sending message"));
         assertFalse(ZelloProtocolUtil.isTransientStreamError("invalid credentials"));
         assertFalse(ZelloProtocolUtil.isTransientStreamError(null));
+    }
+
+    @Test
+    public void getStreamRetryBackoffMs()
+    {
+        assertEquals(750, ZelloProtocolUtil.getStreamRetryBackoffMs("channel busy"));
+        assertEquals(0, ZelloProtocolUtil.getStreamRetryBackoffMs("failed to start stream"));
+        assertEquals(0, ZelloProtocolUtil.getStreamRetryBackoffMs(null));
     }
 }

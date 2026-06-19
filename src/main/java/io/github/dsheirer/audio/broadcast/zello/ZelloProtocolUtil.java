@@ -38,12 +38,16 @@ public final class ZelloProtocolUtil
     public static final String CODEC_HEADER_B64 = Base64.getEncoder().encodeToString(CODEC_HEADER);
 
     private static final Set<String> TRANSIENT_STREAM_ERRORS = Set.of(
+        "channel busy",
         "invalid stream id",
         "failed to stop stream",
         "failed to start stream",
         "failed to start sending message",
         "failed to stop sending message"
     );
+
+    /** Minimum backoff when the server rejects start_stream with channel busy. */
+    private static final int CHANNEL_BUSY_BACKOFF_MS = 750;
 
     private ZelloProtocolUtil()
     {
@@ -83,5 +87,18 @@ public final class ZelloProtocolUtil
     public static boolean isTransientStreamError(String errorMsg)
     {
         return errorMsg != null && TRANSIENT_STREAM_ERRORS.contains(errorMsg);
+    }
+
+    /**
+     * Extra pause before retrying after a transient stream error. Configured pause/guard times still apply.
+     */
+    public static int getStreamRetryBackoffMs(String errorMsg)
+    {
+        if("channel busy".equals(errorMsg))
+        {
+            return CHANNEL_BUSY_BACKOFF_MS;
+        }
+
+        return 0;
     }
 }

@@ -5,6 +5,20 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-14.9.13] - 2026-06-18
+
+Zello reconnect and rate-limit reliability release.
+
+### Fixed
+- Manual Reconnect no longer waits on the cold-start slot counter (~34s delay after startup).
+- Rejected `start_stream` (`channel busy`, etc.) no longer increments ghost-stream counter or forces session reconnect.
+- Ghost-stream detection limited to streams that never received a `stream_id` (pending id -1), not explicit failures (-2).
+
+### Changed
+- Cold-start connections batched at 9 per minute to stay under Zello's documented 10/min/IP WebSocket limit.
+- `channel busy` treated as transient with 750ms minimum retry backoff plus configured pause/guard times.
+- Manual reconnect stagger uses 2s spacing instead of reusing cold-start batch delays.
+
 ## [0.6.2-ap-14.9.12] - 2026-05-29
 
 Zello architecture refactor and broadcast reliability release.
@@ -78,6 +92,7 @@ and ThinLine Radio debug-by-default.
 - Audio pipeline tuning for Cambridge COMIRS P25 trunking system.
 - Rdio Scanner stream wiring and API-key reporting improvements.
 
+[0.6.2-ap-14.9.13]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.13
 [0.6.2-ap-14.9.12]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.12
 [0.6.2-ap-14.6]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.6
 [0.6.2-ap-14.5]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.5

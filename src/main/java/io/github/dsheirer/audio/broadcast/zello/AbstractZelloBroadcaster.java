@@ -479,7 +479,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             mConsecutiveGhostStreams = 0;
             broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
         }
-        else if(streamId <= 0 && mConnected.get())
+        else if(streamId == -1 && mConnected.get())
         {
             mConsecutiveGhostStreams++;
             mLog.warn("{}Zello ghost stream detected — server did not return stream_id ({}/{})",
@@ -509,7 +509,23 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mResampleBufferPos = 0;
         mAudioQueue.clear();
 
-        int pauseMs = zelloConfig().getPauseTimeMs();
+        scheduleStreamCooldown(0);
+
+        mLog.info("{}Zello stream stopped", ch());
+    }
+
+    /**
+     * Applies configured pause/guard after a stream ends or a transient start_stream failure.
+     */
+    private synchronized void scheduleStreamCooldown(int additionalPauseMs)
+    {
+        if(mPauseFuture != null)
+        {
+            mPauseFuture.cancel(false);
+            mPauseFuture = null;
+        }
+
+        int pauseMs = Math.max(zelloConfig().getPauseTimeMs(), additionalPauseMs);
         int guardMs = Math.max(0, zelloConfig().getStreamGuardMs());
         long now = System.currentTimeMillis();
         if(pauseMs > 0)
@@ -531,8 +547,43 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             mStreamGuardUntilTime = guardMs > 0 ? now + guardMs : 0;
             maybeSchedulePendingStreamStart();
         }
+    }
 
-        mLog.info("{}Zello stream stopped", ch());
+    /**
+     * Handles a rejected start_stream without treating it as a ghost stream (no stream_id assigned).
+     */
+    private synchronized void handleStartStreamFailure(String error, int seq, String originCmd)
+    {
+        if(mEncoderFuture != null)
+        {
+            mEncoderFuture.cancel(false);
+            mEncoderFuture = null;
+        }
+
+        int bridgeCode = ZelloProtocolUtil.mapBridgeErrorCode(error);
+        String command = originCmd != null ? originCmd : "start_stream";
+
+        if(ZelloProtocolUtil.isTransientStreamError(error))
+        {
+            mLog.warn("{}Zello start_stream failed (transient): error=\"{}\" [{}] seq={} command={}",
+                ch(), error, bridgeCode, seq, command);
+        }
+        else
+        {
+            mLog.error("{}Zello start_stream failed: error=\"{}\" [{}] seq={} command={}",
+                ch(), error, bridgeCode, seq, command);
+        }
+
+        setLastErrorDetail("[" + bridgeCode + "] " + error);
+        mCurrentStreamId.set(-2);
+        mStreamActive.set(false);
+        mAudioQueue.clear();
+        mResampleBufferPos = 0;
+
+        if(ZelloProtocolUtil.isTransientStreamError(error))
+        {
+            scheduleStreamCooldown(ZelloProtocolUtil.getStreamRetryBackoffMs(error));
+        }
     }
 
     private void maybeSchedulePendingStreamStart()
@@ -1195,6 +1246,12 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
                     if(ZelloProtocolUtil.isTransientStreamError(errorMsg))
                     {
+                        if("start_stream".equals(originCmd))
+                        {
+                            handleStartStreamFailure(errorMsg, seq, originCmd);
+                            return;
+                        }
+
                         mLog.debug("{}Zello [{}]: error=\"{}\" seq={} command={}",
                             ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");
                         setLastErrorDetail("[" + bridgeCode + "] " + errorMsg +
@@ -1332,11 +1389,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                         int seq = json.has("seq") ? json.get("seq").getAsInt() : -1;
                         String originCmd = seq > 0 ? mPendingCommands.remove(seq) : null;
                         String error = json.has("error") ? json.get("error").getAsString() : "unknown";
-                        mLog.error("{}Zello start_stream failed: error=\"{}\" seq={} command={}",
-                            ch(), error, seq, originCmd != null ? originCmd : "start_stream");
-                        setLastErrorDetail("[3006] " + error);
-                        mCurrentStreamId.set(-2);
-                        mStreamActive.set(false);
+                        handleStartStreamFailure(error, seq, originCmd);
                     }
                 }
             }

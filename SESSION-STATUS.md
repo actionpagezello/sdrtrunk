@@ -1,9 +1,9 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-14.9.12
-Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.9.12.zip`
+## Current Build: ap-14.9.13
+Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.9.13.zip`
 
-Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.12\`
+Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.13\`
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
@@ -13,7 +13,7 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.12\`
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.9.12`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.9.13`
 - 6GB heap (`-Xmx6g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Completed Features
@@ -33,6 +33,23 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.12\`
 14. Diagnostics preferences panel with per-category DEBUG toggles
 15. FxTableColumnMonitor for Channels editor column/sort persistence
 
+## Changes in ap-14.9.13
+1. **Manual Reconnect fix** — Reconnect no longer reuses the cold-start `mStartupSlot` counter.
+   `DelayedBroadcasterStartup` passes a reconnect flag so the broadcaster connects immediately
+   after its reconnect delay (slot 0 = 0ms), instead of waiting ~34s after a full startup.
+2. **Zello startup rate limiting** — Cold-start connections batched at 9 per minute (1s apart),
+   then a 60s pause before the next batch, staying under Zello's documented 10 new WebSockets/min/IP.
+   ~33 broadcasters take ~3 minutes to fully connect instead of ~33 seconds.
+3. **Ghost stream fix** — Ghost detection only when `stream_id` is still pending (-1). Explicit
+   `start_stream` failures (-2, including `channel busy`) no longer increment the ghost counter
+   or force a session reconnect after 3 strikes.
+4. **`channel busy` handling** — Added to transient errors in `ZelloProtocolUtil`. Failed starts
+   schedule cooldown with 750ms minimum backoff plus configured pause/guard times instead of
+   disconnecting. `handleStartStreamFailure()` centralizes this path.
+5. **Reconnect stagger** — Manual reconnects spaced 2s apart (`RECONNECT_STAGGER_MS`), separate
+   from cold-start batch timing.
+6. **Tests** — `ZelloProtocolUtilTest` extended for `channel busy` transient and backoff helpers.
+
 ## Changes in ap-14.9.12
 1. **AbstractZelloBroadcaster refactor** — Shared base class for Zello Work and Consumer
    broadcasters. Work/Consumer subclasses are thin hooks (~100 lines each). Shared protocol
@@ -48,14 +65,14 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.12\`
    `ZelloSessionEpochTest` (10 tests, all passing).
 
 ## Key Zello File Paths
-- AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (NEW — shared base)
-- ZelloProtocolUtil.java -> audio/broadcast/zello/ (NEW — constants + error mapping)
-- ZelloChannelConfiguration.java -> audio/broadcast/zello/ (NEW — shared config interface)
+- AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (shared base)
+- ZelloProtocolUtil.java -> audio/broadcast/zello/ (constants + error mapping)
+- ZelloChannelConfiguration.java -> audio/broadcast/zello/ (shared config interface)
 - ZelloBroadcaster.java -> audio/broadcast/zello/ (Work — thin subclass)
 - ZelloConsumerBroadcaster.java -> audio/broadcast/zello/ (Consumer — thin subclass)
 - ZelloConfiguration.java -> audio/broadcast/zello/
 - ZelloConsumerConfiguration.java -> audio/broadcast/zello/
-- BroadcastModel.java -> audio/broadcast/ (staggered broadcaster startup)
+- BroadcastModel.java -> audio/broadcast/ (staggered broadcaster startup + reconnect)
 
 ## Test Commands
 ```
