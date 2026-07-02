@@ -23,12 +23,9 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
-import javafx.geometry.Insets;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,11 +50,7 @@ public class AudioOutputDeviceEditor extends HBox
      */
     public AudioOutputDeviceEditor()
     {
-        setPadding(new Insets(5, 5, 5, 5));
         setSpacing(10);
-
-        Label label = new Label("Audio Output:");
-        label.setMinWidth(Region.USE_PREF_SIZE);
 
         mDeviceComboBox = new ComboBox<>();
         mDeviceComboBox.setMaxWidth(Double.MAX_VALUE);
@@ -95,7 +88,7 @@ public class AudioOutputDeviceEditor extends HBox
             }
         });
 
-        getChildren().addAll(label, mDeviceComboBox);
+        getChildren().addAll(mDeviceComboBox);
     }
 
     /**

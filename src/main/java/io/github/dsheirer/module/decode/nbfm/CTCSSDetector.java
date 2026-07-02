@@ -23,7 +23,6 @@ import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.EnumSet;
 import java.util.Set;
 
 /**
@@ -68,9 +67,22 @@ public class CTCSSDetector
      */
     private static final int LOSS_COUNT = 4;
 
+    /**
+     * Guard tone frequencies placed just outside the valid CTCSS range (67.0 - 254.1 Hz).
+     * When broadband noise or out-of-range energy (hum, power line harmonics, digital
+     * subcarrier bleed) is present, it can leak into the nearest standard CTCSS bins via
+     * spectral leakage from the Goertzel algorithm. Guard tones catch this: if the peak
+     * energy lands on a guard, the detector knows the energy is outside the CTCSS range
+     * and treats it as "no detection" rather than a false match on an edge tone.
+     */
+    private static final float GUARD_LOW_FREQ = 65.0f;
+    private static final float GUARD_HIGH_FREQ = 260.0f;
+
     private final Set<CTCSSCode> mTargetCodes;
-    private final float[] mTargetFrequencies;
-    private final CTCSSCode[] mTargetCodeArray;
+    private final float[] mScanFrequencies;     // All frequencies scanned (standard + guards)
+    private final CTCSSCode[] mScanCodeArray;    // Parallel code array (null for guard entries)
+    private final int mGuardLowIndex;            // Index of low guard in scan arrays
+    private final int mGuardHighIndex;           // Index of high guard in scan arrays
     private final float mSampleRate;
     private final int mBlockSize;
 
@@ -125,29 +137,37 @@ public class CTCSSDetector
             mTargetCodes = targetCodes;
         }
 
-        // Always scan ALL standard CTCSS tones to prevent spectral leakage false matches.
-        // We find the strongest tone across all frequencies, then check if it's in our allowed set.
-        Set<CTCSSCode> allCodes = CTCSSCode.STANDARD_CODES;
-        mTargetCodeArray = allCodes.toArray(new CTCSSCode[0]);
-        mTargetFrequencies = new float[mTargetCodeArray.length];
-        mCoefficients = new float[mTargetCodeArray.length];
+        // Build scan array: low guard + all standard CTCSS tones + high guard.
+        // We scan ALL standard tones (not just targets) to prevent spectral leakage false matches.
+        // Guard tones at the edges catch out-of-range energy (hum, power line harmonics, digital
+        // subcarrier bleed) that would otherwise leak into the nearest standard bins.
+        CTCSSCode[] standardCodes = CTCSSCode.STANDARD_CODES.toArray(new CTCSSCode[0]);
+        int scanCount = standardCodes.length + 2; // +2 for guards
 
-        for(int i = 0; i < mTargetCodeArray.length; i++)
+        mScanFrequencies = new float[scanCount];
+        mScanCodeArray = new CTCSSCode[scanCount];
+        mCoefficients = new float[scanCount];
+
+        // Low guard at index 0
+        mGuardLowIndex = 0;
+        mScanFrequencies[0] = GUARD_LOW_FREQ;
+        mScanCodeArray[0] = null; // null = guard entry
+
+        // Standard tones at indices 1..N
+        for(int i = 0; i < standardCodes.length; i++)
         {
-            mTargetFrequencies[i] = mTargetCodeArray[i].getFrequency();
+            mScanFrequencies[i + 1] = standardCodes[i].getFrequency();
+            mScanCodeArray[i + 1] = standardCodes[i];
         }
 
-        // Block size: enough samples for ~2.5 cycles of the lowest frequency we care about
-        // Lowest CTCSS tone is 67.0 Hz. At 8000 Hz sample rate: 8000/67 * 2.5 ≈ 299 samples
-        // We use a power-of-nothing block — just enough for good frequency resolution
-        float lowestFreq = Float.MAX_VALUE;
-        for(float freq : mTargetFrequencies)
-        {
-            if(freq > 0 && freq < lowestFreq)
-            {
-                lowestFreq = freq;
-            }
-        }
+        // High guard at last index
+        mGuardHighIndex = scanCount - 1;
+        mScanFrequencies[mGuardHighIndex] = GUARD_HIGH_FREQ;
+        mScanCodeArray[mGuardHighIndex] = null; // null = guard entry
+
+        // Block size: enough samples for good frequency resolution.
+        // Lowest scanned frequency is the low guard (65 Hz).
+        float lowestFreq = GUARD_LOW_FREQ;
 
         // Block size targets sufficient frequency resolution to discriminate closely-spaced
         // CTCSS tones (e.g. 131.8 Hz vs 146.2 Hz = 14.4 Hz apart). Frequency resolution is
@@ -172,14 +192,14 @@ public class CTCSSDetector
         mSampleBuffer = new float[mBlockSize];
 
         // Pre-compute Goertzel coefficients: 2 * cos(2π * freq / sampleRate)
-        for(int i = 0; i < mTargetFrequencies.length; i++)
+        for(int i = 0; i < mScanFrequencies.length; i++)
         {
-            double normalizedFreq = mTargetFrequencies[i] / mSampleRate;
+            double normalizedFreq = mScanFrequencies[i] / mSampleRate;
             mCoefficients[i] = (float)(2.0 * Math.cos(2.0 * Math.PI * normalizedFreq));
         }
 
-        LOGGER.debug("{}CTCSSDetector initialized: {} target tones, block size {}, sample rate {}",
-                mChannelLabel, mTargetCodeArray.length, mBlockSize, mSampleRate);
+        LOGGER.debug("{}CTCSSDetector initialized: {} scan frequencies ({} standard + 2 guards), block size {}, sample rate {}",
+                mChannelLabel, scanCount, standardCodes.length, mBlockSize, mSampleRate);
     }
 
     /**
@@ -255,12 +275,12 @@ public class CTCSSDetector
             return;
         }
 
-        // Run Goertzel for each target frequency and store all power values
-        float[] powers = new float[mTargetFrequencies.length];
+        // Run Goertzel for each scan frequency (standard tones + guards)
+        float[] powers = new float[mScanFrequencies.length];
         float maxPower = 0;
         int maxIndex = -1;
 
-        for(int i = 0; i < mTargetFrequencies.length; i++)
+        for(int i = 0; i < mScanFrequencies.length; i++)
         {
             powers[i] = goertzel(mSampleBuffer, mBlockSize, mCoefficients[i]);
 
@@ -313,8 +333,11 @@ public class CTCSSDetector
                     float np = topPow[rank] / (totalEnergy * mBlockSize);
                     float db = (float)(10.0 * Math.log10(np + 1e-10));
                     if(rank > 0) sb.append(", ");
+                    String label = isGuardIndex(topIdx[rank])
+                            ? String.format("GUARD_%.0f", mScanFrequencies[topIdx[rank]])
+                            : mScanCodeArray[topIdx[rank]].toString();
                     sb.append(String.format("#%d %s (%.1f Hz) %.1f dB", rank + 1,
-                            mTargetCodeArray[topIdx[rank]], mTargetFrequencies[topIdx[rank]], db));
+                            label, mScanFrequencies[topIdx[rank]], db));
                 }
             }
             // Include active bin count in survey for diagnostics
@@ -331,39 +354,52 @@ public class CTCSSDetector
 
         if(maxIndex >= 0 && snrDB > DETECTION_THRESHOLD_DB)
         {
-            CTCSSCode detected = mTargetCodeArray[maxIndex];
+            // Guard tone check: if the peak energy is on a guard frequency, the dominant
+            // energy is outside the CTCSS range. Treat as no detection — not a rejection,
+            // because there's no real CTCSS tone present.
+            if(isGuardIndex(maxIndex))
+            {
+                LOGGER.debug("{}CTCSS guard tone {} Hz absorbed out-of-range energy: SNR={} dB",
+                        mChannelLabel, String.format("%.0f", mScanFrequencies[maxIndex]),
+                        String.format("%.1f", snrDB));
+                handleNoDetection();
+                return;
+            }
+
+            CTCSSCode detected = mScanCodeArray[maxIndex];
 
             // For low-frequency tones, spectral leakage can cause a neighboring non-target bin
             // to narrowly beat the actual target bin. If a target tone is within 2 bins of the
             // winner and within 2 dB, prefer the target tone — it's almost certainly the real tone.
-            if(!mTargetCodes.contains(detected) && mTargetFrequencies[maxIndex] <= LOW_FREQ_NARROWBAND_CUTOFF)
+            // Skip guard indices during preference search.
+            if(!mTargetCodes.contains(detected) && mScanFrequencies[maxIndex] <= LOW_FREQ_NARROWBAND_CUTOFF)
             {
                 for(int offset = 1; offset <= 2; offset++)
                 {
                     int belowIdx = maxIndex - offset;
                     int aboveIdx = maxIndex + offset;
 
-                    if(belowIdx >= 0 && mTargetCodes.contains(mTargetCodeArray[belowIdx]))
+                    if(belowIdx >= 0 && !isGuardIndex(belowIdx) && mTargetCodes.contains(mScanCodeArray[belowIdx]))
                     {
                         float diffDB = (float)(10.0 * Math.log10((maxPower / (powers[belowIdx] + 1e-10f)) + 1e-10));
                         if(diffDB < 2.0f)
                         {
                             LOGGER.trace("{}CTCSS preferring target {} over winner {} (diff={} dB)",
-                                    mChannelLabel, mTargetCodeArray[belowIdx], detected, String.format("%.1f", diffDB));
-                            detected = mTargetCodeArray[belowIdx];
+                                    mChannelLabel, mScanCodeArray[belowIdx], detected, String.format("%.1f", diffDB));
+                            detected = mScanCodeArray[belowIdx];
                             maxIndex = belowIdx;
                             maxPower = powers[belowIdx];
                             break;
                         }
                     }
-                    if(aboveIdx < mTargetCodeArray.length && mTargetCodes.contains(mTargetCodeArray[aboveIdx]))
+                    if(aboveIdx < mScanCodeArray.length && !isGuardIndex(aboveIdx) && mTargetCodes.contains(mScanCodeArray[aboveIdx]))
                     {
                         float diffDB = (float)(10.0 * Math.log10((maxPower / (powers[aboveIdx] + 1e-10f)) + 1e-10));
                         if(diffDB < 2.0f)
                         {
                             LOGGER.trace("{}CTCSS preferring target {} over winner {} (diff={} dB)",
-                                    mChannelLabel, mTargetCodeArray[aboveIdx], detected, String.format("%.1f", diffDB));
-                            detected = mTargetCodeArray[aboveIdx];
+                                    mChannelLabel, mScanCodeArray[aboveIdx], detected, String.format("%.1f", diffDB));
+                            detected = mScanCodeArray[aboveIdx];
                             maxIndex = aboveIdx;
                             maxPower = powers[aboveIdx];
                             break;
@@ -377,7 +413,7 @@ public class CTCSSDetector
                (mDetectedCode != detected))
             {
                 LOGGER.debug("{}CTCSS tone {} ({} Hz) detected: SNR={} dB confirm={}/{} target={}",
-                        mChannelLabel, detected, String.format("%.1f", mTargetFrequencies[maxIndex]),
+                        mChannelLabel, detected, String.format("%.1f", mScanFrequencies[maxIndex]),
                         String.format("%.1f", snrDB),
                         mConfirmationCounter, CONFIRMATION_COUNT,
                         mTargetCodes.contains(detected) ? "YES" : "NO");
@@ -385,7 +421,7 @@ public class CTCSSDetector
             else
             {
                 LOGGER.trace("{}CTCSS tone {} ({} Hz) detected: SNR={} dB confirm={}/{} target={}",
-                        mChannelLabel, detected, String.format("%.1f", mTargetFrequencies[maxIndex]),
+                        mChannelLabel, detected, String.format("%.1f", mScanFrequencies[maxIndex]),
                         String.format("%.1f", snrDB),
                         mConfirmationCounter, CONFIRMATION_COUNT,
                         mTargetCodes.contains(detected) ? "YES" : "NO");
@@ -398,12 +434,23 @@ public class CTCSSDetector
             // Log near-misses at TRACE to avoid flooding overnight logs
             if(maxIndex >= 0 && snrDB > (DETECTION_THRESHOLD_DB - 3.0f))
             {
-                LOGGER.trace("{}CTCSS tone {} ({} Hz) below threshold: SNR={} dB (need {} dB)",
-                        mChannelLabel, mTargetCodeArray[maxIndex], String.format("%.1f", mTargetFrequencies[maxIndex]),
+                String label = isGuardIndex(maxIndex)
+                        ? String.format("GUARD_%.0f", mScanFrequencies[maxIndex])
+                        : mScanCodeArray[maxIndex].toString();
+                LOGGER.trace("{}CTCSS {} ({} Hz) below threshold: SNR={} dB (need {} dB)",
+                        mChannelLabel, label, String.format("%.1f", mScanFrequencies[maxIndex]),
                         String.format("%.1f", snrDB), DETECTION_THRESHOLD_DB);
             }
             handleNoDetection();
         }
+    }
+
+    /**
+     * Returns true if the given index corresponds to a guard tone (not a real CTCSS frequency).
+     */
+    private boolean isGuardIndex(int index)
+    {
+        return index == mGuardLowIndex || index == mGuardHighIndex;
     }
 
     /**

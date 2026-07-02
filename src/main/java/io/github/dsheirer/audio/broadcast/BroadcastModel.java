@@ -20,6 +20,7 @@ package io.github.dsheirer.audio.broadcast;
 
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.properties.SystemProperties;
@@ -205,6 +206,7 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
                 int index = mConfiguredBroadcasts.indexOf(configuredBroadcast);
                 fireTableRowsInserted(index, index);
                 process(new BroadcastEvent(configuration, BroadcastEvent.Event.CONFIGURATION_ADD));
+
                 return configuredBroadcast;
             }
         }

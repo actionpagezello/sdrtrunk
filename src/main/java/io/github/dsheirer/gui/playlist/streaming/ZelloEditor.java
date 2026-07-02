@@ -25,6 +25,7 @@ import io.github.dsheirer.gui.control.IntegerTextField;
 import io.github.dsheirer.playlist.PlaylistManager;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
@@ -55,6 +56,7 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
     private IntegerTextField mStreamGuardTextField;
     private IntegerTextField mPauseTimeTextField;
     private IntegerTextField mRelaxationTimeTextField;
+    private CheckBox mUseSharedPoolCheckBox;
     private GridPane mEditorPane;
 
     /**
@@ -71,14 +73,17 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
     {
         super.setItem(item);
 
-        getNetworkNameTextField().setDisable(item == null);
-        getChannelTextField().setDisable(item == null);
-        getUsernameTextField().setDisable(item == null);
-        getPasswordField().setDisable(item == null);
-        getMaxAgeTextField().setDisable(item == null);
-        getStreamGuardTextField().setDisable(item == null);
-        getPauseTimeTextField().setDisable(item == null);
-        getRelaxationTimeTextField().setDisable(item == null);
+        boolean isNull = (item == null);
+
+        getNetworkNameTextField().setDisable(isNull);
+        getChannelTextField().setDisable(isNull);
+        getUsernameTextField().setDisable(isNull);
+        getPasswordField().setDisable(isNull);
+        getMaxAgeTextField().setDisable(isNull);
+        getUseSharedPoolCheckBox().setDisable(isNull);
+        getStreamGuardTextField().setDisable(isNull);
+        getPauseTimeTextField().setDisable(isNull);
+        getRelaxationTimeTextField().setDisable(isNull);
 
         if(item != null)
         {
@@ -90,6 +95,7 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
             getStreamGuardTextField().set(item.getStreamGuardMs());
             getPauseTimeTextField().set(item.getPauseTimeMs());
             getRelaxationTimeTextField().set(item.getRelaxationTimeMs());
+            getUseSharedPoolCheckBox().setSelected(item.isUseSharedPool());
         }
         else
         {
@@ -101,6 +107,7 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
             getStreamGuardTextField().set(0);
             getPauseTimeTextField().set(0);
             getRelaxationTimeTextField().set(700);
+            getUseSharedPoolCheckBox().setSelected(false);
         }
 
         modifiedProperty().set(false);
@@ -116,14 +123,15 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
     {
         if(getItem() != null)
         {
+            getItem().setStreamGuardMs(getStreamGuardTextField().get());
+            getItem().setPauseTimeMs(getPauseTimeTextField().get());
+            getItem().setRelaxationTimeMs(getRelaxationTimeTextField().get());
             getItem().setNetworkName(getNetworkNameTextField().getText());
             getItem().setChannel(getChannelTextField().getText());
             getItem().setUsername(getUsernameTextField().getText());
             getItem().setPassword(getPasswordField().getText());
             getItem().setMaximumRecordingAge(getMaxAgeTextField().get() * 1000);
-            getItem().setStreamGuardMs(getStreamGuardTextField().get());
-            getItem().setPauseTimeMs(getPauseTimeTextField().get());
-            getItem().setRelaxationTimeMs(getRelaxationTimeTextField().get());
+            getItem().setUseSharedPool(getUseSharedPoolCheckBox().isSelected());
         }
 
         super.save();
@@ -261,6 +269,20 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
             Label relaxationHint = new Label("Hold-over before ending stream (0 = off)");
             GridPane.setConstraints(relaxationHint, 2, row, 2, 1);
             mEditorPane.getChildren().add(relaxationHint);
+
+            // Row 10: Use Shared Pool
+            Label poolLabel = new Label("Shared Connection");
+            GridPane.setHalignment(poolLabel, HPos.RIGHT);
+            GridPane.setConstraints(poolLabel, 0, ++row);
+            mEditorPane.getChildren().add(poolLabel);
+
+            GridPane.setConstraints(getUseSharedPoolCheckBox(), 1, row);
+            mEditorPane.getChildren().add(getUseSharedPoolCheckBox());
+
+            Label poolHint = new Label("Share one WebSocket across channels with same credentials");
+            poolHint.setStyle("-fx-font-size: 11; -fx-text-fill: #666666;");
+            GridPane.setConstraints(poolHint, 2, row, 2, 1);
+            mEditorPane.getChildren().add(poolHint);
         }
 
         return mEditorPane;
@@ -356,5 +378,16 @@ public class ZelloEditor extends AbstractBroadcastEditor<ZelloConfiguration>
             mRelaxationTimeTextField.textProperty().addListener(mEditorModificationListener);
         }
         return mRelaxationTimeTextField;
+    }
+
+    private CheckBox getUseSharedPoolCheckBox()
+    {
+        if(mUseSharedPoolCheckBox == null)
+        {
+            mUseSharedPoolCheckBox = new CheckBox("Enable Shared WebSocket Pool");
+            mUseSharedPoolCheckBox.setDisable(true);
+            mUseSharedPoolCheckBox.selectedProperty().addListener((obs, old, val) -> modifiedProperty().set(true));
+        }
+        return mUseSharedPoolCheckBox;
     }
 }

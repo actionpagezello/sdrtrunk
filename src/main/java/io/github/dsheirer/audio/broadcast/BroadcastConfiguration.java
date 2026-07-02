@@ -170,6 +170,11 @@ public abstract class BroadcastConfiguration
     }
 
     /**
+     * Returns true if this config was auto-generated from a multi-channel parent.
+     * Auto-generated configs are not persisted to the playlist file.
+     */
+    @JsonIgnore
+    /**
      * Broadcast server type
      */
     @JacksonXmlProperty(isAttribute = true, localName = "type", namespace = "http://www.w3.org/2001/XMLSchema-instance")

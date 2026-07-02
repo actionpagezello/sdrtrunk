@@ -54,6 +54,7 @@ import io.github.dsheirer.alias.id.tone.TonesID;
 import io.github.dsheirer.audio.broadcast.ConfiguredBroadcast;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.control.IntegerFormatter;
+import io.github.dsheirer.gui.editor.AudioOutputDeviceEditor;
 import io.github.dsheirer.gui.playlist.Editor;
 import io.github.dsheirer.gui.playlist.alias.action.ActionEditor;
 import io.github.dsheirer.gui.playlist.alias.action.ActionEditorFactory;
@@ -140,6 +141,7 @@ public class AliasItemEditor extends Editor<Alias>
     private ToggleSwitch mRecordAudioToggleSwitch;
     private ColorPicker mColorPicker;
     private ComboBox<Icon> mIconNodeComboBox;
+    private AudioOutputDeviceEditor mAudioOutputDeviceEditor;
     private SuggestionProvider<String> mGroupSuggestionProvider;
     private VBox mTitledPanesBox;
     private TitledPane mIdentifierPane;
@@ -288,6 +290,7 @@ public class AliasItemEditor extends Editor<Alias>
         getColorPicker().setDisable(disable);
         getMonitorAudioToggleSwitch().setDisable(disable);
         getIconNodeComboBox().setDisable(disable);
+        getAudioOutputDeviceEditor().setDisable(disable);
 
         getIdentifiersList().setDisable(disable);
         getIdentifiersList().getItems().clear();
@@ -329,6 +332,8 @@ public class AliasItemEditor extends Editor<Alias>
 
             Color color = ColorUtil.fromInteger(alias.getColor());
             getColorPicker().setValue(color);
+
+            getAudioOutputDeviceEditor().setAlias(alias);
 
             //Only add non-audio identifiers to the list -- audio identifiers are managed separately
             for(AliasID aliasID: alias.getAliasIdentifiers())
@@ -373,6 +378,7 @@ public class AliasItemEditor extends Editor<Alias>
             getColorPicker().setValue(Color.BLACK);
             getMonitorPriorityComboBox().getSelectionModel().select(null);
             getMonitorAudioToggleSwitch().setSelected(false);
+            getAudioOutputDeviceEditor().setAlias(null);
         }
 
         mSuppressModification = false;
@@ -1146,6 +1152,14 @@ public class AliasItemEditor extends Editor<Alias>
             mTextFieldPane.getChildren().add(iconLabel);
             GridPane.setConstraints(getIconNodeComboBox(), 5, row, 3, 1);
             mTextFieldPane.getChildren().add(getIconNodeComboBox());
+
+            Label audioOutputLabel = new Label("Audio Output");
+            GridPane.setHalignment(audioOutputLabel, HPos.RIGHT);
+            GridPane.setConstraints(audioOutputLabel, 0, ++row);
+            mTextFieldPane.getChildren().add(audioOutputLabel);
+            GridPane.setConstraints(getAudioOutputDeviceEditor(), 1, row, 7, 1);
+            GridPane.setHgrow(getAudioOutputDeviceEditor(), Priority.ALWAYS);
+            mTextFieldPane.getChildren().add(getAudioOutputDeviceEditor());
         }
 
         return mTextFieldPane;
@@ -1250,6 +1264,25 @@ public class AliasItemEditor extends Editor<Alias>
         }
 
         return mIconNodeComboBox;
+    }
+
+    private AudioOutputDeviceEditor getAudioOutputDeviceEditor()
+    {
+        if(mAudioOutputDeviceEditor == null)
+        {
+            mAudioOutputDeviceEditor = new AudioOutputDeviceEditor();
+            mAudioOutputDeviceEditor.setDisable(true);
+            mAudioOutputDeviceEditor.setMaxWidth(Double.MAX_VALUE);
+            mAudioOutputDeviceEditor.modifiedProperty()
+                .addListener((observable, oldValue, newValue) -> {
+                    if(newValue && !mSuppressModification)
+                    {
+                        modifiedProperty().set(true);
+                    }
+                });
+        }
+
+        return mAudioOutputDeviceEditor;
     }
 
     /**

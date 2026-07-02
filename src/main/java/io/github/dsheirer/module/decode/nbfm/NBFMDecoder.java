@@ -45,6 +45,7 @@ import io.github.dsheirer.module.decode.dcs.DCSCode;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.sample.complex.IComplexSamplesListener;
+import io.github.dsheirer.sample.complex.NoiseBlanker;
 import io.github.dsheirer.sample.real.IRealBufferProvider;
 import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
@@ -123,6 +124,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private NBFMAudioFilters mAudioFilters;
     private final DecodeConfigNBFM mNBFMConfig;
 
+    // Noise blanker — IQ-domain impulse noise suppression (same approach as P25 decoders)
+    private final NoiseBlanker mNoiseBlanker = new NoiseBlanker();
+    private final boolean mNoiseBlankerEnabled;
+
+    // Stuck timer watchdog — force-ends calls that exceed max duration (stuck carrier protection)
+    private final boolean mMaxCallDurationEnabled;
+    private final long mMaxCallDurationMs;
+    private volatile long mCallStartTimeMs = 0;
+    private volatile boolean mWatchdogTripped = false;
+
     /**
      * Constructs an instance
      *
@@ -134,6 +145,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         //Save config reference for audio filter initialization (deferred until sample rate is known)
         mNBFMConfig = config;
+
+        // Noise blanker and stuck timer watchdog configuration
+        mNoiseBlankerEnabled = config.isNoiseBlankerEnabled();
+        mMaxCallDurationEnabled = config.isMaxCallDurationEnabled();
+        mMaxCallDurationMs = config.getMaxCallDurationSeconds() * 1000L;
 
         //Save channel bandwidth to setup channel baseband filter.
         mChannelBandwidth = config.getBandwidth().getValue();
@@ -204,6 +220,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mNoiseSquelch.setSquelchStateListener(squelchState -> {
             if(squelchState == SquelchState.SQUELCH)
             {
+                // Reset stuck timer watchdog — carrier dropped, allow fresh calls
+                mWatchdogTripped = false;
+                mCallStartTimeMs = 0;
+
                 // Squelch closed (end of transmission)
                 if(mSquelchTailRemover != null)
                 {
@@ -234,6 +254,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 if(!mToneFilterEnabled)
                 {
                     // No tone filter — start call immediately (original behavior)
+                    // Reset audio filter state to clear stale IIR values from previous transmission
+                    if(mAudioFilters != null)
+                    {
+                        mAudioFilters.reset();
+                    }
                     notifyCallStart();
                 }
                 else
@@ -254,6 +279,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         // Holdover expired or no previous match — full reset.
                         // Channel stays idle until detector confirms the correct tone.
                         mToneMatch = false;
+
+                        // Reset audio filter state to clear stale IIR values from previous transmission
+                        if(mAudioFilters != null)
+                        {
+                            mAudioFilters.reset();
+                        }
 
                         if(mCTCSSDetector != null)
                         {
@@ -333,6 +364,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     {
         mDecoderState = decoderState;
         updateChannelLabel();
+    }
+
+    /**
+     * Returns the audio filter chain for this decoder, or null if not yet initialized.
+     * Used by the configuration editor to perform real-time audio analysis.
+     */
+    public NBFMAudioFilters getAudioFilters()
+    {
+        return mAudioFilters;
     }
 
     /**
@@ -540,6 +580,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     "before it can process complex sample buffers");
         }
 
+        // Impulse noise blanking — zero IQ spikes before decimation to prevent FIR smearing
+        if(mNoiseBlankerEnabled)
+        {
+            mNoiseBlanker.process(samples.i(), samples.q());
+        }
+
         float[] decimatedI = mIDecimationFilter.decimateReal(samples.i());
         float[] decimatedQ = mQDecimationFilter.decimateReal(samples.q());
 
@@ -556,21 +602,47 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             notifyIdle();
         }
+        else
+        {
+            // Stuck timer watchdog — force-end calls that exceed max duration
+            if(mMaxCallDurationEnabled && !mWatchdogTripped && mCallStartTimeMs > 0)
+            {
+                long elapsed = System.currentTimeMillis() - mCallStartTimeMs;
+                if(elapsed > mMaxCallDurationMs)
+                {
+                    mLog.warn("[{}] Stuck timer watchdog: call exceeded {}s max duration, forcing end",
+                        mChannelLabel, mMaxCallDurationMs / 1000);
+                    mWatchdogTripped = true;
+                    broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.END, State.CALL, 0));
+                }
+            }
+        }
     }
 
     /**
-     * Broadcasts a call start state event
+     * Broadcasts a call start state event.
+     * Suppressed when the stuck timer watchdog has tripped (carrier still open but call force-ended).
      */
     private void notifyCallStart()
     {
+        if(mWatchdogTripped)
+        {
+            return;
+        }
+        mCallStartTimeMs = System.currentTimeMillis();
         broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.START, State.CALL, 0));
     }
 
     /**
-     * Broadcasts a call continuation state event
+     * Broadcasts a call continuation state event.
+     * Suppressed when the stuck timer watchdog has tripped.
      */
     private void notifyCallContinuation()
     {
+        if(mWatchdogTripped)
+        {
+            return;
+        }
         broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.CONTINUATION, State.CALL, 0));
     }
 

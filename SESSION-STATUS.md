@@ -1,9 +1,9 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-14.9.14
-Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.9.14.zip`
+## Current Build: ap-14.10
+Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.10.zip`
 
-Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.14\`
+Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.10\`
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
@@ -13,8 +13,8 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.14\`
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.9.14`
-- 6GB heap (`-Xmx6g` in build.gradle jvmArgsWindows and jvmArgsLinux)
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.10`
+- 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Completed Features
 1. CTCSS channel-level filtering (full squelch, Goertzel detector)
@@ -32,6 +32,25 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.9.14\`
 13. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
 14. Diagnostics preferences panel with per-category DEBUG toggles
 15. FxTableColumnMonitor for Channels editor column/sort persistence
+
+## Changes in ap-14.10
+1. **WebSocket Ping/Pong fix (shared pool)** — `ZelloSharedConnection.onPing()` was silently
+   dropping server Ping frames without sending a Pong reply. Zello closes connections after 30s
+   with no Pong. Fixed to send `ws.sendPong(msg)` + `ws.request(1)`.
+2. **Exponential backoff on reconnects** — Normal reconnects in `AbstractZelloBroadcaster` and
+   `ZelloSharedConnection` now back off: 15s, 30s, 60s, 120s (cap), plus 0-5s jitter. Prevents
+   20-30 channels from exceeding Zello's 10 connections/min/IP limit after a simultaneous drop.
+   Counter resets on successful logon.
+3. **JavaFX D3D software fallback** — Added `-Dprism.order=d3d,sw` to Windows JVM args so the
+   playlist editor falls back to software rendering when GPU driver crashes.
+4. **Heap increase to 10GB** — `-Xmx10g` for both Windows and Linux to prevent GC pressure from
+   freezing waterfall and playlist editor on high-channel-count machines.
+5. **Multi-channel configuration removed** — `ZelloMultiChannelConfiguration` parent/child
+   auto-generation system removed. Each channel needs its own `ZelloConfiguration`. Stubs kept
+   for playlist XML backward compatibility.
+6. **CTCSS guard tones** — 65.0 Hz and 260.0 Hz guard frequencies added to catch interference.
+7. **Zello shared connection pool** — `ZelloSharedConnection` for channels sharing credentials
+   on the same network. Configurable per channel via "Shared Connection" checkbox.
 
 ## Changes in ap-14.9.14
 1. **Streaming table error column** — Stream-level Zello errors (`channel busy`, etc.) are cleared

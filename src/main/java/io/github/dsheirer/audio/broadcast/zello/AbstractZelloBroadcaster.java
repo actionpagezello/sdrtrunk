@@ -44,6 +44,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
@@ -60,6 +61,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 {
     private static final long RECONNECT_INTERVAL_MS = 15000;
     private static final long RECONNECT_JITTER_MS = 5000;
+    private static final long MAX_RECONNECT_INTERVAL_MS = 120000; // 2-minute cap
     private static final long KICKED_BACKOFF_MS = 60000;
     private static final int MAX_KICKED_RETRIES = 5;
 
@@ -69,6 +71,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private static final int MAX_GHOST_STREAMS_BEFORE_RECONNECT = 3;
     private static final long CONNECTION_TIMEOUT_MS = 45000;
     private static final long ENCODER_DRAIN_MS = 15;
+    private static final int MAX_PENDING_OPUS_FRAMES = 15;
 
     protected final Logger mLog = LoggerFactory.getLogger(getClass());
 
@@ -83,6 +86,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private final AtomicBoolean mStopped = new AtomicBoolean(false);
     private final AtomicInteger mSequence = new AtomicInteger(1);
     private final AtomicInteger mKickedCount = new AtomicInteger(0);
+    private final AtomicInteger mReconnectAttempts = new AtomicInteger(0);
     private ScheduledFuture<?> mReconnectFuture;
     private ScheduledFuture<?> mKeepaliveFuture;
     private ScheduledFuture<?> mConnectionTimeoutFuture;
@@ -106,6 +110,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private volatile long mLastAudioReceivedTime = 0;
     private volatile int mConsecutiveGhostStreams = 0;
     private volatile boolean mPendingStreamStart = false;
+    private final ConcurrentLinkedQueue<byte[]> mPendingOpusFrames = new ConcurrentLinkedQueue<>();
 
     private OpusEncoder mOpusEncoder;
     private short[] mResampleBuffer = new short[ZelloProtocolUtil.ZELLO_FRAME_SIZE_SAMPLES];
@@ -113,12 +118,26 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private byte[] mOpusOutputBuffer = new byte[1275];
     private short mPreviousSample = 0;
 
+    // ========================================================================
+    // Shared WebSocket Pool support
+    // ========================================================================
+    private volatile boolean mPooledMode = false;
+    private volatile ZelloSharedConnection mPooledConnection;
+
     protected AbstractZelloBroadcaster(T configuration)
     {
         super(configuration);
         mHttpClient = HttpClient.newBuilder()
             .connectTimeout(java.time.Duration.ofSeconds(15))
             .build();
+    }
+
+    /**
+     * Returns true if this broadcaster is operating in pooled mode (sharing a WebSocket).
+     */
+    protected boolean isPooled()
+    {
+        return mPooledMode && mPooledConnection != null;
     }
 
     protected ZelloChannelConfiguration zelloConfig()
@@ -203,14 +222,50 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         try
         {
             initOpusEncoder();
-            connectWebSocket();
+
+            if(zelloConfig().isUseSharedPool())
+            {
+                startPooled();
+            }
+            else
+            {
+                connectWebSocket();
+            }
         }
         catch(Exception e)
         {
             mLog.error("{}Error starting {} broadcaster", ch(), connectTargetLabel(), e);
             setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-            scheduleReconnect();
+            if(!mPooledMode)
+            {
+                scheduleReconnect();
+            }
         }
+    }
+
+    /**
+     * Starts this broadcaster in pooled mode — acquires a shared WebSocket from the pool.
+     */
+    private void startPooled()
+    {
+        ZelloChannelConfiguration config = zelloConfig();
+        String wsUrl = config.getWebSocketUrl();
+        String networkName = config.getNetworkName();
+        String username = config.getUsername();
+        String password = getBroadcastConfiguration().getPassword();
+        String channel = config.getChannel();
+
+        if(wsUrl == null || channel == null)
+        {
+            mLog.error("{}Cannot start pooled — missing WebSocket URL or channel", ch());
+            setBroadcastState(BroadcastState.CONFIGURATION_ERROR);
+            return;
+        }
+
+        mPooledMode = true;
+        mPooledConnection = ZelloConnectionPool.getInstance()
+            .acquire(wsUrl, networkName, username, password, channel, this);
+        mLog.info("{}Started in pooled mode", ch());
     }
 
     @Override
@@ -260,7 +315,20 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mKicked.set(false);
         mKickedCount.set(0);
         mReconnecting.set(false);
-        disconnectWebSocket();
+
+        if(mPooledMode && mPooledConnection != null)
+        {
+            ZelloChannelConfiguration config = zelloConfig();
+            ZelloConnectionPool.getInstance().release(
+                config.getWebSocketUrl(), config.getUsername(), config.getChannel());
+            mPooledConnection = null;
+            mPooledMode = false;
+        }
+        else
+        {
+            disconnectWebSocket();
+        }
+
         setBroadcastState(BroadcastState.DISCONNECTED);
     }
 
@@ -291,8 +359,22 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         long now = System.currentTimeMillis();
         boolean guardPending = mStreamGuardFuture != null && !mStreamGuardFuture.isDone();
         boolean pausePending = mPauseUntilTime > now;
-        return mConnected.get()
-            && mChannelOnline.get()
+
+        boolean connected;
+        boolean channelOnline;
+        if(mPooledMode)
+        {
+            connected = mPooledConnection != null && mPooledConnection.isConnected();
+            channelOnline = mChannelOnline.get();
+        }
+        else
+        {
+            connected = mConnected.get();
+            channelOnline = mChannelOnline.get();
+        }
+
+        return connected
+            && channelOnline
             && !mStreamActive.get()
             && !guardPending
             && mStreamGuardUntilTime <= now
@@ -302,7 +384,11 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     @Override
     public synchronized void startRealTimeStream(IdentifierCollection identifiers)
     {
-        if(!mConnected.get() || !mChannelOnline.get())
+        boolean connected = mPooledMode
+            ? (mPooledConnection != null && mPooledConnection.isConnected())
+            : mConnected.get();
+
+        if(!connected || !mChannelOnline.get())
         {
             mLog.warn("{}Cannot start Zello stream - not connected", ch());
             return;
@@ -362,7 +448,11 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
     private synchronized void beginStreamInternal()
     {
-        if(!mConnected.get() || !mChannelOnline.get())
+        boolean connected = mPooledMode
+            ? (mPooledConnection != null && mPooledConnection.isConnected())
+            : mConnected.get();
+
+        if(!connected || !mChannelOnline.get())
         {
             return;
         }
@@ -381,6 +471,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mResampleBufferPos = 0;
         mPreviousSample = 0;
         mAudioQueue.clear();
+        mPendingOpusFrames.clear();
 
         sendStartStream();
 
@@ -508,7 +599,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             mConsecutiveGhostStreams = 0;
             broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
         }
-        else if(streamId == -1 && mConnected.get())
+        else if(streamId == -1 && (mConnected.get() || (mPooledMode && mPooledConnection != null && mPooledConnection.isConnected())))
         {
             mConsecutiveGhostStreams++;
             mLog.warn("{}Zello ghost stream detected — server did not return stream_id ({}/{})",
@@ -522,14 +613,20 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 mCurrentStreamId.set(-1);
                 mResampleBufferPos = 0;
                 mAudioQueue.clear();
+                mPendingOpusFrames.clear();
                 mLastStreamStopTime = System.currentTimeMillis();
                 mPauseUntilTime = 0;
                 mStreamGuardUntilTime = 0;
                 mPendingStreamStart = false;
                 mLog.info("{}Zello stream stopped", ch());
-                disconnectWebSocket();
+
+                if(!mPooledMode)
+                {
+                    disconnectWebSocket();
+                    scheduleReconnect();
+                }
+
                 setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                scheduleReconnect();
                 return;
             }
         }
@@ -537,6 +634,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mCurrentStreamId.set(-1);
         mResampleBufferPos = 0;
         mAudioQueue.clear();
+        mPendingOpusFrames.clear();
 
         scheduleStreamCooldown(0);
 
@@ -682,8 +780,14 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
     private void encodeAndSendFrame()
     {
+        if(mOpusEncoder == null)
+        {
+            return;
+        }
+
         long streamId = mCurrentStreamId.get();
-        if(streamId <= 0 || mOpusEncoder == null)
+
+        if(streamId <= 0 && !mStreamActive.get())
         {
             return;
         }
@@ -705,7 +809,22 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             {
                 byte[] opusFrame = new byte[encoded];
                 System.arraycopy(mOpusOutputBuffer, 0, opusFrame, 0, encoded);
-                sendAudioPacket(streamId, opusFrame);
+
+                if(streamId > 0)
+                {
+                    sendAudioPacket(streamId, opusFrame);
+                }
+                else
+                {
+                    // Buffer frame until stream_id arrives from server
+                    mPendingOpusFrames.offer(opusFrame);
+
+                    // Cap the buffer to prevent unbounded growth
+                    while(mPendingOpusFrames.size() > MAX_PENDING_OPUS_FRAMES)
+                    {
+                        mPendingOpusFrames.poll();
+                    }
+                }
             }
         }
         catch(Exception | AssertionError e)
@@ -912,10 +1031,13 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         }
         else
         {
+            int attempt = mReconnectAttempts.getAndIncrement();
+            long base = Math.min(RECONNECT_INTERVAL_MS * (1L << Math.min(attempt, 3)),
+                MAX_RECONNECT_INTERVAL_MS);
             long jitter = ThreadLocalRandom.current().nextLong(RECONNECT_JITTER_MS);
-            long delay = RECONNECT_INTERVAL_MS + jitter;
-            mLog.debug("{}Scheduling reconnect in {}ms (base {}ms + jitter {}ms)",
-                ch(), delay, RECONNECT_INTERVAL_MS, jitter);
+            long delay = base + jitter;
+            mLog.debug("{}Scheduling reconnect in {}ms (base {}ms + jitter {}ms, attempt {})",
+                ch(), delay, base, jitter, attempt + 1);
             scheduleReconnectWithDelay(delay);
         }
     }
@@ -1037,51 +1159,113 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
     protected void sendStartStream()
     {
-        if(mWebSocket == null)
+        if(mPooledMode)
+        {
+            if(mPooledConnection == null || !mPooledConnection.isConnected())
+            {
+                return;
+            }
+        }
+        else if(mWebSocket == null)
         {
             return;
         }
 
-        if(mStreamSessionEpoch != mSessionEpoch.get())
+        if(!mPooledMode && mStreamSessionEpoch != mSessionEpoch.get())
         {
             mLog.warn("{}Aborting start_stream — session epoch changed during setup", ch());
             mStreamActive.set(false);
             return;
         }
 
+        String channelName = zelloConfig().getChannel();
         JsonObject cmd = new JsonObject();
         cmd.addProperty("command", "start_stream");
-        int seq = nextSequence();
+
+        int seq;
+        if(mPooledMode)
+        {
+            seq = mPooledConnection.nextSequenceFor(channelName, "start_stream");
+        }
+        else
+        {
+            seq = nextSequence();
+            trackPendingCommand(seq, "start_stream");
+        }
+
         cmd.addProperty("seq", seq);
-        trackPendingCommand(seq, "start_stream");
-        cmd.addProperty("channel", zelloConfig().getChannel());
+        cmd.addProperty("channel", channelName);
         cmd.addProperty("type", "audio");
         cmd.addProperty("codec", "opus");
         cmd.addProperty("codec_header", ZelloProtocolUtil.CODEC_HEADER_B64);
         cmd.addProperty("packet_duration", ZelloProtocolUtil.ZELLO_FRAME_SIZE_MS);
-        mWebSocket.sendText(mGson.toJson(cmd), true);
+
+        String text = mGson.toJson(cmd);
+        if(mPooledMode)
+        {
+            mPooledConnection.sendText(text);
+        }
+        else
+        {
+            mWebSocket.sendText(text, true);
+        }
     }
 
     protected void sendStopStream(long streamId)
     {
-        if(mWebSocket == null)
+        if(mPooledMode)
+        {
+            if(mPooledConnection == null)
+            {
+                return;
+            }
+        }
+        else if(mWebSocket == null)
         {
             return;
         }
 
+        String channelName = zelloConfig().getChannel();
         JsonObject cmd = new JsonObject();
         cmd.addProperty("command", "stop_stream");
-        int seq = nextSequence();
+
+        int seq;
+        if(mPooledMode)
+        {
+            seq = mPooledConnection.nextSequenceFor(channelName, "stop_stream");
+            mPooledConnection.untrackStreamId(streamId);
+        }
+        else
+        {
+            seq = nextSequence();
+            trackPendingCommand(seq, "stop_stream(id=" + streamId + ")");
+        }
+
         cmd.addProperty("seq", seq);
-        trackPendingCommand(seq, "stop_stream(id=" + streamId + ")");
         cmd.addProperty("stream_id", streamId);
-        cmd.addProperty("channel", zelloConfig().getChannel());
-        mWebSocket.sendText(mGson.toJson(cmd), true);
+        cmd.addProperty("channel", channelName);
+
+        String text = mGson.toJson(cmd);
+        if(mPooledMode)
+        {
+            mPooledConnection.sendText(text);
+        }
+        else
+        {
+            mWebSocket.sendText(text, true);
+        }
     }
 
     protected void sendAudioPacket(long streamId, byte[] opusData)
     {
-        if(mWebSocket == null)
+        if(mPooledMode)
+        {
+            if(mPooledConnection == null)
+            {
+                return;
+            }
+        }
+        else if(mWebSocket == null)
         {
             return;
         }
@@ -1093,7 +1277,15 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         packet.putInt(0);
         packet.put(opusData);
         packet.flip();
-        mWebSocket.sendBinary(packet, true);
+
+        if(mPooledMode)
+        {
+            mPooledConnection.sendBinary(packet);
+        }
+        else
+        {
+            mWebSocket.sendBinary(packet, true);
+        }
     }
 
     protected boolean isStopped()
@@ -1175,6 +1367,134 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     protected int getStreamSessionEpochForTesting()
     {
         return mStreamSessionEpoch;
+    }
+
+    // ========================================================================
+    // Pool callbacks — called by ZelloSharedConnection when in pooled mode
+    // ========================================================================
+
+    /**
+     * Called by the pool when our channel comes online.
+     */
+    public void onPoolChannelOnline()
+    {
+        if(!mChannelOnline.getAndSet(true))
+        {
+            setBroadcastState(BroadcastState.CONNECTED);
+            mLog.info("{}Zello connected (pooled)", ch());
+        }
+    }
+
+    /**
+     * Called by the pool when our channel goes offline.
+     */
+    public void onPoolChannelOffline(String status)
+    {
+        if(mChannelOnline.getAndSet(false))
+        {
+            mLog.warn("{}Zello channel went offline (pooled, status={})", ch(), status);
+            mStreamActive.set(false);
+            mCurrentStreamId.set(-1);
+            setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+            setConnectionErrorDetail("Channel offline (status=" + status + ")");
+        }
+    }
+
+    /**
+     * Called by the pool when the shared WebSocket disconnects.
+     */
+    public void onPoolDisconnected()
+    {
+        mChannelOnline.set(false);
+        mStreamActive.set(false);
+        mCurrentStreamId.set(-1);
+        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+    }
+
+    /**
+     * Called by the pool when a connection error occurs.
+     */
+    public void onPoolConnectionError(String error)
+    {
+        mLog.error("{}Zello pool connection error: {}", ch(), error);
+        setConnectionErrorDetail("Pool: " + error);
+        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+    }
+
+    /**
+     * Called by the pool to deliver a routed message to this broadcaster.
+     * Handles start_stream responses, on_stream_stop, and errors.
+     */
+    public void handlePooledMessage(JsonObject json)
+    {
+        try
+        {
+            // start_stream success response
+            if(json.has("stream_id") && json.has("success"))
+            {
+                if(json.get("success").getAsBoolean())
+                {
+                    long streamId = json.get("stream_id").getAsLong();
+                    mCurrentStreamId.set(streamId);
+                    mConsecutiveGhostStreams = 0;
+                    setLastErrorDetail(null);
+
+                    // Flush pending Opus frames
+                    int flushed = 0;
+                    byte[] pending;
+                    while((pending = mPendingOpusFrames.poll()) != null)
+                    {
+                        sendAudioPacket(streamId, pending);
+                        flushed++;
+                    }
+
+                    if(flushed > 0)
+                    {
+                        mLog.debug("{}Zello stream_id={} (pooled), flushed {} pending frames",
+                            ch(), streamId, flushed);
+                    }
+                    else
+                    {
+                        mLog.debug("{}Zello stream_id={} (pooled)", ch(), streamId);
+                    }
+                }
+                else
+                {
+                    String error = json.has("error") ? json.get("error").getAsString() : "unknown";
+                    int seq = json.has("seq") ? json.get("seq").getAsInt() : -1;
+                    handleStartStreamFailure(error, seq, "start_stream");
+                }
+                return;
+            }
+
+            // on_stream_stop
+            if(json.has("command") && "on_stream_stop".equals(json.get("command").getAsString()))
+            {
+                long stoppedId = json.has("stream_id") ? json.get("stream_id").getAsLong() : -1;
+                if(stoppedId > 0 && stoppedId == mCurrentStreamId.get())
+                {
+                    mLog.info("{}Zello server stopped our stream (pooled, id={})", ch(), stoppedId);
+                    updateStreamErrorDetail("[3007] server stopped stream (id=" + stoppedId + ")");
+                    mStreamActive.set(false);
+                    mCurrentStreamId.set(-1);
+                    mLastStreamStopTime = System.currentTimeMillis();
+                }
+                return;
+            }
+
+            // Error response
+            if(json.has("error"))
+            {
+                String error = json.get("error").getAsString();
+                int bridgeCode = ZelloProtocolUtil.mapBridgeErrorCode(error);
+                mLog.warn("{}Zello pooled error [{}]: {}", ch(), bridgeCode, error);
+                updateStreamErrorDetail("[" + bridgeCode + "] " + error);
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.error("{}Error handling pooled message", ch(), e);
+        }
     }
 
     protected class ZelloWebSocketListener implements WebSocket.Listener
@@ -1275,6 +1595,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     {
                         mConnected.set(true);
                         mKicked.set(false);
+                        mReconnectAttempts.set(0);
                     }
                 }
                 else if(json.has("success") && json.get("success").getAsBoolean() && !json.has("stream_id"))
@@ -1284,6 +1605,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                         mLog.debug("{}Zello logon accepted", ch());
                         mConnected.set(true);
                         mKicked.set(false);
+                        mReconnectAttempts.set(0);
                     }
                 }
                 else if(json.has("error") && !json.has("command"))
@@ -1431,7 +1753,24 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                         mCurrentStreamId.set(streamId);
                         mConsecutiveGhostStreams = 0;
                         setLastErrorDetail(null);
-                        mLog.debug("{}Zello stream_id={}", ch(), streamId);
+
+                        // Flush any Opus frames buffered while waiting for stream_id
+                        int flushed = 0;
+                        byte[] pending;
+                        while((pending = mPendingOpusFrames.poll()) != null)
+                        {
+                            sendAudioPacket(streamId, pending);
+                            flushed++;
+                        }
+
+                        if(flushed > 0)
+                        {
+                            mLog.debug("{}Zello stream_id={}, flushed {} pending frames", ch(), streamId, flushed);
+                        }
+                        else
+                        {
+                            mLog.debug("{}Zello stream_id={}", ch(), streamId);
+                        }
                     }
                     else
                     {

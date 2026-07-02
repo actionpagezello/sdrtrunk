@@ -20,13 +20,16 @@ package io.github.dsheirer.dsp.filter.nbfm;
 
 /**
  * Audio filtering for NBFM decoder (Vox-Send processing chain)
- * 
- * Processing order (same as Vox-Send):
- * 1. Input Gain - Amplify quiet sources
- * 2. Low-Pass Filter - Remove high hiss/noise
- * 3. 75μs Deemphasis - Correct FM radio pre-emphasis
- * 4. Voice Enhancement - Boost speech clarity
- * 5. Intelligent Squelch - Gate out carrier noise
+ *
+ * Processing order:
+ * 1. Low-Pass Filter - Remove high hiss/noise (2nd order Butterworth)
+ * 2. De-emphasis - Correct FM radio pre-emphasis (1-pole IIR, disabled by default)
+ * 3. Hiss Reduction - High-shelf cut above 2 kHz
+ * 4. Bass Boost - Low-shelf boost below 400 Hz
+ * 5. Voice Enhancement - Presence boost around 2.8 kHz (peaking EQ)
+ * 6. Intelligent Squelch - Noise gate with hold time (disabled by default)
+ * 7. Output Gain - Amplify clean signal (default 2.0x / +6 dB)
+ * 8. Soft Clipping - Tanh-based limiter to prevent digital clipping (always on)
  */
 public class NBFMAudioFilters 
 {
@@ -92,6 +95,12 @@ public class NBFMAudioFilters
     private float mSquelchAttackAlpha;
     private float mSquelchReleaseAlpha;
     
+    // Soft clipping threshold — samples below this pass untouched,
+    // above it they're tanh-compressed toward 1.0 to prevent hard digital clipping
+    private static final float SOFT_CLIP_THRESHOLD = 0.8f;
+    private static final float SOFT_CLIP_RANGE = 1.0f - SOFT_CLIP_THRESHOLD;
+    private boolean mSoftClipEnabled = true;
+
     // Enable flags
     private boolean mLowPassEnabled = true;
     private boolean mDeemphasisEnabled = false;
@@ -132,8 +141,8 @@ public class NBFMAudioFilters
     }
     
     /**
-     * Process a single audio sample through the Vox-Send chain
-     * Processing order: Low-Pass -> De-emphasis -> Hiss Reduction -> Bass Boost -> Voice Enhancement -> Squelch -> Output Gain
+     * Process a single audio sample through the filter chain.
+     * Order: LPF -> De-emphasis -> Hiss Reduction -> Bass Boost -> Voice Enhancement -> Squelch -> Gain -> Soft Clip
      */
     public float process(float sample)
     {
@@ -170,6 +179,12 @@ public class NBFMAudioFilters
         // 7. Output Gain - Amplify clean signal (don't amplify noise!)
         sample *= mInputGain;
 
+        // 8. Soft Clipping - Prevent hard digital clipping from gain/filter peaks
+        if(mSoftClipEnabled)
+        {
+            sample = softClip(sample);
+        }
+
         return sample;
     }
     
@@ -191,7 +206,7 @@ public class NBFMAudioFilters
      */
     public void setInputGain(float gain) 
     {
-        mInputGain = Math.max(0.1f, Math.min(10.0f, gain));
+        mInputGain = Math.max(0.0f, Math.min(10.0f, gain));
     }
     
     public float getInputGain() 
@@ -785,8 +800,41 @@ public class NBFMAudioFilters
         mGateOpen = false;
     }
     
+    // ========== SOFT CLIPPING ==========
+
+    /**
+     * Enable/disable soft clipping (tanh-based limiter)
+     */
+    public void setSoftClipEnabled(boolean enabled)
+    {
+        mSoftClipEnabled = enabled;
+    }
+
+    public boolean isSoftClipEnabled()
+    {
+        return mSoftClipEnabled;
+    }
+
+    /**
+     * Soft-knee tanh clipper. Samples below the threshold pass untouched.
+     * Above the threshold, excess is compressed via tanh toward 1.0.
+     * This prevents harsh digital clipping when gain or filters push peaks above 1.0.
+     */
+    private float softClip(float sample)
+    {
+        float abs = Math.abs(sample);
+        if(abs <= SOFT_CLIP_THRESHOLD)
+        {
+            return sample;
+        }
+
+        float sign = Math.signum(sample);
+        float excess = abs - SOFT_CLIP_THRESHOLD;
+        return sign * (SOFT_CLIP_THRESHOLD + SOFT_CLIP_RANGE * (float)Math.tanh(excess / SOFT_CLIP_RANGE));
+    }
+
     // ========== UTILITY METHODS ==========
-    
+
     private float calculateTimeConstant(double sampleRate, float timeMs) 
     {
         return (float)Math.exp(-1.0 / (sampleRate * timeMs / 1000.0));

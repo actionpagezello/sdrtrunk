@@ -146,7 +146,8 @@ def jvmArgsWindows =
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
-         '-Xmx6g',                         //Set max heap size to 6GB
+         '-Xmx10g',                        //Set max heap size to 10GB
+         '-Dprism.order=d3d,sw',            //JavaFX: try D3D first, fall back to software rendering
          '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
 
 /**
@@ -160,7 +161,7 @@ def jvmArgsLinux =
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--enable-native-access=ALL-UNNAMED', //SDRPlay API library path
-         '-Xmx6g']                         //Set max heap size to 6GB
+         '-Xmx10g']                        //Set max heap size to 10GB
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"

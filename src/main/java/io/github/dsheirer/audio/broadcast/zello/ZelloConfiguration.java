@@ -50,6 +50,7 @@ public class ZelloConfiguration extends BroadcastConfiguration implements ZelloC
     private IntegerProperty mStreamGuardMs = new SimpleIntegerProperty(0);
     private IntegerProperty mPauseTimeMs = new SimpleIntegerProperty(0);
     private IntegerProperty mRelaxationTimeMs = new SimpleIntegerProperty(700);
+    private boolean mUseSharedPool = false;
 
     /**
      * Default constructor for Jackson XML deserialization
@@ -202,6 +203,27 @@ public class ZelloConfiguration extends BroadcastConfiguration implements ZelloC
     }
 
     // ========================================================================
+    // Shared WebSocket Pool
+    // ========================================================================
+
+    /**
+     * When enabled, this broadcaster shares a single WebSocket connection with
+     * other Zello Work broadcasters that use the same network and credentials.
+     * Reduces connection count from N to 1 for multiple channels on the same network.
+     * @return true if shared pool is enabled (default false)
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "use_shared_pool")
+    public boolean isUseSharedPool()
+    {
+        return mUseSharedPool;
+    }
+
+    public void setUseSharedPool(boolean useSharedPool)
+    {
+        mUseSharedPool = useSharedPool;
+    }
+
+    // ========================================================================
     // Helpers
     // ========================================================================
 
@@ -238,6 +260,7 @@ public class ZelloConfiguration extends BroadcastConfiguration implements ZelloC
         copy.setStreamGuardMs(getStreamGuardMs());
         copy.setPauseTimeMs(getPauseTimeMs());
         copy.setRelaxationTimeMs(getRelaxationTimeMs());
+        copy.setUseSharedPool(isUseSharedPool());
         return copy;
     }
 }

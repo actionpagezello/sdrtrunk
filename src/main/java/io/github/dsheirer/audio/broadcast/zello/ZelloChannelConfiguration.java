@@ -33,4 +33,21 @@ public interface ZelloChannelConfiguration
     int getPauseTimeMs();
 
     int getRelaxationTimeMs();
+
+    /**
+     * Returns the network name (Zello Work only). May return null for Consumer.
+     */
+    default String getNetworkName() { return null; }
+
+    /**
+     * Returns the username for this Zello account.
+     */
+    default String getUsername() { return null; }
+
+    /**
+     * When true, this broadcaster shares a single WebSocket connection with other
+     * broadcasters that have the same credentials (wsUrl + username).
+     * @return true if shared pool is enabled (default false)
+     */
+    default boolean isUseSharedPool() { return false; }
 }

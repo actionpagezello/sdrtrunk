@@ -40,10 +40,18 @@ import io.github.dsheirer.preference.identifier.IntegerFormat;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.record.RecorderType;
 import io.github.dsheirer.record.config.RecordConfiguration;
+import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.controller.channel.ChannelProcessingManager;
+import io.github.dsheirer.dsp.filter.nbfm.NBFMAudioFilters;
+import io.github.dsheirer.module.Module;
+import io.github.dsheirer.module.ProcessingChain;
+import io.github.dsheirer.module.decode.nbfm.NBFMDecoder;
 import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import java.util.ArrayList;
 import java.util.List;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.ListChangeListener;
@@ -126,6 +134,15 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private TextField mHoldTimeField;
     private javafx.scene.control.Button mAnalyzeButton;
     private Label mAnalyzeStatusLabel;
+    private NBFMAudioFilters mAnalyzingFilter = null;
+    private Timeline mAnalyzeTimeline = null;
+
+    // Noise Blanker UI
+    private ToggleSwitch mNoiseBlankerEnabledSwitch;
+
+    // Stuck Timer Watchdog UI
+    private ToggleSwitch mMaxCallDurationEnabledSwitch;
+    private Spinner<Integer> mMaxCallDurationSpinner;
 
     private boolean mLoadingConfiguration = false;
 
@@ -204,6 +221,54 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
             GridPane.setConstraints(getAudioFilterEnable(), 2, 1);
             gridPane.getChildren().add(getAudioFilterEnable());
+
+            // Noise Blanker
+            Label noiseBlankerLabel = new Label("Noise Blanker");
+            GridPane.setHalignment(noiseBlankerLabel, HPos.RIGHT);
+            GridPane.setConstraints(noiseBlankerLabel, 0, 2);
+            gridPane.getChildren().add(noiseBlankerLabel);
+
+            mNoiseBlankerEnabledSwitch = new ToggleSwitch();
+            mNoiseBlankerEnabledSwitch.setSelected(true);
+            mNoiseBlankerEnabledSwitch.selectedProperty()
+                .addListener((obs, ov, nv) -> modifiedProperty().set(true));
+            GridPane.setConstraints(mNoiseBlankerEnabledSwitch, 1, 2);
+            gridPane.getChildren().add(mNoiseBlankerEnabledSwitch);
+
+            Label noiseBlankerHelp = new Label("Suppress impulse noise (ignition, electrical interference)");
+            noiseBlankerHelp.setStyle("-fx-text-fill: #666;");
+            GridPane.setConstraints(noiseBlankerHelp, 2, 2, 3, 1);
+            gridPane.getChildren().add(noiseBlankerHelp);
+
+            // Stuck Timer Watchdog
+            Label watchdogLabel = new Label("Max Call Duration");
+            GridPane.setHalignment(watchdogLabel, HPos.RIGHT);
+            GridPane.setConstraints(watchdogLabel, 0, 3);
+            gridPane.getChildren().add(watchdogLabel);
+
+            mMaxCallDurationEnabledSwitch = new ToggleSwitch();
+            mMaxCallDurationEnabledSwitch.setSelected(true);
+            mMaxCallDurationEnabledSwitch.selectedProperty()
+                .addListener((obs, ov, nv) -> {
+                    mMaxCallDurationSpinner.setDisable(!nv);
+                    modifiedProperty().set(true);
+                });
+            GridPane.setConstraints(mMaxCallDurationEnabledSwitch, 1, 3);
+            gridPane.getChildren().add(mMaxCallDurationEnabledSwitch);
+
+            mMaxCallDurationSpinner = new Spinner<>(30, 600, 180, 30);
+            mMaxCallDurationSpinner.setPrefWidth(100);
+            mMaxCallDurationSpinner.setEditable(true);
+            mMaxCallDurationSpinner.setTooltip(new Tooltip("Force-end calls longer than this (30-600 seconds)"));
+            mMaxCallDurationSpinner.valueProperty()
+                .addListener((obs, ov, nv) -> modifiedProperty().set(true));
+            GridPane.setConstraints(mMaxCallDurationSpinner, 2, 3);
+            gridPane.getChildren().add(mMaxCallDurationSpinner);
+
+            Label watchdogHelp = new Label("seconds (protects against stuck carriers)");
+            watchdogHelp.setStyle("-fx-text-fill: #666;");
+            GridPane.setConstraints(watchdogHelp, 3, 3, 2, 1);
+            gridPane.getChildren().add(watchdogHelp);
 
             mDecoderPane.setContent(gridPane);
 
@@ -546,13 +611,30 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         GridPane.setConstraints(gainLabel, 0, 0);
         controlsPane.getChildren().add(gainLabel);
 
-        mInputGainSlider = new Slider(0.1, 5.0, 2.0);
+        mInputGainSlider = new Slider(0.0, 5.0, 2.0);
         mInputGainSlider.setMajorTickUnit(1.0);
         mInputGainSlider.setMinorTickCount(4);
         mInputGainSlider.setShowTickMarks(true);
         mInputGainSlider.setShowTickLabels(true);
         mInputGainSlider.setPrefWidth(300);
-        mInputGainSlider.setTooltip(new Tooltip("Output gain applied after all filters\n1.0 = unity, 2.0 = +6dB (default)"));
+        mInputGainSlider.setTooltip(new Tooltip("Output gain applied after all filters\n0 = mute, 1.0 = unity, 2.0 = +6dB (default)"));
+        mInputGainSlider.setLabelFormatter(new javafx.util.StringConverter<Double>()
+        {
+            @Override
+            public String toString(Double value)
+            {
+                if(Math.abs(value - 1.0) < 0.01) return "1 (Unity)";
+                if(Math.abs(value) < 0.01) return "0 (Mute)";
+                return String.format("%.0f", value);
+            }
+
+            @Override
+            public Double fromString(String string)
+            {
+                try { return Double.parseDouble(string.replaceAll("[^0-9.]", "")); }
+                catch(NumberFormatException e) { return 1.0; }
+            }
+        });
         mInputGainSlider.valueProperty().addListener((obs, old, val) -> {
             if(!mLoadingConfiguration)
             {
@@ -1187,6 +1269,12 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
             // Load audio filter settings
             loadAudioFilterConfiguration(decodeConfigNBFM);
+
+            // Load noise blanker and watchdog settings
+            mNoiseBlankerEnabledSwitch.setSelected(decodeConfigNBFM.isNoiseBlankerEnabled());
+            mMaxCallDurationEnabledSwitch.setSelected(decodeConfigNBFM.isMaxCallDurationEnabled());
+            mMaxCallDurationSpinner.getValueFactory().setValue(decodeConfigNBFM.getMaxCallDurationSeconds());
+            mMaxCallDurationSpinner.setDisable(!decodeConfigNBFM.isMaxCallDurationEnabled());
         }
         else
         {
@@ -1218,6 +1306,12 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
             // Disable audio filter controls
             disableAudioFilterControls();
+
+            // Reset noise blanker and watchdog controls
+            mNoiseBlankerEnabledSwitch.setSelected(true);
+            mMaxCallDurationEnabledSwitch.setSelected(true);
+            mMaxCallDurationSpinner.getValueFactory().setValue(180);
+            mMaxCallDurationSpinner.setDisable(false);
         }
 
         mLoadingConfiguration = false;
@@ -1286,6 +1380,11 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
         // Save audio filter settings
         saveAudioFilterConfiguration(config);
+
+        // Save noise blanker and watchdog settings
+        config.setNoiseBlankerEnabled(mNoiseBlankerEnabledSwitch.isSelected());
+        config.setMaxCallDurationEnabled(mMaxCallDurationEnabledSwitch.isSelected());
+        config.setMaxCallDurationSeconds(mMaxCallDurationSpinner.getValue());
 
         getItem().setDecodeConfiguration(config);
     }
@@ -1377,13 +1476,11 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         float inputGain = (float)mInputGainSlider.getValue();
         float maxGainDb = (float)(40.0 * Math.log10(inputGain));
         config.setAgcMaxGain(maxGainDb);
-        config.setAgcEnabled(true);
 
         // Low-pass
         config.setLowPassEnabled(mLowPassEnabledSwitch.isSelected());
         config.setLowPassCutoff(mLowPassCutoffSlider.getValue());
 
-        // De-emphasis
         // Voice Enhancement - store amount as AGC target level
         config.setAgcEnabled(mVoiceEnhanceEnabledSwitch.isSelected());
         float voiceAmount = (float)mVoiceEnhanceSlider.getValue();
@@ -1407,57 +1504,103 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         config.setNoiseGateHoldTime((int)mHoldTimeSlider.getValue());
     }
 
+    /**
+     * Locates the NBFMAudioFilters instance from the running decoder for the currently edited channel.
+     * @return audio filters or null if the channel is not running
+     */
+    private NBFMAudioFilters findRunningAudioFilters()
+    {
+        Channel channel = getItem();
+        if(channel == null)
+        {
+            return null;
+        }
+
+        ChannelProcessingManager cpm = getPlaylistManager().getChannelProcessingManager();
+        ProcessingChain chain = cpm.getProcessingChain(channel);
+        if(chain == null)
+        {
+            return null;
+        }
+
+        for(Module module : chain.getModules())
+        {
+            if(module instanceof NBFMDecoder)
+            {
+                return ((NBFMDecoder)module).getAudioFilters();
+            }
+        }
+
+        return null;
+    }
+
     private void handleAnalyzeClick()
     {
-        if (mAnalyzeButton.getText().equals("Analyze Audio & Suggest Settings")) {
-            // Start analysis
+        if(mAnalyzingFilter == null)
+        {
+            // Start analysis — find the running decoder's audio filters
+            NBFMAudioFilters filters = findRunningAudioFilters();
+            if(filters == null)
+            {
+                mAnalyzeStatusLabel.setText("Channel must be running to analyze audio");
+                mAnalyzeStatusLabel.setStyle("-fx-text-fill: #cc6600;");
+                return;
+            }
+
+            mAnalyzingFilter = filters;
+            mAnalyzingFilter.startAnalyzing();
             mAnalyzeButton.setText("Stop Analysis");
             mAnalyzeStatusLabel.setText("Analyzing... listening to audio (10 seconds)");
             mAnalyzeStatusLabel.setStyle("-fx-text-fill: #0066cc; -fx-font-weight: bold;");
 
-            // TODO: Get decoder's audio filter and start analyzing
-            // NBFMAudioFilters filter = getDecoderAudioFilter();
-            // filter.startAnalyzing();
+            // Auto-stop after 10 seconds and show results
+            mAnalyzeTimeline = new Timeline(new KeyFrame(
+                javafx.util.Duration.millis(10000),
+                ae -> finishAnalysis()
+            ));
+            mAnalyzeTimeline.play();
+        }
+        else
+        {
+            // Manual stop — finish early
+            if(mAnalyzeTimeline != null)
+            {
+                mAnalyzeTimeline.stop();
+                mAnalyzeTimeline = null;
+            }
+            finishAnalysis();
+        }
+    }
 
-            // TODO: After 10 seconds (or when stopped), get results
-            // javafx.application.Platform.runLater(() -> {
-            //     float[] results = filter.stopAnalyzing();
-            //     if (results != null) {
-            //         float carrierMax = results[0];
-            //         float voiceMin = results[1];
-            //         float recommended = results[2];
-            //
-            //         mSquelchThresholdSlider.setValue(recommended);
-            //         mAnalyzeStatusLabel.setText(String.format(
-            //             "✅ Suggested: %.1f%% (Carrier: %.1f%%, Voice: %.1f%%)",
-            //             recommended, carrierMax, voiceMin));
-            //         mAnalyzeStatusLabel.setStyle("-fx-text-fill: #009900; -fx-font-weight: bold;");
-            //         modifiedProperty().set(true);
-            //     } else {
-            //         mAnalyzeStatusLabel.setText("⚠️ Not enough audio - try again with active transmissions");
-            //         mAnalyzeStatusLabel.setStyle("-fx-text-fill: #cc6600;");
-            //     }
-            //     mAnalyzeButton.setText("Analyze Audio & Suggest Settings");
-            // }, 10000);  // 10 second delay
+    private void finishAnalysis()
+    {
+        if(mAnalyzingFilter == null)
+        {
+            return;
+        }
 
-            // For now, just show a message after short delay
-            new javafx.animation.Timeline(new javafx.animation.KeyFrame(
-                javafx.util.Duration.millis(1000),
-                ae -> {
-                    mAnalyzeStatusLabel.setText("⚠️ Analysis requires decoder connection (not yet wired)");
-                    mAnalyzeStatusLabel.setStyle("-fx-text-fill: #cc6600;");
-                    mAnalyzeButton.setText("Analyze Audio & Suggest Settings");
-                }
-            )).play();
+        float[] results = mAnalyzingFilter.stopAnalyzing();
+        mAnalyzingFilter = null;
+        mAnalyzeTimeline = null;
+        mAnalyzeButton.setText("Analyze Audio & Suggest Settings");
 
-        } else {
-            // Stop analysis
-            mAnalyzeButton.setText("Analyze Audio & Suggest Settings");
-            mAnalyzeStatusLabel.setText("Analysis stopped");
-            mAnalyzeStatusLabel.setStyle("-fx-text-fill: #666;");
+        if(results != null)
+        {
+            float carrierMax = results[0];
+            float voiceMin = results[1];
+            float recommended = results[2];
 
-            // TODO: Stop analyzing
-            // filter.stopAnalyzing();
+            mSquelchThresholdSlider.setValue(recommended);
+            mAnalyzeStatusLabel.setText(String.format(
+                "Suggested: %.1f%% (Carrier noise: %.1f%%, Voice floor: %.1f%%)",
+                recommended, carrierMax, voiceMin));
+            mAnalyzeStatusLabel.setStyle("-fx-text-fill: #009900; -fx-font-weight: bold;");
+            modifiedProperty().set(true);
+        }
+        else
+        {
+            mAnalyzeStatusLabel.setText("Not enough audio - try again with active transmissions");
+            mAnalyzeStatusLabel.setStyle("-fx-text-fill: #cc6600;");
         }
     }
 

@@ -71,6 +71,13 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     private float mHissReductionDb = -6.0f; // -12 to 0 dB (shelf cut)
     private double mHissReductionCornerHz = 2000.0; // Shelf pivot frequency
 
+    // Noise blanker (IQ-domain impulse noise suppression before decimation)
+    private boolean mNoiseBlankerEnabled = true;
+
+    // Stuck timer watchdog (max call duration protection against stuck carriers)
+    private boolean mMaxCallDurationEnabled = true;
+    private int mMaxCallDurationSeconds = 180; // 3 minutes default
+
     /**
      * Constructs an instance
      */
@@ -642,6 +649,71 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     public void setHissReductionCornerHz(double hz)
     {
         mHissReductionCornerHz = Math.max(500.0, Math.min(3800.0, hz));
+    }
+
+    // ========== NOISE BLANKER ==========
+
+    /**
+     * Indicates if the IQ-domain impulse noise blanker is enabled.
+     * When enabled, impulse spikes (ignition, electrical interference) are detected
+     * and zeroed in the baseband signal before decimation and demodulation.
+     * @return true if enabled (default true)
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "noiseBlankerEnabled")
+    public boolean isNoiseBlankerEnabled()
+    {
+        return mNoiseBlankerEnabled;
+    }
+
+    /**
+     * Sets the noise blanker enabled state.
+     * @param enabled true to enable impulse noise blanking
+     */
+    public void setNoiseBlankerEnabled(boolean enabled)
+    {
+        mNoiseBlankerEnabled = enabled;
+    }
+
+    // ========== STUCK TIMER WATCHDOG ==========
+
+    /**
+     * Indicates if the stuck timer watchdog is enabled.
+     * When enabled, calls that exceed the max duration are force-ended to protect
+     * against stuck carriers or interference holding a channel open indefinitely.
+     * @return true if enabled (default true)
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "maxCallDurationEnabled")
+    public boolean isMaxCallDurationEnabled()
+    {
+        return mMaxCallDurationEnabled;
+    }
+
+    /**
+     * Sets the stuck timer watchdog enabled state.
+     * @param enabled true to enable max call duration protection
+     */
+    public void setMaxCallDurationEnabled(boolean enabled)
+    {
+        mMaxCallDurationEnabled = enabled;
+    }
+
+    /**
+     * Maximum call duration in seconds before the watchdog force-ends the call.
+     * @return max duration in seconds (default 180 = 3 minutes)
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "maxCallDurationSeconds")
+    public int getMaxCallDurationSeconds()
+    {
+        return mMaxCallDurationSeconds;
+    }
+
+    /**
+     * Sets the maximum call duration in seconds (clamped to 30-600 seconds).
+     * @param seconds max call duration (30s minimum, 600s / 10 minutes maximum)
+     */
+    public void setMaxCallDurationSeconds(int seconds)
+    {
+        mMaxCallDurationSeconds = Math.max(30, Math.min(600, seconds));
     }
 
 }

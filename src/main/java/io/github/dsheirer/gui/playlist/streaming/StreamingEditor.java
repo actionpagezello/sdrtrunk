@@ -25,9 +25,11 @@ import io.github.dsheirer.audio.broadcast.BroadcastFormat;
 import io.github.dsheirer.audio.broadcast.BroadcastServerType;
 import io.github.dsheirer.audio.broadcast.ConfiguredBroadcast;
 import io.github.dsheirer.audio.broadcast.broadcastify.BroadcastifyFeedConfiguration;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.rrapi.type.UserFeedBroadcast;
 import io.github.dsheirer.util.ThreadPool;
+
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -221,6 +223,11 @@ public class StreamingEditor extends SplitPane
         BroadcastConfiguration broadcastConfiguration = configuredBroadcast != null ?
             configuredBroadcast.getBroadcastConfiguration() : null;
 
+        // Auto-generated children open in their own editor (ZelloEditor) so
+        // the user can configure per-channel streaming settings and restart
+        // channels independently.  The parent multi-channel editor is reached
+        // by clicking the parent row in the table.
+
         getCurrentEditor().setItem(broadcastConfiguration);
         getStreamAliasSelectionEditor().setBroadcastConfiguration(broadcastConfiguration);
     }
@@ -398,7 +405,8 @@ public class StreamingEditor extends SplitPane
             mConfiguredBroadcastTableView = new TableView<>();
             mConfiguredBroadcastTableView.setPlaceholder(new Label("Click the New button to create a new " +
                 "audio streaming configuration"));
-            mConfiguredBroadcastTableView.setItems(mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts());
+            mConfiguredBroadcastTableView.setItems(
+                mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts());
 
             TableColumn<ConfiguredBroadcast,Boolean> enabledColumn = new TableColumn("Enabled");
             enabledColumn.setCellValueFactory(new PropertyValueFactory<>("enabled"));

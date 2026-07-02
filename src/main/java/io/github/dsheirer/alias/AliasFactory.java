@@ -199,6 +199,7 @@ public class AliasFactory
         copy.setColor(original.getColor());
         copy.setIconName(original.getIconName());
         copy.setRecordable(original.isRecordable());
+        copy.setAudioOutputDevice(original.getAudioOutputDevice());
         return copy;
     }
 
