@@ -64,6 +64,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private static final long MAX_RECONNECT_INTERVAL_MS = 120000; // 2-minute cap
     private static final long KICKED_BACKOFF_MS = 60000;
     private static final int MAX_KICKED_RETRIES = 5;
+    private static final long WATCHDOG_INTERVAL_MS = 60000; // 1-minute watchdog check
 
     private static final long KEEPALIVE_INTERVAL_MS = 30000;
     private static final int KEEPALIVE_MISSED_ACK_THRESHOLD = 3;
@@ -90,6 +91,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private ScheduledFuture<?> mReconnectFuture;
     private ScheduledFuture<?> mKeepaliveFuture;
     private ScheduledFuture<?> mConnectionTimeoutFuture;
+    private ScheduledFuture<?> mWatchdogFuture;
     private volatile boolean mKeepaliveAwaitingAck = false;
     private volatile int mKeepaliveMissedAcks = 0;
 
@@ -217,6 +219,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     public void start()
     {
         mStopped.set(false);
+        startWatchdog();
         setBroadcastState(BroadcastState.CONNECTING);
 
         try
@@ -298,6 +301,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             mReconnectFuture.cancel(true);
             mReconnectFuture = null;
         }
+
+        stopWatchdog();
 
         if(mStreamActive.get())
         {
@@ -1046,7 +1051,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     {
         if(mReconnectFuture != null && !mReconnectFuture.isDone())
         {
-            return;
+            mLog.debug("{}Cancelling pending reconnect — replacing with {}ms delay", ch(), delayMs);
+            mReconnectFuture.cancel(false);
         }
 
         mReconnectFuture = ThreadPool.SCHEDULED.schedule(() ->
@@ -1055,6 +1061,10 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             {
                 mLog.debug("{}Zello reconnecting...", ch());
                 connectWebSocket();
+            }
+            else if(mConnected.get())
+            {
+                mLog.debug("{}Reconnect skipped — already connected", ch());
             }
         }, delayMs, TimeUnit.MILLISECONDS);
     }
@@ -1074,6 +1084,54 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         {
             mKeepaliveFuture.cancel(false);
             mKeepaliveFuture = null;
+        }
+    }
+
+    /**
+     * Starts a periodic watchdog that detects channels stuck in TEMPORARY_BROADCAST_ERROR
+     * with no pending reconnect future. This catches race conditions where onError and onClose
+     * interleave and both miss scheduling a reconnect.
+     */
+    private void startWatchdog()
+    {
+        stopWatchdog();
+        mWatchdogFuture = ThreadPool.SCHEDULED.scheduleAtFixedRate(
+            this::watchdogTick, WATCHDOG_INTERVAL_MS, WATCHDOG_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void stopWatchdog()
+    {
+        if(mWatchdogFuture != null)
+        {
+            mWatchdogFuture.cancel(false);
+            mWatchdogFuture = null;
+        }
+    }
+
+    private void watchdogTick()
+    {
+        try
+        {
+            if(mStopped.get() || mKicked.get() || mPooledMode)
+            {
+                return;
+            }
+
+            BroadcastState state = getBroadcastState();
+            boolean isError = (state == BroadcastState.TEMPORARY_BROADCAST_ERROR);
+            boolean noReconnectPending = (mReconnectFuture == null || mReconnectFuture.isDone());
+            boolean notConnected = !mConnected.get();
+
+            if(isError && noReconnectPending && notConnected)
+            {
+                mLog.warn("{}Watchdog: channel stuck in error state with no reconnect pending — forcing reconnect",
+                    ch());
+                scheduleReconnect();
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.warn("{}Watchdog tick failed: {}", ch(), e.getMessage());
         }
     }
 
