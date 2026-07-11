@@ -27,54 +27,17 @@ import io.github.dsheirer.module.decode.FeedbackDecoder;
 import io.github.dsheirer.sample.Listener;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Demodulates filtered LSM I/Q samples to feed message framer for sync detection and framing.
- *
- * Includes carrier frequency pre-correction to compensate for frequency offset introduced by the
- * polyphase channelizer.  The channelizer output typically has a carrier offset of several hundred
- * Hz which exceeds the PLL's tracking range (MAX_PLL = +/- 60 degrees), causing the PLL and Gardner
- * timing error detector to converge to an incorrect operating point.  The carrier pre-correction
- * estimates the offset from the first 5000 I/Q samples and applies a numerically controlled oscillator
- * (NCO) to remove the offset before demodulation.
  */
 public class P25P1DemodulatorLSM
 {
-    private static final Logger mLog = LoggerFactory.getLogger(P25P1DemodulatorLSM.class);
     private static final float HALF_PI = (float)(Math.PI / 2.0);
     private static final float TWO_PI = (float)(Math.PI * 2.0);
     private static final float MAX_PLL = (float)(Math.PI / 3.0); //+/- 800 Hz
     private static final float OBJECTIVE_MAGNITUDE = 1.0f;
 
-    /**
-     * Maximum sample gain cap.
-     *
-     * The original cap of 500 was dangerously high. At typical RTL-SDR channelized signal
-     * levels (magnitude ~1e-3), gain could reach 500x, amplifying the noise floor by the
-     * same factor and overwhelming the Gardner TED and PLL with noise energy.
-     *
-     * 40x is derived from the expected signal magnitude range:
-     *   Channelizer output at normal RTL-SDR gain: magnitude ~0.025 (needs ~40x to reach 1.0)
-     *   This provides headroom for weak/fading signals while preventing noise amplification blow-up.
-     *   Signals weaker than magnitude 0.025 are below useful SNR for P25 decoding regardless.
-     */
-    private static final float MAX_SAMPLE_GAIN = 40.0f;
-
-    /**
-     * Gain smoothing alpha for exponential moving average of the target gain.
-     * Applied symmetrically for both increases and decreases to prevent the asymmetric
-     * ratchet behavior of the original code, where gain jumped to 500 instantly on a
-     * single low-magnitude noise sample then recovered only slowly at 5% per symbol.
-     * 0.05 gives a ~20-symbol (~4ms at 4800 baud) smoothing time constant.
-     */
-    private static final float GAIN_ALPHA = 0.05f;
-
-    private static final int SYMBOL_RATE = 4800;
-    private static final int CARRIER_ESTIMATE_SAMPLES = 5000;
-
-    private static final int CARRIER_RE_ESTIMATE_SYMBOLS = 2 * SYMBOL_RATE; //Re-estimate after 2 sec sync loss
     private final DibitToByteBufferAssembler mDibitAssembler = new DibitToByteBufferAssembler(300);
     private final FeedbackDecoder mFeedbackDecoder;
     private final P25P1MessageFramer mMessageFramer;
@@ -90,15 +53,6 @@ public class P25P1DemodulatorLSM
     private int mBufferPointer;
     private int mBufferReserve;
 
-    //Carrier frequency pre-correction NCO state
-    private float mCarrierPhaseIncrement = 0f;
-    private float mCarrierPhase = 0f;
-    private boolean mCarrierEstimated = false;
-    private float[] mCarrierEstI;
-    private float[] mCarrierEstQ;
-    private int mCarrierEstCount = 0;
-
-    private int mSymbolsSinceSync = 0;
     /**
      * Constructs an instance
      * @param messageFramer for receiving demodulated symbol stream and providing sync detection events.
@@ -108,8 +62,6 @@ public class P25P1DemodulatorLSM
     {
         mMessageFramer = messageFramer;
         mFeedbackDecoder = feedbackDecoder;
-        mCarrierEstI = new float[CARRIER_ESTIMATE_SAMPLES];
-        mCarrierEstQ = new float[CARRIER_ESTIMATE_SAMPLES];
     }
 
     /**
@@ -118,15 +70,6 @@ public class P25P1DemodulatorLSM
     public void resetPLL()
     {
         mPLL = 0f;
-        mCarrierEstimated = false;
-        mCarrierEstCount = 0;
-        mCarrierPhaseIncrement = 0f;
-        mCarrierPhase = 0f;
-        mCarrierEstI = new float[CARRIER_ESTIMATE_SAMPLES];
-        mCarrierEstQ = new float[CARRIER_ESTIMATE_SAMPLES];
-        mSymbolsSinceSync = 0;
-        // Reset gain to neutral so it re-converges cleanly on the new channel
-        mSampleGain = 1.0f;
     }
 
     /**
@@ -143,40 +86,7 @@ public class P25P1DemodulatorLSM
     }
 
     /**
-     * Estimates the carrier frequency offset from collected I/Q samples and configures the NCO
-     * to pre-correct subsequent samples.  Uses the average instantaneous frequency measured from
-     * the argument of consecutive sample products: freq = mean(angle(z[n] * conj(z[n-1]))).
-     */
-    private void estimateCarrier()
-    {
-        double sumAngle = 0;
-
-        for(int n = 1; n < mCarrierEstCount; n++)
-        {
-            //Compute z[n] * conj(z[n-1])
-            float prodI = mCarrierEstI[n] * mCarrierEstI[n - 1] + mCarrierEstQ[n] * mCarrierEstQ[n - 1];
-            float prodQ = mCarrierEstQ[n] * mCarrierEstI[n - 1] - mCarrierEstI[n] * mCarrierEstQ[n - 1];
-            sumAngle += Math.atan2(prodQ, prodI);
-        }
-
-        mCarrierPhaseIncrement = (float)(sumAngle / (mCarrierEstCount - 1));
-        mCarrierPhase = 0f;
-        mCarrierEstimated = true;
-
-        double sampleRate = SYMBOL_RATE * mSamplesPerSymbol;
-        double carrierHz = mCarrierPhaseIncrement * sampleRate / (2.0 * Math.PI);
-        mLog.info("Carrier offset estimate: {} Hz ({} rad/sample at {} Hz sample rate)",
-            String.format("%.1f", carrierHz), String.format("%.6f", mCarrierPhaseIncrement),
-            String.format("%.0f", sampleRate));
-
-        //Release estimation buffers
-        mCarrierEstI = null;
-        mCarrierEstQ = null;
-    }
-
-    /**
      * Primary input method for receiving a stream of filtered, pulse-shaped samples to process into symbols.
-     * Collects initial samples for carrier offset estimation, then applies NCO pre-correction before demodulation.
      * @param i inphase samples to process
      * @param q quadrature samples to process
      */
@@ -309,7 +219,7 @@ public class P25P1DemodulatorLSM
                 //display the measured carrier offset value in the channel display
                 if(mMessageFramer.processWithSoftSyncDetect(softSymbol, hardSymbol))
                 {
-                    mFeedbackDecoder.processPLLError(pll, SYMBOL_RATE);
+                    mFeedbackDecoder.processPLLError(pll);
                 }
 
                 mDibitAssembler.receive(hardSymbol);

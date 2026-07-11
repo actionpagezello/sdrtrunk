@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2025 Dennis Sheirer
+ * Copyright (C) 2014-2026 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -804,7 +804,6 @@ public class AliasItemEditor extends Editor<Alias>
             dmrMenu.getItems().add(new AddRadioIdRangeItem(Protocol.DMR));
             dmrMenu.getItems().add(new AddTonesItem("AMBE Audio Tones"));
 
-
             Menu fleetsyncMenu = new ProtocolMenu(Protocol.FLEETSYNC);
             fleetsyncMenu.getItems().add(new AddTalkgroupItem(Protocol.FLEETSYNC));
             fleetsyncMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.FLEETSYNC));
@@ -828,6 +827,13 @@ public class AliasItemEditor extends Editor<Alias>
             nbfmMenu.getItems().add(new AddCtcssItem());
             nbfmMenu.getItems().add(new AddDcsItem());
 
+            Menu nxdnMenu = new ProtocolMenu(Protocol.NXDN);
+            nxdnMenu.getItems().add(new AddTalkgroupItem(Protocol.NXDN));
+            nxdnMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.NXDN));
+            nxdnMenu.getItems().add(new AddRadioIdItem(Protocol.NXDN));
+            nxdnMenu.getItems().add(new AddRadioIdRangeItem(Protocol.NXDN));
+            nxdnMenu.getItems().add(new AddTonesItem("AMBE Audio Tones"));
+
             Menu passportMenu = new ProtocolMenu(Protocol.PASSPORT);
             passportMenu.getItems().add(new AddTalkgroupItem(Protocol.PASSPORT));
             passportMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.PASSPORT));
@@ -841,7 +847,7 @@ public class AliasItemEditor extends Editor<Alias>
             lojackMenu.getItems().add(new AddLojackItem());
 
             mAddIdentifierButton.getItems().addAll(amMenu, p25Menu, dmrMenu, fleetsyncMenu, ltrMenu, mdcMenu, mptMenu,
-                nbfmMenu, passportMenu, taitMenu, new SeparatorMenuItem(), lojackMenu);
+                nbfmMenu, nxdnMenu, passportMenu, taitMenu, new SeparatorMenuItem(), lojackMenu);
         }
 
         return mAddIdentifierButton;
