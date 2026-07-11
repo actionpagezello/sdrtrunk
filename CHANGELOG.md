@@ -5,6 +5,42 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15] - 2026-07-11
+
+Major upstream merge: NXDN decoder, frequency error management redesign, and fork customization port.
+
+### Added
+- **NXDN 4800/9600 decoder** — Complete NXDN protocol support from upstream PR #2431 including
+  4FSK demodulation, Layer 1/2/3 message stack, AMBE audio decoding, trunk tracking with traffic
+  channel management, channel map configuration, and GUI configuration editor.
+- **NXDN Type-C/D support** — Includes conventional repeater (SCCH) decoding alongside trunked modes.
+- **Two-tier frequency error management** — New `ChannelFrequencyErrorManager` (per-channel, 500ms
+  loop, mixer adjustment) and `TunerFrequencyErrorManager` (per-tuner, 5s loop, multi-channel
+  averaging, PPM adjustment) replace the old single-tier `FrequencyErrorCorrectionManager`.
+- **P25 ChannelEventTracker refactoring** — `P25TrafficChannelEventTracker` replaced by generic
+  `ChannelEventTracker<T>` base class with `P25ChannelEventTracker` and `NXDNChannelEventTracker`
+  subclasses.
+- **jdk.charsets module** — Added for NXDN BIG5 character encoding support in talker aliases.
+
+### Changed
+- **PPM sanity clamp ported to new architecture** — The AP-fork's `SANITY_CLAMP_PPM = 10.0` rejection
+  threshold and baseline EMA tracking (0.8/0.2 weighting) have been ported from the deleted
+  `FrequencyErrorCorrectionManager` to the new `TunerFrequencyErrorManager`. Wild PPM swings from
+  PLL lock-on errors are still rejected; baseline is preserved across corrections.
+- **FeedbackDecoder API** — `processPLLError(float, int)` replaced with `processPLLError(float)` using
+  stored decimated sample rate. New `setDecimatedSampleRate(double)` method.
+- **TunerChannelSource** — Constructor now takes `TunerFrequencyErrorManager` parameter. New abstract
+  `setFrequencyCorrection(long)` method for per-channel mixer correction.
+
+### Removed
+- **FrequencyErrorCorrectionManager** — Replaced by two-tier system (see Added).
+- **CarrierOffsetProcessor** — Removed by upstream.
+- **TunerFrequencyErrorMonitor** — Replaced by `TunerFrequencyErrorManager`.
+
+### Upstream
+- Merged DSheirer/sdrtrunk PR #2431 (NXDN decoder + frequency error redesign, 30,854 additions,
+  445 files) and PR #2433 (NXDN cleanup, jdk.charsets + tooltip fixes).
+
 ## [0.6.2-ap-14.10] - 2026-07-02
 
 Zello WebSocket reliability, connection rate-limiting, and multi-channel cleanup release.

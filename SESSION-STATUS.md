@@ -1,9 +1,9 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-14.10
-Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-14.10.zip`
+## Current Build: ap-15
+Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-15.zip`
 
-Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.10\`
+Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15\`
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
@@ -13,7 +13,7 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.10\`
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-14.10`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Completed Features
@@ -32,6 +32,22 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-14.10\`
 13. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
 14. Diagnostics preferences panel with per-category DEBUG toggles
 15. FxTableColumnMonitor for Channels editor column/sort persistence
+
+## Changes in ap-15
+1. **Upstream merge: NXDN decoder** — Complete NXDN 4800/9600 protocol support from upstream
+   PR #2431 (30,854 additions, 445 files). Includes 4FSK demodulation, Layer 1/2/3 message stack,
+   AMBE audio, trunk tracking, traffic channel management, and GUI configuration editor.
+2. **Upstream merge: frequency error redesign** — New two-tier frequency error management replaces
+   old single-tier `FrequencyErrorCorrectionManager`. `ChannelFrequencyErrorManager` (per-channel,
+   500ms, mixer) + `TunerFrequencyErrorManager` (per-tuner, 5s, PPM).
+3. **PPM sanity clamp ported** — `SANITY_CLAMP_PPM = 10.0` and baseline EMA (0.8/0.2) ported
+   from deleted `FrequencyErrorCorrectionManager` to new `TunerFrequencyErrorManager`.
+4. **P25 ChannelEventTracker refactoring** — Generic `ChannelEventTracker<T>` base class with
+   `P25ChannelEventTracker` and `NXDNChannelEventTracker` subclasses.
+5. **jdk.charsets module** — Added for NXDN BIG5 talker alias encoding.
+6. **Post-merge compilation fixes** — Added NXDN to DecoderType enum + EnumSets, renamed
+   `P25TrafficChannelEventTracker` → `P25ChannelEventTracker`, removed stale `setAllowedNACs`,
+   fixed `exceedsMaxDataDuration` method name, fixed `RealResampler` duplicate variable.
 
 ## Changes in ap-14.10
 1. **WebSocket Ping/Pong fix (shared pool)** — `ZelloSharedConnection.onPing()` was silently
