@@ -240,7 +240,7 @@ public class RealResampler
             //  mOutputArrayLength (usually 512) samples.
             if(mLastBatch && mOutputBuffer.position() != 0)
             {
-                float[] resampled = new float[mOutputArrayLength];
+                resampled = new float[mOutputArrayLength];
                 mOutputBuffer.flip();       // sets limit to remaining array length
                 mOutputBuffer.get(resampled, 0, mOutputBuffer.limit());     // unused are already zeroed, for padding
                 mOutputBuffer.compact();

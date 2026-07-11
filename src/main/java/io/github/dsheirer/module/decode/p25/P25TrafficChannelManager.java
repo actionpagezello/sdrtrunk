@@ -597,7 +597,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                 P25ChannelEventTracker trackerTS1 = getTrackerRemoveIfStale(channel.getDownlinkFrequency(),
                         P25P1Message.TIMESLOT_1, timestamp);
 
-                if(trackerTS1 != null && trackerTS1.exceedsMaxTDMADataDuration())
+                if(trackerTS1 != null && trackerTS1.exceedsMaxDataDuration())
                 {
                     removeTracker(frequency, P25P1Message.TIMESLOT_1);
                     trackerTS1 = null;
@@ -641,7 +641,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                 P25ChannelEventTracker trackerTS2 = getTrackerRemoveIfStale(channel.getDownlinkFrequency(),
                         P25P1Message.TIMESLOT_2, timestamp);
 
-                if(trackerTS2 != null && trackerTS2.exceedsMaxTDMADataDuration())
+                if(trackerTS2 != null && trackerTS2.exceedsMaxDataDuration())
                 {
                     removeTracker(frequency, P25P1Message.TIMESLOT_2);
                     trackerTS2 = null;
