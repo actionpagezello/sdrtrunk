@@ -33,6 +33,7 @@ public enum DecoderType
     LTR_NET("LTR-Net", "LTR-Net", Protocol.LTR_NET),
     MPT1327("MPT1327", "MPT1327", Protocol.MPT1327),
     NBFM("NBFM", "NBFM", Protocol.NBFM),
+    NXDN("NXDN", "NXDN", Protocol.NXDN),
     PASSPORT("Passport", "Passport", Protocol.PASSPORT),
     P25_PHASE1("P25 Phase 1", "P25-1", Protocol.APCO25),
     P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2),
@@ -66,6 +67,7 @@ public enum DecoderType
         DecoderType.LTR_NET,
         DecoderType.MPT1327,
         DecoderType.NBFM,
+        DecoderType.NXDN,
         DecoderType.P25_PHASE1,
         DecoderType.P25_PHASE2,
         DecoderType.PASSPORT);
@@ -85,13 +87,13 @@ public enum DecoderType
      * Decoders that produce a (recordable) bitstream
      */
     public static final EnumSet<DecoderType> BITSTREAM_DECODERS = EnumSet.of(DecoderType.DMR,
-        DecoderType.MPT1327, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
+        DecoderType.MPT1327, DecoderType.NXDN, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
 
     /**
      * Decoders that produce (recordable) MBE audio codec frames
      */
     public static final EnumSet<DecoderType> MBE_AUDIO_CODEC_DECODERS =
-        EnumSet.of(DecoderType.DMR, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
+        EnumSet.of(DecoderType.DMR, DecoderType.NXDN, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
 
     public Protocol getProtocol()
     {

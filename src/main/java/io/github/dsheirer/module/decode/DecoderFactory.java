@@ -299,22 +299,12 @@ public class DecoderFactory
                 case C4FM:
                 {
                     P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
-                    java.util.Set<Integer> nacs = p1.getAllowedNACSet();
-                    if(nacs != null)
-                    {
-                        decoder.setAllowedNACs(nacs);
-                    }
                     modules.add(decoder);
                     break;
                 }
                 case CQPSK:
                 {
                     P25P1DecoderLSM decoder = new P25P1DecoderLSM();
-                    java.util.Set<Integer> nacs = p1.getAllowedNACSet();
-                    if(nacs != null)
-                    {
-                        decoder.setAllowedNACs(nacs);
-                    }
                     modules.add(decoder);
                     break;
                 }
