@@ -45,6 +45,10 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
     private static final long MINIMUM_CORRECTION_THRESHOLD_HZ = 50;
     private static final long TIMER_INTERVAL_SECONDS = 5;
     private static final DecimalFormat DF = new DecimalFormat("0.00000");
+
+    //AP-fork: sanity clamp to reject wild PPM swings (e.g. PLL locks onto wrong signal)
+    private static final double SANITY_CLAMP_PPM = 10.0;
+
     private final List<ChannelFrequencyErrorManager> mChannelManagers = new ArrayList<>();
     private final TunerController mTunerController;
     private ScheduledFuture<?> mScheduledFuture;
@@ -52,6 +56,9 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
     private boolean mShutdown = false;
     private double mTunerPPM;
     private long mTunerCorrection;
+
+    //AP-fork: baseline PPM tracking with EMA for sanity checks
+    private double mBaselinePPM = Double.NaN;
 
     /**
      * Constructs an instance
@@ -142,14 +149,34 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                     if(mEnabled)
                     {
                         double adjustment = requestedChangeHz / (mTunerController.getFrequency() * PPM_DIVISOR);
+                        double proposedPPM = mTunerController.getFrequencyCorrection() + adjustment;
 
-                        try
+                        //AP-fork: reject PPM measurements that deviate too far from baseline
+                        if(!Double.isNaN(mBaselinePPM) && Math.abs(proposedPPM - mBaselinePPM) > SANITY_CLAMP_PPM)
                         {
-                            mTunerController.setFrequencyCorrection(mTunerController.getFrequencyCorrection() + adjustment);
+                            LOG.debug("Rejecting PPM adjustment {}, too far from baseline {}",
+                                    DF.format(proposedPPM), DF.format(mBaselinePPM));
                         }
-                        catch(SourceException e)
+                        else
                         {
-                            LOG.error("Error while adjusting PPM value", e);
+                            try
+                            {
+                                mTunerController.setFrequencyCorrection(proposedPPM);
+
+                                //AP-fork: update baseline EMA (0.8 old / 0.2 new weighting)
+                                if(Double.isNaN(mBaselinePPM))
+                                {
+                                    mBaselinePPM = proposedPPM;
+                                }
+                                else
+                                {
+                                    mBaselinePPM = mBaselinePPM * 0.8 + proposedPPM * 0.2;
+                                }
+                            }
+                            catch(SourceException e)
+                            {
+                                LOG.error("Error while adjusting PPM value", e);
+                            }
                         }
                     }
                 }
