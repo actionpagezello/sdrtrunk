@@ -369,7 +369,7 @@ public class ZelloSharedConnection
             MAX_RECONNECT_INTERVAL_MS);
         long jitter = ThreadLocalRandom.current().nextLong(RECONNECT_JITTER_MS);
         long delay = base + jitter;
-        mLog.debug("[Pool] Scheduling reconnect in {}ms (attempt {})", delay, attempt + 1);
+        mLog.warn("[Pool] Scheduling reconnect in {}ms (attempt {})", delay, attempt + 1);
 
         if(mReconnectFuture != null && !mReconnectFuture.isDone()) return;
         mReconnectFuture = ThreadPool.SCHEDULED.schedule(() ->

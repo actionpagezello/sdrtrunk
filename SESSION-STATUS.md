@@ -1,9 +1,9 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-15
-Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-15.zip`
+## Current Build: ap-15.1
+Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-15.1.zip`
 
-Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15\`
+Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.1\`
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
@@ -13,7 +13,7 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15\`
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.1`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Completed Features
@@ -32,6 +32,19 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15\`
 13. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
 14. Diagnostics preferences panel with per-category DEBUG toggles
 15. FxTableColumnMonitor for Channels editor column/sort persistence
+
+## Changes in ap-15.1
+1. **Zello silent channel death fix** — `onClose` and `onError` WebSocket callbacks wrap
+   `setBroadcastState()` in try-catch so `scheduleReconnect()` always fires. Previously channels
+   would silently die on code=1006 disconnects with no reconnect and no stack trace.
+2. **Watchdog blind spot fix** — `watchdogTick()` now catches any disconnected channel with no
+   pending reconnect, regardless of broadcast state. Previously only caught `TEMPORARY_BROADCAST_ERROR`.
+3. **Reconnect logging at WARN** — `scheduleReconnect` logs at WARN instead of DEBUG for production
+   visibility.
+4. **Upstream channelizer optimization** — Ported fused multiply-accumulate to
+   `ComplexPolyphaseChannelizerM2.process()`. Eliminates 2 per-call array allocations (~194 MB/sec
+   GC garbage per tuner), pre-allocates reusable accumulator, caches fields into locals. Bit-for-bit
+   identical output.
 
 ## Changes in ap-15
 1. **Upstream merge: NXDN decoder** — Complete NXDN 4800/9600 protocol support from upstream

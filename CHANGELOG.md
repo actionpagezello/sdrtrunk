@@ -5,6 +5,36 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.1] - 2026-07-18
+
+Zello silent channel death fix and upstream channelizer performance optimization.
+
+### Fixed
+- **Zello silent channel death on code=1006 disconnect** — `onClose` and `onError` WebSocket
+  callbacks now wrap `setBroadcastState()` in try-catch so `scheduleReconnect()` always executes,
+  even if a listener exception propagates through the event bus and kills the callback. Previously,
+  channels like Boston MA EMS and Massport Fire would silently die on code=1006 disconnects with no
+  reconnect scheduled and no stack trace in the logs. Confirmed across 7 days of production logs
+  (July 11-17) affecting 7 channels total.
+- **Watchdog blind spot for disconnected channels** — `watchdogTick()` previously only caught
+  channels in `TEMPORARY_BROADCAST_ERROR` state with no pending reconnect. Now catches any channel
+  where `!mConnected && !mStopped && noReconnectPending`, regardless of broadcast state. This
+  covers the edge case where the async `Platform.runLater` state update hasn't propagated yet,
+  leaving the state stale as `CONNECTED` while the channel is actually dead.
+
+### Changed
+- **Reconnect scheduling logged at WARN** — `scheduleReconnect` in both `AbstractZelloBroadcaster`
+  and `ZelloSharedConnection` now logs at WARN instead of DEBUG, making reconnect events visible in
+  production logs without enabling debug output.
+
+### Upstream
+- **Fused multiply-accumulate in polyphase channelizer** — Ported upstream optimization to
+  `ComplexPolyphaseChannelizerM2.process()`. The multiply and per-sub-channel accumulation are now
+  fused into a single pass with a pre-allocated reusable accumulator buffer (`mFilterAccumulator`),
+  eliminating two per-call array allocations (~194 MB/sec of GC garbage per tuner at 2.4 MSPS).
+  Instance fields are cached into `final` locals to avoid virtual method dispatch in the inner loop.
+  Output is bit-for-bit identical to the previous implementation.
+
 ## [0.6.2-ap-15] - 2026-07-11
 
 Major upstream merge: NXDN decoder, frequency error management redesign, and fork customization port.

@@ -1041,7 +1041,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 MAX_RECONNECT_INTERVAL_MS);
             long jitter = ThreadLocalRandom.current().nextLong(RECONNECT_JITTER_MS);
             long delay = base + jitter;
-            mLog.debug("{}Scheduling reconnect in {}ms (base {}ms + jitter {}ms, attempt {})",
+            mLog.warn("{}Scheduling reconnect in {}ms (base {}ms + jitter {}ms, attempt {})",
                 ch(), delay, base, jitter, attempt + 1);
             scheduleReconnectWithDelay(delay);
         }
@@ -1117,15 +1117,13 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 return;
             }
 
-            BroadcastState state = getBroadcastState();
-            boolean isError = (state == BroadcastState.TEMPORARY_BROADCAST_ERROR);
             boolean noReconnectPending = (mReconnectFuture == null || mReconnectFuture.isDone());
             boolean notConnected = !mConnected.get();
 
-            if(isError && noReconnectPending && notConnected)
+            if(notConnected && noReconnectPending)
             {
-                mLog.warn("{}Watchdog: channel stuck in error state with no reconnect pending — forcing reconnect",
-                    ch());
+                mLog.warn("{}Watchdog: channel disconnected with no reconnect pending (state={}) — forcing reconnect",
+                    ch(), getBroadcastState());
                 scheduleReconnect();
             }
         }
@@ -1619,7 +1617,16 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 return null;
             }
 
-            setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+            try
+            {
+                setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+            }
+            catch(Exception e)
+            {
+                mLog.warn("{}setBroadcastState threw in onClose — proceeding to reconnect: {}",
+                    ch(), e.getMessage());
+            }
+
             scheduleReconnect();
             return null;
         }
@@ -1636,7 +1643,16 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
             if(!mKicked.get() && getBroadcastState() != BroadcastState.CONFIGURATION_ERROR)
             {
-                setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                try
+                {
+                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                }
+                catch(Exception e)
+                {
+                    mLog.warn("{}setBroadcastState threw in onError — proceeding to reconnect: {}",
+                        ch(), e.getMessage());
+                }
+
                 scheduleReconnect();
             }
         }
