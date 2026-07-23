@@ -5,6 +5,20 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.2] - 2026-07-22
+
+### Fixed
+- **RealResampler buffer overflow crash** — `dispatchOutputBuffer()` contained a `mLastBatch`
+  tail-flush block that attempted to copy all remaining output samples into a fixed-size
+  `float[512]` array without checking the count. When the resampler produced a large output burst
+  (e.g., 1040 samples), the `dispatchFullOutputBuffers` loop would extract 512, leaving 528 — and
+  the tail-flush block would try `FloatBuffer.get(float[512], 0, 528)`, throwing
+  `IndexOutOfBoundsException`. This fired on every NBFM squelch close (`lastBatch=true`) and was
+  suppressed 4-of-5 by log suppression, creating continuous exception garbage that contributed to
+  GC pressure and UI freezes. Fix: removed the redundant `mLastBatch` tail-flush from
+  `dispatchOutputBuffer` (already handled by `flushPartialOutput()` after the dispatch loop) and
+  changed `dispatchFullOutputBuffers` from `>` to `>=` to dispatch exact-512 buffers immediately.
+
 ## [0.6.2-ap-15.1] - 2026-07-18
 
 Zello silent channel death fix and upstream channelizer performance optimization.
