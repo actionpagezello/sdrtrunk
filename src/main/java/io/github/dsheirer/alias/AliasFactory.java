@@ -24,7 +24,9 @@ import io.github.dsheirer.alias.action.clip.ClipAction;
 import io.github.dsheirer.alias.action.script.ScriptAction;
 import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
+import io.github.dsheirer.alias.id.ctcss.Ctcss;
 import io.github.dsheirer.alias.id.dcs.Dcs;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.esn.Esn;
 import io.github.dsheirer.alias.id.legacy.mobileID.Min;
 import io.github.dsheirer.alias.id.legacy.siteID.SiteID;
@@ -58,6 +60,11 @@ public class AliasFactory
                 BroadcastChannel copyBroadcast = new BroadcastChannel();
                 copyBroadcast.setChannelName(originalBroadcast.getChannelName());
                 return copyBroadcast;
+            case CTCSS:
+                Ctcss originalCtcss = (Ctcss)id;
+                Ctcss copyCtcss = new Ctcss();
+                copyCtcss.setCTCSSCode(originalCtcss.getCTCSSCode());
+                return copyCtcss;
             case DCS:
                 Dcs originalDcs = (Dcs)id;
                 Dcs copyDcs = new Dcs();
@@ -79,6 +86,11 @@ public class AliasFactory
                 Min copyMin = new Min();
                 copyMin.setMin(originalMin.getMin());
                 return copyMin;
+            case NAC:
+                Nac originalNac = (Nac)id;
+                Nac copyNac = new Nac();
+                copyNac.setNacValue(originalNac.getNacValue());
+                return copyNac;
             case P25_FULLY_QUALIFIED_RADIO_ID:
                 P25FullyQualifiedRadio originalP25 = (P25FullyQualifiedRadio) id;
                 P25FullyQualifiedRadio copyP25 = new P25FullyQualifiedRadio(originalP25.getWacn(),
@@ -145,6 +157,7 @@ public class AliasFactory
 
             //Legacy identifiers ... not supported
             case FLEETSYNC:
+            case INVERT:
             case LEGACY_TALKGROUP:
             case LTR_NET_UID:
             case MDC1200:

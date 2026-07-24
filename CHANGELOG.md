@@ -5,6 +5,15 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.3] - 2026-07-24
+
+### Fixed
+- **AliasFactory cannot copy CTCSS or NAC alias IDs** — `AliasFactory.copyOf()` switch was missing
+  cases for `CTCSS` and `NAC` alias ID types, causing a "cannot make copy of instance" warning and
+  silently dropping those IDs when the alias editor creates a working copy. This prevented adding or
+  editing streaming actions on any alias that contained a CTCSS tone filter. Also added `INVERT` to
+  the legacy/unsupported fall-through (no implementation class exists).
+
 ## [0.6.2-ap-15.2] - 2026-07-22
 
 ### Fixed
