@@ -5,6 +5,17 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.4] - 2026-07-26
+
+### Fixed
+- **Zello audio distortion when graphic EQ is enabled** — The float-to-short conversion in
+  `AbstractZelloBroadcaster.processAudioBuffer()` had no clipping protection. When the P25 graphic
+  equalizer boosted frequency bands, audio peaks could exceed the ±1.0f range after
+  NonClippingGain + EQ, causing the raw `(short)(sample * 32767)` cast to overflow and wrap —
+  producing hard clipping distortion audible on Zello streams but not on local speakers (which
+  handle float samples natively). Added a `tanh` soft clipper that smoothly compresses peaks
+  exceeding ±1.0f before the short conversion, preserving audio quality through the Opus encoder.
+
 ## [0.6.2-ap-15.3] - 2026-07-24
 
 ### Fixed

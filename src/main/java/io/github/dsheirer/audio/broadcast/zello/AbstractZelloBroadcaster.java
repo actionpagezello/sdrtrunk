@@ -750,11 +750,25 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         }
     }
 
+    /**
+     * Soft-clips a float audio sample to prevent hard clipping distortion when converting to short.
+     * Uses tanh compression for samples exceeding [-1.0, 1.0] range, which can happen when the
+     * graphic equalizer boosts frequency bands above the NonClippingGain ceiling.
+     */
+    private static short softClipToShort(float sample)
+    {
+        if(sample > 1.0f || sample < -1.0f)
+        {
+            sample = (float)Math.tanh(sample);
+        }
+        return (short)(sample * 32767.0f);
+    }
+
     private void processAudioBuffer(float[] audio8k)
     {
         for(int i = 0; i < audio8k.length; i++)
         {
-            short currentSample = (short)(audio8k[i] * 32767.0f);
+            short currentSample = softClipToShort(audio8k[i]);
             short midpoint = (short)((mPreviousSample + currentSample) / 2);
 
             if(mResampleBufferPos < ZelloProtocolUtil.ZELLO_FRAME_SIZE_SAMPLES)
