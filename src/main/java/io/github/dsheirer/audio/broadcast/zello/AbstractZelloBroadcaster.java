@@ -70,6 +70,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private static final int KEEPALIVE_MISSED_ACK_THRESHOLD = 3;
 
     private static final int MAX_GHOST_STREAMS_BEFORE_RECONNECT = 3;
+    private static final int MAX_CONSECUTIVE_3008_BEFORE_RECONNECT = 3;
+    private static final long PENDING_STOP_TIMEOUT_MS = 5000;
     private static final long CONNECTION_TIMEOUT_MS = 45000;
     private static final long ENCODER_DRAIN_MS = 15;
     private static final int MAX_PENDING_OPUS_FRAMES = 15;
@@ -113,6 +115,10 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private volatile int mConsecutiveGhostStreams = 0;
     private volatile boolean mPendingStreamStart = false;
     private final ConcurrentLinkedQueue<byte[]> mPendingOpusFrames = new ConcurrentLinkedQueue<>();
+    private final AtomicLong mPendingStopStreamId = new AtomicLong(-1);
+    private volatile long mLastKnownStreamId = -1;
+    private volatile int mConsecutive3008Errors = 0;
+    private ScheduledFuture<?> mPendingStopTimeoutFuture;
 
     private OpusEncoder mOpusEncoder;
     private short[] mResampleBuffer = new short[ZelloProtocolUtil.ZELLO_FRAME_SIZE_SAMPLES];
@@ -317,6 +323,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
         mPauseUntilTime = 0;
         mStreamGuardUntilTime = 0;
+        mPendingStopStreamId.set(-1);
+        cancelPendingStopTimeout();
+        mConsecutive3008Errors = 0;
         mKicked.set(false);
         mKickedCount.set(0);
         mReconnecting.set(false);
@@ -383,7 +392,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             && !mStreamActive.get()
             && !guardPending
             && mStreamGuardUntilTime <= now
-            && !pausePending;
+            && !pausePending
+            && mPendingStopStreamId.get() <= 0;
     }
 
     @Override
@@ -466,6 +476,13 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         if(mStreamGuardUntilTime > now || mPauseUntilTime > now)
         {
             scheduleStreamStart();
+            return;
+        }
+
+        if(mPendingStopStreamId.get() > 0)
+        {
+            mLog.debug("{}Deferring stream start — pending stop not yet confirmed", ch());
+            mPendingStreamStart = true;
             return;
         }
 
@@ -599,9 +616,12 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         if(streamId > 0)
         {
             sendStopStream(streamId);
+            mPendingStopStreamId.set(streamId);
+            schedulePendingStopTimeout();
             incrementStreamedAudioCount();
             mKickedCount.set(0);
             mConsecutiveGhostStreams = 0;
+            mConsecutive3008Errors = 0;
             broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
         }
         else if(streamId == -1 && (mConnected.get() || (mPooledMode && mPooledConnection != null && mPooledConnection.isConnected())))
@@ -616,6 +636,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     ch(), mConsecutiveGhostStreams);
                 mConsecutiveGhostStreams = 0;
                 mCurrentStreamId.set(-1);
+                mPendingStopStreamId.set(-1);
+                cancelPendingStopTimeout();
                 mResampleBufferPos = 0;
                 mAudioQueue.clear();
                 mPendingOpusFrames.clear();
@@ -686,6 +708,41 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     }
 
     /**
+     * Schedules a safety timeout for the pending on_stream_stop acknowledgment. If the server does not
+     * confirm the stop within PENDING_STOP_TIMEOUT_MS, the pending stop is cleared to avoid permanently
+     * blocking new streams.
+     */
+    private void schedulePendingStopTimeout()
+    {
+        if(mPendingStopTimeoutFuture != null)
+        {
+            mPendingStopTimeoutFuture.cancel(false);
+        }
+
+        mPendingStopTimeoutFuture = ThreadPool.SCHEDULED.schedule(() ->
+        {
+            long pending = mPendingStopStreamId.getAndSet(-1);
+            if(pending > 0)
+            {
+                mLog.warn("{}Zello on_stream_stop timeout — clearing pending stop for stream_id={}", ch(), pending);
+                maybeSchedulePendingStreamStart();
+            }
+        }, PENDING_STOP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Cancels any pending stop timeout.
+     */
+    private void cancelPendingStopTimeout()
+    {
+        if(mPendingStopTimeoutFuture != null)
+        {
+            mPendingStopTimeoutFuture.cancel(false);
+            mPendingStopTimeoutFuture = null;
+        }
+    }
+
+    /**
      * Handles a rejected start_stream without treating it as a ghost stream (no stream_id assigned).
      */
     private synchronized void handleStartStreamFailure(String error, int seq, String originCmd)
@@ -715,6 +772,56 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mStreamActive.set(false);
         mAudioQueue.clear();
         mResampleBufferPos = 0;
+
+        // Change 2 & 3: On "channel busy" (3008), send stop_stream for last known stream and
+        // reconnect WebSocket after repeated failures
+        if("channel busy".equals(error))
+        {
+            mConsecutive3008Errors++;
+
+            // Send stop_stream for the last known stream to clear server-side orphan
+            long pendingId = mPendingStopStreamId.get();
+            long stopTarget = pendingId > 0 ? pendingId : mLastKnownStreamId;
+            if(stopTarget > 0)
+            {
+                mLog.warn("{}Zello 3008 ({}/{}) — sending stop_stream for last known id={} before retry",
+                    ch(), mConsecutive3008Errors, MAX_CONSECUTIVE_3008_BEFORE_RECONNECT, stopTarget);
+                sendStopStream(stopTarget);
+                mPendingStopStreamId.set(stopTarget);
+                schedulePendingStopTimeout();
+            }
+            else
+            {
+                mLog.warn("{}Zello 3008 ({}/{}) — no last known stream_id to stop",
+                    ch(), mConsecutive3008Errors, MAX_CONSECUTIVE_3008_BEFORE_RECONNECT);
+            }
+
+            // After repeated 3008s, close and reopen the WebSocket to clear stuck server state
+            if(mConsecutive3008Errors >= MAX_CONSECUTIVE_3008_BEFORE_RECONNECT)
+            {
+                mLog.error("{}Zello {} consecutive 3008 errors — reconnecting WebSocket to clear stuck stream",
+                    ch(), mConsecutive3008Errors);
+                mConsecutive3008Errors = 0;
+                mPendingStopStreamId.set(-1);
+                cancelPendingStopTimeout();
+                mLastKnownStreamId = -1;
+
+                if(!mPooledMode)
+                {
+                    disconnectWebSocket();
+                    scheduleReconnect();
+                }
+
+                setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                updateStreamErrorDetail("[3008] channel busy — WebSocket reset after " +
+                    MAX_CONSECUTIVE_3008_BEFORE_RECONNECT + " consecutive failures");
+                return;
+            }
+        }
+        else
+        {
+            mConsecutive3008Errors = 0;
+        }
 
         if(ZelloProtocolUtil.isTransientStreamError(error))
         {
@@ -934,6 +1041,10 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mChannelOnline.set(false);
         mPendingCommands.clear();
         mConsecutiveGhostStreams = 0;
+        mConsecutive3008Errors = 0;
+        mPendingStopStreamId.set(-1);
+        cancelPendingStopTimeout();
+        mLastKnownStreamId = -1;
 
         String wsUrl = zelloConfig().getWebSocketUrl();
         if(wsUrl == null)
@@ -1172,6 +1283,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 mChannelOnline.set(false);
                 mStreamActive.set(false);
                 mCurrentStreamId.set(-1);
+                mPendingStopStreamId.set(-1);
+                cancelPendingStopTimeout();
 
                 if(mWebSocket != null)
                 {
@@ -1465,6 +1578,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             mLog.warn("{}Zello channel went offline (pooled, status={})", ch(), status);
             mStreamActive.set(false);
             mCurrentStreamId.set(-1);
+            mPendingStopStreamId.set(-1);
+            cancelPendingStopTimeout();
             setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
             setConnectionErrorDetail("Channel offline (status=" + status + ")");
         }
@@ -1478,6 +1593,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mChannelOnline.set(false);
         mStreamActive.set(false);
         mCurrentStreamId.set(-1);
+        mPendingStopStreamId.set(-1);
+        cancelPendingStopTimeout();
         setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
     }
 
@@ -1506,7 +1623,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 {
                     long streamId = json.get("stream_id").getAsLong();
                     mCurrentStreamId.set(streamId);
+                    mLastKnownStreamId = streamId;
                     mConsecutiveGhostStreams = 0;
+                    mConsecutive3008Errors = 0;
                     setLastErrorDetail(null);
 
                     // Flush pending Opus frames
@@ -1541,13 +1660,23 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             if(json.has("command") && "on_stream_stop".equals(json.get("command").getAsString()))
             {
                 long stoppedId = json.has("stream_id") ? json.get("stream_id").getAsLong() : -1;
-                if(stoppedId > 0 && stoppedId == mCurrentStreamId.get())
+                long currentId = mCurrentStreamId.get();
+                long pendingStopId = mPendingStopStreamId.get();
+
+                if(stoppedId > 0 && stoppedId == currentId)
                 {
                     mLog.info("{}Zello server stopped our stream (pooled, id={})", ch(), stoppedId);
                     updateStreamErrorDetail("[3007] server stopped stream (id=" + stoppedId + ")");
                     mStreamActive.set(false);
                     mCurrentStreamId.set(-1);
                     mLastStreamStopTime = System.currentTimeMillis();
+                }
+                else if(stoppedId > 0 && stoppedId == pendingStopId)
+                {
+                    mPendingStopStreamId.set(-1);
+                    cancelPendingStopTimeout();
+                    mLog.info("{}Zello on_stream_stop confirmed (pooled, id={})", ch(), stoppedId);
+                    maybeSchedulePendingStreamStart();
                 }
                 return;
             }
@@ -1620,6 +1749,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             mChannelOnline.set(false);
             mStreamActive.set(false);
             mCurrentStreamId.set(-1);
+            mPendingStopStreamId.set(-1);
+            cancelPendingStopTimeout();
 
             if(mKicked.get())
             {
@@ -1654,6 +1785,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             mChannelOnline.set(false);
             mStreamActive.set(false);
             mCurrentStreamId.set(-1);
+            mPendingStopStreamId.set(-1);
+            cancelPendingStopTimeout();
 
             if(!mKicked.get() && getBroadcastState() != BroadcastState.CONFIGURATION_ERROR)
             {
@@ -1717,6 +1850,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                             (originCmd != null ? " — " + originCmd : ""));
                         mStreamActive.set(false);
                         mCurrentStreamId.set(-1);
+                        mPendingStopStreamId.set(-1);
+                        cancelPendingStopTimeout();
                         mLastStreamStopTime = System.currentTimeMillis();
                         return;
                     }
@@ -1758,6 +1893,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                                 mConnected.set(false);
                                 mStreamActive.set(false);
                                 mCurrentStreamId.set(-1);
+                                mPendingStopStreamId.set(-1);
+                                cancelPendingStopTimeout();
                                 if(mWebSocket != null)
                                 {
                                     try
@@ -1779,18 +1916,30 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     else if("on_stream_stop".equals(command))
                     {
                         long stoppedId = json.has("stream_id") ? json.get("stream_id").getAsLong() : -1;
-                        if(stoppedId > 0 && stoppedId == mCurrentStreamId.get())
+                        long currentId = mCurrentStreamId.get();
+                        long pendingStopId = mPendingStopStreamId.get();
+
+                        if(stoppedId > 0 && stoppedId == currentId)
                         {
+                            // Server-initiated stop of our active stream
                             mLog.info("{}Zello server stopped our stream (id={})", ch(), stoppedId);
                             updateStreamErrorDetail("[3007] server stopped stream (id=" + stoppedId + ")");
                             mStreamActive.set(false);
                             mCurrentStreamId.set(-1);
                             mLastStreamStopTime = System.currentTimeMillis();
                         }
+                        else if(stoppedId > 0 && stoppedId == pendingStopId)
+                        {
+                            // Server confirmed our stop_stream — stream fully closed
+                            mPendingStopStreamId.set(-1);
+                            cancelPendingStopTimeout();
+                            mLog.info("{}Zello on_stream_stop confirmed (id={})", ch(), stoppedId);
+                            maybeSchedulePendingStreamStart();
+                        }
                         else
                         {
-                            mLog.debug("{}Zello on_stream_stop for stream_id={} (not ours: {})",
-                                ch(), stoppedId, mCurrentStreamId.get());
+                            mLog.debug("{}Zello on_stream_stop for stream_id={} (not ours: current={}, pendingStop={})",
+                                ch(), stoppedId, currentId, pendingStopId);
                         }
                     }
                     else if("on_error".equals(command))
@@ -1839,7 +1988,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     {
                         long streamId = json.get("stream_id").getAsLong();
                         mCurrentStreamId.set(streamId);
+                        mLastKnownStreamId = streamId;
                         mConsecutiveGhostStreams = 0;
+                        mConsecutive3008Errors = 0;
                         setLastErrorDetail(null);
 
                         // Flush any Opus frames buffered while waiting for stream_id

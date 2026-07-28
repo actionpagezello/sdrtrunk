@@ -5,6 +5,25 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.5] - 2026-07-28
+
+### Fixed
+- **Zello orphaned stream collisions (3008 "channel busy")** — Three changes to
+  `AbstractZelloBroadcaster` stream lifecycle to eliminate orphaned streams that leave the Zello
+  server in a "channel busy" state:
+  1. **Server-acknowledged stream closure** — After sending `stop_stream`, the broadcaster now tracks
+     the pending stop and blocks new `start_stream` requests until the server confirms with
+     `on_stream_stop` (matched on stream_id). Previously, local state was cleared immediately after
+     sending `stop_stream`, so the `on_stream_stop` response arrived with "not ours" and was ignored,
+     allowing a new stream to race the server's cleanup. A 5-second safety timeout prevents permanent
+     blocking if the server never responds.
+  2. **Stop-before-retry on 3008** — When the server rejects `start_stream` with "channel busy", the
+     broadcaster now sends `stop_stream` for the last known `stream_id` before scheduling the retry.
+     This clears the orphaned server-side stream instead of blindly retrying into the same collision.
+  3. **WebSocket reset on repeated 3008s** — After 3 consecutive "channel busy" failures on the same
+     connection, the broadcaster disconnects and reconnects the WebSocket. Since Zello allows only one
+     outbound stream per connection, a fresh socket guarantees the stuck stream is cleared.
+
 ## [0.6.2-ap-15.4] - 2026-07-26
 
 ### Fixed
