@@ -5,6 +5,32 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.6] - 2026-07-30
+
+### Fixed
+- **Noise blanker kills audio on weak NBFM signals** — The `NoiseBlanker` had a self-reinforcing
+  feedback loop: only non-blanked samples updated the running average power, so on weak signals the
+  average stayed artificially low and legitimate voice peaks exceeded the 225× blanking threshold.
+  Once triggered, the blanker suppressed more and more of the signal, eventually gating all audio
+  (e.g., Cataldo Ambulance). Fix: blanked samples now update the running average at 1/10th normal
+  weight (`ALPHA_BLANKED`), allowing the average to gradually rise to match the actual signal level.
+  A safety valve checks the blanking rate every 2000 samples and boosts the average by 50% if more
+  than 5% of samples are being blanked.
+
+- **CTCSS tone filter clips first ~250ms of NBFM calls** — The CTCSS detector requires 3
+  confirmation blocks (~83ms each) before allowing audio to pass. During that window,
+  `processResampledAudio()` discarded the audio entirely instead of buffering it. Fix: audio is now
+  buffered (up to 500ms / 4000 samples at 8 kHz) during tone confirmation and flushed through the
+  normal audio pipeline when the detector confirms the correct tone. The 500ms tone holdover for
+  rapid squelch flutter is unchanged — calls that re-open within the holdover window still pass
+  audio immediately.
+
+- **Zello pending stop timeout too long (5s → 500ms)** — The Zello server does not send
+  `on_stream_stop` in response to client-initiated `stop_stream`, so every stream hit the 5-second
+  safety timeout before allowing the next stream to start. Log analysis showed 31 deferred stream
+  starts on Stoneham and 9 on Somerville from this delay. Reduced `PENDING_STOP_TIMEOUT_MS` from
+  5000 to 500ms.
+
 ## [0.6.2-ap-15.5] - 2026-07-28
 
 ### Fixed

@@ -52,6 +52,7 @@ import io.github.dsheirer.source.SourceEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -127,6 +128,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     // Noise blanker — IQ-domain impulse noise suppression (same approach as P25 decoders)
     private final NoiseBlanker mNoiseBlanker = new NoiseBlanker();
     private final boolean mNoiseBlankerEnabled;
+
+    // CTCSS/DCS tone confirmation audio buffer — holds audio during the detection
+    // window so it can be released retroactively when the tone is confirmed,
+    // rather than being discarded and clipping the start of every call.
+    private final List<float[]> mPendingToneAudio = new ArrayList<>();
+    private int mPendingToneSampleCount = 0;
+    private static final int MAX_PENDING_TONE_SAMPLES = 4000; // 500ms at 8kHz
 
     // Stuck timer watchdog — force-ends calls that exceed max duration (stuck carrier protection)
     private final boolean mMaxCallDurationEnabled;
@@ -236,6 +244,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 // holdover period. The tone match will be cleared either:
                 //   (a) when squelch re-opens and holdover has expired, or
                 //   (b) when the detector reports tone lost or rejected.
+
+                // Discard any buffered audio from an unconfirmed tone detection
+                clearPendingToneAudio();
 
                 // Only send call end if a call was actually active (tone was matched or no filter)
                 if(!mToneFilterEnabled || mToneMatch)
@@ -500,7 +511,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         // Step 2: Gate audio based on tone/code match
         if(mToneFilterEnabled && !mToneMatch)
         {
-            // Tone/code not confirmed yet — block audio
+            // Tone/code not confirmed yet — buffer audio for retroactive release
+            // when the detector confirms the correct tone, instead of discarding it
+            bufferPendingToneAudio(resampledAudio);
             return;
         }
 
@@ -537,6 +550,73 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             broadcast(resampledAudio);
         }
+    }
+
+    /**
+     * Buffers audio during the CTCSS/DCS tone confirmation window. When the detector
+     * confirms the correct tone, flushPendingToneAudio() releases the buffered audio
+     * through the normal pipeline so the start of the call is not lost.
+     */
+    private void bufferPendingToneAudio(float[] audio)
+    {
+        mPendingToneAudio.add(audio);
+        mPendingToneSampleCount += audio.length;
+
+        // Cap buffer to prevent unbounded growth — evict oldest chunks
+        while(mPendingToneSampleCount > MAX_PENDING_TONE_SAMPLES && !mPendingToneAudio.isEmpty())
+        {
+            float[] removed = mPendingToneAudio.remove(0);
+            mPendingToneSampleCount -= removed.length;
+        }
+    }
+
+    /**
+     * Flushes buffered audio through the audio filter and broadcast pipeline after
+     * the CTCSS/DCS detector confirms the correct tone. This recovers the ~250ms of
+     * audio that would otherwise be lost during tone confirmation.
+     */
+    private void flushPendingToneAudio()
+    {
+        if(mPendingToneAudio.isEmpty())
+        {
+            return;
+        }
+
+        int chunks = mPendingToneAudio.size();
+        int samples = mPendingToneSampleCount;
+
+        for(float[] audio : mPendingToneAudio)
+        {
+            if(mAudioFilters != null)
+            {
+                mAudioFilters.process(audio);
+            }
+
+            if(mSquelchTailRemover != null)
+            {
+                mSquelchTailRemover.process(audio);
+            }
+            else
+            {
+                broadcast(audio);
+            }
+        }
+
+        mPendingToneAudio.clear();
+        mPendingToneSampleCount = 0;
+
+        mLog.debug("[{}] Flushed {} buffered audio chunks ({}ms) after tone confirmation",
+            mChannelLabel, chunks, samples * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE);
+    }
+
+    /**
+     * Clears the pending tone audio buffer without broadcasting. Called when squelch
+     * closes, or when the tone detector rejects/loses the tone.
+     */
+    private void clearPendingToneAudio()
+    {
+        mPendingToneAudio.clear();
+        mPendingToneSampleCount = 0;
     }
 
     /**
@@ -769,10 +849,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mToneMatch = true;
                     mLastToneMatchTime = System.currentTimeMillis();
 
-                    // If we were previously blocked, fire a call start now
+                    // If we were previously blocked, fire a call start and flush
+                    // the audio that was buffered during tone confirmation
                     if(wasBlocked)
                     {
                         notifyCallStart();
+                        flushPendingToneAudio();
                     }
 
                     if(mDecoderState != null)
@@ -787,6 +869,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // Wrong tone confirmed — fully squelch the channel like a real radio
                     boolean wasActive = mToneMatch;
                     mToneMatch = false;
+                    clearPendingToneAudio();
 
                     // If we had an active call, end it and go idle
                     if(wasActive)
@@ -807,6 +890,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // Tone lost — squelch the channel until tone re-confirmed
                     boolean wasActive = mToneMatch;
                     mToneMatch = false;
+                    clearPendingToneAudio();
 
                     if(wasActive)
                     {
@@ -843,6 +927,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     if(wasBlocked)
                     {
                         notifyCallStart();
+                        flushPendingToneAudio();
                     }
 
                     if(mDecoderState != null)
@@ -857,6 +942,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // Wrong code confirmed — fully squelch the channel
                     boolean wasActive = mToneMatch;
                     mToneMatch = false;
+                    clearPendingToneAudio();
 
                     if(wasActive)
                     {
@@ -876,6 +962,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // Code lost — squelch until re-confirmed
                     boolean wasActive = mToneMatch;
                     mToneMatch = false;
+                    clearPendingToneAudio();
 
                     if(wasActive)
                     {

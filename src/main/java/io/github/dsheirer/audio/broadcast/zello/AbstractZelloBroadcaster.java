@@ -71,7 +71,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
     private static final int MAX_GHOST_STREAMS_BEFORE_RECONNECT = 3;
     private static final int MAX_CONSECUTIVE_3008_BEFORE_RECONNECT = 3;
-    private static final long PENDING_STOP_TIMEOUT_MS = 5000;
+    private static final long PENDING_STOP_TIMEOUT_MS = 500;
     private static final long CONNECTION_TIMEOUT_MS = 45000;
     private static final long ENCODER_DRAIN_MS = 15;
     private static final int MAX_PENDING_OPUS_FRAMES = 15;
