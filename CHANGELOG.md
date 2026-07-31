@@ -5,6 +5,22 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.7] - 2026-07-31
+
+### Fixed
+- **SampleNativeBuffer wrong SIMD implementation selection (upstream #2398)** — Ported upstream
+  fix e2d9c4c. `getNonInterleaved()` switched on `mInterleavedImplementation` instead of
+  `mNonInterleavedImplementation`, so the non-interleaved sample path could select the wrong
+  vector implementation. Fields are now `final`, matching upstream.
+
+### Added
+- **Extended DCS code list (upstream #2424)** — Ported upstream commit 3c01c64, which extends
+  `DCSCode` beyond the original ETSI-spec list to cover the codes supported by most modern
+  radios: 43 new entries (21 normal + 22 inverted, e.g. N036/I036, N053/I053, N122/I122).
+  New codes are inserted within the existing `N023..N754` / `I023..I754` enum ranges, so they
+  appear automatically in the NBFM tone filter DCS combo box and are recognized by the
+  DCS detector's code map.
+
 ## [0.6.2-ap-15.6] - 2026-07-30
 
 ### Fixed
