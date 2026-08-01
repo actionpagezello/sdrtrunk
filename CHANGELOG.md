@@ -5,9 +5,37 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
-## [0.6.2-ap-15.7] - 2026-07-31
+## [0.6.2-ap-15.7] - 2026-08-01
 
 ### Fixed
+- **Zello "audio data sent too fast" wedges channel in Configuration Error** — The async
+  stream-kill error (and "bad mid") was not classified as transient, so it fell through to the
+  terminal error branch and set `CONFIGURATION_ERROR` — a state that blocks automatic
+  reconnects. ap-15.6 soak logs showed this wedged Brookline MA Fire, Winchester MA Police,
+  Watertown MA Police, Everett MA Police, Saugus MA Police, and Atlantic EMS 1 until a manual
+  restart or a later disconnect let the watchdog recover them. Both errors are now in
+  `TRANSIENT_STREAM_ERRORS`: stream state resets cleanly with a backoff (1s for
+  "audio data sent too fast") and the channel keeps running.
+
+- **Zello unpaced pending-frame flush triggers server stream kills** — Frames buffered while
+  waiting for `stream_id` (inflated by the ap-15.6 CTCSS confirmation flush pushing ~250-500ms
+  of audio through the encoder faster than real time) were sent in one unpaced burst when the
+  stream opened. Soak logs: bursts of 13+ frames intermittently drew the server's
+  "audio data sent too fast" [3008] stream kill (18 occurrences); bursts ≤12 were always
+  accepted. Now `flushPendingFramesPaced()` sends 8 frames immediately (evidence-based safe
+  burst) and drains the remainder at 55ms per frame. On stream stop, up to 8 undrained frames
+  are sent as a final bounded burst so short calls keep their tail audio.
+
+- **Zello pending-frame cap raised 15 → 30** — At the old cap, ~11% of stream starts hit the
+  limit and silently evicted the oldest frames — the start-of-call audio the CTCSS buffering
+  fix was meant to preserve. 30 frames (~1.8s) covers the CTCSS flush plus server latency
+  without eviction; the paced drain makes the larger backlog safe to send.
+
+- **Zello pending-stop timeout log spam** — The server never sends `on_stream_stop` for
+  client-initiated stops, so the 500ms timeout fires on essentially every stop by design
+  (~53,000 WARN lines per 3 days across two machines). Demoted to DEBUG.
+
+### Fixed (upstream ports)
 - **SampleNativeBuffer wrong SIMD implementation selection (upstream #2398)** — Ported upstream
   fix e2d9c4c. `getNonInterleaved()` switched on `mInterleavedImplementation` instead of
   `mNonInterleavedImplementation`, so the non-interleaved sample path could select the wrong

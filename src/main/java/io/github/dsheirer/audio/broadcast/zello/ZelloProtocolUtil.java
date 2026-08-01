@@ -43,11 +43,16 @@ public final class ZelloProtocolUtil
         "failed to stop stream",
         "failed to start stream",
         "failed to start sending message",
-        "failed to stop sending message"
+        "failed to stop sending message",
+        "audio data sent too fast",
+        "bad mid"
     );
 
     /** Minimum backoff when the server rejects start_stream with channel busy. */
     private static final int CHANNEL_BUSY_BACKOFF_MS = 750;
+
+    /** Backoff after the server kills a stream for exceeding real-time audio pacing. */
+    private static final int SENT_TOO_FAST_BACKOFF_MS = 1000;
 
     private ZelloProtocolUtil()
     {
@@ -97,6 +102,11 @@ public final class ZelloProtocolUtil
         if("channel busy".equals(errorMsg))
         {
             return CHANNEL_BUSY_BACKOFF_MS;
+        }
+
+        if("audio data sent too fast".equals(errorMsg))
+        {
+            return SENT_TOO_FAST_BACKOFF_MS;
         }
 
         return 0;

@@ -74,7 +74,30 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private static final long PENDING_STOP_TIMEOUT_MS = 500;
     private static final long CONNECTION_TIMEOUT_MS = 45000;
     private static final long ENCODER_DRAIN_MS = 15;
-    private static final int MAX_PENDING_OPUS_FRAMES = 15;
+
+    /**
+     * Cap on Opus frames buffered while waiting for the server to return a stream_id.
+     * 30 frames = ~1.8s at 60ms/frame — large enough that the CTCSS confirmation flush
+     * (~250-500ms of audio arriving faster than real time) plus normal server latency
+     * never evicts the start of a call.
+     */
+    private static final int MAX_PENDING_OPUS_FRAMES = 30;
+
+    /**
+     * Number of pending frames sent immediately when the stream_id arrives. Log analysis
+     * (ap-15.6 soak, 2026-07-30..08-01) showed the server killed streams with
+     * "audio data sent too fast" only after unpaced bursts of 13+ frames; bursts of 12 or
+     * fewer were accepted tens of thousands of times without a single kill. 8 covers the
+     * common CTCSS-confirmation backlog (3-9 frames) instantly with a wide safety margin.
+     */
+    private static final int FLUSH_BURST_FRAMES = 8;
+
+    /**
+     * Interval for draining the remaining pending frames, slightly faster than the 60ms
+     * real-time frame rate so the backlog catches up gradually without triggering the
+     * server's "audio data sent too fast" [3008] stream kill.
+     */
+    private static final long FLUSH_FRAME_INTERVAL_MS = 55;
 
     protected final Logger mLog = LoggerFactory.getLogger(getClass());
 
@@ -115,6 +138,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private volatile int mConsecutiveGhostStreams = 0;
     private volatile boolean mPendingStreamStart = false;
     private final ConcurrentLinkedQueue<byte[]> mPendingOpusFrames = new ConcurrentLinkedQueue<>();
+    private final AtomicBoolean mFlushDrainActive = new AtomicBoolean(false);
+    private ScheduledFuture<?> mFlushDrainFuture;
     private final AtomicLong mPendingStopStreamId = new AtomicLong(-1);
     private volatile long mLastKnownStreamId = -1;
     private volatile int mConsecutive3008Errors = 0;
@@ -493,6 +518,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mResampleBufferPos = 0;
         mPreviousSample = 0;
         mAudioQueue.clear();
+        cancelFlushDrain();
         mPendingOpusFrames.clear();
 
         sendStartStream();
@@ -615,6 +641,24 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         long streamId = mCurrentStreamId.get();
         if(streamId > 0)
         {
+            // Send any undrained pending frames as a final bounded burst so short calls do not
+            // lose their tail audio when the paced drain has not caught up. Bounded to
+            // FLUSH_BURST_FRAMES — a burst size the server reliably accepts.
+            cancelFlushDrain();
+            int tailSent = 0;
+            byte[] tailFrame;
+            while(tailSent < FLUSH_BURST_FRAMES && (tailFrame = mPendingOpusFrames.poll()) != null)
+            {
+                sendAudioPacket(streamId, tailFrame);
+                tailSent++;
+            }
+
+            if(!mPendingOpusFrames.isEmpty())
+            {
+                mLog.debug("{}Discarding {} undrained pending frames at stream stop",
+                    ch(), mPendingOpusFrames.size());
+            }
+
             sendStopStream(streamId);
             mPendingStopStreamId.set(streamId);
             schedulePendingStopTimeout();
@@ -640,6 +684,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 cancelPendingStopTimeout();
                 mResampleBufferPos = 0;
                 mAudioQueue.clear();
+                cancelFlushDrain();
                 mPendingOpusFrames.clear();
                 mLastStreamStopTime = System.currentTimeMillis();
                 mPauseUntilTime = 0;
@@ -661,6 +706,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mCurrentStreamId.set(-1);
         mResampleBufferPos = 0;
         mAudioQueue.clear();
+        cancelFlushDrain();
         mPendingOpusFrames.clear();
 
         scheduleStreamCooldown(0);
@@ -724,7 +770,10 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             long pending = mPendingStopStreamId.getAndSet(-1);
             if(pending > 0)
             {
-                mLog.warn("{}Zello on_stream_stop timeout — clearing pending stop for stream_id={}", ch(), pending);
+                // DEBUG, not WARN: the server never sends on_stream_stop for client-initiated
+                // stops, so this timeout fires on essentially every stream stop by design
+                // (ap-15.6 soak logs: ~53,000 of these per 3 days at WARN).
+                mLog.debug("{}Zello on_stream_stop timeout — clearing pending stop for stream_id={}", ch(), pending);
                 maybeSchedulePendingStreamStart();
             }
         }, PENDING_STOP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
@@ -936,19 +985,26 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 byte[] opusFrame = new byte[encoded];
                 System.arraycopy(mOpusOutputBuffer, 0, opusFrame, 0, encoded);
 
-                if(streamId > 0)
+                if(streamId > 0 && !mFlushDrainActive.get() && mPendingOpusFrames.isEmpty())
                 {
                     sendAudioPacket(streamId, opusFrame);
                 }
                 else
                 {
-                    // Buffer frame until stream_id arrives from server
+                    // Buffer frame until stream_id arrives from server, or behind an
+                    // in-progress paced drain so frame ordering is preserved
                     mPendingOpusFrames.offer(opusFrame);
 
                     // Cap the buffer to prevent unbounded growth
                     while(mPendingOpusFrames.size() > MAX_PENDING_OPUS_FRAMES)
                     {
                         mPendingOpusFrames.poll();
+                    }
+
+                    // Stream is open but a backlog exists — make sure a paced drain is running
+                    if(streamId > 0)
+                    {
+                        ensureFlushDrainScheduled(streamId);
                     }
                 }
             }
@@ -968,6 +1024,112 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 mOpusEncoder = null;
             }
         }
+    }
+
+    /**
+     * Sends Opus frames buffered while waiting for the server's stream_id: an immediate burst
+     * of FLUSH_BURST_FRAMES for low perceived latency, then the remainder paced at
+     * FLUSH_FRAME_INTERVAL_MS per frame. Previously the entire backlog (up to ~900ms of audio)
+     * was sent in one unpaced burst, which intermittently triggered the server's
+     * "audio data sent too fast" [3008] stream kill.
+     *
+     * @param streamId the newly opened stream to send to
+     */
+    private void flushPendingFramesPaced(long streamId)
+    {
+        int burst = 0;
+        byte[] frame;
+
+        while(burst < FLUSH_BURST_FRAMES && (frame = mPendingOpusFrames.poll()) != null)
+        {
+            sendAudioPacket(streamId, frame);
+            burst++;
+        }
+
+        if(!mPendingOpusFrames.isEmpty())
+        {
+            int remaining = mPendingOpusFrames.size();
+            ensureFlushDrainScheduled(streamId);
+            mLog.debug("{}Zello stream_id={}, sent {} burst frames, draining {} more at {}ms intervals",
+                ch(), streamId, burst, remaining, FLUSH_FRAME_INTERVAL_MS);
+        }
+        else if(burst > 0)
+        {
+            mLog.debug("{}Zello stream_id={}, flushed {} pending frames", ch(), streamId, burst);
+        }
+        else
+        {
+            mLog.debug("{}Zello stream_id={}", ch(), streamId);
+        }
+    }
+
+    /**
+     * Starts the paced pending-frame drain if one is not already running.
+     */
+    private synchronized void ensureFlushDrainScheduled(long streamId)
+    {
+        if(mFlushDrainActive.getAndSet(true))
+        {
+            return;
+        }
+
+        scheduleFlushDrainTick(streamId);
+    }
+
+    /**
+     * Schedules the next paced drain tick. Each tick sends one pending frame and reschedules
+     * until the backlog is empty. The drain self-cancels if the stream it was started for is
+     * no longer the active stream.
+     */
+    private synchronized void scheduleFlushDrainTick(long streamId)
+    {
+        mFlushDrainFuture = ThreadPool.SCHEDULED.schedule(() ->
+        {
+            try
+            {
+                if(mCurrentStreamId.get() != streamId || !mStreamActive.get())
+                {
+                    cancelFlushDrain();
+                    return;
+                }
+
+                byte[] frame = mPendingOpusFrames.poll();
+
+                if(frame != null)
+                {
+                    sendAudioPacket(streamId, frame);
+                }
+
+                if(!mPendingOpusFrames.isEmpty())
+                {
+                    scheduleFlushDrainTick(streamId);
+                }
+                else
+                {
+                    mFlushDrainActive.set(false);
+                }
+            }
+            catch(Exception e)
+            {
+                mLog.debug("{}Pending frame drain error (non-fatal): {}", ch(), e.getMessage());
+                mFlushDrainActive.set(false);
+            }
+        }, FLUSH_FRAME_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Cancels any in-progress paced drain and clears the drain flag. Called when a stream
+     * starts or stops so a stale drain can never block direct sends for a new stream.
+     */
+    private synchronized void cancelFlushDrain()
+    {
+        if(mFlushDrainFuture != null)
+        {
+            mFlushDrainFuture.cancel(false);
+            mFlushDrainFuture = null;
+        }
+
+        mFlushDrainActive.set(false);
     }
 
     private void flushResampleBuffer()
@@ -1628,24 +1790,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     mConsecutive3008Errors = 0;
                     setLastErrorDetail(null);
 
-                    // Flush pending Opus frames
-                    int flushed = 0;
-                    byte[] pending;
-                    while((pending = mPendingOpusFrames.poll()) != null)
-                    {
-                        sendAudioPacket(streamId, pending);
-                        flushed++;
-                    }
-
-                    if(flushed > 0)
-                    {
-                        mLog.debug("{}Zello stream_id={} (pooled), flushed {} pending frames",
-                            ch(), streamId, flushed);
-                    }
-                    else
-                    {
-                        mLog.debug("{}Zello stream_id={} (pooled)", ch(), streamId);
-                    }
+                    // Flush pending Opus frames — burst then paced drain
+                    flushPendingFramesPaced(streamId);
                 }
                 else
                 {
@@ -1688,6 +1834,22 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 int bridgeCode = ZelloProtocolUtil.mapBridgeErrorCode(error);
                 mLog.warn("{}Zello pooled error [{}]: {}", ch(), bridgeCode, error);
                 updateStreamErrorDetail("[" + bridgeCode + "] " + error);
+
+                // "audio data sent too fast" kills the stream server-side asynchronously
+                // (no seq) — reset local stream state with backoff so the next call starts
+                // cleanly instead of sending audio into a dead stream. Other transient errors
+                // are seq-matched responses handled by the start/stop recovery paths above.
+                if("audio data sent too fast".equals(error))
+                {
+                    mStreamActive.set(false);
+                    mCurrentStreamId.set(-1);
+                    mPendingStopStreamId.set(-1);
+                    cancelPendingStopTimeout();
+                    cancelFlushDrain();
+                    mPendingOpusFrames.clear();
+                    mLastStreamStopTime = System.currentTimeMillis();
+                    scheduleStreamCooldown(ZelloProtocolUtil.getStreamRetryBackoffMs(error));
+                }
             }
         }
         catch(Exception e)
@@ -1852,7 +2014,13 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                         mCurrentStreamId.set(-1);
                         mPendingStopStreamId.set(-1);
                         cancelPendingStopTimeout();
+                        cancelFlushDrain();
+                        mPendingOpusFrames.clear();
                         mLastStreamStopTime = System.currentTimeMillis();
+
+                        // Apply per-error backoff (e.g. "audio data sent too fast") before the
+                        // next stream start so we do not immediately re-trigger the condition
+                        scheduleStreamCooldown(ZelloProtocolUtil.getStreamRetryBackoffMs(errorMsg));
                         return;
                     }
 
@@ -1993,23 +2161,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                         mConsecutive3008Errors = 0;
                         setLastErrorDetail(null);
 
-                        // Flush any Opus frames buffered while waiting for stream_id
-                        int flushed = 0;
-                        byte[] pending;
-                        while((pending = mPendingOpusFrames.poll()) != null)
-                        {
-                            sendAudioPacket(streamId, pending);
-                            flushed++;
-                        }
-
-                        if(flushed > 0)
-                        {
-                            mLog.debug("{}Zello stream_id={}, flushed {} pending frames", ch(), streamId, flushed);
-                        }
-                        else
-                        {
-                            mLog.debug("{}Zello stream_id={}", ch(), streamId);
-                        }
+                        // Flush any Opus frames buffered while waiting for stream_id — burst then paced drain
+                        flushPendingFramesPaced(streamId);
                     }
                     else
                     {
