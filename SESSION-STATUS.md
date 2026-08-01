@@ -1,20 +1,38 @@
 # SDRTrunk AP Features - Session Status
 
-## Current Build: ap-15.1
-Location: `C:\Users\Admin\projects\sdrtrunk-ap\build\image\sdr-trunk-windows-x86_64-v0.6.2-ap-15.1.zip`
+> NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
+> more current than this file. This file tracks build/release state at a glance.
 
-Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.1\`
+## Current Release: ap-15.7 (2026-08-01)
+- GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.7
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.7.zip`
+- Deployed: not yet — Somerville and Stoneham still on ap-15.6
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
 - Master branch has all features integrated
+- Content-synced with upstream DSheirer/sdrtrunk master as of 2026-08-01 (through e2d9c4c)
 
 ## Build Environment
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
+- Gradle now autoprovisions the JDK (foojay resolver + BELLSOFT vendor spec, upstream #2427)
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.1`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.7`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
+
+## Changes in ap-15.7
+See CHANGELOG.md for full details.
+1. **Zello "audio data sent too fast"/"bad mid" → transient** — no longer wedge channels in
+   terminal Configuration Error; stream state resets with backoff (root cause of manual
+   restarts during ap-15.6 soak).
+2. **Paced pending-frame flush** — 8-frame burst + 55ms/frame drain replaces the unpaced
+   burst that drew server stream kills; bounded tail burst at stream stop.
+3. **Pending-frame cap 15 → 30** — stops eviction of start-of-call audio (~11% of starts).
+4. **Pending-stop timeout log WARN → DEBUG** — was ~53k log lines per 3 days.
+5. **Upstream ports** — SampleNativeBuffer SIMD fix (#2398), 43 new DCS codes (#2424),
+   NXDN radio reference editor (#2446, manual merge), NXDN talker alias log removal (#2442),
+   playlist name sorting (#2342), Gradle JVM autoprovisioning (#2427).
 
 ## Completed Features
 1. CTCSS channel-level filtering (full squelch, Goertzel detector)
@@ -27,108 +45,20 @@ Archive copy: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.1\`
 8. Mute/Unmute right-click + Show in Waterfall (16x zoom)
 9. Live alias editor refresh via AliasPriorityChangedEvent
 10. Zello Work + Zello Consumer real-time streaming (Opus over WebSocket)
-11. Column width persistence (JTableColumnWidthMonitor)
-12. Column order persistence (added to JTableColumnWidthMonitor)
-13. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
-14. Diagnostics preferences panel with per-category DEBUG toggles
-15. FxTableColumnMonitor for Channels editor column/sort persistence
-
-## Changes in ap-15.1
-1. **Zello silent channel death fix** — `onClose` and `onError` WebSocket callbacks wrap
-   `setBroadcastState()` in try-catch so `scheduleReconnect()` always fires. Previously channels
-   would silently die on code=1006 disconnects with no reconnect and no stack trace.
-2. **Watchdog blind spot fix** — `watchdogTick()` now catches any disconnected channel with no
-   pending reconnect, regardless of broadcast state. Previously only caught `TEMPORARY_BROADCAST_ERROR`.
-3. **Reconnect logging at WARN** — `scheduleReconnect` logs at WARN instead of DEBUG for production
-   visibility.
-4. **Upstream channelizer optimization** — Ported fused multiply-accumulate to
-   `ComplexPolyphaseChannelizerM2.process()`. Eliminates 2 per-call array allocations (~194 MB/sec
-   GC garbage per tuner), pre-allocates reusable accumulator, caches fields into locals. Bit-for-bit
-   identical output.
-
-## Changes in ap-15
-1. **Upstream merge: NXDN decoder** — Complete NXDN 4800/9600 protocol support from upstream
-   PR #2431 (30,854 additions, 445 files). Includes 4FSK demodulation, Layer 1/2/3 message stack,
-   AMBE audio, trunk tracking, traffic channel management, and GUI configuration editor.
-2. **Upstream merge: frequency error redesign** — New two-tier frequency error management replaces
-   old single-tier `FrequencyErrorCorrectionManager`. `ChannelFrequencyErrorManager` (per-channel,
-   500ms, mixer) + `TunerFrequencyErrorManager` (per-tuner, 5s, PPM).
-3. **PPM sanity clamp ported** — `SANITY_CLAMP_PPM = 10.0` and baseline EMA (0.8/0.2) ported
-   from deleted `FrequencyErrorCorrectionManager` to new `TunerFrequencyErrorManager`.
-4. **P25 ChannelEventTracker refactoring** — Generic `ChannelEventTracker<T>` base class with
-   `P25ChannelEventTracker` and `NXDNChannelEventTracker` subclasses.
-5. **jdk.charsets module** — Added for NXDN BIG5 talker alias encoding.
-6. **Post-merge compilation fixes** — Added NXDN to DecoderType enum + EnumSets, renamed
-   `P25TrafficChannelEventTracker` → `P25ChannelEventTracker`, removed stale `setAllowedNACs`,
-   fixed `exceedsMaxDataDuration` method name, fixed `RealResampler` duplicate variable.
-
-## Changes in ap-14.10
-1. **WebSocket Ping/Pong fix (shared pool)** — `ZelloSharedConnection.onPing()` was silently
-   dropping server Ping frames without sending a Pong reply. Zello closes connections after 30s
-   with no Pong. Fixed to send `ws.sendPong(msg)` + `ws.request(1)`.
-2. **Exponential backoff on reconnects** — Normal reconnects in `AbstractZelloBroadcaster` and
-   `ZelloSharedConnection` now back off: 15s, 30s, 60s, 120s (cap), plus 0-5s jitter. Prevents
-   20-30 channels from exceeding Zello's 10 connections/min/IP limit after a simultaneous drop.
-   Counter resets on successful logon.
-3. **JavaFX D3D software fallback** — Added `-Dprism.order=d3d,sw` to Windows JVM args so the
-   playlist editor falls back to software rendering when GPU driver crashes.
-4. **Heap increase to 10GB** — `-Xmx10g` for both Windows and Linux to prevent GC pressure from
-   freezing waterfall and playlist editor on high-channel-count machines.
-5. **Multi-channel configuration removed** — `ZelloMultiChannelConfiguration` parent/child
-   auto-generation system removed. Each channel needs its own `ZelloConfiguration`. Stubs kept
-   for playlist XML backward compatibility.
-6. **CTCSS guard tones** — 65.0 Hz and 260.0 Hz guard frequencies added to catch interference.
-7. **Zello shared connection pool** — `ZelloSharedConnection` for channels sharing credentials
-   on the same network. Configurable per channel via "Shared Connection" checkbox.
-
-## Changes in ap-14.9.14
-1. **Streaming table error column** — Stream-level Zello errors (`channel busy`, etc.) are cleared
-   while Connected so status and error text do not contradict each other. Connection-level problems
-   (handshake, timeout, kicked, offline) still show in the error column.
-2. **Editor defaults** — Empty Zello editor forms use the same timing defaults as the configuration
-   classes (`stream_guard_ms=0`, `pause_time_ms=0`, `relaxation_time_ms=700`). Per-channel tuning
-   unchanged — configure in the playlist as needed.
-3. **Tests** — `ZelloBroadcasterTimingTest` covers error clearing while connected and timing defaults.
-
-## Changes in ap-14.9.13
-1. **Manual Reconnect fix** — Reconnect no longer reuses the cold-start `mStartupSlot` counter.
-   `DelayedBroadcasterStartup` passes a reconnect flag so the broadcaster connects immediately
-   after its reconnect delay (slot 0 = 0ms), instead of waiting ~34s after a full startup.
-2. **Zello startup rate limiting** — Cold-start connections batched at 9 per minute (1s apart),
-   then a 60s pause before the next batch, staying under Zello's documented 10 new WebSockets/min/IP.
-   ~33 broadcasters take ~3 minutes to fully connect instead of ~33 seconds.
-3. **Ghost stream fix** — Ghost detection only when `stream_id` is still pending (-1). Explicit
-   `start_stream` failures (-2, including `channel busy`) no longer increment the ghost counter
-   or force a session reconnect after 3 strikes.
-4. **`channel busy` handling** — Added to transient errors in `ZelloProtocolUtil`. Failed starts
-   schedule cooldown with 750ms minimum backoff plus configured pause/guard times instead of
-   disconnecting. `handleStartStreamFailure()` centralizes this path.
-5. **Reconnect stagger** — Manual reconnects spaced 2s apart (`RECONNECT_STAGGER_MS`), separate
-   from cold-start batch timing.
-6. **Tests** — `ZelloProtocolUtilTest` extended for `channel busy` transient and backoff helpers.
-
-## Changes in ap-14.9.12
-1. **AbstractZelloBroadcaster refactor** — Shared base class for Zello Work and Consumer
-   broadcasters. Work/Consumer subclasses are thin hooks (~100 lines each). Shared protocol
-   helpers in `ZelloProtocolUtil.java` and `ZelloChannelConfiguration.java` interface.
-2. **Non-blocking stream guard and pause** — Removed `Thread.sleep` from real-time audio
-   paths. Guard/pause use scheduled timers; `isRealTimeReady()` reflects pending delays.
-3. **BroadcastModel startup stagger fix** — Separate reconnect slot counter resets between
-   batches so manual reconnects are not delayed by prior startup slots. Startup batch resets
-   on `addBroadcastConfigurations()`. Fixed missing `break` in aged-off table update switch.
-4. **Zello Consumer parity** — Keepalive try/catch wrapper, channel-offline reconnect, and
-   encoder shutdown timing aligned with Work broadcaster.
-5. **Zello unit tests** — `ZelloProtocolUtilTest`, `ZelloBroadcasterTimingTest`,
-   `ZelloSessionEpochTest` (10 tests, all passing).
+11. Column width/order persistence (JTableColumnWidthMonitor)
+12. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
+13. Diagnostics preferences panel with per-category DEBUG toggles
+14. FxTableColumnMonitor for Channels editor column/sort persistence
+15. CTCSS/DCS/NAC auto-import from Radio Reference tone field (FrequencyEditor)
+16. NXDN decoder (upstream merge, ap-15) + NXDN radio reference import (ap-15.7)
 
 ## Key Zello File Paths
-- AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (shared base)
-- ZelloProtocolUtil.java -> audio/broadcast/zello/ (constants + error mapping)
+- AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (shared base, paced flush, watchdog)
+- ZelloProtocolUtil.java -> audio/broadcast/zello/ (constants + transient error classification)
 - ZelloChannelConfiguration.java -> audio/broadcast/zello/ (shared config interface)
 - ZelloBroadcaster.java -> audio/broadcast/zello/ (Work — thin subclass)
 - ZelloConsumerBroadcaster.java -> audio/broadcast/zello/ (Consumer — thin subclass)
-- ZelloConfiguration.java -> audio/broadcast/zello/
-- ZelloConsumerConfiguration.java -> audio/broadcast/zello/
+- ZelloSharedConnection.java -> audio/broadcast/zello/ (shared WebSocket pool)
 - BroadcastModel.java -> audio/broadcast/ (staggered broadcaster startup + reconnect)
 
 ## Test Commands
