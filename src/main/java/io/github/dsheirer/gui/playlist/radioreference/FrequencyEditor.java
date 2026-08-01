@@ -26,6 +26,8 @@ import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.module.decode.nxdn.DecodeConfigNXDN;
+import io.github.dsheirer.module.decode.nxdn.layer3.type.TransmissionMode;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
 import io.github.dsheirer.module.decode.p25.phase1.Modulation;
@@ -444,6 +446,19 @@ public class FrequencyEditor extends VBox
                     configureNacFilter(p25Config, tone.trim());
                 }
             }
+            else if(decodeConfiguration instanceof DecodeConfigNXDN nxdn)
+            {
+                //Upstream #2446: NXDN repeater channel configurations from non-trunked county entries
+                if(modeDecoderType == ModeDecoderType.NXDN48)
+                {
+                    nxdn.setTransmissionMode(TransmissionMode.M4800);
+                }
+                else if(modeDecoderType == ModeDecoderType.NXDN96)
+                {
+                    nxdn.setTransmissionMode(TransmissionMode.M9600);
+                }
+            }
+
             channel.setDecodeConfiguration(decodeConfiguration);
             return channel;
         }

@@ -41,7 +41,20 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   `mNonInterleavedImplementation`, so the non-interleaved sample path could select the wrong
   vector implementation. Fields are now `final`, matching upstream.
 
-### Added
+### Added (upstream ports)
+- **NXDN radio reference editor support (upstream #2446)** — Manually merged into the fork's
+  customized `FrequencyEditor` (which adds CTCSS/DCS/NAC tone filter auto-import): the radio
+  reference importer now creates NXDN repeater channel configurations from non-trunked county
+  entries. `ModeDecoderType` NXDN split into NXDN48/NXDN96 mapping to 4800/9600 transmission
+  modes.
+- **Playlist file name sorting (upstream #2342)** — Playlist manager path column is now
+  sortable (case-insensitive).
+- **Gradle JVM autoprovisioning (upstream #2427)** — `foojay-resolver-convention` plugin in
+  settings.gradle plus `JvmVendorSpec.BELLSOFT` in the toolchain spec: Gradle now downloads
+  the correct Bellsoft Liberica JDK 25 automatically on machines that lack it. Also removed
+  the redundant sourceSets block, matching upstream.
+- **NXDN talker alias log spam removal (upstream #2442)** — Removed the "Unexpected NXDN
+  Talker Alias Fragment sequence" INFO logging.
 - **Extended DCS code list (upstream #2424)** — Ported upstream commit 3c01c64, which extends
   `DCSCode` beyond the original ETSI-spec list to cover the codes supported by most modern
   radios: 43 new entries (21 normal + 22 inverted, e.g. N036/I036, N053/I053, N122/I122).
