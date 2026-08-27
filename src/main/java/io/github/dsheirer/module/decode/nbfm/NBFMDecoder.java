@@ -102,6 +102,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private volatile boolean mToneMatch = false;
 
     /**
+     * Rejects 2-slot TDMA digital bleed (DMR / P25 Phase 2) that would otherwise satisfy the
+     * CTCSS detector by lighting up the target bin with broadband noise. Only instantiated when
+     * tone filtering is enabled, since it exists purely to protect the tone gate.
+     */
+    private TdmaInterferenceDetector mTdmaDetector;
+
+    /**
      * Holdover period (ms) for tone match across brief squelch closures.
      * When noise squelch flutters closed and re-opens within this window,
      * the previously confirmed tone match is preserved — avoiding a full
@@ -110,6 +117,21 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private static final long TONE_HOLDOVER_MS = 500;
     private volatile long mLastToneMatchTime = 0;
+
+    /**
+     * Maximum time (ms) a gate opened via holdover may continue passing audio without the
+     * detector re-confirming the target tone. The holdover check at squelch-open only gates
+     * ENTRY; once open the gate previously stayed open until the loss counter closed it, which
+     * digital interference could prevent indefinitely. This is the hard backstop: if the tone
+     * is not re-confirmed within this window the gate closes regardless.
+     *
+     * Sized to comfortably exceed a normal confirmation (3 blocks, ~250ms) while cutting off
+     * the multi-second interference bursts seen on Somerville Fire.
+     */
+    private static final long HOLDOVER_CONFIRM_DEADLINE_MS = 600;
+
+    /** Timestamp the gate was opened via holdover, or 0 when not in a holdover-opened state. */
+    private volatile long mHoldoverOpenTime = 0;
 
     // Channel identification for log messages
     private volatile String mChannelLabel = "";
@@ -283,6 +305,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     {
                         // Holdover active — continue as if tone is still confirmed.
                         // The detector keeps running and will reject/lost if tone changes.
+                        // Arm the confirmation deadline: this gate is open on trust, and must
+                        // earn a re-confirmation before HOLDOVER_CONFIRM_DEADLINE_MS elapses.
+                        mHoldoverOpenTime = System.currentTimeMillis();
                         notifyCallStart();
                     }
                     else
@@ -290,6 +315,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         // Holdover expired or no previous match — full reset.
                         // Channel stays idle until detector confirms the correct tone.
                         mToneMatch = false;
+                        mHoldoverOpenTime = 0;
 
                         // Reset audio filter state to clear stale IIR values from previous transmission
                         if(mAudioFilters != null)
@@ -300,6 +326,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         if(mCTCSSDetector != null)
                         {
                             mCTCSSDetector.reset();
+                        }
+                        if(mTdmaDetector != null)
+                        {
+                            mTdmaDetector.reset();
                         }
                         if(mDCSDetector != null)
                         {
@@ -507,6 +537,35 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             mDCSDetector.process(resampledAudio);
         }
+        if(mTdmaDetector != null)
+        {
+            mTdmaDetector.process(resampledAudio);
+        }
+
+        // Step 1b: Digital-bleed veto. A 2-slot TDMA carrier demodulated as FM sprays broadband
+        // noise across the CTCSS bins — including the target tone's bin — which can satisfy the
+        // tone detector and hold the gate open for the entire burst. The TDMA slot cadence is
+        // unambiguous and speech never produces it, so it overrides any tone match.
+        if(mToneFilterEnabled && mTdmaDetector != null && mTdmaDetector.isInterferenceDetected())
+        {
+            if(mToneMatch)
+            {
+                mLog.debug("[{}] Closing tone gate — TDMA digital interference (comb score={})",
+                        mChannelLabel, String.format("%.1f", mTdmaDetector.getLastScore()));
+                mToneMatch = false;
+                mHoldoverOpenTime = 0;
+
+                if(mAudioFilters != null)
+                {
+                    mAudioFilters.reset();
+                }
+
+                notifyCallEnd();
+            }
+
+            clearPendingToneAudio();
+            return;
+        }
 
         // Step 2: Gate audio based on tone/code match
         if(mToneFilterEnabled && !mToneMatch)
@@ -517,20 +576,51 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             return;
         }
 
-        // Diagnostic: log when audio passes through with mToneMatch=true but the CTCSS detector
-        // doesn't have the target tone actively confirmed. This indicates holdover-carried audio,
-        // which could be legitimate (brief squelch flutter) or a noise leak.
-        if(mToneFilterEnabled && mCTCSSDetector != null)
+        // Holdover backstop: audio is flowing on a gate that was opened on trust rather than on
+        // a confirmed tone. If the detector has not re-confirmed the target within
+        // HOLDOVER_CONFIRM_DEADLINE_MS, close the gate. Without this a gate opened by holdover
+        // stayed open for as long as interference kept the loss counter from expiring.
+        if(mToneFilterEnabled && (mCTCSSDetector != null || mDCSDetector != null))
         {
-            CTCSSCode confirmed = mCTCSSDetector.getDetectedCode();
-            if(confirmed == null)
+            CTCSSCode confirmed = mCTCSSDetector != null ? mCTCSSDetector.getDetectedCode() : null;
+            boolean dcsConfirmed = mDCSDetector != null && mDCSDetector.getDetectedCode() != null;
+
+            if(confirmed != null || dcsConfirmed)
+            {
+                // Re-confirmed — the gate is standing on its own again
+                mHoldoverOpenTime = 0;
+            }
+            else
             {
                 // Audio passing via holdover or stale match — not actively confirmed
-                CTCSSCode raw = mCTCSSDetector.getRawDetectedCode();
-                int lossCount = mCTCSSDetector.getLossCounter();
-                long holdoverAge = System.currentTimeMillis() - mLastToneMatchTime;
-                mLog.debug("[{}] CTCSS gate OPEN via holdover: confirmed=null raw={} lossCounter={} holdoverAge={}ms",
-                        mChannelLabel, raw != null ? raw.getDisplayString() : "none", lossCount, holdoverAge);
+                long now = System.currentTimeMillis();
+                long openFor = mHoldoverOpenTime > 0 ? now - mHoldoverOpenTime : 0;
+
+                if(mHoldoverOpenTime > 0 && openFor > HOLDOVER_CONFIRM_DEADLINE_MS)
+                {
+                    mLog.debug("[{}] CTCSS holdover deadline exceeded ({}ms without confirmation) — closing gate",
+                            mChannelLabel, openFor);
+                    mToneMatch = false;
+                    mHoldoverOpenTime = 0;
+                    clearPendingToneAudio();
+
+                    if(mAudioFilters != null)
+                    {
+                        mAudioFilters.reset();
+                    }
+
+                    notifyCallEnd();
+                    return;
+                }
+
+                if(mCTCSSDetector != null)
+                {
+                    CTCSSCode raw = mCTCSSDetector.getRawDetectedCode();
+                    int lossCount = mCTCSSDetector.getLossCounter();
+                    mLog.debug("[{}] CTCSS gate OPEN via holdover: confirmed=null raw={} lossCounter={} holdoverAge={}ms",
+                            mChannelLabel, raw != null ? raw.getDisplayString() : "none", lossCount,
+                            now - mLastToneMatchTime);
+                }
             }
         }
 
@@ -835,6 +925,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mResampler = new RealResampler(decimatedSampleRate, DEMODULATED_AUDIO_SAMPLE_RATE, 4192, 512);
         mResampler.setListener(NBFMDecoder.this::processResampledAudio);
 
+        // Digital-bleed veto — protects the tone gate on channels sharing spectrum with DMR or
+        // P25 Phase 2 systems. Runs whenever tone filtering is active, for CTCSS and DCS alike.
+        if(mToneFilterEnabled)
+        {
+            mTdmaDetector = new TdmaInterferenceDetector((float) DEMODULATED_AUDIO_SAMPLE_RATE);
+            mTdmaDetector.setChannelLabel(mChannelLabel);
+        }
+
         // Initialize CTCSS detector at 8 kHz (resampled audio rate) if tone filtering is enabled
         if(mToneFilterEnabled && mTargetCTCSSCodes != null && !mTargetCTCSSCodes.isEmpty())
         {
@@ -848,6 +946,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
                     mLastToneMatchTime = System.currentTimeMillis();
+                    // Confirmed detection — the gate no longer rests on holdover trust
+                    mHoldoverOpenTime = 0;
 
                     // If we were previously blocked, fire a call start and flush
                     // the audio that was buffered during tone confirmation
@@ -923,6 +1023,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
                     mLastToneMatchTime = System.currentTimeMillis();
+                    // Confirmed detection — the gate no longer rests on holdover trust
+                    mHoldoverOpenTime = 0;
 
                     if(wasBlocked)
                     {
@@ -1113,6 +1215,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         if(mDCSDetector != null)
         {
             mDCSDetector.setChannelLabel(mChannelLabel);
+        }
+        if(mTdmaDetector != null)
+        {
+            mTdmaDetector.setChannelLabel(mChannelLabel);
         }
     }
 }

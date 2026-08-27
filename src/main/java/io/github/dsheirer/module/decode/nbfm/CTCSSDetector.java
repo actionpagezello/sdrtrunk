@@ -521,9 +521,16 @@ public class CTCSSDetector
             return;
         }
 
-        // TARGET tone detected — reset loss counter
-        mLossCounter = 0;
-
+        // TARGET tone detected.
+        //
+        // IMPORTANT (ap-15.8): the loss counter is reset ONLY once this detection is
+        // CONFIRMED (CONFIRMATION_COUNT consecutive blocks on the same code). Previously a
+        // single raw block-level detection reset it, which let broadband digital interference
+        // (DMR/P25-Phase2 bleed) hold the tone gate open indefinitely: the interference lights
+        // up the target bin often enough — including the adjacent, unresolvable 127.3/131.8 Hz
+        // pair — that the loss counter never reached LOSS_COUNT and the gate never closed.
+        // Somerville Fire log analysis showed 3,206 holdover-carried gate opens against only
+        // 791 confirmed opens as a result.
         if(mDetectedCode == code)
         {
             // Same tone detected again — increment confirmation
@@ -531,20 +538,31 @@ public class CTCSSDetector
             {
                 mConfirmationCounter++;
 
-                if(mConfirmationCounter >= CONFIRMATION_COUNT && mListener != null)
+                if(mConfirmationCounter >= CONFIRMATION_COUNT)
+                {
+                    mLossCounter = 0;
+
+                    if(mListener != null)
+                    {
+                        mListener.ctcssDetected(code);
+                    }
+                }
+            }
+            // Already confirmed — keep the gate alive and keep reporting
+            else
+            {
+                mLossCounter = 0;
+
+                if(mListener != null)
                 {
                     mListener.ctcssDetected(code);
                 }
             }
-            // Already confirmed — just keep reporting
-            else if(mListener != null)
-            {
-                mListener.ctcssDetected(code);
-            }
         }
         else
         {
-            // Different tone — restart confirmation
+            // Different tone — restart confirmation. Loss counter is intentionally NOT reset:
+            // an unconfirmed switch between adjacent bins must not keep the gate open.
             mDetectedCode = code;
             mConfirmationCounter = 1;
         }

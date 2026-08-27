@@ -5,6 +5,44 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.8] - 2026-08-22
+
+### Fixed
+- **DMR digital bleed recorded as calls on CTCSS-filtered NBFM channels** — Somerville Fire
+  (483.3875, target 131.8 Hz) was recording multi-second bursts of digital buzz. Spectral
+  analysis of four captured bursts identified them as 2-slot TDMA (DMR): constant envelope,
+  no voice, and a hard 29.9 ms slot cadence (33.4 Hz) in every clip. Three separate defects
+  combined to let them through:
+
+  1. **Loss counter reset on unconfirmed detection.** `CTCSSDetector.handleDetection()` reset
+     `mLossCounter` on a single raw block-level match of the target tone. A DMR carrier
+     demodulated as FM sprays broadband noise across the CTCSS bins and lights up the target
+     bin often enough to keep resetting it, so the gate never closed. The counter now resets
+     only once a detection is CONFIRMED (`CONFIRMATION_COUNT` consecutive blocks). Log evidence:
+     3,206 holdover-carried gate opens against 791 confirmed opens on a single day.
+
+  2. **Unbounded holdover.** The 500 ms holdover was only checked at squelch-open; once opened
+     the gate stayed open until the loss counter expired, which defect 1 prevented. Added
+     `HOLDOVER_CONFIRM_DEADLINE_MS` (600 ms): a gate opened on holdover that fails to re-confirm
+     the tone within the deadline is force-closed. Applies to CTCSS and DCS channels alike.
+
+  3. **No defence against digital carriers.** CTCSS analysis cannot reject interference whose
+     energy genuinely lands on the target frequency — worsened by ~12 Hz Goertzel bin resolution,
+     which cannot separate 127.3 Hz from 131.8 Hz (observed as `raw=127.3` in 710 holdover opens).
+
+### Added
+- **`TdmaInterferenceDetector`** — rejects DMR / P25 Phase 2 bleed on tone-filtered NBFM
+  channels. Builds a 500 Hz RMS envelope, high-passes it at 15 Hz to strip syllabic speech
+  rates, then scores a harmonic comb (f0, 2·f0, 3·f0) across candidate 30 ms slot cadences via
+  Goertzel, against an off-comb noise reference. Requiring all three harmonics is what separates
+  a true TDMA cadence from broad modulation that merely has energy near 33 Hz. While
+  interference is present the tone gate is vetoed and any open call is ended.
+
+  Validated against the four captured DMR bursts (per-window peaks 64, 76, 182, 354 — all
+  vetoed) and synthetic negatives (speech-like AM 13, white noise 8, CTCSS tone + speech 9,
+  60 Hz hum 5, squelch flutter 1 — none vetoed). Threshold 20 sits 1.5x above the worst
+  negative and 3.2x below the weakest real burst. Vetoes log their score at DEBUG for auditing.
+
 ## [0.6.2-ap-15.7] - 2026-08-01
 
 ### Fixed
