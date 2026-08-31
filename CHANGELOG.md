@@ -5,9 +5,42 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
-## [0.6.2-ap-15.8] - 2026-08-22
+## [0.6.2-ap-15.8] - 2026-08-31
 
 ### Fixed
+- **GUI freezes while decoding continues (channel metadata table row sorter)** — Monson froze on
+  2026-08-30 at 17:07 and kept decoding normally for more than five hours with a dead interface.
+  Console capture showed two uncaught exceptions on the Swing event dispatch thread, both from
+  `ChannelMetadataModel.remove()` at line 196:
+
+  ```
+  IllegalArgumentException: Comparison method violates its general contract!
+    ... DefaultRowSorter.sort -> rowsDeleted -> fireTableRowsDeleted
+  ArrayIndexOutOfBoundsException: Index 38 out of bounds for length 38
+    ... DefaultRowSorter.setModelToViewFromViewToModel -> rowsDeleted
+  ```
+
+  Cause: the clickable column-header sorting added to the channel metadata table (fork feature,
+  not upstream) means removing a channel triggers a full re-sort. Every column in that table is
+  updated live by decoder threads, so values change underneath TimSort mid-sort; it detects the
+  resulting inconsistency and throws. The aborted sort leaves the sorter's model-to-view index
+  arrays inconsistent, so the next row change throws `ArrayIndexOutOfBoundsException`, and from
+  there every table change kills the EDT. Sites running P25 trunked systems are most exposed,
+  since traffic channels are created and destroyed constantly.
+
+  Fix: new `SafeTableRowSorter` (`gui/control/`) guards every model-change notification and, on
+  failure, clears the sort keys and rebuilds a clean identity mapping. The symptom degrades from
+  "the GUI is frozen" to "the table stopped being sorted", recovery is logged at WARN, and the
+  user can click a column header to re-apply sorting.
+
+  Verified by reproduction: with a model whose values mutate during sorting, a stock
+  `TableRowSorter` dies with the identical `IllegalArgumentException` while `SafeTableRowSorter`
+  survives and recovers.
+
+  Note this bug is unrelated to the DMR work below — Monson was running ap-15.7 when it froze,
+  and the two failures share no code. A pre-release ap-15.8 build carrying only the DMR changes
+  was deployed to Somerville on 2026-08-22 and predates this fix.
+
 - **DMR digital bleed recorded as calls on CTCSS-filtered NBFM channels** — Somerville Fire
   (483.3875, target 131.8 Hz) was recording multi-second bursts of digital buzz. Spectral
   analysis of four captured bursts identified them as 2-slot TDMA (DMR): constant envelope,

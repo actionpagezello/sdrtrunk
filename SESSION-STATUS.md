@@ -6,7 +6,19 @@
 ## Current Release: ap-15.7 (2026-08-01)
 - GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.7
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.7.zip`
-- Deployed: not yet — Somerville and Stoneham still on ap-15.6
+
+## In Progress: ap-15.8 (committed, NOT yet rebuilt)
+More changes are planned before this is built and released — see CHANGELOG.md and the
+"Queued for the next build" notes. A pre-release ap-15.8 build carrying only the DMR work was
+deployed to Somerville on 2026-08-22 and does NOT include the GUI freeze fix.
+
+1. **DMR digital bleed rejected on tone-filtered NBFM** — new `TdmaInterferenceDetector`
+   (30 ms 2-slot TDMA harmonic-comb detector) vetoes the tone gate; CTCSS loss counter now
+   resets only on confirmed detection; holdover bounded by a 600 ms confirmation deadline.
+   First production day on Somerville: 512 vetoes, no data bursts and no clipped voice.
+2. **GUI freeze fixed** — new `SafeTableRowSorter` (`gui/control/`). The channel metadata table's
+   row sorter was killing the Swing EDT when channel churn re-sorted rows whose values decoder
+   threads were changing mid-sort. Decoding continued for 5+ hours with a dead GUI on Monson.
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk
@@ -18,8 +30,12 @@
 - Gradle now autoprovisions the JDK (foojay resolver + BELLSOFT vendor spec, upstream #2427)
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.7`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.8`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
+
+## Changes in ap-15.8
+See CHANGELOG.md. DMR/TDMA interference rejection on tone-filtered NBFM, plus the
+SafeTableRowSorter GUI freeze fix.
 
 ## Changes in ap-15.7
 See CHANGELOG.md for full details.
@@ -51,6 +67,8 @@ See CHANGELOG.md for full details.
 14. FxTableColumnMonitor for Channels editor column/sort persistence
 15. CTCSS/DCS/NAC auto-import from Radio Reference tone field (FrequencyEditor)
 16. NXDN decoder (upstream merge, ap-15) + NXDN radio reference import (ap-15.7)
+17. TDMA (DMR / P25 Phase 2) interference rejection on tone-filtered NBFM channels (ap-15.8)
+18. Fault-tolerant table row sorting — SafeTableRowSorter (ap-15.8)
 
 ## Key Zello File Paths
 - AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (shared base, paced flush, watchdog)

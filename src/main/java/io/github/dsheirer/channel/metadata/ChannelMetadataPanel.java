@@ -26,6 +26,7 @@ import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelModel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.eventbus.MyEventBus;
+import io.github.dsheirer.gui.control.SafeTableRowSorter;
 import io.github.dsheirer.gui.playlist.channel.ViewChannelRequest;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.identifier.Identifier;
@@ -78,7 +79,6 @@ import javax.swing.SwingConstants;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.TableRowSorter;
 
 public class ChannelMetadataPanel extends JPanel implements ListSelectionListener
 {
@@ -143,8 +143,13 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         mTable.getColumnModel().getColumn(ChannelMetadataModel.COLUMN_CONFIGURATION_FREQUENCY)
             .setCellRenderer(new FrequencyCellRenderer());
 
-        //Add a row sorter for clickable column header sorting with case-insensitive string comparison
-        TableRowSorter<ChannelMetadataModel> rowSorter = new TableRowSorter<>(mChannelProcessingManager.getChannelMetadataModel());
+        //Add a row sorter for clickable column header sorting with case-insensitive string comparison.
+        //SafeTableRowSorter is used rather than TableRowSorter because every column in this table is
+        //updated live by decoder threads. Removing a channel triggers a full re-sort, and values can
+        //change mid-sort, which makes TimSort throw and — left uncaught on the event dispatch thread —
+        //freezes the entire GUI while decoding continues in the background. See SafeTableRowSorter.
+        SafeTableRowSorter<ChannelMetadataModel> rowSorter =
+            new SafeTableRowSorter<>(mChannelProcessingManager.getChannelMetadataModel());
         rowSorter.setComparator(ChannelMetadataModel.COLUMN_CONFIGURATION_CHANNEL, (o1, o2) -> {
             String s1 = o1 != null ? o1.toString() : "";
             String s2 = o2 != null ? o2.toString() : "";
