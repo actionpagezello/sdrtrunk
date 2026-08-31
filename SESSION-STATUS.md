@@ -19,6 +19,12 @@ deployed to Somerville on 2026-08-22 and does NOT include the GUI freeze fix.
 2. **GUI freeze fixed** — new `SafeTableRowSorter` (`gui/control/`). The channel metadata table's
    row sorter was killing the Swing EDT when channel churn re-sorted rows whose values decoder
    threads were changing mid-sort. Decoding continued for 5+ hours with a dead GUI on Monson.
+3. **"Show in Waterfall" tuner resolution fixed** — the menu action trusted the channel's
+   configured preferred tuner without checking that it was actually carrying the channel, so
+   channels relocated to another tuner displayed the wrong spectrum (wrong noise floor, no green
+   channel column). The live processing chain source is now authoritative; the preferred tuner is
+   a validated fallback. Confirmed by the reporter: setting the channel's tuner to None worked
+   around it.
 
 ## GitHub
 - Fork: https://github.com/actionpagezello/sdrtrunk

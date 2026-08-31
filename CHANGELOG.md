@@ -63,6 +63,28 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
      energy genuinely lands on the target frequency — worsened by ~12 Hz Goertzel bin resolution,
      which cannot separate 127.3 Hz from 131.8 Hz (observed as `raw=127.3` in 710 holdover opens).
 
+- **"Show in Waterfall" displays the wrong tuner** — right-clicking a channel and choosing *Show
+  in Waterfall* sometimes zoomed to a spectrum with a different noise floor and no green channel
+  column. Reported for Lawrence Fire New P25 (453.5125) while the analog channel on the same
+  frequency worked correctly, plus one other channel.
+
+  Cause: `ChannelMetadataPanel.showChannelInWaterfall()` resolved the tuner from the channel's
+  configured **preferred tuner** first, and accepted it merely for existing — no check that the
+  tuner was carrying the channel or even tuned to cover its frequency. The preferred tuner is
+  only a request; when it has no spare bandwidth or is tuned elsewhere, the tuner manager sources
+  the channel from a different tuner and says so in the log (*"Unable to source channel [x] from
+  preferred tuner [y] - searching for another tuner"*). The authoritative lookup — matching the
+  channel frequency against each tuner's `center ± sampleRate/2` — only ran when no preferred
+  tuner was set at all, which is why setting the channel's tuner to *None* made it work.
+
+  Fix: resolution order reversed. The live processing chain's `TunerChannelSource` is now
+  consulted first and is authoritative for a running channel, for both the serving tuner and the
+  frequency to center on (a trunked traffic channel is often not on its configured frequency).
+  The configured preferred tuner is used only as a fallback for a channel that isn't decoding,
+  and only when its current tuned range actually covers the channel frequency; otherwise the
+  frequency-range search runs. Rejections and outright failures now log at DEBUG instead of
+  silently doing nothing.
+
 ### Added
 - **`TdmaInterferenceDetector`** — rejects DMR / P25 Phase 2 bleed on tone-filtered NBFM
   channels. Builds a 500 Hz RMS envelope, high-passes it at 15 Hz to strip syllabic speech

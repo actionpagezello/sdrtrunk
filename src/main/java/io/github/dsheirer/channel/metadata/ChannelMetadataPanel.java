@@ -613,8 +613,19 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
     /**
      * Attempts to show the tuner serving a channel in the main spectral display (waterfall).
-     * Finds the tuner by checking the channel's source configuration for a preferred tuner name,
-     * or by matching against the processing chain's current tuner channel source.
+     *
+     * Resolution order matters here. A channel's configured preferred tuner is only a request - if
+     * that tuner has no spare bandwidth, or the channel's frequency falls outside its current tuned
+     * range, the tuner manager silently sources the channel from a different tuner ("Unable to
+     * source channel [x] from preferred tuner [y] - searching for another tuner"). Trusting the
+     * preferred tuner name in that case displays a tuner that is not carrying the channel, which
+     * shows an unrelated noise floor and no channel column at the requested frequency.
+     *
+     * So the live processing chain's tuner channel source is authoritative whenever the channel is
+     * running. The configured preferred tuner is used only as a fallback for a channel that is not
+     * currently decoding, and even then only when that tuner's tuned range actually covers the
+     * channel frequency.
+     *
      * @param channel to show in waterfall
      */
     private void showChannelInWaterfall(Channel channel)
@@ -626,78 +637,29 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         }
 
         DiscoveredTunerModel discoveredTunerModel = mTunerManager.getDiscoveredTunerModel();
-        Tuner tuner = null;
-
-        // First try: find tuner via preferred tuner name from source config
         SourceConfiguration sourceConfig = channel.getSourceConfiguration();
+        Tuner tuner = null;
+        long channelFrequency = 0;
 
-        String preferredTunerName = null;
+        //First: the live source. This is the only authoritative answer for a running channel, both
+        //for which tuner is carrying it and for which frequency it is actually on - a trunked
+        //traffic channel or a multiple-frequency channel is often not on the configured frequency.
+        ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
 
-        if(sourceConfig instanceof SourceConfigTuner)
+        if(processingChain != null)
         {
-            preferredTunerName = ((SourceConfigTuner)sourceConfig).getPreferredTuner();
-        }
-        else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
-        {
-            preferredTunerName = ((SourceConfigTunerMultipleFrequency)sourceConfig).getPreferredTuner();
-        }
+            Source source = processingChain.getSource();
 
-        if(preferredTunerName != null)
-        {
-            DiscoveredTuner discoveredTuner = mTunerManager.getDiscoveredTuner(preferredTunerName);
-
-            if(discoveredTuner != null && discoveredTuner.hasTuner())
+            if(source instanceof TunerChannelSource)
             {
-                tuner = discoveredTuner.getTuner();
+                channelFrequency = ((TunerChannelSource)source).getFrequency();
+                tuner = getTunerServingFrequency(discoveredTunerModel, channelFrequency);
             }
         }
 
-        // Second try: find tuner via the processing chain's source
-        if(tuner == null)
+        //Fall back to the configured frequency when the channel isn't running.
+        if(channelFrequency == 0)
         {
-            ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
-
-            if(processingChain != null)
-            {
-                Source source = processingChain.getSource();
-
-                if(source instanceof TunerChannelSource)
-                {
-                    long channelFrequency = ((TunerChannelSource)source).getFrequency();
-
-                    // Find which tuner is serving this frequency
-                    for(DiscoveredTuner discoveredTuner : discoveredTunerModel.getAvailableTuners())
-                    {
-                        if(discoveredTuner.hasTuner())
-                        {
-                            try
-                            {
-                                long tunerFreq = discoveredTuner.getTuner().getTunerController().getFrequency();
-                                double sampleRate = discoveredTuner.getTuner().getTunerController().getSampleRate();
-                                long halfBandwidth = (long)(sampleRate / 2.0);
-
-                                if(channelFrequency >= tunerFreq - halfBandwidth &&
-                                   channelFrequency <= tunerFreq + halfBandwidth)
-                                {
-                                    tuner = discoveredTuner.getTuner();
-                                    break;
-                                }
-                            }
-                            catch(Exception ex)
-                            {
-                                mLog.error("Error checking tuner frequency", ex);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if(tuner != null)
-        {
-            // Determine the channel frequency to center on
-            long channelFrequency = 0;
-
             if(sourceConfig instanceof SourceConfigTuner)
             {
                 channelFrequency = ((SourceConfigTuner)sourceConfig).getFrequency();
@@ -711,18 +673,50 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                     channelFrequency = frequencies.get(0);
                 }
             }
+        }
 
-            // Fall back to the live tuner channel source frequency if config frequency is 0
-            if(channelFrequency == 0)
+        //Second: the configured preferred tuner, accepted only if it can actually show the channel.
+        if(tuner == null)
+        {
+            String preferredTunerName = null;
+
+            if(sourceConfig instanceof SourceConfigTuner)
             {
-                ProcessingChain pc = mChannelProcessingManager.getProcessingChain(channel);
-
-                if(pc != null && pc.getSource() instanceof TunerChannelSource)
-                {
-                    channelFrequency = ((TunerChannelSource)pc.getSource()).getFrequency();
-                }
+                preferredTunerName = ((SourceConfigTuner)sourceConfig).getPreferredTuner();
+            }
+            else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+            {
+                preferredTunerName = ((SourceConfigTunerMultipleFrequency)sourceConfig).getPreferredTuner();
             }
 
+            if(preferredTunerName != null)
+            {
+                DiscoveredTuner discoveredTuner = mTunerManager.getDiscoveredTuner(preferredTunerName);
+
+                if(discoveredTuner != null && discoveredTuner.hasTuner())
+                {
+                    if(channelFrequency == 0 || isFrequencyWithinTunerBandwidth(discoveredTuner.getTuner(),
+                            channelFrequency))
+                    {
+                        tuner = discoveredTuner.getTuner();
+                    }
+                    else
+                    {
+                        mLog.debug("Preferred tuner [" + preferredTunerName + "] is not currently tuned to cover " +
+                                "channel frequency [" + channelFrequency + "] - looking for the tuner that is");
+                    }
+                }
+            }
+        }
+
+        //Third: any tuner whose current tuned range covers the channel frequency.
+        if(tuner == null && channelFrequency > 0)
+        {
+            tuner = getTunerServingFrequency(discoveredTunerModel, channelFrequency);
+        }
+
+        if(tuner != null)
+        {
             if(channelFrequency > 0)
             {
                 discoveredTunerModel.broadcast(new TunerEvent(tuner,
@@ -736,6 +730,58 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         }
         else
         {
+            mLog.debug("Unable to identify a tuner currently covering channel [" + channel.getName() +
+                    "] frequency [" + channelFrequency + "] - nothing to show in the waterfall");
+        }
+    }
+
+    /**
+     * Identifies the tuner whose current center frequency and sample rate span the specified
+     * frequency.
+     *
+     * @param discoveredTunerModel containing the available tuners
+     * @param frequency to locate, in hertz
+     * @return the tuner covering the frequency, or null
+     */
+    private Tuner getTunerServingFrequency(DiscoveredTunerModel discoveredTunerModel, long frequency)
+    {
+        if(frequency <= 0)
+        {
+            return null;
+        }
+
+        for(DiscoveredTuner discoveredTuner : discoveredTunerModel.getAvailableTuners())
+        {
+            if(discoveredTuner.hasTuner() && isFrequencyWithinTunerBandwidth(discoveredTuner.getTuner(), frequency))
+            {
+                return discoveredTuner.getTuner();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Indicates if the specified frequency falls within the tuner's currently tuned bandwidth.
+     *
+     * @param tuner to check
+     * @param frequency to test, in hertz
+     * @return true if the tuner is presently able to display the frequency
+     */
+    private boolean isFrequencyWithinTunerBandwidth(Tuner tuner, long frequency)
+    {
+        try
+        {
+            long tunerFrequency = tuner.getTunerController().getFrequency();
+            double sampleRate = tuner.getTunerController().getSampleRate();
+            long halfBandwidth = (long)(sampleRate / 2.0);
+
+            return frequency >= tunerFrequency - halfBandwidth && frequency <= tunerFrequency + halfBandwidth;
+        }
+        catch(Exception ex)
+        {
+            mLog.error("Error checking tuner frequency", ex);
+            return false;
         }
     }
 
