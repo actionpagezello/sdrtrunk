@@ -3,14 +3,20 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.7 (2026-08-01)
+## Current Release: ap-15.8.1 (2026-09-07)
+- GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.8.1
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.8.1\sdr-trunk-windows-x86_64-v0.6.2-ap-15.8.1.zip`
+- Built 2026-09-07 with JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean runtimeZipWindows`. Not yet
+  deployed to any site.
+
+> `ap-15.8` is a *separate, already-deployed* build: Somerville only, 2026-08-22, carrying the
+> DMR/TDMA work and nothing else. A machine reporting `0.6.2-ap-15.8` is running that, not 15.8.1.
+
+## Previous Release: ap-15.7 (2026-08-01)
 - GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.7
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.7.zip`
 
-## In Progress: ap-15.8.1 (committed through fa42830e, NOT yet rebuilt)
-See CHANGELOG.md. Note ap-15.8 is a *separate, already-deployed* build: it went to Somerville
-on 2026-08-22 carrying only the DMR/TDMA work, and has none of the fixes below. A machine
-reporting `0.6.2-ap-15.8` is running that build, not this one.
+## Contents of ap-15.8.1
 
 1. **GUI freeze fixed** — new `SafeTableRowSorter` (`gui/control/`). The channel metadata table's
    row sorter was killing the Swing EDT when channel churn re-sorted rows whose values decoder
@@ -43,14 +49,10 @@ reporting `0.6.2-ap-15.8` is running that build, not this one.
 - JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
 - Gradle now autoprovisions the JDK (foojay resolver + BELLSOFT vendor spec, upstream #2427)
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
-- Build command: `.\gradlew runtimeZipCurrent`
+- Build command: `.\gradlew clean runtimeZipWindows` (archiveVersion finalizer copies the zip to
+  `sdrtrunk-ap-versions\v<version>\` automatically)
 - Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.8.1`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
-
-## Changes in ap-15.8.1
-See CHANGELOG.md: SafeTableRowSorter GUI freeze fix, waterfall tuner resolution, ThinLine/Rdio
-diagnostics, bounded Dispatcher queue, Broadcastify/OpenMHz NPE, Zello HttpClient close, squelch
-println removal, upstream eclipse build fix.
 
 ## Changes in ap-15.8 (deployed to Somerville 2026-08-22)
 **DMR digital bleed rejected on tone-filtered NBFM** — new `TdmaInterferenceDetector` (30 ms
