@@ -30,6 +30,11 @@ public abstract class ChannelOutputProcessor implements IPolyphaseChannelOutputP
 {
     private final static Logger mLog = LoggerFactory.getLogger(ChannelOutputProcessor.class);
 
+    /**
+     * Maximum channel results batches queued per channel before the oldest are discarded - approximately one second.
+     */
+    private static final int MAX_QUEUED_CHANNEL_RESULTS_BATCHES = 25;
+
     private Dispatcher<List<float[]>> mChannelResultsDispatcher;
     private HeartbeatManager mHeartbeatManager;
     protected Listener<ComplexSamples> mComplexSamplesListener;
@@ -49,7 +54,12 @@ public abstract class ChannelOutputProcessor implements IPolyphaseChannelOutputP
         mInputChannelCount = inputChannelCount;
         //Process 1/10th of the sample rate per second at a rate of 20 times a second (200% of anticipated rate)
         mHeartbeatManager = heartbeatManager;
-        mChannelResultsDispatcher = new Dispatcher(threadName,50, mHeartbeatManager);
+        //Bound the queue to approximately one second of channel results batches.  Batches arrive at a constant ~24 per
+        //second regardless of tuner sample rate (see ComplexPolyphaseChannelizerM2), and the float arrays they carry
+        //are shared with the channelizer's output batch, so an unbounded per-channel queue retains whole channelizer
+        //batches long after they should have been collected.
+        mChannelResultsDispatcher = new Dispatcher(threadName, 50, MAX_QUEUED_CHANNEL_RESULTS_BATCHES,
+                mHeartbeatManager);
         mChannelResultsDispatcher.setListener(floats -> {
             try
             {

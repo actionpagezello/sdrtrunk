@@ -88,9 +88,6 @@ public class NBFMAudioFilters
     private float mRmsAlpha = 0.05f;      // Smoothing factor for level display
     private float mRmsSmoothed = 0.0f;    // Smoothed RMS for display
     
-    // Debug counter
-    private int mDebugCounter = 0;
-    
     // Attack/release for smooth gating
     private float mSquelchAttackAlpha;
     private float mSquelchReleaseAlpha;
@@ -639,14 +636,7 @@ public class NBFMAudioFilters
         // Scale RMS to percentage - typical carrier ~0.1-0.3 RMS, voice ~0.3-0.8 RMS
         // Use 1.0 RMS = 100% for better range
         mSquelchCurrentLevel = Math.min(100.0f, rms * 100.0f);
-        
-        // DEBUG: Print every 1000 samples to see what's happening
-        if (++mDebugCounter % 1000 == 0) {
-            System.out.printf("[SQUELCH DEBUG] Level: %.1f%%, Threshold: %.1f%%, Gate: %s, Gain: %.2f, Reduction: %.0f%%\n",
-                mSquelchCurrentLevel, mSquelchThresholdPercent, mGateOpen ? "OPEN" : "CLOSED", 
-                mSquelchCurrentGain, mSquelchReduction * 100.0f);
-        }
-        
+
         // If analyzing, collect level data
         if (mAnalyzing && mAnalyzeSampleCount < mAnalyzeMaxSamples) {
             mAnalyzedLevels.add(mSquelchCurrentLevel);

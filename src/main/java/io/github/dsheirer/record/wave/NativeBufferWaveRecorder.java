@@ -47,7 +47,13 @@ public class NativeBufferWaveRecorder extends Module implements Listener<INative
     private static final Logger mLog = LoggerFactory.getLogger(ComplexSamplesWaveRecorder.class);
     private static final long STATUS_UPDATE_BYTE_INTERVAL = 1_048_576;
     private static final long MAX_RECORDING_SIZE = (long)Integer.MAX_VALUE * 2l;
-    private Dispatcher<INativeBuffer> mBufferProcessor = new Dispatcher<>("sdrtrunk native buffer wave recorder", 250);
+    /**
+     * Generous queue bound for recorders.  Disk writes can stall for far longer than a DSP consumer, and
+     * discarding recorded samples is worse than a brief backlog, so this is sized well above the DSP paths.
+     */
+    private static final int RECORDER_MAX_QUEUE_SIZE = 2000;
+
+    private Dispatcher<INativeBuffer> mBufferProcessor = new Dispatcher<>("sdrtrunk native buffer wave recorder", 250, RECORDER_MAX_QUEUE_SIZE);
 
     private AtomicBoolean mRunning = new AtomicBoolean();
     private NativeBufferWaveWriter mWriter;

@@ -68,6 +68,17 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
      */
     private static final int PROCESSED_CHANNEL_RESULTS_THRESHOLD = 1024;
 
+    /**
+     * Maximum number of channel results batches the IFFT dispatcher will queue before discarding the oldest.
+     *
+     * Each batch holds PROCESSED_CHANNEL_RESULTS_THRESHOLD arrays of getSubChannelCount() floats, so batch size grows
+     * with channel count - roughly 3.3 MB for a 400-channel 10 MSPS tuner and 0.8 MB for a 96-channel 2.4 MSPS tuner.
+     * Batch *rate*, however, is constant at about 24 per second for any tuner, because channel count scales with
+     * sample rate: rate = sampleRate / (threshold * channelCount) = 25000 / 1024.  A fixed element bound is therefore
+     * a fixed time bound, and 25 batches is approximately one second of backlog.
+     */
+    private static final int MAX_QUEUED_CHANNEL_RESULTS_BATCHES = 25;
+
     //Sized to process 40 times per second
     private IFFTProcessorDispatcher mIFFTProcessorDispatcher = new IFFTProcessorDispatcher(25);
     private FloatFFT_1D mFFT;
@@ -419,7 +430,7 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
     {
         public IFFTProcessorDispatcher(long interval)
         {
-            super("sdrtrunk polyphase ifft processor", interval);
+            super("sdrtrunk polyphase ifft processor", interval, MAX_QUEUED_CHANNEL_RESULTS_BATCHES);
 
             //We create a listener interface to receive the batched channel results arrays from the scheduled thread pool
             //dispatcher thread that is part of this continuous buffer processor.  We perform an IFFT on each

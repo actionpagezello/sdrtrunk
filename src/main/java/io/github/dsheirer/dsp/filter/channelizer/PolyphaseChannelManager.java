@@ -71,6 +71,13 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
     private static final double CHANNEL_OVERSAMPLING = 2.0;
     private static final int POLYPHASE_CHANNELIZER_TAPS_PER_CHANNEL = 9;
 
+    /**
+     * Backlog of tuner sample buffers, in milliseconds, that the buffer dispatcher will queue before discarding the
+     * oldest.  Sized to absorb a normal garbage collection pause without dropping samples, while bounding heap growth
+     * when the consumer stalls for longer than that.
+     */
+    private static final long BUFFER_QUEUE_DURATION_MS = 2000;
+
     private Broadcaster<SourceEvent> mSourceEventBroadcaster = new Broadcaster<>();
     private TunerController mTunerController;
     private List<PolyphaseChannelSource> mChannelSources = new CopyOnWriteArrayList<>();
@@ -107,7 +114,13 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
 
         mChannelCalculator = new ChannelCalculator(tunerController.getSampleRate(), channelCount,
                 tunerController.getFrequency(), CHANNEL_OVERSAMPLING);
-        mBufferDispatcher = new Dispatcher("sdrtrunk polyphase buffer processor", 10);
+        //Bound the queue to roughly two seconds of tuner buffers.  Buffer duration is derived from the tuner's sample
+        //rate and transfer size, so this scales correctly across tuner types (e.g. ~13 ms per buffer for an RTL-2832
+        //at 2.4 MSPS, giving ~150 buffers).  Without a bound, a consumer stall converts directly into heap growth at
+        //the full sample rate of the tuner.
+        long bufferDuration = Math.max(1, tunerController.getBufferDuration());
+        int maxQueueSize = (int)Math.max(32, Math.min(2000, (BUFFER_QUEUE_DURATION_MS / bufferDuration)));
+        mBufferDispatcher = new Dispatcher("sdrtrunk polyphase buffer processor", 10, maxQueueSize);
         mBufferDispatcher.setListener(mNativeBufferReceiver);
     }
 

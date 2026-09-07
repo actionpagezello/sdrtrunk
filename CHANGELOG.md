@@ -97,6 +97,72 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   `CompletionException` to report the underlying cause. The same defect exists upstream in
   `BroadcastifyCallBroadcaster` and `OpenMHzBroadcaster` and is a candidate for an upstream PR.
 
+- **Unbounded `Dispatcher` queue caused a 10 GB heap exhaustion (Paxton, 2026-09-05)** — SDRTrunk
+  died at 09:44:46 with `java.lang.OutOfMemoryError: Java heap space` on eleven threads at once,
+  taking down all sixteen Zello streams.
+
+  The log shows the shape clearly. Heap sat between 455 and 832 MB inside a 912 MB committed heap
+  for the preceding 56 minutes. At 09:37:11 logging stopped completely — not just DSP threads, but
+  the scheduled pool and the HttpClient workers too, which had been writing several lines per
+  second. Fifty-seven seconds later the next line appears already reading `[9GB/10GB 99%]`, then
+  one line in the following six and a half minutes, then the OOM cascade. Measured from closely
+  spaced heap samples, this machine allocates at roughly 1 GB/s (mean 1030 MB/s, peak 1429 MB/s
+  between rising samples), so ten seconds of consumer stall is enough to fill a 10 GB heap.
+
+  Cause: `Dispatcher.receive()` added to an unbounded `LinkedTransferQueue` and never blocked or
+  dropped, while the producers are USB transfer callback threads that keep running regardless of
+  consumer state. `process()` then drained unbounded into a freshly allocated `ArrayList` on every
+  interval, copying a backlogged queue into a second structure of the same size before dispatching
+  anything. Queued elements are strongly reachable, so they are live objects the collector cannot
+  reclaim — which is why the process spent six minutes making no progress rather than recovering.
+  The 10 GB maximum heap was not protection here; it was runway.
+
+  Fix: the queue is now bounded and discards the oldest elements on overflow, which is the correct
+  policy for real-time DSP where the newest samples are the useful ones. Occupancy is tracked in an
+  `AtomicInteger` rather than by calling `LinkedTransferQueue.size()`, which is O(n) and would
+  become a hotspot under exactly the backlog this bound exists to handle. `drainTo` is bounded and
+  targets a reused list instead of allocating one per interval. Overflow logs a WARN with the
+  discarded count, rate limited to one message per ten seconds, and recovery logs at INFO.
+
+  Bounds are derived rather than guessed. The polyphase buffer dispatcher takes two seconds of
+  tuner buffers, computed from the tuner's own buffer duration, so it scales across tuner types
+  (~150 buffers for an RTL-2832 at 2.4 MSPS). The IFFT and per-channel channel-results dispatchers
+  take 25 batches, which is about one second: batch rate is a constant ~24/second for any tuner
+  because channel count scales with sample rate, so a fixed element bound is a fixed time bound.
+  Recorders get a much larger bound since disk writes stall longer and dropping recorded audio is
+  worse than a backlog. Every bound was checked against its callsite's real arrival rate and has
+  between 20x and 209x headroom over normal per-interval traffic.
+
+  Verified by a concurrency harness: under a fully stalled consumer with 500,000 elements produced,
+  observed queue size never exceeded the bound, and consumed + dropped + queued accounted for every
+  element with none lost or double counted. At realistic arrival rates the tightest bound dropped
+  nothing.
+
+- **Null response dereferenced in Broadcastify Calls and OpenMHz upload callbacks** — the same
+  defect fixed for ThinLine and Rdio Scanner earlier in this release. Both wrote
+  `if(throwable != null || response.statusCode() != 200)` and then dereferenced `response` inside
+  that branch, but `whenComplete` passes a null response whenever the throwable is non-null, so any
+  upload failure that was not an `IOException` or `CompletionException` threw a
+  `NullPointerException` from inside the completion handler and lost the real error. OpenMHz was
+  worse — both of its branches dereferenced the response, so its socket-reset path threw every
+  time. The throwable case is now handled separately and logs the underlying cause.
+
+- **Zello `HttpClient` never closed** — `AbstractZelloBroadcaster` builds an `HttpClient` per
+  broadcaster and `BroadcastModel` destroys and recreates broadcasters on reconnect, so the
+  client's selector and worker threads accumulated for the life of the application. Now closed on
+  dispose.
+
+- **Leftover squelch debug output** — a `System.out.printf` in `NBFMAudioFilters` printed squelch
+  level, threshold, gate state and gain to stdout every 1000 samples. Left in from 2026-03-16
+  (`ae6dc745`) and never removed.
+
+- **Eclipse build (upstream #2434, `9dcebb49`)** — `OpenMHzEditor` sits in
+  `audio/broadcast/openmhz/` but still declared `package io.github.dsheirer.gui.playlist.streaming`.
+  Gradle's flat source set tolerates the mismatch; Eclipse does not. Package declaration corrected,
+  `AbstractBroadcastEditor` imported, and `StreamEditorFactory` now imports `OpenMHzEditor`. The
+  `BroadcastModel` half of that upstream commit is cosmetic and was not taken — the fork has two
+  call sites there because of staggered broadcaster startup.
+
 ### Added
 - **ThinLine Radio and Rdio Scanner diagnostics** — the `THINLINE` and `RDIO` categories already
   existed in the Diagnostics panel but had nothing behind them: `ThinLineRadioBroadcaster` carried

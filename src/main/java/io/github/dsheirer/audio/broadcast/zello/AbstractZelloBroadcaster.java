@@ -375,6 +375,18 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     public void dispose()
     {
         stop();
+
+        //Release the HttpClient's selector and worker threads.  BroadcastModel destroys and recreates broadcasters on
+        //reconnect, and each broadcaster builds its own client, so without this the threads accumulate across the life
+        //of the application.
+        try
+        {
+            mHttpClient.close();
+        }
+        catch(Throwable t)
+        {
+            mLog.debug("{}Error closing Zello HTTP client during dispose - ignoring", ch(), t);
+        }
     }
 
     @Override

@@ -19,7 +19,19 @@ deployed to Somerville on 2026-08-22 and does NOT include the GUI freeze fix.
 2. **GUI freeze fixed** — new `SafeTableRowSorter` (`gui/control/`). The channel metadata table's
    row sorter was killing the Swing EDT when channel churn re-sorted rows whose values decoder
    threads were changing mid-sort. Decoding continued for 5+ hours with a dead GUI on Monson.
-3. **"Show in Waterfall" tuner resolution fixed** — the menu action trusted the channel's
+3. **`Dispatcher` queue bounded** — root cause of the Paxton 2026-09-05 `OutOfMemoryError`
+   (10 GB heap exhausted in under 60 seconds after a whole-JVM stall). Unbounded
+   `LinkedTransferQueue` plus unbounded `drainTo` turned a consumer stall into unbounded live-object
+   growth that the collector could not reclaim. Now bounded with drop-oldest, derived per-callsite
+   caps (20x–209x headroom over normal arrival rates), rate-limited overflow WARN and recovery INFO.
+   Clean upstream PR candidate — the file was byte-identical to upstream.
+4. **Broadcastify Calls / OpenMHz null-response NPE** — same defect already fixed for ThinLine and
+   Rdio Scanner. Also a clean upstream PR candidate.
+5. **Zello `HttpClient` closed on dispose** — selector/worker threads previously leaked on every
+   broadcaster reconnect.
+6. **Leftover `[SQUELCH DEBUG]` stdout printf removed** from `NBFMAudioFilters` (from `ae6dc745`).
+7. **Eclipse build fix ported** (upstream #2434 `9dcebb49`) — `OpenMHzEditor` package declaration.
+8. **"Show in Waterfall" tuner resolution fixed** — the menu action trusted the channel's
    configured preferred tuner without checking that it was actually carrying the channel, so
    channels relocated to another tuner displayed the wrong spectrum (wrong noise floor, no green
    channel column). The live processing chain source is now authoritative; the preferred tuner is
@@ -95,3 +107,25 @@ See CHANGELOG.md for full details.
 The correct path is `channel/metadata/ChannelMetadataPanel.java` (package `io.github.dsheirer.channel.metadata`).
 It was incorrectly copied to `gui/channel/` in ap-06 which caused mute/unmute and channel names to not work.
 Fixed in ap-07. The wrong file at `gui/channel/` was deleted.
+
+## Upstream sync (checked 2026-09-07)
+11 commits behind `upstream/master`, but 8 are already content-present (hand-ported in ap-15.7;
+compare with `git diff --ignore-cr-at-eol -w`, since some fork files are CRLF and upstream is LF).
+Genuinely outstanding:
+- `9dcebb49` eclipse build fix — **taken in ap-15.8**
+- `af5dbcfc` dark mode (#2411) — deferred, cosmetic, 19 files / +1767 lines, touches the fork's
+  customized preference plumbing
+- `80360029` JDK 26 + Gradle 9.6.1 + library updates (#2450) — **hold for ap-15.9 as its own
+  release.** Bumps JTransforms 3.1 -> 3.2 (the FFT in the IFFT dispatcher, the exact path implicated
+  in the Paxton OOM) and changes Vector API codegen across a fleet with mixed AVX2 support. Taking
+  it wholesale would also clobber `-Xmx10g`, `-Dprism.order=d3d,sw` and the ap-fork lazy platform
+  configuration in `runtimeZipCurrent` — hand-merge required.
+
+## Queued for ap-15.9
+- **P25 encryption double-confirm** — `APCO25EncryptionKey.isEncrypted()` treats
+  `Encryption.UNKNOWN` as encrypted, so a corrupt ALG ID silently suppresses audio
+  (10.3% bogus rate observed on Essex County). Deliberately held back from 15.8: it is the only
+  behavior-affecting change in the batch, and the two-consecutive-sync approach needs validating
+  against captured data first — if corruption is bursty, two consecutive corrupt sequences carrying
+  the *same* bogus ALG ID would still pass.
+- **Revisit `-Xmx10g`** — fleet steady state is under 1 GB. Needs a fleet-wide check before changing.
