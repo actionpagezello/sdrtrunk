@@ -85,7 +85,31 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   frequency-range search runs. Rejections and outright failures now log at DEBUG instead of
   silently doing nothing.
 
+- **ThinLine Radio and Rdio Scanner upload failures were silently swallowed** — the `whenComplete`
+  callback on the audio upload tested `throwable1 != null || fileResponse.statusCode() != 200` and
+  then dereferenced `fileResponse` in every branch. When the request fails at the network level
+  (connection refused, timeout, socket reset) the throwable is non-null and the response is
+  **null**, so the error handler itself threw a `NullPointerException` — inside a
+  `CompletableFuture` callback, where it was discarded without ever reaching a log. The result was
+  a feed that could fail indefinitely while producing no log output whatsoever.
+
+  The throwable case is now handled separately from a non-200 response, and unwraps
+  `CompletionException` to report the underlying cause. The same defect exists upstream in
+  `BroadcastifyCallBroadcaster` and `OpenMHzBroadcaster` and is a candidate for an upstream PR.
+
 ### Added
+- **ThinLine Radio and Rdio Scanner diagnostics** — the `THINLINE` and `RDIO` categories already
+  existed in the Diagnostics panel but had nothing behind them: `ThinLineRadioBroadcaster` carried
+  seven `error` calls and no `debug`, `info` or `warn` statements at all, so switching either
+  category to DEBUG produced no output.
+
+  Both broadcasters now log the upload lifecycle at DEBUG — recording queued with queue depth,
+  upload starting with talkgroup and byte count, upload accepted with elapsed milliseconds,
+  duplicate rejected by the server, and aged-off recordings discarded without upload. Connection
+  state changes log at INFO on (re)connect and WARN on a failed connection test, including the
+  server's response text and the retry interval. Queue-depth and aged-off events were previously
+  invisible at any log level.
+
 - **`TdmaInterferenceDetector`** — rejects DMR / P25 Phase 2 bleed on tone-filtered NBFM
   channels. Builds a 500 Hz RMS envelope, high-passes it at 15 Hz to strip syllabic speech
   rates, then scores a harmonic comb (f0, 2·f0, 3·f0) across candidate 30 ms slot cadences via

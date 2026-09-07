@@ -108,6 +108,7 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
 
         if(response != null && response.toLowerCase().startsWith("incomplete call data: no talkgroup"))
         {
+            mLog.info("ThinLine Radio connected to [{}]", getBroadcastConfiguration().getHost());
             setBroadcastState(BroadcastState.CONNECTED);
         }
         else
@@ -161,17 +162,30 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
         if(getBroadcastState() != BroadcastState.CONNECTED &&
             (System.currentTimeMillis() - mLastConnectionAttempt > mConnectionAttemptInterval))
         {
+            BroadcastState previousState = getBroadcastState();
             setBroadcastState(BroadcastState.CONNECTING);
+
+            mLog.debug("ThinLine Radio connection test to [{}] - previous state [{}] queue depth [{}]",
+                getBroadcastConfiguration().getHost(), previousState, mAudioRecordingQueue.size());
 
             String response = testConnection(getBroadcastConfiguration());
             mLastConnectionAttempt = System.currentTimeMillis();
 
             if(response != null && response.toLowerCase().startsWith("incomplete call data: no talkgroup"))
             {
+                if(previousState != BroadcastState.CONNECTED)
+                {
+                    mLog.info("ThinLine Radio reconnected to [{}] after state [{}]",
+                        getBroadcastConfiguration().getHost(), previousState);
+                }
+
                 setBroadcastState(BroadcastState.CONNECTED);
             }
             else
             {
+                //Previously silent - a failing feed produced no log output at all between uploads.
+                mLog.warn("ThinLine Radio connection test failed for [{}] - response [{}] - retrying in {} ms",
+                    getBroadcastConfiguration().getHost(), response, mConnectionAttemptInterval);
                 setBroadcastState(BroadcastState.ERROR);
             }
         }
@@ -189,6 +203,14 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
     public void receive(AudioRecording audioRecording)
     {
         mAudioRecordingQueue.offer(audioRecording);
+
+        if(mLog.isDebugEnabled())
+        {
+            mLog.debug("ThinLine queued recording - talkgroup [{}] {}s audio - queue depth now [{}] state [{}]",
+                getTo(audioRecording), String.format("%.1f", audioRecording.getRecordingLength() / 1E3f),
+                mAudioRecordingQueue.size(), getBroadcastState());
+        }
+
         broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_QUEUE_CHANGE));
     }
 
@@ -257,24 +279,40 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                             .POST(bodyBuilder.build())
                             .build();
 
+                        final long uploadStartTime = System.currentTimeMillis();
+                        final int uploadByteCount = audioBytes.length;
+
+                        mLog.debug("ThinLine upload starting - talkgroup [{}] radio [{}] {} bytes {}s audio -> [{}]",
+                            talkgroup, radioId, uploadByteCount, String.format("%.1f", durationSeconds),
+                            getBroadcastConfiguration().getHost());
+
                         mHttpClient.sendAsync(fileRequest, HttpResponse.BodyHandlers.ofString())
                             .whenComplete((fileResponse, throwable1) -> {
-                                if(throwable1 != null || fileResponse.statusCode() != 200)
+                                long elapsed = System.currentTimeMillis() - uploadStartTime;
+
+                                //A non-null throwable means the request never produced a response, so fileResponse
+                                //is null here and must not be dereferenced.
+                                if(throwable1 != null)
                                 {
-                                    if(throwable1 instanceof IOException || throwable1 instanceof CompletionException)
-                                    {
-                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("ThinLine Radio API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
-                                    }
-                                    else
-                                    {
-                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("ThinLine Radio API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
-                                    }
+                                    Throwable cause = (throwable1 instanceof CompletionException &&
+                                        throwable1.getCause() != null) ? throwable1.getCause() : throwable1;
+
+                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                    mLog.error("ThinLine Radio API upload failed - talkgroup [" + talkgroup +
+                                        "] no response from [" + getBroadcastConfiguration().getHost() +
+                                        "] after " + elapsed + "ms - " + cause.getClass().getSimpleName() +
+                                        ": " + cause.getMessage());
+
+                                    incrementErrorAudioCount();
+                                    broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
+                                        BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                }
+                                else if(fileResponse.statusCode() != 200)
+                                {
+                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                    mLog.error("ThinLine Radio API upload rejected - talkgroup [" + talkgroup +
+                                        "] HTTP [" + fileResponse.statusCode() + "] after " + elapsed +
+                                        "ms - response [" + fileResponse.body() + "]");
 
                                     incrementErrorAudioCount();
                                     broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
@@ -286,6 +324,8 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
 
                                     if(fileResponseString.contains("Call imported successfully."))
                                     {
+                                        mLog.debug("ThinLine upload accepted - talkgroup [{}] {} bytes in {} ms",
+                                            talkgroup, uploadByteCount, elapsed);
                                         incrementStreamedAudioCount();
                                         broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
                                             BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
@@ -293,14 +333,16 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                                     }
                                     else if(fileResponseString.contains("duplicate call rejected"))
                                     {
+                                        mLog.debug("ThinLine duplicate rejected by server - talkgroup [{}] ({} ms)",
+                                            talkgroup, elapsed);
                                         audioRecording.removePendingReplay();
                                     }
                                     else
                                     {
                                         setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("ThinLine Radio API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
+                                        mLog.error("ThinLine Radio API unexpected response - talkgroup [" +
+                                            talkgroup + "] HTTP [" + fileResponse.statusCode() + "] after " +
+                                            elapsed + "ms - response [" + fileResponse.body() + "]");
                                     }
                                 }
                             });
@@ -336,6 +378,11 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
             }
             else
             {
+                //Previously silent - recordings were discarded without any indication.
+                mLog.debug("ThinLine aged off recording - talkgroup [{}] older than {} ms, discarded without " +
+                        "upload - queue depth [{}]", getTo(audioRecording),
+                    getBroadcastConfiguration().getMaximumRecordingAge(), mAudioRecordingQueue.size());
+
                 mAudioRecordingQueue.poll();
                 audioRecording.removePendingReplay();
                 incrementAgedOffAudioCount();
