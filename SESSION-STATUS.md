@@ -7,7 +7,7 @@
 - GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.7
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.7.zip`
 
-## In Progress: ap-15.8.1 (committed through 23e383b1, NOT yet rebuilt)
+## In Progress: ap-15.8.1 (committed through fa42830e, NOT yet rebuilt)
 See CHANGELOG.md. Note ap-15.8 is a *separate, already-deployed* build: it went to Somerville
 on 2026-08-22 carrying only the DMR/TDMA work, and has none of the fixes below. A machine
 reporting `0.6.2-ap-15.8` is running that build, not this one.
