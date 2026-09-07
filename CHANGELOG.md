@@ -5,7 +5,7 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
-## [0.6.2-ap-15.8] - 2026-08-31
+## [0.6.2-ap-15.8.1] - 2026-09-07
 
 ### Fixed
 - **GUI freezes while decoding continues (channel metadata table row sorter)** — Monson froze on
@@ -37,31 +37,9 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   `TableRowSorter` dies with the identical `IllegalArgumentException` while `SafeTableRowSorter`
   survives and recovers.
 
-  Note this bug is unrelated to the DMR work below — Monson was running ap-15.7 when it froze,
-  and the two failures share no code. A pre-release ap-15.8 build carrying only the DMR changes
+  Note this bug is unrelated to the DMR work in ap-15.8 — Monson was running ap-15.7 when it froze,
+  and the two failures share no code. The ap-15.8 build carrying only the DMR changes
   was deployed to Somerville on 2026-08-22 and predates this fix.
-
-- **DMR digital bleed recorded as calls on CTCSS-filtered NBFM channels** — Somerville Fire
-  (483.3875, target 131.8 Hz) was recording multi-second bursts of digital buzz. Spectral
-  analysis of four captured bursts identified them as 2-slot TDMA (DMR): constant envelope,
-  no voice, and a hard 29.9 ms slot cadence (33.4 Hz) in every clip. Three separate defects
-  combined to let them through:
-
-  1. **Loss counter reset on unconfirmed detection.** `CTCSSDetector.handleDetection()` reset
-     `mLossCounter` on a single raw block-level match of the target tone. A DMR carrier
-     demodulated as FM sprays broadband noise across the CTCSS bins and lights up the target
-     bin often enough to keep resetting it, so the gate never closed. The counter now resets
-     only once a detection is CONFIRMED (`CONFIRMATION_COUNT` consecutive blocks). Log evidence:
-     3,206 holdover-carried gate opens against 791 confirmed opens on a single day.
-
-  2. **Unbounded holdover.** The 500 ms holdover was only checked at squelch-open; once opened
-     the gate stayed open until the loss counter expired, which defect 1 prevented. Added
-     `HOLDOVER_CONFIRM_DEADLINE_MS` (600 ms): a gate opened on holdover that fails to re-confirm
-     the tone within the deadline is force-closed. Applies to CTCSS and DCS channels alike.
-
-  3. **No defence against digital carriers.** CTCSS analysis cannot reject interference whose
-     energy genuinely lands on the target frequency — worsened by ~12 Hz Goertzel bin resolution,
-     which cannot separate 127.3 Hz from 131.8 Hz (observed as `raw=127.3` in 710 holdover opens).
 
 - **"Show in Waterfall" displays the wrong tuner** — right-clicking a channel and choosing *Show
   in Waterfall* sometimes zoomed to a spectrum with a different noise floor and no green channel
@@ -175,6 +153,38 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   state changes log at INFO on (re)connect and WARN on a failed connection test, including the
   server's response text and the retry interval. Queue-depth and aged-off events were previously
   invisible at any log level.
+
+## [0.6.2-ap-15.8] - 2026-08-22
+
+Pre-release build deployed to Somerville only. Contains the DMR/TDMA work and nothing
+else — no GUI freeze fix, no waterfall fix, none of the streaming or Dispatcher work
+in 15.8.1. A machine reporting `0.6.2-ap-15.8` is running exactly this.
+
+### Fixed
+
+- **DMR digital bleed recorded as calls on CTCSS-filtered NBFM channels** — Somerville Fire
+  (483.3875, target 131.8 Hz) was recording multi-second bursts of digital buzz. Spectral
+  analysis of four captured bursts identified them as 2-slot TDMA (DMR): constant envelope,
+  no voice, and a hard 29.9 ms slot cadence (33.4 Hz) in every clip. Three separate defects
+  combined to let them through:
+
+  1. **Loss counter reset on unconfirmed detection.** `CTCSSDetector.handleDetection()` reset
+     `mLossCounter` on a single raw block-level match of the target tone. A DMR carrier
+     demodulated as FM sprays broadband noise across the CTCSS bins and lights up the target
+     bin often enough to keep resetting it, so the gate never closed. The counter now resets
+     only once a detection is CONFIRMED (`CONFIRMATION_COUNT` consecutive blocks). Log evidence:
+     3,206 holdover-carried gate opens against 791 confirmed opens on a single day.
+
+  2. **Unbounded holdover.** The 500 ms holdover was only checked at squelch-open; once opened
+     the gate stayed open until the loss counter expired, which defect 1 prevented. Added
+     `HOLDOVER_CONFIRM_DEADLINE_MS` (600 ms): a gate opened on holdover that fails to re-confirm
+     the tone within the deadline is force-closed. Applies to CTCSS and DCS channels alike.
+
+  3. **No defence against digital carriers.** CTCSS analysis cannot reject interference whose
+     energy genuinely lands on the target frequency — worsened by ~12 Hz Goertzel bin resolution,
+     which cannot separate 127.3 Hz from 131.8 Hz (observed as `raw=127.3` in 710 holdover opens).
+
+### Added
 
 - **`TdmaInterferenceDetector`** — rejects DMR / P25 Phase 2 bleed on tone-filtered NBFM
   channels. Builds a 500 Hz RMS envelope, high-passes it at 15 Hz to strip syllabic speech

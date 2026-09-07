@@ -7,31 +7,27 @@
 - GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.7
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.7.zip`
 
-## In Progress: ap-15.8 (committed, NOT yet rebuilt)
-More changes are planned before this is built and released — see CHANGELOG.md and the
-"Queued for the next build" notes. A pre-release ap-15.8 build carrying only the DMR work was
-deployed to Somerville on 2026-08-22 and does NOT include the GUI freeze fix.
+## In Progress: ap-15.8.1 (committed through 23e383b1, NOT yet rebuilt)
+See CHANGELOG.md. Note ap-15.8 is a *separate, already-deployed* build: it went to Somerville
+on 2026-08-22 carrying only the DMR/TDMA work, and has none of the fixes below. A machine
+reporting `0.6.2-ap-15.8` is running that build, not this one.
 
-1. **DMR digital bleed rejected on tone-filtered NBFM** — new `TdmaInterferenceDetector`
-   (30 ms 2-slot TDMA harmonic-comb detector) vetoes the tone gate; CTCSS loss counter now
-   resets only on confirmed detection; holdover bounded by a 600 ms confirmation deadline.
-   First production day on Somerville: 512 vetoes, no data bursts and no clipped voice.
-2. **GUI freeze fixed** — new `SafeTableRowSorter` (`gui/control/`). The channel metadata table's
+1. **GUI freeze fixed** — new `SafeTableRowSorter` (`gui/control/`). The channel metadata table's
    row sorter was killing the Swing EDT when channel churn re-sorted rows whose values decoder
    threads were changing mid-sort. Decoding continued for 5+ hours with a dead GUI on Monson.
-3. **`Dispatcher` queue bounded** — root cause of the Paxton 2026-09-05 `OutOfMemoryError`
+2. **`Dispatcher` queue bounded** — root cause of the Paxton 2026-09-05 `OutOfMemoryError`
    (10 GB heap exhausted in under 60 seconds after a whole-JVM stall). Unbounded
    `LinkedTransferQueue` plus unbounded `drainTo` turned a consumer stall into unbounded live-object
    growth that the collector could not reclaim. Now bounded with drop-oldest, derived per-callsite
    caps (20x–209x headroom over normal arrival rates), rate-limited overflow WARN and recovery INFO.
    Clean upstream PR candidate — the file was byte-identical to upstream.
-4. **Broadcastify Calls / OpenMHz null-response NPE** — same defect already fixed for ThinLine and
+3. **Broadcastify Calls / OpenMHz null-response NPE** — same defect already fixed for ThinLine and
    Rdio Scanner. Also a clean upstream PR candidate.
-5. **Zello `HttpClient` closed on dispose** — selector/worker threads previously leaked on every
+4. **Zello `HttpClient` closed on dispose** — selector/worker threads previously leaked on every
    broadcaster reconnect.
-6. **Leftover `[SQUELCH DEBUG]` stdout printf removed** from `NBFMAudioFilters` (from `ae6dc745`).
-7. **Eclipse build fix ported** (upstream #2434 `9dcebb49`) — `OpenMHzEditor` package declaration.
-8. **"Show in Waterfall" tuner resolution fixed** — the menu action trusted the channel's
+5. **Leftover `[SQUELCH DEBUG]` stdout printf removed** from `NBFMAudioFilters` (from `ae6dc745`).
+6. **Eclipse build fix ported** (upstream #2434 `9dcebb49`) — `OpenMHzEditor` package declaration.
+7. **"Show in Waterfall" tuner resolution fixed** — the menu action trusted the channel's
    configured preferred tuner without checking that it was actually carrying the channel, so
    channels relocated to another tuner displayed the wrong spectrum (wrong noise floor, no green
    channel column). The live processing chain source is now authoritative; the preferred tuner is
@@ -48,12 +44,19 @@ deployed to Somerville on 2026-08-22 and does NOT include the GUI freeze fix.
 - Gradle now autoprovisions the JDK (foojay resolver + BELLSOFT vendor spec, upstream #2427)
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew runtimeZipCurrent`
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.8`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.8.1`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
-## Changes in ap-15.8
-See CHANGELOG.md. DMR/TDMA interference rejection on tone-filtered NBFM, plus the
-SafeTableRowSorter GUI freeze fix.
+## Changes in ap-15.8.1
+See CHANGELOG.md: SafeTableRowSorter GUI freeze fix, waterfall tuner resolution, ThinLine/Rdio
+diagnostics, bounded Dispatcher queue, Broadcastify/OpenMHz NPE, Zello HttpClient close, squelch
+println removal, upstream eclipse build fix.
+
+## Changes in ap-15.8 (deployed to Somerville 2026-08-22)
+**DMR digital bleed rejected on tone-filtered NBFM** — new `TdmaInterferenceDetector` (30 ms
+2-slot TDMA harmonic-comb detector) vetoes the tone gate; CTCSS loss counter now resets only on
+confirmed detection; holdover bounded by a 600 ms confirmation deadline. First production day on
+Somerville: 512 vetoes, no data bursts and no clipped voice. Nothing else is in this build.
 
 ## Changes in ap-15.7
 See CHANGELOG.md for full details.
@@ -86,7 +89,8 @@ See CHANGELOG.md for full details.
 15. CTCSS/DCS/NAC auto-import from Radio Reference tone field (FrequencyEditor)
 16. NXDN decoder (upstream merge, ap-15) + NXDN radio reference import (ap-15.7)
 17. TDMA (DMR / P25 Phase 2) interference rejection on tone-filtered NBFM channels (ap-15.8)
-18. Fault-tolerant table row sorting — SafeTableRowSorter (ap-15.8)
+18. Fault-tolerant table row sorting — SafeTableRowSorter (ap-15.8.1)
+19. Bounded Dispatcher queue with drop-oldest and overflow reporting (ap-15.8.1)
 
 ## Key Zello File Paths
 - AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (shared base, paced flush, watchdog)
@@ -112,7 +116,7 @@ Fixed in ap-07. The wrong file at `gui/channel/` was deleted.
 11 commits behind `upstream/master`, but 8 are already content-present (hand-ported in ap-15.7;
 compare with `git diff --ignore-cr-at-eol -w`, since some fork files are CRLF and upstream is LF).
 Genuinely outstanding:
-- `9dcebb49` eclipse build fix — **taken in ap-15.8**
+- `9dcebb49` eclipse build fix — **taken in ap-15.8.1**
 - `af5dbcfc` dark mode (#2411) — deferred, cosmetic, 19 files / +1767 lines, touches the fork's
   customized preference plumbing
 - `80360029` JDK 26 + Gradle 9.6.1 + library updates (#2450) — **hold for ap-15.9 as its own
@@ -124,7 +128,7 @@ Genuinely outstanding:
 ## Queued for ap-15.9
 - **P25 encryption double-confirm** — `APCO25EncryptionKey.isEncrypted()` treats
   `Encryption.UNKNOWN` as encrypted, so a corrupt ALG ID silently suppresses audio
-  (10.3% bogus rate observed on Essex County). Deliberately held back from 15.8: it is the only
+  (10.3% bogus rate observed on Essex County). Deliberately held back from 15.8.1: it is the only
   behavior-affecting change in the batch, and the two-consecutive-sync approach needs validating
   against captured data first — if corruption is bursty, two consecutive corrupt sequences carrying
   the *same* bogus ALG ID would still pass.
