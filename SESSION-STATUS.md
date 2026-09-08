@@ -128,10 +128,17 @@ Genuinely outstanding:
   configuration in `runtimeZipCurrent` — hand-merge required.
 
 ## Queued for ap-15.9
-- **P25 encryption double-confirm** — `APCO25EncryptionKey.isEncrypted()` treats
-  `Encryption.UNKNOWN` as encrypted, so a corrupt ALG ID silently suppresses audio
-  (10.3% bogus rate observed on Essex County). Deliberately held back from 15.8.1: it is the only
-  behavior-affecting change in the batch, and the two-consecutive-sync approach needs validating
-  against captured data first — if corruption is bursty, two consecutive corrupt sequences carrying
-  the *same* bogus ALG ID would still pass.
+- **Audit every tuner's sample rate across the fleet** — an RTL-2832 above ~2.56 MSPS drops USB
+  samples; see the RTL-2832 section in CLAUDE.md. On Daly, Methuen Police went from 1 call to 246
+  in the same clock window by moving 2.88 -> 2.4 MSPS. Configuration change, not code, and the
+  highest-value item outstanding. The failure mode is silence, not a logged error.
+- **P25 unknown-ALG-ID should be visible, not silent** (revised — was "double-confirm").
+  `Encryption.UNKNOWN` is treated as encrypted and mutes the call with no log line at any level.
+  The Daly evidence shows the corruption came from sample loss at the tuner, not the decoder, so
+  the double-confirm approach is the wrong shape — it would add latency to every genuinely
+  encrypted call to compensate for a problem better fixed upstream. Keep the safe default, but log
+  the raw ALG ID at WARN so the episode is diagnosable.
+- **Warn at startup when a tuner is configured above its safe sample rate** — SDRTrunk knows the
+  tuner class and the configured rate. One log line would have caught the Methuen problem months
+  earlier.
 - **Revisit `-Xmx10g`** — fleet steady state is under 1 GB. Needs a fleet-wide check before changing.
