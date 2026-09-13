@@ -72,11 +72,19 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
     private static final int POLYPHASE_CHANNELIZER_TAPS_PER_CHANNEL = 9;
 
     /**
-     * Backlog of tuner sample buffers, in milliseconds, that the buffer dispatcher will queue before discarding the
+     * Backlog of tuner sample buffers, in seconds, that the buffer dispatcher will queue before discarding the
      * oldest.  Sized to absorb a normal garbage collection pause without dropping samples, while bounding heap growth
      * when the consumer stalls for longer than that.
      */
-    private static final long BUFFER_QUEUE_DURATION_MS = 2000;
+    private static final double BUFFER_QUEUE_DURATION_SECONDS = 2.0;
+
+    /**
+     * Absolute bounds on the buffer dispatcher queue size, in elements.  The upper bound exists so that a tuner
+     * reporting an implausible buffer rate cannot size the queue into an out-of-memory condition: at the RSP1B's
+     * 128-sample buffers this ceiling is roughly 100 MB.
+     */
+    private static final int MINIMUM_BUFFER_QUEUE_SIZE = 32;
+    private static final int MAXIMUM_BUFFER_QUEUE_SIZE = 200_000;
 
     private Broadcaster<SourceEvent> mSourceEventBroadcaster = new Broadcaster<>();
     private TunerController mTunerController;
@@ -114,13 +122,30 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
 
         mChannelCalculator = new ChannelCalculator(tunerController.getSampleRate(), channelCount,
                 tunerController.getFrequency(), CHANNEL_OVERSAMPLING);
-        //Bound the queue to roughly two seconds of tuner buffers.  Buffer duration is derived from the tuner's sample
-        //rate and transfer size, so this scales correctly across tuner types (e.g. ~13 ms per buffer for an RTL-2832
-        //at 2.4 MSPS, giving ~150 buffers).  Without a bound, a consumer stall converts directly into heap growth at
-        //the full sample rate of the tuner.
-        long bufferDuration = Math.max(1, tunerController.getBufferDuration());
-        int maxQueueSize = (int)Math.max(32, Math.min(2000, (BUFFER_QUEUE_DURATION_MS / bufferDuration)));
-        mBufferDispatcher = new Dispatcher("sdrtrunk polyphase buffer processor", 10, maxQueueSize);
+        //Bound the queue to BUFFER_QUEUE_DURATION_SECONDS of tuner buffers, derived from the tuner's own buffer rate
+        //so that it scales correctly across tuner types.
+        //
+        //Note: do NOT derive this from TunerController.getBufferDuration().  That method returns a long and truncates
+        //to zero for any tuner delivering buffers faster than 1 kHz.  An RSP1B reports 128-sample buffers, so at
+        //10 MSPS it delivers 78,125 buffers/second - a buffer duration of 0.0128 ms, which truncates to 0 and collapses
+        //the bound onto its ceiling.  That sized the queue at 25 ms against a 10 ms dispatch interval and made the
+        //dispatcher discard roughly 3% of the sample stream continuously, which prevented the tuner from holding a
+        //frequency lock.  An RTL-2832 at 2.4 MSPS was unaffected (13.65 ms per buffer, truncating to 13).
+        double buffersPerSecond = tunerController.getSampleRate() /
+                Math.max(1, tunerController.getBufferSampleCount());
+        int maxQueueSize = (int)Math.max(MINIMUM_BUFFER_QUEUE_SIZE, Math.min(MAXIMUM_BUFFER_QUEUE_SIZE,
+                buffersPerSecond * BUFFER_QUEUE_DURATION_SECONDS));
+
+        //Name the dispatcher after the tuner so that queue overflow warnings identify which device is affected -
+        //every tuner previously shared the name "sdrtrunk polyphase buffer processor".
+        mBufferDispatcher = new Dispatcher("sdrtrunk polyphase buffer processor [" +
+                tunerController.getClass().getSimpleName() + " " +
+                FREQUENCY_FORMAT.format(tunerController.getSampleRate() / 1E6d) + " MSPS]", 10, maxQueueSize);
+
+        mLog.info("Polyphase buffer dispatcher for [" + tunerController.getClass().getSimpleName() + "] at [" +
+                FREQUENCY_FORMAT.format(tunerController.getSampleRate() / 1E6d) + "] MSPS - [" +
+                (int)buffersPerSecond + "] buffers/second - queue bounded at [" + maxQueueSize + "] elements (" +
+                String.format("%.2f", maxQueueSize / buffersPerSecond) + " seconds)");
         mBufferDispatcher.setListener(mNativeBufferReceiver);
     }
 
