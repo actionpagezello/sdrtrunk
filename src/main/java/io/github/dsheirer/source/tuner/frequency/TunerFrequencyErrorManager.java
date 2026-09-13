@@ -49,6 +49,17 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
     //AP-fork: sanity clamp to reject wild PPM swings (e.g. PLL locks onto wrong signal)
     private static final double SANITY_CLAMP_PPM = 10.0;
 
+    /**
+     * AP-fork: number of consecutive rejected PPM measurements after which the baseline is re-acquired.
+     *
+     * The clamp exists to reject transient wild measurements, but the baseline is only updated when a measurement is
+     * accepted.  Without this, a tuner whose true frequency error drifts further than SANITY_CLAMP_PPM from the
+     * baseline - or whose very first measurement was taken while the tuner was still settling - has every subsequent
+     * correction rejected forever, with no way for the baseline to catch up.  After this many consecutive rejections
+     * we assume the baseline is wrong rather than the measurements, and re-acquire from the next measurement.
+     */
+    private static final int BASELINE_REACQUIRE_AFTER_REJECTIONS = 12;
+
     private final List<ChannelFrequencyErrorManager> mChannelManagers = new ArrayList<>();
     private final TunerController mTunerController;
     private ScheduledFuture<?> mScheduledFuture;
@@ -59,6 +70,9 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
 
     //AP-fork: baseline PPM tracking with EMA for sanity checks
     private double mBaselinePPM = Double.NaN;
+
+    //AP-fork: consecutive rejections against the current baseline - see BASELINE_REACQUIRE_AFTER_REJECTIONS
+    private int mConsecutiveRejections = 0;
 
     /**
      * Constructs an instance
@@ -116,9 +130,28 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
     }
 
     /**
-     * Processes channel frequency error values and updates the tuner to apply a correction.
+     * Scheduled entry point for frequency error correction.  Guards the scheduled task against any throwable.
      */
     private void process()
+    {
+        //Note: this runs on a scheduleAtFixedRate() task.  An uncaught throwable there cancels all future executions
+        //silently - the exception is captured in the Future and never surfaces - which would disable frequency error
+        //correction for this tuner for the rest of the session with nothing logged.  Catch everything.
+        try
+        {
+            processFrequencyError();
+        }
+        catch(Throwable t)
+        {
+            LOG.error("Error processing tuner frequency error correction for tuner [" +
+                    mTunerController.getClass().getSimpleName() + "] - correction continues on the next interval", t);
+        }
+    }
+
+    /**
+     * Processes channel frequency error values and updates the tuner to apply a correction.
+     */
+    private void processFrequencyError()
     {
         mTunerController.getLock().lock();
 
@@ -139,6 +172,14 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                     }
                 }
 
+                //Channel managers can exist while none has reported a measurement during this interval - the
+                //isEmpty() check above does not guarantee count > 0.  Dividing by zero here throws and, on a
+                //scheduled task, permanently cancels frequency error correction for this tuner.
+                if(count == 0)
+                {
+                    return;
+                }
+
                 requestedChangeHz /= count;
                 mTunerController.setMeasuredFrequencyError((int)requestedChangeHz);
 
@@ -154,14 +195,31 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                         //AP-fork: reject PPM measurements that deviate too far from baseline
                         if(!Double.isNaN(mBaselinePPM) && Math.abs(proposedPPM - mBaselinePPM) > SANITY_CLAMP_PPM)
                         {
-                            LOG.debug("Rejecting PPM adjustment {}, too far from baseline {}",
-                                    DF.format(proposedPPM), DF.format(mBaselinePPM));
+                            mConsecutiveRejections++;
+
+                            if(mConsecutiveRejections >= BASELINE_REACQUIRE_AFTER_REJECTIONS)
+                            {
+                                //Consistent rejection means the baseline is wrong, not the measurements.  Discard it
+                                //and re-acquire, otherwise correction for this tuner is disabled permanently.
+                                LOG.warn("Tuner [{}] PPM baseline {} rejected {} consecutive measurements (latest {}) " +
+                                                "- discarding baseline and re-acquiring",
+                                        mTunerController.getClass().getSimpleName(), DF.format(mBaselinePPM),
+                                        mConsecutiveRejections, DF.format(proposedPPM));
+                                mBaselinePPM = Double.NaN;
+                                mConsecutiveRejections = 0;
+                            }
+                            else
+                            {
+                                LOG.debug("Rejecting PPM adjustment {}, too far from baseline {} ({} consecutive)",
+                                        DF.format(proposedPPM), DF.format(mBaselinePPM), mConsecutiveRejections);
+                            }
                         }
                         else
                         {
                             try
                             {
                                 mTunerController.setFrequencyCorrection(proposedPPM);
+                                mConsecutiveRejections = 0;
 
                                 //AP-fork: update baseline EMA (0.8 old / 0.2 new weighting)
                                 if(Double.isNaN(mBaselinePPM))

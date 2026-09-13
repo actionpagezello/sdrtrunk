@@ -5,6 +5,65 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9] - 2026-09-13
+
+### Fixed
+- **Polyphase buffer queue bound starved high-rate tuners (RSP1B)** — the ap-15.8.1 queue bound was derived
+  from `TunerController.getBufferDuration()`, which returns a `long` and truncates to zero for any tuner
+  delivering buffers faster than 1 kHz. `RspTunerController.getBufferSampleCount()` returns 128, so an RSP1B
+  at 10 MSPS produces **78,125 buffers/second** — a buffer duration of 0.0128 ms. That truncated to 0, the
+  `Math.max(1, ...)` guard turned it into 1, and the bound collapsed onto its 2000-element ceiling:
+  **25.6 ms of queue against a 10 ms dispatch interval**, where two seconds was intended.
+
+  With only 2.5 dispatch intervals of headroom, ordinary scheduling jitter overflowed the queue continuously
+  rather than at startup. On Paxton the dispatcher discarded roughly 2,700 buffers/second indefinitely — about
+  3% of the sample stream, removed at arbitrary points — and the RSP1B could not hold a frequency lock.
+  Measured 2026-09-12 across a single session: 12.6 million buffers discarded over 80 minutes with the RSP1B
+  fitted, and zero overflow in every run without it.
+
+  RTL-2832 tuners were never affected: 32,768-sample buffers at 2.4 MSPS give 13.65 ms, which truncates to 13
+  and yields the intended ~2 seconds.
+
+  The bound is now derived from sample rate and buffer sample count in floating point, with explicit floor and
+  ceiling constants: RTL-2832 at 2.4 MSPS gets 146 elements (1.99 s, ~10 MB); RSP1B at 10 MSPS gets 156,250
+  (2.00 s, ~80 MB). Each buffer dispatcher is also now named after its tuner — all tuners previously shared the
+  thread name `sdrtrunk polyphase buffer processor`, so overflow warnings identified the stage but not the
+  device — and the computed bound and buffer rate are logged at startup.
+
+- **Frequency error correction could be cancelled permanently and silently** — `TunerFrequencyErrorManager.process()`
+  averages channel measurements with `requestedChangeHz /= count`. The guard above it is
+  `if(!mChannelManagers.isEmpty())`, which checks that managers *exist*, not that any reported a measurement
+  during the interval, so `count` is zero whenever the tuner has a quiet five-second window and the division
+  throws `ArithmeticException`.
+
+  `process()` had a `try`/`finally` for the tuner lock but no `catch`, and it runs via
+  `ThreadPool.SCHEDULED.scheduleAtFixedRate()` — where an uncaught throwable cancels all future executions. The
+  exception is captured in the `Future` and never read, so frequency error correction stopped for that tuner for
+  the rest of the session with nothing logged at any level.
+
+  Now guarded explicitly, and the scheduled entry point catches everything and logs at ERROR so a future failure
+  announces itself instead of silently disabling correction. **This defect is also present upstream** and is a
+  clean PR candidate.
+
+- **PPM baseline latch disabled correction permanently after drift (ap-fork)** — the ap-fork sanity clamp rejects
+  any proposed PPM more than `SANITY_CLAMP_PPM` (10) from the baseline, but the baseline is only updated when a
+  measurement is *accepted*, so a wrong baseline can never correct itself.
+
+  Gradual drift is not the problem — the EMA follows it. The failure mode is a baseline that starts wrong or is
+  displaced in one step: the first measurement is latched **unconditionally** (`isNaN` → accept), so a reading
+  taken while the tuner was still settling poisons the baseline for the entire session and every subsequent
+  correction is rejected forever. Simulated with a poisoned first measurement of 40 ppm against a true error of
+  2 ppm: before the fix the baseline stays pinned at 40.000 and no correction is ever applied again; after it,
+  the baseline re-acquires to 2.115 and tracking resumes. Rejections logged at DEBUG in a package no Diagnostics
+  category covers, so this was invisible in practice.
+
+  After `BASELINE_REACQUIRE_AFTER_REJECTIONS` (12, one minute at the 5-second interval) consecutive rejections,
+  the baseline is now discarded and re-acquired from the next measurement, with a WARN naming the tuner and the
+  stale baseline.
+
+  Note: these two correction defects predate ap-15.8.1 and match reports of occasional tuner lock difficulty on
+  ap-15.7 and earlier. They are code-reading findings — both fail silently, so no log evidence exists either way.
+
 ## [0.6.2-ap-15.8.1] - 2026-09-07
 
 ### Fixed

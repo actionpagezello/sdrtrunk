@@ -3,7 +3,27 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.8.1 (2026-09-07)
+## In Progress: ap-15.9 (committed, NOT yet built)
+Three fixes, all in the tuner sample path:
+1. **Polyphase buffer queue bound starved high-rate tuners** — `getBufferDuration()` truncates to 0 for any
+   tuner above 1 kHz buffer rate. An RSP1B at 10 MSPS delivers 78,125 buffers/sec, so the bound collapsed to
+   its ceiling: 25.6 ms of queue against a 10 ms dispatch interval, where 2 seconds was intended. Discarded
+   ~2,700 buffers/sec continuously on Paxton (12.6M over 80 minutes) and prevented the RSP1B holding a lock.
+   RTL-2832 was unaffected. Bound now derived in floating point; dispatchers named per tuner.
+2. **Frequency correction cancelled permanently and silently** — `requestedChangeHz /= count` divides by zero
+   during any quiet interval, and the uncaught throwable cancels the `scheduleAtFixedRate` task with nothing
+   logged. Also present upstream — clean PR candidate.
+3. **PPM baseline latch** (ap-fork) — the sanity clamp never updates the baseline on rejection, so a baseline
+   that starts wrong stays wrong. The first measurement is latched unconditionally, so one taken while the tuner
+   is still settling disables correction for the whole session (gradual drift is fine — the EMA follows it).
+   Baseline now re-acquired after 12 consecutive rejections, with a WARN naming the tuner.
+
+Items 2 and 3 predate ap-15.8.1 and match reports of occasional tuner lock difficulty on ap-15.7 and earlier.
+Both fail silently, so they are code-reading findings with no log evidence either way.
+
+> **ap-15.8.1 must not run with an RSP1B fitted** — see item 1. Use ap-15.9, or ap-15.7.
+
+## Previous Release: ap-15.8.1 (2026-09-07)
 - GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.8.1
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.8.1\sdr-trunk-windows-x86_64-v0.6.2-ap-15.8.1.zip`
 - Built 2026-09-07 with JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean runtimeZipWindows`. Not yet
@@ -51,7 +71,7 @@
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew clean runtimeZipWindows` (archiveVersion finalizer copies the zip to
   `sdrtrunk-ap-versions\v<version>\` automatically)
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.8.1`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Changes in ap-15.8 (deployed to Somerville 2026-08-22)
