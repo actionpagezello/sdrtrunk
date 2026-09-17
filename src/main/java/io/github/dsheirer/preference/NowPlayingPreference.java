@@ -41,6 +41,11 @@ public class NowPlayingPreference
     // We persist a map of "filter name → enabled" as individual preference entries.
     private static final String KEY_FILTER_PREFIX = "now.playing.event.filter.";
 
+    // Muted channel keys — one per channel identity stored as a boolean.  Stored as individual
+    // entries rather than a single delimited value so the number of muted channels is not bounded
+    // by Preferences.MAX_VALUE_LENGTH.
+    private static final String KEY_MUTED_CHANNEL_PREFIX = "now.playing.channel.muted.";
+
     // -------------------------------------------------------------------------
     // History sizes
     // -------------------------------------------------------------------------
@@ -112,5 +117,66 @@ public class NowPlayingPreference
     {
         // Replace characters not valid in Preferences keys
         return KEY_FILTER_PREFIX + filterName.replaceAll("[^a-zA-Z0-9._\\-]", "_");
+    }
+
+    // -------------------------------------------------------------------------
+    // Per-channel mute state (keyed by channel identity)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Indicates if the channel identified by the supplied key is muted.
+     *
+     * @param channelKey stable identity for the channel
+     * @return true if the channel has been muted, false if it has not (the default)
+     */
+    public boolean isChannelMuted(String channelKey)
+    {
+        return PREFS.getBoolean(mutedChannelKey(channelKey), false);
+    }
+
+    /**
+     * Persists the mute state for the channel identified by the supplied key.
+     *
+     * Unmuting removes the entry rather than storing false, so the preference node does not
+     * accumulate one dead entry for every channel that has ever been muted and unmuted.
+     *
+     * @param channelKey stable identity for the channel
+     * @param muted true to mute
+     */
+    public void setChannelMuted(String channelKey, boolean muted)
+    {
+        String key = mutedChannelKey(channelKey);
+
+        if(muted)
+        {
+            PREFS.putBoolean(key, true);
+        }
+        else
+        {
+            PREFS.remove(key);
+        }
+    }
+
+    /**
+     * Builds a safe preference key from a channel identity.
+     *
+     * Preferences keys are limited to {@link Preferences#MAX_KEY_LENGTH} characters, which channel
+     * identities built from system, site and name can exceed.  Over-long keys are truncated with a
+     * hash of the full identity appended, so two channels whose identities share a long prefix
+     * cannot collapse onto the same key.
+     */
+    private static String mutedChannelKey(String channelKey)
+    {
+        String sanitized = channelKey.replaceAll("[^a-zA-Z0-9._\\-]", "_");
+
+        //Reserve 9 characters for a separator plus up to 8 hex digits of hash
+        int budget = Preferences.MAX_KEY_LENGTH - KEY_MUTED_CHANNEL_PREFIX.length() - 9;
+
+        if(sanitized.length() > budget)
+        {
+            sanitized = sanitized.substring(0, budget) + "_" + Integer.toHexString(channelKey.hashCode());
+        }
+
+        return KEY_MUTED_CHANNEL_PREFIX + sanitized;
     }
 }

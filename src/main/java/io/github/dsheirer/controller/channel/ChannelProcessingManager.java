@@ -53,6 +53,7 @@ import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.util.ThreadPool;
 import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -163,6 +164,22 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
     public ProcessingChain getProcessingChain(Channel channel)
     {
         return mProcessingChainsMap.get(channel);
+    }
+
+    /**
+     * Returns an unmodifiable view of the currently active channel to processing chain mappings.
+     *
+     * Intended for callers that have to act on every processing chain matching some property of its
+     * channel - applying a mute to a trunked channel and all of its traffic channels, for example -
+     * rather than on one channel known in advance.  The backing map is concurrent, so the returned
+     * view is safe to iterate while channels start and stop, but it is a live view and not a
+     * snapshot.
+     *
+     * @return unmodifiable view of the active channel to processing chain mappings
+     */
+    public Map<Channel,ProcessingChain> getProcessingChains()
+    {
+        return Collections.unmodifiableMap(mProcessingChainsMap);
     }
 
     /**

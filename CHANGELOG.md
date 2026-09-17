@@ -44,6 +44,49 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   this was found at all, since it printed `at [0.00000] MSPS ... bounded at [32] elements (Infinity seconds)` —
   now also reports the buffer sample count.
 
+- **Now Playing channel mute wrote into alias playback priority, silencing unrelated channels.**
+  Reported as mute "not working at times, more noticeable when channels and aliases are created."
+
+  `ChannelMetadataPanel` stored mute state in two places and read it from a third. Three separate defects:
+
+  1. **Mute mutated shared alias objects.** `setChannelMuted()` resolved a channel's "aliases" via
+     `getChannelAliases()`, whose third fallback returns *every alias in the channel's configured alias list* —
+     not the aliases of that channel. It then wrote `Priority.DO_NOT_MONITOR` into all of them and saved the
+     playlist. Muting one conventional channel therefore muted **every channel sharing that alias list**, and
+     unmuting reset them all to `DEFAULT_PRIORITY`, destroying whatever priorities the user had configured. An
+     alias is a global, persisted, per-talkgroup object; channel mute is local and per-channel. Conflating them
+     was the root defect.
+
+  2. **The read path could disagree with the write path.** Mute on a channel with no aliases was tracked in an
+     in-memory `mMutedChannelIds` set. Creating an alias afterwards switched `isChannelMuted()` onto the alias
+     branch, which saw `DEFAULT_PRIORITY` and reported *unmuted* while the channel ID was still in the set — so
+     the menu offered "Mute" on an already-muted channel. This is why the symptom tracked alias creation.
+
+  3. **Re-apply asked a different question again.** The `ChannelAddListener` re-apply block muted a channel if
+     **any** alias anywhere in its alias list carried `DO_NOT_MONITOR`, which is neither what `isChannelMuted()`
+     checked nor what the user asked for.
+
+  Mute is now single-sourced and never touches aliases. State is keyed on a channel identity built from system,
+  site and name, persisted in `NowPlayingPreference` as one entry per channel. `Channel.getChannelID()` was
+  unusable for this — it is assigned from an incrementing counter at construction, so it changes every run and
+  every traffic channel receives a fresh one.
+
+  Because traffic channels are created as `"T-"` plus the parent channel's name and carry the parent's system and
+  site, stripping that prefix folds a trunked channel and all of its traffic channels onto one identity. Muting a
+  trunked channel now actually silences it — its audio is produced by the traffic channels, not by the control
+  channel whose row the user clicks — and the mute survives traffic channels being torn down between calls, as
+  well as application restarts. A conventional channel whose name genuinely begins with `T-` is unaffected, since
+  the prefix is only stripped from channels of type `TRAFFIC`.
+
+  `ChannelProcessingManager.getProcessingChains()` is added so the mute can be applied to every running chain
+  sharing an identity rather than only the one clicked. `AliasItemEditor`'s `AliasPriorityChangedEvent`
+  subscriber is left in place but now has no publisher, since mute no longer changes alias priority.
+
+### Changed
+- `NowPlayingPreference` gained persisted per-channel mute state. Keys are sanitized and, when a channel identity
+  exceeds `Preferences.MAX_KEY_LENGTH`, truncated with a hash of the full identity appended so two channels with
+  a long shared prefix cannot collapse onto one entry. Unmuting removes the entry rather than storing `false`.
+
 ## [0.6.2-ap-15.9] - 2026-09-13
 
 ### Fixed

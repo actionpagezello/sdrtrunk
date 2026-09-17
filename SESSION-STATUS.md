@@ -11,8 +11,19 @@ constructor — collapsed to its 32-element floor for every tuner in BOTH ap-15.
 them the RSP1B. The bound is now re-derived when `NOTIFICATION_SAMPLE_RATE_CHANGE` arrives, with a generous
 provisional bound (160,000) until then, and a WARN if any dispatcher ends up pinned to its minimum.
 
+Also carries the **Now Playing mute fix**. Mute was writing `Priority.DO_NOT_MONITOR` into every alias in the
+channel's alias list, so muting one channel muted every channel sharing that list and unmuting wiped the user's
+configured priorities. Mute is now keyed on the channel's system/site/name, persisted in `NowPlayingPreference`,
+and never touches aliases. Trunked channels fold together with their `T-` traffic channels, so muting a trunked
+channel actually silences it and the mute survives both traffic-channel churn and restarts.
+
 > **Neither ap-15.8.1 nor ap-15.9 should run with an RSP1B (or any tuner above ~1 kHz buffer rate).** Use 15.9.1,
 > or fall back to 15.7. RTL-2832-only machines are unaffected.
+
+> **Alias priorities may need checking after upgrading from ap-15.9 or earlier.** If mute was ever used on a
+> channel, the old code may have left `DO_NOT_MONITOR` on aliases across a whole alias list. 15.9.1 stops causing
+> this but does not repair existing playlists — check the Listen toggles in the alias editor for any alias list
+> where a channel was muted.
 
 ## Superseded: ap-15.9 (built 2026-09-13, released)
 Three fixes, all in the tuner sample path:
