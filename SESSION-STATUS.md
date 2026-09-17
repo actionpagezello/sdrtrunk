@@ -20,6 +20,17 @@ channel actually silences it and the mute survives both traffic-channel churn an
 > **Neither ap-15.8.1 nor ap-15.9 should run with an RSP1B (or any tuner above ~1 kHz buffer rate).** Use 15.9.1,
 > or fall back to 15.7. RTL-2832-only machines are unaffected.
 
+Also carries a **mains hum diagnostic** for the reported 60 Hz hum on analog channels — `HumAnalyzer`, Goertzel at
+50/60/100/120/180/240 Hz, reporting per transmission which mains family the energy is in, whether the fundamental
+or the second harmonic dominates (supply ripple versus coupled field), and whether the hum level is constant or
+rises during speech pauses (additive hum versus a gain stage lifting the noise floor). It measures only; nothing is
+filtered. Off unless enabled in Diagnostics → "Mains hum analysis (audio)". Each NBFM channel now also logs its
+"Audio Filter" (200/300 Hz high-pass) setting at startup, at WARN when disabled.
+
+> **To collect hum data:** tick "Mains hum analysis (audio)" in the Diagnostics preferences panel, let the affected
+> channels run through a few transmissions, then send the application log. Turn it back off afterwards — it writes
+> three DEBUG lines per transmission per channel.
+
 > **Alias priorities may need checking after upgrading from ap-15.9 or earlier.** If mute was ever used on a
 > channel, the old code may have left `DO_NOT_MONITOR` on aliases across a whole alias list. 15.9.1 stops causing
 > this but does not repair existing playlists — check the Listen toggles in the alias editor for any alias list

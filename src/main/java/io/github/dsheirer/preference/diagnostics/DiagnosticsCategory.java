@@ -35,7 +35,8 @@ public enum DiagnosticsCategory
     TUNER_POOL("Tuner manager / pool", "io.github.dsheirer.source.tuner.manager"),
     P25("P25 decoder", "io.github.dsheirer.module.decode.p25"),
     NBFM_AUDIO("NBFM / audio output", "io.github.dsheirer.audio"),
-    CTCSS_DCS("CTCSS / DCS squelch codes", "io.github.dsheirer.module.decode.nbfm");
+    CTCSS_DCS("CTCSS / DCS squelch codes", "io.github.dsheirer.module.decode.nbfm"),
+    HUM_ANALYSIS("Mains hum analysis (audio)", "io.github.dsheirer.dsp.audio");
 
     private final String mDisplayName;
     private final String mLoggerName;

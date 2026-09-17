@@ -22,6 +22,7 @@ import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.IDecoderStateEventProvider;
 import io.github.dsheirer.channel.state.State;
+import io.github.dsheirer.dsp.audio.HumAnalyzer;
 import io.github.dsheirer.dsp.filter.FilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.DecimationFilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
@@ -142,6 +143,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private final int mSquelchTailRemovalMs;
     private final int mSquelchHeadRemovalMs;
     private SquelchTailRemover mSquelchTailRemover;
+
+    /**
+     * Mains hum diagnostic, or null when the diagnostic is switched off.  See HumAnalyzer.
+     */
+    private HumAnalyzer mHumAnalyzer;
 
     // VoxSend audio filter chain (low-pass, de-emphasis, bass boost, voice enhancement, noise gate)
     private NBFMAudioFilters mAudioFilters;
@@ -274,6 +280,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 if(!mToneFilterEnabled || mToneMatch)
                 {
                     notifyCallEnd();
+                }
+
+                // End of transmission — report what the hum diagnostic measured, if it is running
+                if(mHumAnalyzer != null)
+                {
+                    mHumAnalyzer.reportAndReset();
                 }
             }
             else
@@ -622,6 +634,28 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                             now - mLastToneMatchTime);
                 }
             }
+        }
+
+        // Step 2b: Mains hum measurement. Taken here, after the gate has decided to pass this audio
+        // but before any audio filter touches it, so it measures what the demodulator delivered
+        // rather than what survives the chain — and does not measure squelched noise, which the
+        // early returns above have already discarded.
+        //
+        // Created on demand rather than at startup so that ticking the box in the Diagnostics panel
+        // takes effect on channels that are already running. When it is off the cost here is one
+        // boolean check per buffer.
+        if(HumAnalyzer.isEnabled())
+        {
+            if(mHumAnalyzer == null)
+            {
+                mHumAnalyzer = new HumAnalyzer(mChannelLabel, DEMODULATED_AUDIO_SAMPLE_RATE);
+            }
+
+            mHumAnalyzer.receive(resampledAudio);
+        }
+        else if(mHumAnalyzer != null)
+        {
+            mHumAnalyzer = null;
         }
 
         // Step 3: Apply VoxSend audio filter chain (low-pass, de-emphasis, bass boost,
@@ -1093,6 +1127,25 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         // Initialize VoxSend audio filter chain at the resampled audio rate (8 kHz)
         initializeAudioFilters(DEMODULATED_AUDIO_SAMPLE_RATE);
+
+        //The 200/300 Hz high-pass that removes hum and rumble lives in AudioModule and is driven by
+        //this per-channel setting, which is easy to leave unticked without noticing.  Report it at
+        //startup so a channel with the filter disabled is visible in the log rather than only
+        //audible.
+        if(mNBFMConfig != null)
+        {
+            if(mNBFMConfig.isAudioFilter())
+            {
+                mLog.info("[{}] audio high-pass filter ENABLED (200/300 Hz) - hum and rumble below 300 Hz are " +
+                        "attenuated", mChannelLabel);
+            }
+            else
+            {
+                mLog.warn("[{}] audio high-pass filter DISABLED - nothing attenuates mains hum or rumble below " +
+                        "300 Hz on this channel. Enable 'Audio Filter' in the channel's NBFM configuration if hum " +
+                        "is audible.", mChannelLabel);
+            }
+        }
     }
 
     /**
@@ -1219,6 +1272,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         if(mTdmaDetector != null)
         {
             mTdmaDetector.setChannelLabel(mChannelLabel);
+        }
+        if(mHumAnalyzer != null)
+        {
+            mHumAnalyzer.setChannelLabel(mChannelLabel);
         }
     }
 }

@@ -82,6 +82,55 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   sharing an identity rather than only the one clicked. `AliasItemEditor`'s `AliasPriorityChangedEvent`
   subscriber is left in place but now has no publisher, since mute no longer changes alias priority.
 
+### Added
+- **Mains hum diagnostic for NBFM audio** (`io.github.dsheirer.dsp.audio.HumAnalyzer`), for the reported 60 Hz hum
+  that is most noticeable during pauses in speech. This measures; it does not filter. No filter is designed until
+  there is a measurement to design it against.
+
+  Runs a Goertzel evaluation at 50, 60, 100, 120, 180 and 240 Hz over Hann-windowed 1600-sample blocks — 200 ms at
+  8 kHz, a 5 Hz bin spacing chosen so that **every** analyzed frequency lands on an exact bin centre, leaving no
+  scalloping loss to correct for and putting 50 and 60 Hz two bins apart rather than in one bin. Amplitude recovery
+  validated numerically: a 0.01-amplitude 60 Hz tone reads −40.01 dBFS against a −40.00 dBFS expectation, a
+  0.02-amplitude 120 Hz tone reads −33.98 against −33.98, mixed tones are separated correctly, and a 59.9 Hz tone
+  still reads −40.01 so a slightly off-nominal mains frequency is not missed.
+
+  At the end of each transmission it reports, per channel, three things chosen because each one changes the
+  remedy:
+
+  - **Which mains family the energy is in.** The 50 Hz set is measured alongside the 60 Hz set specifically so the
+    result can come back negative. Energy in the 50 Hz family on a 60 Hz mains region would mean this is not mains
+    hum and the filter would be the wrong fix.
+  - **Fundamental versus second harmonic.** A dominant 120 Hz is the signature of full-wave rectifier ripple,
+    consistent with a power supply or USB hub, and is the case in which a 60 Hz notch alone disappoints. A
+    dominant 60 Hz points instead at a coupled magnetic field or a ground loop.
+  - **Hum level during speech versus during pauses**, which tests the reported symptom directly. Blocks are
+    classified against the transmission's own peak voice level. A hum level that is *constant* and merely more
+    audible in the gaps is additive hum that a filter removes; one that genuinely *rises* in the gaps is a gain
+    stage lifting the noise floor, where filtering treats a symptom of the gain control.
+
+  Hum is reported against a voice-band reference taken through three cascaded 300 Hz high-pass sections, measured
+  at 84 dB of rejection at 60 Hz so the reference is not itself mostly hum.
+
+  The measurement is taken after the tone/squelch gate has decided to pass the audio but before any audio filter
+  touches it, so it reflects what the demodulator delivered and never measures squelched noise. Output is at DEBUG
+  and every measurement is skipped when that logger is not at DEBUG, so the cost when switched off is one boolean
+  check per audio buffer. The analyzer is created on demand, so enabling it affects channels that are already
+  running. Toggle it from the Diagnostics preferences panel under "Mains hum analysis (audio)"; a new
+  `DiagnosticsCategory.HUM_ANALYSIS` was added for it.
+
+- **Startup report of each NBFM channel's audio high-pass setting.** The 200/300 Hz Remez high-pass that
+  attenuates hum and rumble lives in `AudioModule` and is driven by the per-channel "Audio Filter" checkbox, which
+  is easy to leave unticked without noticing. An enabled channel now logs at INFO and a disabled one at **WARN**
+  naming the setting, so a channel with no hum protection is visible in the log rather than only audible. This
+  costs nothing and may on its own explain hum on specific channels.
+
+  Note for context: the digital (P25/DMR) audio path has **no** high-pass at any point — `JmbeAudioModule` extends
+  `AbstractAudioModule` directly and never reaches `AudioModule`'s filter. P25 adds only gain and a 10-band
+  peaking equalizer. Nothing was changed there, but any hum on a digital channel is unfiltered by design, and
+  since vocoded audio is reconstructed from bits rather than carried as a waveform, supply noise in the receiver
+  cannot put hum into it — that would produce bit errors and garble instead. Hum on a digital channel therefore
+  points upstream, at the radio system or dispatch console, not at local hardware.
+
 ### Changed
 - `NowPlayingPreference` gained persisted per-channel mute state. Keys are sanitized and, when a channel identity
   exceeds `Preferences.MAX_KEY_LENGTH`, truncated with a hash of the full identity appended so two channels with
