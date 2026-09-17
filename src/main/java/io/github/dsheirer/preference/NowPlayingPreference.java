@@ -41,9 +41,11 @@ public class NowPlayingPreference
     // We persist a map of "filter name → enabled" as individual preference entries.
     private static final String KEY_FILTER_PREFIX = "now.playing.event.filter.";
 
-    // Muted channel keys — one per channel identity stored as a boolean.  Stored as individual
-    // entries rather than a single delimited value so the number of muted channels is not bounded
-    // by Preferences.MAX_VALUE_LENGTH.
+    // Muted channel keys - one per channel identity stored as a boolean.  Used ONLY for channels
+    // with no alias to carry the mute state; a channel with an alias keeps it in that alias's
+    // playback priority instead, so the two stores can never disagree about one channel.  Stored as
+    // individual entries rather than one delimited value so the count is not bounded by
+    // Preferences.MAX_VALUE_LENGTH.
     private static final String KEY_MUTED_CHANNEL_PREFIX = "now.playing.channel.muted.";
 
     // -------------------------------------------------------------------------
@@ -120,7 +122,7 @@ public class NowPlayingPreference
     }
 
     // -------------------------------------------------------------------------
-    // Per-channel mute state (keyed by channel identity)
+    // Per-channel mute state, for channels with no alias
     // -------------------------------------------------------------------------
 
     /**

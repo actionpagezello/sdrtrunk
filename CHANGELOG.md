@@ -5,6 +5,57 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.3] - 2026-09-17
+
+### Fixed
+- **Now Playing mute now works on a channel with no alias, which is the case it was asked for.**
+  ap-15.9.2 made the alias the only store for mute state, so a channel with no alias and no talkgroup
+  had nowhere to keep it and the menu greyed out. That is exactly the situation the feature was
+  wanted for: a channel added with default info and monitored for quality before being made
+  permanent, which needs silencing while other channels are talking.
+
+  Mute is now backed by **two stores with one authority rule** — for any given channel exactly one is
+  written, so they cannot disagree, which is the defect that broke ap-15.9 and ap-15.9.1 in opposite
+  directions:
+
+  - **An identifiable alias governs the channel** → that alias's playback priority is the state, the
+    same state the alias editor's Listen toggle writes. Aliases here are keyed by talkgroup, so on a
+    trunked channel carrying a call the live TO identifier resolves to exactly one alias.
+  - **No alias can be identified** → a per-channel entry in `NowPlayingPreference`, applied through
+    the audio modules and re-applied when the channel's processing chain is rebuilt.
+
+  Reads take the **union** of the two. A channel can be muted while no alias is identifiable — a
+  trunked channel between calls — and acquire one when the next call arrives. Reading the alias alone
+  at that moment would report the channel unmuted while its audio modules were still silenced, and
+  the menu would offer "Mute" on a channel the user cannot hear. Unmute clears both stores and
+  releases any sticky module-level mute, so the state cannot get stuck. Simulated across four
+  transition sequences, including both directions of a channel gaining and losing an identifiable
+  alias; in every case the menu label matches what is actually audible.
+
+  The menu now names what it changes: `Mute alias: Camb PD 12` versus `Mute channel: 483.7000 NBFM`.
+  ap-15.9.2's greyed-out "Mute unavailable" item is gone, since there is no longer a case where mute
+  cannot be applied.
+
+  One asymmetry worth recording: unmuting while an alias resolves clears that alias's Listen
+  setting, but unmuting while no alias resolves clears only the per-channel entry. An alias mute is a
+  deliberate, persisted playlist setting, so a channel-level unmute does not silently discard it — it
+  takes effect again when the alias next resolves. The menu stays truthful throughout because reads
+  are the union.
+
+### Changed
+- `AbstractAudioModule.flushAudioSegment()`, added in ap-15.9.2, is removed. `setMuted(false)`
+  already ends the segment in progress, so the alias path uses that and clears any sticky module
+  mute in the same call.
+- `ChannelMetadataPanel.getAliasListSize()` removed with the "Mute unavailable" item it explained.
+
+### Note
+- ap-15.9.2's changelog claimed `NowPlayingPreference`'s per-channel mute entries had been removed.
+  They had not — an earlier revert restored the file, the removal never reached the commit, and the
+  code shipped as unused. It is in use again now, deliberately, for the no-alias case.
+- Mute remains **local speaker audio only**; Zello and ThinLine keep streaming a muted channel.
+  `AudioStreamingManager` never consults monitor priority, gating only on whether the alias carries
+  broadcast channels and on duplicate suppression. This is the intended behaviour, not a gap.
+
 ## [0.6.2-ap-15.9.2] - 2026-09-17
 
 ### Changed

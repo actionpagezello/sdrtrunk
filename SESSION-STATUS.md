@@ -3,7 +3,20 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## In Progress: ap-15.9.2 (committed, NOT yet built)
+## In Progress: ap-15.9.3 (committed, NOT yet built)
+**Makes Now Playing mute work on a channel with no alias** — the case it was actually asked for, and the one
+ap-15.9.2 could not serve because it made the alias the only store.
+
+Two stores, one authority rule: an identifiable alias governs → that alias's Listen state (aliases are keyed by
+talkgroup, so a trunked channel carrying a call resolves to exactly one); no alias identifiable → a per-channel
+entry in `NowPlayingPreference`, applied at the audio modules and re-applied when the chain rebuilds. Exactly one
+is ever written for a given channel, so they cannot disagree. Reads take the union so the menu label always
+matches what is audible, and unmute clears both stores. Menu names its target: `Mute alias: X` vs
+`Mute channel: Y`.
+
+> **Mute is local speakers only — Zello and ThinLine keep streaming.** By design, unchanged in every version.
+
+## Released: ap-15.9.2 (built and pushed 2026-09-17)
 **Reworks Now Playing mute into a shortcut for the alias editor's Listen toggle.** ap-15.9.1 stopped the data
 corruption by decoupling mute from alias priority and storing it separately — which removed the linkage the
 feature exists for, so the right-click menu and the Listen switch no longer moved together. Mute now reads and
