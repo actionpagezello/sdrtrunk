@@ -112,6 +112,20 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     }
 
     /**
+     * Immediately ends the audio segment in progress, without delay and without changing any mute
+     * state on this module.
+     *
+     * An audio segment's monitor priority is resolved from its aliases when the segment is created,
+     * so changing an alias's playback priority only affects segments created afterwards.  Calling
+     * this makes a priority change take effect on the transmission already in progress rather than
+     * at the end of it.
+     */
+    public void flushAudioSegment()
+    {
+        closeAudioSegmentNow();
+    }
+
+    /**
      * Immediately closes the current audio segment without delay.
      */
     private void closeAudioSegmentNow()

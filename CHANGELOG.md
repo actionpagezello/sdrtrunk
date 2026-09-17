@@ -5,6 +5,61 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.2] - 2026-09-17
+
+### Changed
+- **Now Playing mute is now a shortcut to the alias editor's Listen toggle, which is what it was
+  always meant to be.** ap-15.9.1 fixed the data corruption by decoupling channel mute from alias
+  priority entirely, and stored mute state separately. That was the wrong call: it removed the
+  linkage the feature exists to provide. Toggling mute from the Now Playing window left the alias
+  editor's Listen switch unmoved and vice versa, so the two disagreed by construction — the same
+  class of defect as before, in the opposite direction.
+
+  Mute now reads and writes exactly one thing: the governing alias's playback priority, the same
+  state the Listen toggle writes. There is no second copy of the mute state anywhere. Consequences
+  worth noting:
+
+  - `NowPlayingPreference`'s per-channel mute entries are gone, as is the channel identity built
+    from system, site and name. The playlist is the only store.
+  - `ChannelAddListener` no longer re-applies mute to new processing chains. It does not need to:
+    `AudioSegment` resolves monitor priority from its aliases every time a segment is created, so
+    new chains, traffic channels spun up for the next call, and restarts all pick the state up on
+    their own. The re-apply block only existed because earlier versions kept state outside the
+    playlist.
+  - `AliasPriorityChangedEvent` has a publisher again, so `AliasItemEditor` updates its Listen
+    switch live when mute is used from the Now Playing window.
+
+  The original defect is still fixed, because the fix was never "stop touching aliases" — it was
+  "stop touching the *wrong* aliases." The governing alias is resolved most-specific-first: the live
+  TO identifier's alias when it resolves to exactly one, then the live FROM identifier's alias on the
+  same condition, then the sole alias in the channel's configured alias list when that list holds
+  exactly one. Anything else is ambiguous and resolves to nothing.
+
+  The FROM rule matters more than it looks: `CTCSSIdentifier` carries `Role.FROM` and `AliasList`
+  keeps a 1:1 map from CTCSS code to alias, so a conventional channel whose aliases are keyed by
+  tone resolves precisely even when its alias list holds several — which is the case that previously
+  caused the damage. That resolution needs a detected tone, so between transmissions such a channel
+  falls through to the ambiguous case.
+
+  When no single alias can be identified the menu shows a **disabled** item naming the reason and the
+  alias count, e.g. `Mute unavailable - 3 aliases in list "Salem", use the Aliases tab`. It never
+  guesses, and it never silently does something other than what the label says.
+
+  The menu item is now labelled with the **alias** name rather than the channel's, since the alias is
+  what is being changed. An alias priority change only affects segments created afterwards, so every
+  running processing chain governed by that alias has its current audio segment flushed, making the
+  change audible immediately rather than at the end of the call in progress.
+  `AbstractAudioModule.flushAudioSegment()` was added for this — it ends the segment in progress
+  without setting any sticky mute flag on the module.
+
+### Note
+- **Mute stops local speaker audio only. It does not stop Zello or ThinLine streaming.** This was
+  true before these changes and is unchanged, but it was never written down. `AudioPlaybackManager`
+  skips segments flagged do-not-monitor; `AudioStreamingManager` accepts every segment it is given
+  and never consults that flag, gating only on whether the alias carries broadcast channels and on
+  duplicate suppression. Taking a channel off a feed is a different operation — removing the
+  broadcast channel from the alias — and no shortcut for it exists yet.
+
 ## [0.6.2-ap-15.9.1] - 2026-09-17
 
 ### Fixed

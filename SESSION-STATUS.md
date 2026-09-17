@@ -3,7 +3,23 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## In Progress: ap-15.9.1 (committed, NOT yet built)
+## In Progress: ap-15.9.2 (committed, NOT yet built)
+**Reworks Now Playing mute into a shortcut for the alias editor's Listen toggle.** ap-15.9.1 stopped the data
+corruption by decoupling mute from alias priority and storing it separately — which removed the linkage the
+feature exists for, so the right-click menu and the Listen switch no longer moved together. Mute now reads and
+writes only the governing alias's playback priority; there is no second copy of the state, and no re-apply logic,
+because `AudioSegment` resolves priority from its aliases on every segment.
+
+The governing alias is resolved most-specific-first: live TO alias (exactly one), live FROM alias (exactly one —
+this catches CTCSS-keyed conventional channels precisely, since `CTCSSIdentifier` is `Role.FROM` and CTCSS maps
+1:1 to an alias), then the sole alias in the channel's alias list. Ambiguous cases show a **disabled** menu item
+naming the reason and the alias count instead of guessing.
+
+> **Mute stops local speaker audio only — it does NOT stop Zello or ThinLine streaming.** `AudioStreamingManager`
+> never consults the do-not-monitor flag. True in every version; now documented. Taking a channel off a feed means
+> removing the broadcast channel from the alias, and there is no shortcut for that yet.
+
+## Released: ap-15.9.1 (built and pushed 2026-09-17)
 **Fixes the RSP1B starvation that ap-15.9 claimed to fix and didn't.** `PolyphaseChannelManager` is constructed
 before the tuner applies a sample rate, so `getSampleRate()` returns 0 and the queue bound — derived once, in the
 constructor — collapsed to its 32-element floor for every tuner in BOTH ap-15.8.1 and ap-15.9. At an RSP1B's
@@ -11,11 +27,11 @@ constructor — collapsed to its 32-element floor for every tuner in BOTH ap-15.
 them the RSP1B. The bound is now re-derived when `NOTIFICATION_SAMPLE_RATE_CHANGE` arrives, with a generous
 provisional bound (160,000) until then, and a WARN if any dispatcher ends up pinned to its minimum.
 
-Also carries the **Now Playing mute fix**. Mute was writing `Priority.DO_NOT_MONITOR` into every alias in the
-channel's alias list, so muting one channel muted every channel sharing that list and unmuting wiped the user's
-configured priorities. Mute is now keyed on the channel's system/site/name, persisted in `NowPlayingPreference`,
-and never touches aliases. Trunked channels fold together with their `T-` traffic channels, so muting a trunked
-channel actually silences it and the mute survives both traffic-channel churn and restarts.
+Also carried the first **Now Playing mute fix**. Mute was writing `Priority.DO_NOT_MONITOR` into every alias in
+the channel's alias list, so muting one channel muted every channel sharing that list and unmuting wiped the
+user's configured priorities. 15.9.1 stopped that by decoupling mute from aliases entirely and keying it on the
+channel's system/site/name in `NowPlayingPreference`. **Superseded by ap-15.9.2**, which keeps the fix but
+restores the alias linkage — decoupling removed the behaviour the feature exists for.
 
 > **Neither ap-15.8.1 nor ap-15.9 should run with an RSP1B (or any tuner above ~1 kHz buffer rate).** Use 15.9.1,
 > or fall back to 15.7. RTL-2832-only machines are unaffected.
@@ -32,9 +48,20 @@ filtered. Off unless enabled in Diagnostics → "Mains hum analysis (audio)". Ea
 > three DEBUG lines per transmission per channel.
 
 > **Alias priorities may need checking after upgrading from ap-15.9 or earlier.** If mute was ever used on a
-> channel, the old code may have left `DO_NOT_MONITOR` on aliases across a whole alias list. 15.9.1 stops causing
-> this but does not repair existing playlists — check the Listen toggles in the alias editor for any alias list
-> where a channel was muted.
+> channel, the old code may have left `DO_NOT_MONITOR` on aliases across a whole alias list. Neither 15.9.1 nor
+> 15.9.2 repairs existing playlists — check the Listen toggles in the Aliases tab for any alias list where a
+> channel was muted. Audit with:
+>
+> ```powershell
+> $x = [xml](Get-Content "$env:USERPROFILE\SDRTrunk\playlist\default.xml")
+> $x.playlist.alias | Group-Object list | ForEach-Object {
+>   $m = @($_.Group | Where-Object { $_.id | Where-Object { $_.type -eq 'priority' -and $_.priority -eq '-1' } }).Count
+>   [pscustomobject]@{ AliasList=$_.Name; Total=$_.Count; Muted=$m; Pct=[math]::Round(100*$m/$_.Count,1) }
+> } | Sort-Object AliasList | Format-Table -AutoSize
+> ```
+>
+> A list at or near 100% muted is the damage signature. Deliberate mutes of encrypted or tactical talkgroups look
+> like a scattered subset, not a whole list.
 
 ## Superseded: ap-15.9 (built 2026-09-13, released)
 Three fixes, all in the tuner sample path:

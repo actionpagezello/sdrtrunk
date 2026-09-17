@@ -37,6 +37,7 @@ import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.identifier.TalkgroupFormatPreference;
 import io.github.dsheirer.preference.swing.JTableColumnWidthMonitor;
+import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.sample.Broadcaster;
@@ -81,12 +82,6 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private final static Logger mLog = LoggerFactory.getLogger(ChannelMetadataPanel.class);
 
     private static final String TABLE_PREFERENCE_KEY = "channel.metadata.panel";
-
-    /**
-     * Name prefix applied by every traffic channel manager when it creates a traffic channel from a
-     * parent channel.  Kept in sync with P25/DMR/NXDN/MPT1327TrafficChannelManager.
-     */
-    private static final String TRAFFIC_CHANNEL_NAME_PREFIX = "T-";
 
     private ChannelModel mChannelModel;
     private ChannelProcessingManager mChannelProcessingManager;
@@ -463,84 +458,169 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     }
 
     /**
-     * Builds the identity under which a channel's mute state is stored.
+     * Resolves the single alias whose Listen setting governs a channel's audio, or null when no
+     * single alias can be identified.
      *
-     * Mute is a channel-level setting, so it needs a channel identity that is stable across both
-     * restarts and traffic channel churn.  Channel.getChannelID() is neither - it is assigned from
-     * an incrementing counter at construction, so it changes on every run and every traffic channel
-     * gets a fresh one.  System, site and name come from the playlist and do not.
+     * Channel mute in the Now Playing window is a shortcut to the alias editor's Listen toggle, so
+     * it must target exactly the alias the user would have toggled by hand.  Getting this wrong is
+     * what broke ap-15.9 and earlier: the old code fell back to every alias in the channel's alias
+     * list, so muting one channel wrote DO_NOT_MONITOR across all of them and silenced every other
+     * channel sharing that list.
      *
-     * Traffic channels are created per call as "T-" plus the parent channel's name, carrying the
-     * parent's system and site.  Stripping that prefix folds a trunked channel and every traffic
-     * channel it spawns onto a single identity, which is what makes muting a trunked channel
-     * actually silence its audio: the audio is produced by the traffic channels, not by the control
-     * channel whose row the user clicked.
+     * Resolution, most specific first:
      *
-     * @param channel to identify
-     * @return mute identity for the channel, never null
+     * 1. The live TO identifier's alias, when it resolves to exactly one.  On a trunked system this
+     *    is the talkgroup actually producing the audio.
+     * 2. The live FROM identifier's alias, when it resolves to exactly one.
+     * 3. The only alias in the channel's configured alias list, when that list holds exactly one.
+     *    This is the conventional-channel case and is unambiguous by definition.
+     *
+     * Anything else is ambiguous and returns null.  A channel with no live identifiers whose alias
+     * list holds several aliases offers no way to tell which one the user means, and guessing is the
+     * defect this replaces.
+     *
+     * @param metadata for the channel's live identifiers
+     * @param channel to resolve for
+     * @return the governing alias, or null when it cannot be identified unambiguously
      */
-    private static String getMuteKey(Channel channel)
+    private Alias resolveChannelAlias(ChannelMetadata metadata, Channel channel)
     {
-        String name = nullToEmpty(channel.getName());
+        List<Alias> toAliases = metadata.getToIdentifierAliases();
 
-        if(channel.isTrafficChannel() && name.startsWith(TRAFFIC_CHANNEL_NAME_PREFIX))
+        if(toAliases != null && toAliases.size() == 1)
         {
-            name = name.substring(TRAFFIC_CHANNEL_NAME_PREFIX.length());
+            return toAliases.get(0);
         }
 
-        return (nullToEmpty(channel.getSystem()) + "|" + nullToEmpty(channel.getSite()) + "|" + name)
-            .toLowerCase();
-    }
+        List<Alias> fromAliases = metadata.getFromIdentifierAliases();
 
-    /**
-     * Returns the supplied value, or an empty string if it is null.
-     */
-    private static String nullToEmpty(String value)
-    {
-        return value != null ? value : "";
-    }
-
-    /**
-     * Toggles mute state for a channel.
-     *
-     * Mute is stored against the channel's own identity and applied through the audio modules of
-     * every running processing chain that shares it.  Alias playback priority is deliberately left
-     * alone: an alias is a global, persisted, per-talkgroup object shared across every channel using
-     * the same alias list, so writing DO_NOT_MONITOR into it to mute one channel silenced every
-     * other channel on that list and destroyed whatever priority the user had configured.  That is
-     * what ap-15.9 and earlier did.
-     *
-     * @param channel to mute/unmute
-     * @param mute true to mute, false to unmute
-     */
-    private void setChannelMuted(Channel channel, boolean mute)
-    {
-        String muteKey = getMuteKey(channel);
-
-        mUserPreferences.getNowPlayingPreference().setChannelMuted(muteKey, mute);
-
-        //Apply to every running processing chain sharing this identity, not only the channel whose
-        //row was clicked - see getMuteKey() on trunked channels and their traffic channels.
-        for(Map.Entry<Channel,ProcessingChain> entry : mChannelProcessingManager.getProcessingChains().entrySet())
+        if(fromAliases != null && fromAliases.size() == 1)
         {
-            if(getMuteKey(entry.getKey()).equals(muteKey))
+            return fromAliases.get(0);
+        }
+
+        String aliasListName = channel.getAliasListName();
+
+        if(aliasListName != null && !aliasListName.isEmpty())
+        {
+            Alias only = null;
+
+            for(Alias alias : mPlaylistManager.getAliasModel().getAliases())
             {
-                setProcessingChainMuted(entry.getValue(), mute);
+                if(alias.hasList() && aliasListName.equalsIgnoreCase(alias.getAliasListName()))
+                {
+                    if(only != null)
+                    {
+                        //More than one alias in the list - ambiguous
+                        return null;
+                    }
+
+                    only = alias;
+                }
+            }
+
+            return only;
+        }
+
+        return null;
+    }
+
+    /**
+     * Counts the aliases in a channel's configured alias list, for explaining to the user why mute
+     * is unavailable on a channel.
+     *
+     * @param channel to count for
+     * @return number of aliases sharing the channel's alias list
+     */
+    private int getAliasListSize(Channel channel)
+    {
+        String aliasListName = channel.getAliasListName();
+
+        if(aliasListName == null || aliasListName.isEmpty())
+        {
+            return 0;
+        }
+
+        int count = 0;
+
+        for(Alias alias : mPlaylistManager.getAliasModel().getAliases())
+        {
+            if(alias.hasList() && aliasListName.equalsIgnoreCase(alias.getAliasListName()))
+            {
+                count++;
             }
         }
 
-        mLog.info("Channel [{}] {} by user", muteKey, mute ? "muted" : "unmuted");
+        return count;
     }
 
     /**
-     * Applies a mute state to every audio module in a processing chain.  AbstractAudioModule closes
-     * the current audio segment on both mute and unmute, so the change takes effect immediately
-     * rather than at the end of the transmission in progress.
+     * Toggles the Listen setting on the alias governing a channel.
      *
-     * @param processingChain to apply to, may be null
-     * @param mute true to mute
+     * This is the same state the alias editor's Listen toggle writes, and the only place mute state
+     * lives - there is deliberately no second, channel-level mute to fall out of step with it.
+     *
+     * A segment's monitor priority is resolved from its aliases when the segment is created, so the
+     * priority change alone would not affect a transmission already in progress.  Every running
+     * processing chain governed by this same alias therefore has its current audio segment flushed,
+     * which makes the change audible immediately instead of at the end of the current call.
+     *
+     * @param alias governing the channel, as returned by resolveChannelAlias
+     * @param mute true to mute (Listen off), false to unmute
      */
-    private static void setProcessingChainMuted(ProcessingChain processingChain, boolean mute)
+    private void setAliasMuted(Alias alias, boolean mute)
+    {
+        alias.setCallPriority(mute ? Priority.DO_NOT_MONITOR : Priority.DEFAULT_PRIORITY);
+        mPlaylistManager.schedulePlaylistSave();
+
+        //Keeps the alias editor's Listen toggle in step in real time
+        MyEventBus.getGlobalEventBus().post(new AliasPriorityChangedEvent(alias));
+
+        for(Map.Entry<Channel,ProcessingChain> entry : mChannelProcessingManager.getProcessingChains().entrySet())
+        {
+            ChannelMetadata chainMetadata = getFirstMetadata(entry.getKey());
+
+            if(chainMetadata != null && resolveChannelAlias(chainMetadata, entry.getKey()) == alias)
+            {
+                flushAudio(entry.getValue());
+            }
+        }
+
+        mLog.info("Alias [{}] in list [{}] {} from the Now Playing window", alias.getName(),
+                alias.getAliasListName(), mute ? "muted" : "unmuted");
+    }
+
+    /**
+     * Returns any one channel metadata for a channel, used to resolve that channel's governing
+     * alias while iterating running processing chains.
+     *
+     * @param channel to look up
+     * @return one of the channel's metadata entries, or null if it has none
+     */
+    private ChannelMetadata getFirstMetadata(Channel channel)
+    {
+        ChannelMetadataModel model = mChannelProcessingManager.getChannelMetadataModel();
+
+        for(int row = 0; row < model.getRowCount(); row++)
+        {
+            ChannelMetadata candidate = model.getChannelMetadata(row);
+
+            if(candidate != null && channel.equals(model.getChannelFromMetadata(candidate)))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Ends the audio segment in progress on every audio module of a processing chain, so an alias
+     * priority change takes effect on the current transmission.
+     *
+     * @param processingChain to flush, may be null
+     */
+    private static void flushAudio(ProcessingChain processingChain)
     {
         if(processingChain == null)
         {
@@ -551,24 +631,9 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         {
             if(module instanceof AbstractAudioModule)
             {
-                ((AbstractAudioModule)module).setMuted(mute);
+                ((AbstractAudioModule)module).flushAudioSegment();
             }
         }
-    }
-
-    /**
-     * Checks if a channel is currently muted.
-     *
-     * This reads the same stored state that setChannelMuted() writes and that the channel add
-     * listener re-applies, so the menu label, the audio modules and the re-apply path cannot
-     * disagree.  Previously each consulted a different source.
-     *
-     * @param channel to check
-     * @return true if the channel is muted
-     */
-    private boolean isChannelMuted(Channel channel)
-    {
-        return mUserPreferences.getNowPlayingPreference().isChannelMuted(getMuteKey(channel));
     }
 
     /**
@@ -779,13 +844,31 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                                 popupMenu.add(viewChannel);
                                 populated = true;
 
-                                // Mute/Unmute menu item
-                                boolean isMuted = isChannelMuted(channel);
-                                String muteLabel = isMuted ? "Unmute: " + channel.getShortTitle()
-                                                          : "Mute: " + channel.getShortTitle();
-                                JMenuItem muteItem = new JMenuItem(muteLabel);
-                                muteItem.addActionListener(e2 -> setChannelMuted(channel, !isMuted));
-                                popupMenu.add(muteItem);
+                                // Mute/Unmute menu item. This is a shortcut to the alias editor's
+                                // Listen toggle, so it is only offered when the governing alias can
+                                // be identified without guessing - see resolveChannelAlias().
+                                Alias governingAlias = resolveChannelAlias(metadata, channel);
+
+                                if(governingAlias != null)
+                                {
+                                    boolean isMuted = governingAlias.getPlaybackPriority() == Priority.DO_NOT_MONITOR;
+                                    JMenuItem muteItem = new JMenuItem((isMuted ? "Unmute: " : "Mute: ")
+                                        + governingAlias.getName());
+                                    muteItem.addActionListener(e2 -> setAliasMuted(governingAlias, !isMuted));
+                                    popupMenu.add(muteItem);
+                                }
+                                else
+                                {
+                                    //Say why rather than silently offering nothing, or guessing
+                                    int aliasCount = getAliasListSize(channel);
+                                    String reason = aliasCount > 1
+                                        ? "Mute unavailable - " + aliasCount + " aliases in list \""
+                                            + channel.getAliasListName() + "\", use the Aliases tab"
+                                        : "Mute unavailable - no alias for this channel";
+                                    JMenuItem muteItem = new JMenuItem(reason);
+                                    muteItem.setEnabled(false);
+                                    popupMenu.add(muteItem);
+                                }
 
                                 // Show in Waterfall menu item - only show if channel has a tuner source
                                 SourceConfiguration sourceConfig = channel.getSourceConfiguration();
@@ -847,15 +930,11 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                 }
             }
 
-            //Re-apply mute state when a new processing chain is created.  This covers both a traffic
-            //channel being spun up for a call on a muted trunked channel and a channel restarting.
-            //It consults the same stored state the mute menu reads and writes - the previous version
-            //muted a channel whenever ANY alias anywhere in its alias list carried DO_NOT_MONITOR,
-            //which is not the same question and not the same answer isChannelMuted() gave.
-            if(isChannelMuted(channel))
-            {
-                setProcessingChainMuted(mChannelProcessingManager.getProcessingChain(channel), true);
-            }
+            //No mute state needs re-applying here.  Mute lives entirely in the alias's playback
+            //priority, and AudioSegment resolves that from its aliases every time a segment is
+            //created - so a new processing chain, a traffic channel spun up for the next call, and a
+            //restart all pick it up on their own.  The previous versions needed this block because
+            //they kept a second copy of the mute state outside the playlist.
         }
     }
 }
