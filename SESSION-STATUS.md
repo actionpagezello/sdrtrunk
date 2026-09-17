@@ -9,7 +9,11 @@
 - Built and pushed 2026-09-17 with JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean runtimeZipWindows`
 - Release notes cover the whole ap-15.9.1 → ap-15.9.4 arc; ap-15.9.1/.2/.3 were same-day iterations and are
   superseded. ap-15.9.1's RSP1B fix and ap-15.9.4's tone notch are both confirmed by measurement, not inference.
-- Deployed to: *(none yet — record machines here as they are updated)*
+- Deployed to: **Daly** (`DESKTOP`) and **Baker** (`DESKTOP-3NNNO6F`), both 2026-09-17. Beauport is on
+  ap-15.9.1 and has not taken .4 yet. Somerville/Stoneham/Monson still on ap-15.7 or earlier.
+- Now Playing mute confirmed working on Daly and Baker after this build. The CTCSS tone notch is validated
+  against a real recording but has not yet been confirmed by ear in production, and the DCS path is
+  unmeasured — see "Open" below.
 
 **Notches the CTCSS/DCS squelch tone out of NBFM audio.** The reported "60 Hz hum" was measured and is
 neither hum nor 60 Hz — it is the channel's own CTCSS tone. In a District 5/15 recording (CTCSS 131.8) the
@@ -23,6 +27,16 @@ real recording: tone in pauses −48.4 → **−82.1 dBFS (−33.7 dB)**, voice 
 134.4 Hz, labelled partial in the log and unmeasured.
 
 > **The USB hub and SDR were not the cause.** A 60 Hz notch, the original request, would have done nothing.
+
+### Open after ap-15.9.4
+- **DCS notch unmeasured.** The CTCSS notch is validated; the DCS path (134.4 Hz, Q=4) is reasoned only.
+  Needs a clip from Lynn Fire FG 3 (DCS-125) or Boxford Police (DCS-411).
+- **Stuck-call watchdog trips**, all on tone-gated channels: Danvers Fire (483.3375) and Salem Fire Ch 2
+  (483.6375) on Baker; Essex Police (483.3000) and Manchester BTS Fire (483.7000) on Beauport. The tone
+  detector is the suspect rather than the squelch. Count them per machine with:
+  `Select-String -Path "$env:USERPROFILE\SDRTrunk\logs\*.log" -Pattern "Stuck timer watchdog"`
+- **Baker's 7 muted aliases** — worth reviewing; Salem at 2 of 3 is the only pattern the old whole-list mute
+  bug could plausibly have produced.
 
 ## Released: ap-15.9.3 (built and pushed 2026-09-17)
 **Makes Now Playing mute work on a channel with no alias** — the case it was actually asked for, and the one

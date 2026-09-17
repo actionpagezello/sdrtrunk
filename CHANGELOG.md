@@ -7,6 +7,14 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
 ## [0.6.2-ap-15.9.4] - 2026-09-17
 
+Released: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.9.4 — deployed to Daly and
+Baker on 2026-09-17. Release notes for that tag cover the whole ap-15.9.1 → ap-15.9.4 arc; ap-15.9.1/.2/.3
+were same-day iterations and are superseded by this build.
+
+Field confirmation on both machines: Now Playing mute works as intended, and ap-15.9.1's RSP1B fix is
+confirmed by measurement rather than inference (see that entry). The CTCSS notch below is validated against a
+real recording but has not yet been confirmed by ear in production, and the DCS path remains unmeasured.
+
 ### Added
 - **CTCSS/DCS tone notch in the NBFM audio path.** Fixes the reported "60 Hz hum", which measurement
   showed is not hum and not 60 Hz: it is the channel's own CTCSS squelch tone leaking into the audio.
