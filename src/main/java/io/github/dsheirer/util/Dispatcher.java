@@ -77,8 +77,11 @@ public class Dispatcher<E> implements Listener<E>
 
     /**
      * Maximum number of elements the queue may hold before the oldest are discarded.
+     *
+     * Not final: a tuner's sample rate - and therefore its buffer rate - is often not known when the owning component
+     * is constructed, so the bound has to be re-derived once the rate arrives.  See setMaxQueueSize().
      */
-    private final int mMaxQueueSize;
+    private volatile int mMaxQueueSize;
 
     /**
      * Running count of queued elements.  Maintained separately because LinkedTransferQueue.size() is O(n) and would
@@ -169,6 +172,33 @@ public class Dispatcher<E> implements Listener<E>
     public int getMaxQueueSize()
     {
         return mMaxQueueSize;
+    }
+
+    /**
+     * Updates the maximum queue size.  Safe to call while running.
+     *
+     * This exists because the correct bound usually depends on the producer's data rate, and that rate is frequently
+     * unknown at construction time - a TunerController reports a sample rate of zero until the tuner is started and
+     * applies one.  A bound derived at construction from a zero rate collapses to the floor, which starves the
+     * consumer; callers must re-derive and set the bound once the real rate is known.
+     *
+     * @param maxQueueSize new bound, must be greater than zero.
+     */
+    public void setMaxQueueSize(int maxQueueSize)
+    {
+        if(maxQueueSize < 1)
+        {
+            throw new IllegalArgumentException("Max queue size must be greater than zero");
+        }
+
+        int previous = mMaxQueueSize;
+        mMaxQueueSize = maxQueueSize;
+
+        if(previous != maxQueueSize)
+        {
+            mLog.info("Dispatcher [{}] queue bound changed from [{}] to [{}] elements", mThreadName, previous,
+                    maxQueueSize);
+        }
     }
 
     /**

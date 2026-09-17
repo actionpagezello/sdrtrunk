@@ -3,7 +3,18 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## In Progress: ap-15.9 (committed, NOT yet built)
+## In Progress: ap-15.9.1 (committed, NOT yet built)
+**Fixes the RSP1B starvation that ap-15.9 claimed to fix and didn't.** `PolyphaseChannelManager` is constructed
+before the tuner applies a sample rate, so `getSampleRate()` returns 0 and the queue bound — derived once, in the
+constructor — collapsed to its 32-element floor for every tuner in BOTH ap-15.8.1 and ap-15.9. At an RSP1B's
+78,125 buffers/second that is 0.41 ms of queue: Daly discarded **262,638,170 buffers on 2026-09-16 alone**, all of
+them the RSP1B. The bound is now re-derived when `NOTIFICATION_SAMPLE_RATE_CHANGE` arrives, with a generous
+provisional bound (160,000) until then, and a WARN if any dispatcher ends up pinned to its minimum.
+
+> **Neither ap-15.8.1 nor ap-15.9 should run with an RSP1B (or any tuner above ~1 kHz buffer rate).** Use 15.9.1,
+> or fall back to 15.7. RTL-2832-only machines are unaffected.
+
+## Superseded: ap-15.9 (built 2026-09-13, released)
 Three fixes, all in the tuner sample path:
 1. **Polyphase buffer queue bound starved high-rate tuners** — `getBufferDuration()` truncates to 0 for any
    tuner above 1 kHz buffer rate. An RSP1B at 10 MSPS delivers 78,125 buffers/sec, so the bound collapsed to
@@ -71,7 +82,7 @@ Both fail silently, so they are code-reading findings with no log evidence eithe
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew clean runtimeZipWindows` (archiveVersion finalizer copies the zip to
   `sdrtrunk-ap-versions\v<version>\` automatically)
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9.1`
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Changes in ap-15.8 (deployed to Somerville 2026-08-22)

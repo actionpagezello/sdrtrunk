@@ -5,10 +5,56 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.1] - 2026-09-17
+
+### Fixed
+- **Buffer queue bound was derived before the tuner reported a sample rate, starving high-rate tuners.**
+  This is the real cause of the RSP1B starvation that ap-15.9 was supposed to fix, and ap-15.9 did not fix it.
+
+  `PolyphaseChannelSourceManager` constructs `PolyphaseChannelManager` at tuner-discovery time, before the tuner
+  is started and applies a sample rate, so `TunerController.getSampleRate()` returns **zero**. Both ap-15.8.1 and
+  ap-15.9 derived the queue bound once, in the constructor, from that zero — and both collapsed onto the
+  32-element floor for **every tuner**, by different arithmetic:
+
+  - ap-15.8.1: `getBufferDuration()` = `1000.0/(0/128)` = infinity, truncated to `Long.MAX_VALUE`;
+    `2000/Long.MAX_VALUE` = 0; floored to 32.
+  - ap-15.9: `buffersPerSecond` = `0/128` = 0; `0 × 2.0` = 0; floored to 32.
+
+  At an RSP1B's 78,125 buffers/second a 32-element queue is **0.41 ms**. Measured on Daly under ap-15.9:
+  **262,638,170 buffers discarded on 2026-09-16 alone** across 30,452 overflow warnings, all of them the RSP1B —
+  the RTL-2832 tuners never overflowed once, because 32 buffers is 0.44 s at their 73/second.
+
+  The ap-15.9 claim that 15.8.1 gave the RSP1B a 25.6 ms queue was wrong; the truncation was real but incidental,
+  and the actual bound was 0.41 ms in both releases. The `getBufferDuration()` analysis pointed at the right line
+  for the wrong reason.
+
+  Fixed properly: `Dispatcher.setMaxQueueSize()` is added so the bound can be re-derived, and
+  `PolyphaseChannelManager.updateBufferQueueBound()` is now called from the `NOTIFICATION_SAMPLE_RATE_CHANGE`
+  handler alongside the existing `mChannelCalculator.setRates()` call. Until the rate arrives the dispatcher runs
+  with a deliberately generous provisional bound of 160,000 elements rather than a tight one — an over-sized bound
+  costs memory for a moment, an under-sized one discards the sample stream. Resulting bounds:
+
+  | Tuner | Buffers/sec | Bound | Backlog |
+  |---|---|---|---|
+  | RTL-2832 @ 2.4 MSPS | 73 | 146 | 1.99 s |
+  | RSP1B @ 10 MSPS | 78,125 | 156,250 | 2.00 s |
+
+  A WARN now fires if any dispatcher ends up pinned to its minimum bound, stating explicitly that this indicates a
+  sizing defect rather than an overload condition. The ap-15.9 per-tuner startup line — which is the only reason
+  this was found at all, since it printed `at [0.00000] MSPS ... bounded at [32] elements (Infinity seconds)` —
+  now also reports the buffer sample count.
+
 ## [0.6.2-ap-15.9] - 2026-09-13
 
 ### Fixed
-- **Polyphase buffer queue bound starved high-rate tuners (RSP1B)** — the ap-15.8.1 queue bound was derived
+- **Polyphase buffer queue bound starved high-rate tuners (RSP1B)**
+  > **CORRECTION (ap-15.9.1):** the diagnosis below is wrong and this change did not fix the problem. The bound
+  > was collapsing to the 32-element floor, not the 2000-element ceiling, because the tuner reports a sample rate
+  > of zero at construction time — and ap-15.9 reproduced that defect. The truncation described below is real but
+  > incidental. See ap-15.9.1. Figures below (25.6 ms, 2,700 buffers/second, 12.6 M over 80 minutes) are
+  > understated: the actual bound was 0.41 ms.
+
+  The ap-15.8.1 queue bound was derived
   from `TunerController.getBufferDuration()`, which returns a `long` and truncates to zero for any tuner
   delivering buffers faster than 1 kHz. `RspTunerController.getBufferSampleCount()` returns 128, so an RSP1B
   at 10 MSPS produces **78,125 buffers/second** — a buffer duration of 0.0128 ms. That truncated to 0, the
