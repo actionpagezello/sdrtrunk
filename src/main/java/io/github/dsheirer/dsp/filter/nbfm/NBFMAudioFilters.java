@@ -33,8 +33,38 @@ package io.github.dsheirer.dsp.filter.nbfm;
  */
 public class NBFMAudioFilters 
 {
+    /**
+     * Default Q for the sub-audible tone notch.  131.8 / 12 gives an 11 Hz -3 dB bandwidth, which
+     * removes the tone while costing 0.04 dB at 200 Hz and 0.01 dB at 300 Hz - nothing a listener
+     * can hear, since the AudioModule high-pass already removes everything below 200 Hz anyway.
+     */
+    public static final double DEFAULT_TONE_NOTCH_Q = 12.0;
+
+    /**
+     * Q for a DCS notch.  DCS is a 134.4 bit/second NRZ bitstream rather than a steady tone, so its
+     * energy is spread rather than concentrated and a notch can only take out the middle of it.  A
+     * wider notch catches more of that spread.  Attenuation is partial by nature - see
+     * setDcsNotch().
+     */
+    public static final double DCS_NOTCH_Q = 4.0;
+
+    /**
+     * Maximum number of cascaded notch sections, one per configured tone.
+     */
+    private static final int MAXIMUM_TONE_NOTCHES = 4;
+
     // Input gain
     private float mInputGain = 1.0f;
+
+    // Sub-audible tone notch (CTCSS/DCS), one cascaded biquad section per configured tone.
+    // Coefficients and state are double rather than float: at 131.8 Hz on an 8 kHz stream the poles
+    // sit very close to the unit circle, where float rounding in the feedback path is enough to
+    // shift the notch off the tone and undo the point of the filter.
+    private boolean mToneNotchEnabled = false;
+    private double[] mToneNotchFrequencies = new double[0];
+    private double mToneNotchQ = DEFAULT_TONE_NOTCH_Q;
+    private double[] mNotchB0, mNotchB1, mNotchB2, mNotchA1, mNotchA2;
+    private double[] mNotchX1, mNotchX2, mNotchY1, mNotchY2;
     
     // Low-pass filter state (2nd order Butterworth)
     private float mLpfX1 = 0, mLpfX2 = 0;
@@ -143,6 +173,12 @@ public class NBFMAudioFilters
      */
     public float process(float sample)
     {
+        // 0. Sub-audible tone notch - remove the CTCSS/DCS squelch tone from the audio.
+        //    Runs first so the tone is gone before any gain or shelving stage can lift it.
+        if (mToneNotchEnabled) {
+            sample = processToneNotch(sample);
+        }
+
         // 1. Low-Pass Filter - Remove high hiss/noise (brickwall)
         if (mLowPassEnabled) {
             sample = processLowPass(sample);
@@ -195,6 +231,159 @@ public class NBFMAudioFilters
         }
     }
     
+    // ========== 0. SUB-AUDIBLE TONE NOTCH ==========
+
+    /**
+     * Configures a notch at each CTCSS tone the channel is filtering on, so the squelch tone does
+     * not reach the listener.
+     *
+     * A continuously transmitted CTCSS tone is audible as a low hum, and most noticeably during
+     * pauses in speech: the tone level is constant while every other band drops 20-30 dB when the
+     * talking stops, so in the gaps the tone becomes the loudest thing in the audio.  Measured on a
+     * 131.8 Hz channel: the tone sat at -49 dBFS against voice at -19 dBFS, unchanged between
+     * speech and pause, while the 300-600 Hz band fell 32 dB in the pauses.
+     *
+     * The AudioModule high-pass (200 Hz stop, 300 Hz pass) already attenuates this, but only by
+     * about 32 dB in its stop band, which is not enough when the transmitted tone deviation is
+     * strong.  A notch places a zero on the tone instead, so the limit is how precisely the tone
+     * sits on frequency rather than the filter's stop-band ripple.
+     *
+     * Safe with respect to tone squelch: the CTCSS and DCS detectors are fed from the resampler
+     * output ahead of this filter chain, so removing the tone from the audio cannot affect
+     * detection.
+     *
+     * @param frequencies tone frequencies in Hz, at most {@value #MAXIMUM_TONE_NOTCHES} of them
+     * @param sampleRate of the audio stream
+     * @param q notch Q; see {@link #DEFAULT_TONE_NOTCH_Q}
+     */
+    public void setToneNotch(double[] frequencies, double sampleRate, double q)
+    {
+        if(frequencies == null || frequencies.length == 0 || sampleRate <= 0)
+        {
+            mToneNotchEnabled = false;
+            mToneNotchFrequencies = new double[0];
+            return;
+        }
+
+        int count = Math.min(frequencies.length, MAXIMUM_TONE_NOTCHES);
+
+        mToneNotchQ = q;
+        mToneNotchFrequencies = new double[count];
+        mNotchB0 = new double[count];
+        mNotchB1 = new double[count];
+        mNotchB2 = new double[count];
+        mNotchA1 = new double[count];
+        mNotchA2 = new double[count];
+        mNotchX1 = new double[count];
+        mNotchX2 = new double[count];
+        mNotchY1 = new double[count];
+        mNotchY2 = new double[count];
+
+        for(int x = 0; x < count; x++)
+        {
+            double frequency = frequencies[x];
+
+            //A tone at or above Nyquist, or at DC, has no meaningful notch
+            if(frequency <= 0 || frequency >= sampleRate / 2.0)
+            {
+                mToneNotchEnabled = false;
+                mToneNotchFrequencies = new double[0];
+                return;
+            }
+
+            mToneNotchFrequencies[x] = frequency;
+
+            //RBJ cookbook notch
+            double omega = 2.0 * Math.PI * frequency / sampleRate;
+            double sn = Math.sin(omega);
+            double cs = Math.cos(omega);
+            double alpha = sn / (2.0 * q);
+            double a0 = 1.0 + alpha;
+
+            mNotchB0[x] = 1.0 / a0;
+            mNotchB1[x] = (-2.0 * cs) / a0;
+            mNotchB2[x] = 1.0 / a0;
+            mNotchA1[x] = (-2.0 * cs) / a0;
+            mNotchA2[x] = (1.0 - alpha) / a0;
+        }
+
+        mToneNotchEnabled = true;
+    }
+
+    /**
+     * Configures a notch for a DCS channel, centred on the 134.4 bit/second DCS symbol rate.
+     *
+     * Unlike CTCSS this is a partial measure and is documented as such.  DCS transmits a continuous
+     * 23-bit NRZ codeword at 134.4 bit/second, so its energy is spread across a band rather than
+     * concentrated at one frequency.  A wide notch removes the centre of that band and reduces the
+     * audible rumble; it cannot remove it the way a notch removes a steady tone.
+     *
+     * @param sampleRate of the audio stream
+     */
+    public void setDcsNotch(double sampleRate)
+    {
+        setToneNotch(new double[]{DCS_SYMBOL_RATE_HZ}, sampleRate, DCS_NOTCH_Q);
+    }
+
+    /**
+     * DCS symbol rate, and the centre of the notch used for DCS channels.
+     */
+    public static final double DCS_SYMBOL_RATE_HZ = 134.4;
+
+    /**
+     * Indicates if the tone notch is active.
+     */
+    public boolean isToneNotchEnabled()
+    {
+        return mToneNotchEnabled;
+    }
+
+    /**
+     * Returns the tone frequencies currently notched, for logging.  Never null.
+     */
+    public double[] getToneNotchFrequencies()
+    {
+        return mToneNotchFrequencies;
+    }
+
+    /**
+     * Returns the Q in use for the tone notch.
+     */
+    public double getToneNotchQ()
+    {
+        return mToneNotchQ;
+    }
+
+    /**
+     * Runs the sample through each cascaded notch section.
+     */
+    private float processToneNotch(float sample)
+    {
+        double value = sample;
+
+        for(int x = 0; x < mToneNotchFrequencies.length; x++)
+        {
+            double out = mNotchB0[x] * value + mNotchB1[x] * mNotchX1[x] + mNotchB2[x] * mNotchX2[x]
+                    - mNotchA1[x] * mNotchY1[x] - mNotchA2[x] * mNotchY2[x];
+
+            if(Double.isNaN(out) || Double.isInfinite(out))
+            {
+                //Never let a poisoned feedback path silence the channel
+                mNotchX1[x] = mNotchX2[x] = mNotchY1[x] = mNotchY2[x] = 0.0;
+                return sample;
+            }
+
+            mNotchX2[x] = mNotchX1[x];
+            mNotchX1[x] = value;
+            mNotchY2[x] = mNotchY1[x];
+            mNotchY1[x] = out;
+
+            value = out;
+        }
+
+        return (float)value;
+    }
+
     // ========== 1. INPUT GAIN ==========
     
     /**
@@ -776,6 +965,15 @@ public class NBFMAudioFilters
     {
         mLpfX1 = mLpfX2 = 0.0f;
         mLpfY1 = mLpfY2 = 0.0f;
+
+        if(mToneNotchEnabled)
+        {
+            for(int x = 0; x < mToneNotchFrequencies.length; x++)
+            {
+                mNotchX1[x] = mNotchX2[x] = mNotchY1[x] = mNotchY2[x] = 0.0;
+            }
+        }
+
         mDeemphasisPrevious = 0.0f;
         mVoiceEnhX1 = mVoiceEnhX2 = 0.0f;
         mVoiceEnhY1 = mVoiceEnhY2 = 0.0f;

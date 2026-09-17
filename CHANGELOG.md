@@ -5,6 +5,74 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.4] - 2026-09-17
+
+### Added
+- **CTCSS/DCS tone notch in the NBFM audio path.** Fixes the reported "60 Hz hum", which measurement
+  showed is not hum and not 60 Hz: it is the channel's own CTCSS squelch tone leaking into the audio.
+
+  Measured from a recording of District 5/15 (configured CTCSS 131.8 Hz), 9.8 seconds, 48 analysis
+  blocks at 8 kHz:
+
+  | | 50 Hz | 60 Hz | 100 Hz | 120 Hz | 180 Hz | 240 Hz | **131.8 Hz** |
+  |---|---|---|---|---|---|---|---|
+  | mean dBFS | −93.4 | −84.9 | −74.6 | −69.8 | −78.6 | −75.4 | **−49.1** |
+
+  Voice sat at −19.4 dBFS, so every mains frequency was 50–75 dB down and inaudible. The USB hub and
+  the SDR were not involved. A 60 Hz notch, which is what was originally asked for, would have done
+  nothing at all.
+
+  The reason it reads as hum during pauses is that the tone level does not change while everything
+  else does. Measured pause-versus-speech by band:
+
+  | band | pause | speech | change |
+  |---|---|---|---|
+  | 100–200 Hz (holds the tone) | −46.6 | −46.0 | **−0.6** |
+  | 200–300 Hz | −66.6 | −47.1 | −19.5 |
+  | 300–600 Hz | −49.2 | −17.3 | −31.9 |
+  | 1–2 kHz | −47.2 | −17.7 | −29.5 |
+
+  CTCSS is transmitted continuously for the whole transmission, so when the talking stops the tone
+  becomes the loudest thing left in the audio. The `AudioModule` 200/300 Hz high-pass is enabled on
+  every channel — the ap-15.9.1 startup line confirms it — but its stop band gives only about 32 dB,
+  which is not enough against a strongly deviated tone.
+
+  A notch places a zero on the tone instead. One cascaded biquad section per configured CTCSS tone,
+  Q = 12 (11 Hz bandwidth), derived from the channel's own `ChannelToneFilter` so there is nothing to
+  detect and nothing to guess. It engages only on channels that actually filter on a tone.
+
+  **Verified by running the filter over the real recording**, not by trusting the design math:
+
+  | | before | after | change |
+  |---|---|---|---|
+  | 131.8 Hz tone, during pauses | −48.4 | **−82.1** | **−33.7 dB** |
+  | 131.8 Hz tone, all blocks | −48.2 | −73.4 | −25.1 dB |
+  | voice at 300 / 500 / 800 / 1500 / 2500 Hz | — | — | **0.0 dB** |
+  | voice-band RMS above 300 Hz | −19.4 | −19.4 | **0.0 dB** |
+
+  After the notch the loudest thing in the pauses is ordinary residual noise at 395 Hz and −60 dBFS,
+  so the tone is no longer the dominant artifact. The smaller 22.7 dB figure measured during speech
+  is a measurement floor rather than a filter limit — speech energy leaks into the 131.8 Hz analysis
+  bin, so the "after" number there reflects voice, not tone.
+
+  Safe for tone squelch: the CTCSS and DCS detectors are fed from the resampler output ahead of the
+  audio filter chain, so removing the tone from what the listener hears cannot affect detection. The
+  notch runs as stage 0 of `NBFMAudioFilters`, before any gain or shelving stage can lift the tone
+  back up.
+
+  Coefficients and filter state are `double` rather than the `float` used elsewhere in that class. At
+  131.8 Hz on an 8 kHz stream the poles sit very close to the unit circle, where `float` rounding in
+  the feedback path is enough to shift the notch off the tone and defeat the filter.
+
+- **DCS channels get a wider notch at the 134.4 Hz symbol rate, and the log says the reduction is
+  partial.** DCS transmits a continuous 23-bit NRZ codeword rather than a steady tone, so its energy
+  is spread across a band and a notch removes the middle of it rather than the whole thing. Q = 4.
+  Whether this is enough on a DCS channel has not been measured — no DCS recording was available.
+
+### Note
+- The `HumAnalyzer` diagnostic from ap-15.9.1 stays in place. It did its job here by ruling mains out
+  rather than confirming it, which is why the 50 Hz family is measured alongside the 60 Hz family.
+
 ## [0.6.2-ap-15.9.3] - 2026-09-17
 
 ### Fixed

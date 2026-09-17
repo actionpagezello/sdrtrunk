@@ -3,7 +3,21 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## In Progress: ap-15.9.3 (committed, NOT yet built)
+## In Progress: ap-15.9.4 (committed, NOT yet built)
+**Notches the CTCSS/DCS squelch tone out of NBFM audio.** The reported "60 Hz hum" was measured and is
+neither hum nor 60 Hz — it is the channel's own CTCSS tone. In a District 5/15 recording (CTCSS 131.8) the
+tone sat at −49 dBFS against voice at −19, while 60 Hz was at −85 dBFS and every mains frequency was 50–75 dB
+down. The tone reads as hum in the gaps because its level is constant: the 100–200 Hz band drops 0.6 dB when
+talking stops while every other band drops 20–32 dB.
+
+One biquad notch per configured tone, Q=12, taken from the channel's own `ChannelToneFilter`. Verified on the
+real recording: tone in pauses −48.4 → **−82.1 dBFS (−33.7 dB)**, voice unchanged to 0.0 dB at 300/500/800/
+1500/2500 Hz. Safe for tone squelch — the detectors tap ahead of the audio filters. DCS gets a wider notch at
+134.4 Hz, labelled partial in the log and unmeasured.
+
+> **The USB hub and SDR were not the cause.** A 60 Hz notch, the original request, would have done nothing.
+
+## Released: ap-15.9.3 (built and pushed 2026-09-17)
 **Makes Now Playing mute work on a channel with no alias** — the case it was actually asked for, and the one
 ap-15.9.2 could not serve because it made the alias the only store.
 
@@ -32,7 +46,15 @@ naming the reason and the alias count instead of guessing.
 > never consults the do-not-monitor flag. True in every version; now documented. Taking a channel off a feed means
 > removing the broadcast channel from the alias, and there is no shortcut for that yet.
 
-## Released: ap-15.9.1 (built and pushed 2026-09-17)
+## Released: ap-15.9.1 (built and pushed 2026-09-17) — RSP1B FIX CONFIRMED IN THE FIELD
+> **Confirmed on Daly, same log, same day.** 15.9 ran to 13:40, 15.9.1 from 13:43.
+> Overflow warnings 8,930 → **0**. Cumulative buffers discarded **402,708,445 → 0**. Startup line reads
+> `Rsp1bTunerController at [10.00000] MSPS - [78125] buffers/second ([128] samples each) - queue bounded at
+> [156250] elements (2.00 seconds)`. Every NH feed the RSP1B serves came back: Salem NH Police 0 → 255 stream
+> starts, Salem NH Fire 0 → 61, Derry 0 → 299/46, Londonderry 0 → 281/212, Windham 0 → 122/109, Hudson 0 → 79,
+> Lawrence MA 0 → 462/198. MA feeds on the RTLs were unaffected throughout (the control). No OOM, no tuner
+> removals. Baker's RSP1B at 8 MSPS resolves to 125,000 elements, also correct.
+
 **Fixes the RSP1B starvation that ap-15.9 claimed to fix and didn't.** `PolyphaseChannelManager` is constructed
 before the tuner applies a sample rate, so `getSampleRate()` returns 0 and the queue bound — derived once, in the
 constructor — collapsed to its 32-element floor for every tuner in BOTH ap-15.8.1 and ap-15.9. At an RSP1B's

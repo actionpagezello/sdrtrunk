@@ -54,6 +54,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -1191,6 +1192,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mAudioFilters.setHissReductionDb(mNBFMConfig.getHissReductionDb());
         mAudioFilters.setHissReductionEnabled(mNBFMConfig.isHissReductionEnabled());
 
+        // Sub-audible tone notch. Removes the CTCSS/DCS squelch tone from the audio, which is
+        // otherwise audible as a low hum - most noticeably during pauses in speech, because the tone
+        // level is constant while every other band drops 20-30 dB when the talking stops.
+        //
+        // Derived from the channel's own configured tone, so there is nothing to detect and nothing
+        // to guess, and it engages only on channels that actually filter on a tone. Safe for tone
+        // squelch: the CTCSS and DCS detectors are fed ahead of this filter chain.
+        configureToneNotch(sampleRate);
+
         mLog.info("VoxSend audio filters initialized: lowPass={} ({}Hz), deemphasis={} ({}μs), " +
                 "hissReduction={} ({}dB@{}Hz), bassBoost={} ({}dB), voiceEnhance={}, " +
                 "noiseGate={} (threshold={})",
@@ -1201,6 +1211,73 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 mNBFMConfig.isBassBoostEnabled(), mNBFMConfig.getBassBoostDb(),
                 mNBFMConfig.isAgcEnabled(),
                 mNBFMConfig.isNoiseGateEnabled(), mNBFMConfig.getNoiseGateThreshold());
+    }
+
+    /**
+     * Configures the audio-path notch from the channel's configured CTCSS or DCS tone.
+     *
+     * CTCSS tones are notched individually - one cascaded section per configured tone - because a
+     * CTCSS tone is a steady sinusoid and a notch removes it cleanly.  DCS is a 134.4 bit/second
+     * NRZ codeword whose energy is spread, so it gets one wide notch at the symbol rate and the log
+     * says plainly that the reduction is partial.
+     *
+     * Does nothing on a channel with no tone filtering configured.
+     *
+     * @param sampleRate of the audio stream, 8 kHz
+     */
+    private void configureToneNotch(double sampleRate)
+    {
+        if(mNBFMConfig == null || mNBFMConfig.getToneFilters() == null)
+        {
+            return;
+        }
+
+        List<Double> ctcssFrequencies = new ArrayList<>();
+        boolean hasDcs = false;
+
+        for(ChannelToneFilter filter : mNBFMConfig.getToneFilters())
+        {
+            if(filter == null)
+            {
+                continue;
+            }
+
+            CTCSSCode ctcss = filter.getCTCSSCode();
+
+            if(ctcss != null)
+            {
+                ctcssFrequencies.add((double)ctcss.getFrequency());
+            }
+            else if(filter.getDCSCode() != null)
+            {
+                hasDcs = true;
+            }
+        }
+
+        if(!ctcssFrequencies.isEmpty())
+        {
+            double[] frequencies = new double[ctcssFrequencies.size()];
+
+            for(int x = 0; x < frequencies.length; x++)
+            {
+                frequencies[x] = ctcssFrequencies.get(x);
+            }
+
+            mAudioFilters.setToneNotch(frequencies, sampleRate, NBFMAudioFilters.DEFAULT_TONE_NOTCH_Q);
+
+            mLog.info("[{}] CTCSS tone notch ENABLED at {} Hz (Q={}) - the squelch tone is removed from " +
+                    "the audio so it is not audible as a hum between transmissions", mChannelLabel,
+                    Arrays.toString(frequencies), NBFMAudioFilters.DEFAULT_TONE_NOTCH_Q);
+        }
+        else if(hasDcs)
+        {
+            mAudioFilters.setDcsNotch(sampleRate);
+
+            mLog.info("[{}] DCS tone notch ENABLED at {} Hz (Q={}) - DCS is a {} bit/second bitstream " +
+                    "rather than a steady tone, so its energy is spread and this reduces the audible " +
+                    "rumble rather than removing it", mChannelLabel, NBFMAudioFilters.DCS_SYMBOL_RATE_HZ,
+                    NBFMAudioFilters.DCS_NOTCH_Q, NBFMAudioFilters.DCS_SYMBOL_RATE_HZ);
+        }
     }
 
     /**
