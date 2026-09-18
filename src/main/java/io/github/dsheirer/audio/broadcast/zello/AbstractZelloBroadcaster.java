@@ -72,6 +72,12 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private static final int MAX_GHOST_STREAMS_BEFORE_RECONNECT = 3;
     private static final int MAX_CONSECUTIVE_3008_BEFORE_RECONNECT = 3;
     private static final long PENDING_STOP_TIMEOUT_MS = 500;
+    /**
+     * AP-fork: a stream that has been open this long with no audio arriving is orphaned - every real
+     * call delivers buffers continuously, and the relaxation hold-over (default 700 ms) is far shorter.
+     * Checked by the watchdog, so detection latency is this plus up to WATCHDOG_INTERVAL_MS.
+     */
+    private static final long STALE_STREAM_TIMEOUT_MS = 15000;
     private static final long CONNECTION_TIMEOUT_MS = 45000;
     private static final long ENCODER_DRAIN_MS = 15;
 
@@ -135,6 +141,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private ScheduledFuture<?> mStreamGuardFuture;
     private ScheduledFuture<?> mPauseFuture;
     private volatile long mLastAudioReceivedTime = 0;
+    private volatile long mStreamStartTime = 0;
     private volatile int mConsecutiveGhostStreams = 0;
     private volatile boolean mPendingStreamStart = false;
     private final ConcurrentLinkedQueue<byte[]> mPendingOpusFrames = new ConcurrentLinkedQueue<>();
@@ -525,6 +532,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
         int epoch = mSessionEpoch.get();
         mStreamActive.set(true);
+        mStreamStartTime = System.currentTimeMillis();
+        mLastAudioReceivedTime = mStreamStartTime;
         mStreamSessionEpoch = epoch;
         mCurrentStreamId.set(-1);
         mResampleBufferPos = 0;
@@ -564,6 +573,28 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     {
         if(!mStreamActive.get())
         {
+            //AP-fork: the segment that asked for this stream is finished, but the start it requested may
+            //still be queued - as mPendingStreamStart behind a pending stop, or as a guard-delayed
+            //beginStreamInternal(). Before this, that start fired anyway and opened a stream no segment
+            //owned, which nothing ever stopped: isRealTimeReady() then stayed false and every later call
+            //on the channel was skipped without a log line. Daly 2026-09-17: Lawrence MA Fire from 19:24
+            //and Test Channel 1 from 22:53, each 'stream started' exactly 500 ms (PENDING_STOP_TIMEOUT_MS)
+            //after a stop, then silent until restart.
+            boolean guardStartPending = mStreamGuardFuture != null && !mStreamGuardFuture.isDone();
+
+            if(mPendingStreamStart || guardStartPending)
+            {
+                mLog.debug("{}Stream stop for a segment whose start was still pending (flag={}, scheduled={}) - cancelling the start",
+                    ch(), mPendingStreamStart, guardStartPending);
+                mPendingStreamStart = false;
+
+                if(guardStartPending)
+                {
+                    mStreamGuardFuture.cancel(false);
+                    mStreamGuardFuture = null;
+                }
+            }
+
             return;
         }
 
@@ -1411,7 +1442,34 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     {
         try
         {
-            if(mStopped.get() || mKicked.get() || mPooledMode)
+            if(mStopped.get() || mKicked.get())
+            {
+                return;
+            }
+
+            //AP-fork: belt and braces for the orphaned-stream case handled in stopRealTimeStream(), and
+            //for any other way a stream can be left active with no segment feeding it. This is the
+            //blind spot the ap-15.1 watchdog had: it only ever checked for 'disconnected'.
+            if(mStreamActive.get())
+            {
+                long now = System.currentTimeMillis();
+                long sinceAudio = now - Math.max(mLastAudioReceivedTime, mStreamStartTime);
+
+                if(sinceAudio > STALE_STREAM_TIMEOUT_MS)
+                {
+                    mLog.warn("{}Watchdog: stream active for {} s with no audio for {} s (stream_id={}, pending_stop={}, pending_start={}) - forcing stop so the channel can stream again",
+                        ch(), (now - mStreamStartTime) / 1000, sinceAudio / 1000, mCurrentStreamId.get(),
+                        mPendingStopStreamId.get(), mPendingStreamStart);
+
+                    synchronized(this)
+                    {
+                        mPendingStreamStart = false;
+                        doStopRealTimeStream();
+                    }
+                }
+            }
+
+            if(mPooledMode)
             {
                 return;
             }

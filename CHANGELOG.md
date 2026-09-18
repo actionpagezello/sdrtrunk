@@ -8,6 +8,24 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 ## [Unreleased]
 
 ### Fixed
+- **Zello feed could wedge silently on an orphaned stream.** `AudioStreamingManager` stops a real-time
+  stream only when the audio segment that requested it completes. When a segment completed while its
+  requested start was still queued — as `mPendingStreamStart` behind a pending stop, or as a guard-delayed
+  `beginStreamInternal()` — `stopRealTimeStream()` returned early because no stream was active yet, and the
+  queued start then fired and opened a stream that no segment owned. Nothing ever stopped it, so
+  `isRealTimeReady()` stayed false and every later call on that channel was skipped **with no log line**;
+  recording and ThinLine were unaffected, so it presented as "Zello only". Daly 2026-09-17: Lawrence MA
+  Fire (17 starts / 16 stops, last start 19:24:40.136, exactly 500 ms — `PENDING_STOP_TIMEOUT_MS` — after
+  the preceding stop) and Test Channel 1 (last start 22:53:00.387, 501 ms after a stop), each silent from
+  then until the 13:12 restart on 9/18, on channels that had been streaming 1–5 times a minute.
+  Two changes: `stopRealTimeStream()` now cancels a queued start when the stream never became active
+  (DEBUG line when it does), and the broadcaster watchdog — which since ap-15.1 only checked for
+  *disconnected* — now force-stops a stream that has been active with no audio for 15 s
+  (`STALE_STREAM_TIMEOUT_MS`; every real call delivers buffers continuously and the relaxation hold-over is
+  700 ms), logging a WARN with stream age, stream id and pending flags so the next occurrence explains
+  itself. The stale check runs in pooled mode too; the disconnect check remains direct-mode only.
+  **Watch for `Watchdog: stream active for` in fleet logs — each one is a wedge that would previously have
+  been permanent.**
 - **MDC-1200 activity summary looped forever and OOM'd the GUI thread.** `MDCDecoderState.getActivitySummary()`
   iterated `mEmergencyIdents` with `while(it.hasNext())` and never called `it.next()`, so once a channel with
   the MDC-1200 decoder enabled had decoded one emergency ident, selecting that channel in the channel table
