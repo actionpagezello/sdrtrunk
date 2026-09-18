@@ -28,7 +28,6 @@ import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.event.DecodeEventType;
 import io.github.dsheirer.module.decode.mdc1200.identifier.MDC1200Identifier;
-import java.util.Iterator;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -146,14 +145,13 @@ public class MDCDecoderState extends DecoderState
         }
         else
         {
-            Iterator<MDC1200Identifier> it = mEmergencyIdents.iterator();
-
-            while(it.hasNext())
+            //AP-fork: was `while(it.hasNext()) { for(ident : mIdents) ... }` with no it.next() - an
+            //infinite loop on the Swing EDT once any emergency ident had been decoded, ending in
+            //OutOfMemoryError when the StringBuilder passed 2 GB (Daly, 2026-09-18). It also listed
+            //every ident rather than the emergency ones.
+            for(MDC1200Identifier mIdent : mEmergencyIdents)
             {
-
-                for (MDC1200Identifier mIdent : mIdents) {
-                    sb.append("  ").append(mIdent).append("\n");
-                }
+                sb.append("  ").append(mIdent).append("\n");
             }
         }
 

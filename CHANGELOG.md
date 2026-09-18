@@ -5,6 +5,18 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [Unreleased]
+
+### Fixed
+- **MDC-1200 activity summary looped forever and OOM'd the GUI thread.** `MDCDecoderState.getActivitySummary()`
+  iterated `mEmergencyIdents` with `while(it.hasNext())` and never called `it.next()`, so once a channel with
+  the MDC-1200 decoder enabled had decoded one emergency ident, selecting that channel in the channel table
+  appended the ident list to a `StringBuilder` until it exceeded 2 GB and threw
+  `OutOfMemoryError: Required array length 2147483644 + 5 is too large` on `AWT-EventQueue-0`. Seen twice on
+  Daly 2026-09-18 13:08 via `ChannelMetadataPanel.valueChanged → ChannelDetailPanel.receive`. Decoding and
+  streaming were unaffected; only the click handler unwound. The loop also printed every ident instead of the
+  emergency ones. Present in upstream master — PR candidate.
+
 ## [0.6.2-ap-15.9.4] - 2026-09-17
 
 Released: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.9.4 — deployed to Daly and
