@@ -5,6 +5,27 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.7] - 2026-09-22
+
+### Changed
+- **Never clear a tuner's configured frequency range; move the stale centre frequency instead.** ap-15.9.6
+  recovered from a saved min/max window that excluded the tuner's own centre frequency by resetting the
+  limits to the tuner's hardware extents and zeroing them in the configuration. That was the wrong value to
+  sacrifice. The min/max window is a **deliberate, load-bearing setting**: `PolyphaseChannelSourceManager`
+  `.isTunable()` tests every channel's min and max against it, which is how a tuner is kept off channels
+  that belong to another tuner and how tuner usage is partitioned across a fleet box. Clearing it would let
+  that tuner take any channel again — exactly what the setting exists to prevent.
+
+  The centre frequency is the disposable one. Channel allocation owns it: `getSource()` recomputes the
+  centre from the channels being served and calls `setFrequency()`, so an idle tuner's saved centre is
+  simply wherever the last channel left it and carries no configuration intent. It can therefore sit
+  outside a window set later, which is all that happened on Baker.
+
+  `apply()` now moves the centre frequency to the nearest edge of the configured window, logs why, and
+  leaves the window untouched. The first channel allocation moves the centre again anyway. The ap-15.9.6
+  defect it guards against is unchanged: without this the mismatch throws out of `apply()` and the saved
+  PPM correction and auto-PPM enable are skipped silently for the whole session.
+
 ## [0.6.2-ap-15.9.6] - 2026-09-22
 
 Two silent failures found by measuring rather than by reading code, both on the first day of ap-15.9.5 field
