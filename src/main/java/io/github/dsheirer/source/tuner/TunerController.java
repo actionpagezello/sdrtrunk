@@ -65,6 +65,14 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
     protected TunerFrequencyErrorManager mTunerFrequencyErrorManager;
 
     /**
+     * AP-fork: the tuner's own hardware tuning extents, recorded by setFrequencyExtents() so that a saved
+     * minimum/maximum window which excludes the tuner's frequency can be discarded rather than stranding the rest of
+     * the configuration.  See apply().
+     */
+    private long mHardwareMinimumFrequency = 0;
+    private long mHardwareMaximumFrequency = 0;
+
+    /**
      * Abstract tuner controller class.  The tuner controller manages frequency bandwidth and currently tuned channels
      * that are being fed samples from the tuner.
      * @param tunerErrorListener to monitor errors produced from this tuner controller
@@ -118,6 +126,8 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
      */
     public void setFrequencyExtents(long minimum, long maximum)
     {
+        mHardwareMinimumFrequency = minimum;
+        mHardwareMaximumFrequency = maximum;
         mFrequencyController.setMinimumFrequency(minimum);
         mFrequencyController.setMaximumFrequency(maximum);
     }
@@ -229,7 +239,38 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         {
             setMaximumFrequency(config.getMaximumFrequency());
         }
-        setFrequencyCorrection(config.getFrequencyCorrection());
+
+        //AP-fork: a saved min/max window that excludes the tuner's own centre frequency used to abort the rest of this
+        //method.  setFrequencyCorrection() re-validates the current frequency against the limits installed just above,
+        //so it threw InvalidFrequencyException, and because that propagated out of apply(), the PPM correction was
+        //never applied and auto-PPM correction was never enabled - silently, for the whole session.  Seen on three of
+        //Baker's four RTL-2832 dongles on 2026-09-22 (saved centre 483.5125 MHz against a 170 MHz maximum, and
+        //101.1 MHz against a 150 MHz minimum), reported only as one ERROR at startup.  Now the limits are reported and
+        //dropped rather than allowed to strand the rest of the configuration.
+        try
+        {
+            setFrequencyCorrection(config.getFrequencyCorrection());
+        }
+        catch(Exception e)
+        {
+            mLog.warn("Tuner frequency limits in the saved configuration [" + config.getMinimumFrequency() + "-" +
+                    config.getMaximumFrequency() + " Hz] exclude the tuner's frequency [" + getFrequency() +
+                    " Hz] - clearing the limits so the rest of the configuration can be applied.  Correct or clear " +
+                    "the minimum/maximum frequency fields for this tuner.");
+            if(mHardwareMinimumFrequency > 0)
+            {
+                setMinimumFrequency(mHardwareMinimumFrequency);
+            }
+            if(mHardwareMaximumFrequency > 0)
+            {
+                setMaximumFrequency(mHardwareMaximumFrequency);
+            }
+
+            config.setMinimumFrequency(0);
+            config.setMaximumFrequency(0);
+            setFrequencyCorrection(config.getFrequencyCorrection());
+        }
+
         getTunerFrequencyErrorManager().setEnabled(config.getAutoPPMCorrectionEnabled());
     }
 

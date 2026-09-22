@@ -5,6 +5,48 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.6] - 2026-09-22
+
+Two silent failures found by measuring rather than by reading code, both on the first day of ap-15.9.5 field
+data from Baker and Audubon.
+
+### Fixed
+- **The stuck-call watchdog was firing on a stale timer, not a stuck carrier.** `NoiseSquelch.process()`
+  broadcast `SquelchState.SQUELCH` only from inside `if(mSquelchOpenIndex < squelchCloseIndex)` — the guard
+  around emitting a trailing audio segment. `mSquelchOpenIndex` comes from `findTransition()`, which indexes
+  the delay buffer and can exceed `squelchCloseIndex`, and when it did the internal state went squelched
+  while **no listener was told**. In `NBFMDecoder` that meant the close was never seen: `mCallStartTimeMs`
+  was never cleared, the squelch tail remover never closed, and the tone holdover never started. A stale
+  `mCallStartTimeMs` then makes the *next* squelch opening — however brief — exceed the 180 s limit
+  immediately.
+
+  The evidence is that no stuck carrier was ever present. Across all eight watchdog trips on Baker and
+  Audubon on 2026-09-22, the `CTCSS_DCS` diagnostics show the channel **silent** for the whole "call":
+  the CTCSS survey line, which is unconditional every ~3 s whenever the detector is fed, produced **zero**
+  lines during every trip window, where a genuine 180 s carrier would have produced about fifty. The last
+  channel activity before each trip was 160 s to 29 minutes earlier. On the one trip with surveys running
+  into it (Baker, Peabody Fire, 11:37:37), the target tone 203.5 Hz was steady at 16.0–18.7 dB SNR until
+  11:34:57 and the call timer read exactly 11:34:37 — a call that had ended two and a half minutes before
+  the watchdog "force-ended" it.
+
+  `SquelchState.SQUELCH` is now broadcast whenever `mSquelch` flips to true, symmetric with `UNSQUELCH`
+  which was already unconditional. The watchdog WARN now also reports the call age and how long ago audio
+  last reached the resampler, and says `STALE CALL TIMER, not a stuck carrier` when the two disagree — so
+  if this ever recurs the log distinguishes the two cases by itself.
+
+  **This corrects the standing hypothesis in this project that the CTCSS detector was holding the gate open
+  on a false match. It was not: during these episodes the detector was not being fed at all.**
+- **A saved tuner frequency window could silently strand the rest of the tuner configuration.**
+  `TunerController.apply()` sets the frequency, then installs the configuration's minimum/maximum frequency
+  limits, then calls `setFrequencyCorrection()` — which re-validates the current frequency against the
+  limits just installed. A saved window that excludes the tuner's own centre frequency therefore threw
+  `InvalidFrequencyException` out of `apply()`, so **the saved PPM correction was never applied and
+  auto-PPM correction was never enabled** for that tuner, for the whole session, reported only as a single
+  ERROR at startup. Three of Baker's four RTL-2832 dongles were in this state at every start on 2026-09-22
+  (saved centre 483.5125 MHz against a 170 MHz maximum, the same against a 469 MHz maximum, and 101.1 MHz
+  against a 150 MHz minimum). The limits are now reported at WARN, reset to the tuner's hardware extents
+  and cleared from the configuration, so the correction and auto-PPM settings still apply.
+
 ## [0.6.2-ap-15.9.5] - 2026-09-21
 
 Two silent-failure fixes plus one new warning. The theme is the same as ap-15.9: each of these failed with
