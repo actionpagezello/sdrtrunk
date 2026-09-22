@@ -5,7 +5,11 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
-## [Unreleased]
+## [0.6.2-ap-15.9.5] - 2026-09-21
+
+Two silent-failure fixes plus one new warning. The theme is the same as ap-15.9: each of these failed with
+no log line at any level, which is why the Zello wedge below ran for four days across two machines before
+anyone could point at it.
 
 ### Fixed
 - **Zello feed could wedge silently on an orphaned stream.** `AudioStreamingManager` stops a real-time
@@ -14,18 +18,37 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   `beginStreamInternal()` — `stopRealTimeStream()` returned early because no stream was active yet, and the
   queued start then fired and opened a stream that no segment owned. Nothing ever stopped it, so
   `isRealTimeReady()` stayed false and every later call on that channel was skipped **with no log line**;
-  recording and ThinLine were unaffected, so it presented as "Zello only". Daly 2026-09-17: Lawrence MA
-  Fire (17 starts / 16 stops, last start 19:24:40.136, exactly 500 ms — `PENDING_STOP_TIMEOUT_MS` — after
-  the preceding stop) and Test Channel 1 (last start 22:53:00.387, 501 ms after a stop), each silent from
-  then until the 13:12 restart on 9/18, on channels that had been streaming 1–5 times a minute.
+  recording and ThinLine were unaffected, so it presented as "Zello only".
+
+  Measured on Daly across five separate events on ap-15.9.4, every one with the same signature — a final
+  `Zello stream started` almost exactly 500 ms (`PENDING_STOP_TIMEOUT_MS`) after the preceding stop, on a
+  channel that had been streaming 1–5 times a minute:
+
+  | Feed | Wedged | Recovered | Dark |
+  |---|---|---|---|
+  | Lawrence MA Fire | 09-17 19:24:40 | 09-18 13:12 restart | ~17.8 h |
+  | Test Channel 1 | 09-17 22:53:00 | 09-18 13:12 restart | ~14.3 h |
+  | Andover MA Police | 09-19 17:18:21 | 09-20 02:52:57 | 9 h 34 m |
+  | Lawrence MA Fire | 09-20 13:23:25 | 09-21 02:54:39 | 13 h 31 m |
+  | Londonderry NH Fire | 09-19 10:48:27 | 09-19 11:40:40 | 52 m |
+
+  **A wedge is not permanent** — an earlier note in this project claimed it was, and the 9/19–9/21 logs
+  disprove it. It clears whenever the broadcaster's WebSocket next drops and reconnects, because the
+  reconnect path resets `mStreamActive`. Both September 19–21 cases recovered that way, unprompted, at
+  02:52 and 02:54 — Zello appears to cycle idle connections in the early morning. The Londonderry case
+  cleared differently again, when the Zello server itself ended the stream after 52 minutes
+  (`Zello server stopped our stream`). So the failure is bounded by luck rather than by anything in this
+  code, which is the reason to fix it rather than wait for the reconnect.
+
   Two changes: `stopRealTimeStream()` now cancels a queued start when the stream never became active
   (DEBUG line when it does), and the broadcaster watchdog — which since ap-15.1 only checked for
   *disconnected* — now force-stops a stream that has been active with no audio for 15 s
   (`STALE_STREAM_TIMEOUT_MS`; every real call delivers buffers continuously and the relaxation hold-over is
   700 ms), logging a WARN with stream age, stream id and pending flags so the next occurrence explains
   itself. The stale check runs in pooled mode too; the disconnect check remains direct-mode only.
-  **Watch for `Watchdog: stream active for` in fleet logs — each one is a wedge that would previously have
-  been permanent.**
+  Detection latency is 15 s plus up to the 60 s watchdog tick, against the 52 m to 17.8 h above.
+  **Watch for `Watchdog: stream active for` in fleet logs — each one is a feed that would otherwise have
+  been dark until the next reconnect.**
 - **MDC-1200 activity summary looped forever and OOM'd the GUI thread.** `MDCDecoderState.getActivitySummary()`
   iterated `mEmergencyIdents` with `while(it.hasNext())` and never called `it.next()`, so once a channel with
   the MDC-1200 decoder enabled had decoded one emergency ident, selecting that channel in the channel table
@@ -34,6 +57,18 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   Daly 2026-09-18 13:08 via `ChannelMetadataPanel.valueChanged → ChannelDetailPanel.receive`. Decoding and
   streaming were unaffected; only the click handler unwound. The loop also printed every ident instead of the
   emergency ones. Present in upstream master — PR candidate.
+
+### Added
+- **A tuner leaving the bus is now a WARN that names it and the channels it took with it.** Device removal
+  was logged only as `INFO Tuner removal detected - stopping and removing: <tuner>`, followed by a burst of
+  `Stopping traffic channel` INFO lines. Daly 2026-09-21 08:05:21: the RSP1B (`SER#24050F5260`) dropped out
+  carrying **13 channels**, and eleven Zello feeds — every NH system plus Lawrence MA — produced **zero**
+  streams until the 10:04 restart, one hour 59 minutes later. The four RTL-served MA feeds kept running
+  normally throughout, which is exactly what makes this hard to spot from the outside. Nothing anywhere in
+  the log was above INFO. `DiscoveredTunerModel` now logs
+  `TUNER REMOVED FROM SYSTEM [<tuner>] while carrying [n] channel(s)` at WARN, stating that it is a device
+  or USB level disconnect rather than a decoder fault. The channel count is read best-effort and never
+  suppresses the warning.
 
 ## [0.6.2-ap-15.9.4] - 2026-09-17
 

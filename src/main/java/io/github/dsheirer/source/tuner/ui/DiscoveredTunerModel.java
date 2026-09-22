@@ -381,6 +381,36 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
         {
             mLog.info("Tuner removal detected - stopping and removing: " + discoveredTuner);
 
+            //AP-fork: a device that disappears from the bus takes every channel it was carrying with it, and
+            //until this WARN the only trace was the INFO line above plus a burst of 'Stopping traffic channel'.
+            //Daly 2026-09-21 08:05:21: the RSP1B dropped out carrying 13 channels and eleven Zello feeds went
+            //silent for just under two hours, with nothing at WARN or ERROR anywhere in the log.
+            int removedChannelCount = -1;
+
+            try
+            {
+                if(discoveredTuner.hasTuner() && discoveredTuner.getTuner().getChannelSourceManager() != null)
+                {
+                    removedChannelCount = discoveredTuner.getTuner().getChannelSourceManager().getTunerChannelCount();
+                }
+            }
+            catch(Exception e)
+            {
+                //Counting channels is best-effort - never let it suppress the warning below
+            }
+
+            if(removedChannelCount > 0)
+            {
+                mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] while carrying [" + removedChannelCount +
+                    "] channel(s) - those channels have stopped and will not restart until the device returns. This is " +
+                    "a device or USB level disconnect, not a channel or decoder fault.");
+            }
+            else
+            {
+                mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] - it was carrying no channels at the " +
+                    "time. This is a device or USB level disconnect, not a channel or decoder fault.");
+            }
+
             //Note: RSPduo only gets device removal indication if the device is streaming.  There may be situation where
             //master only is streaming, or slave only is streaming.  Ensure we remove both devices when detected.
 
