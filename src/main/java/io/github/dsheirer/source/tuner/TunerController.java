@@ -229,49 +229,6 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         {
             setMaximumFrequency(config.getMaximumFrequency());
         }
-
-        //AP-fork: the saved centre frequency of an idle tuner is a leftover, not a setting.  Channel allocation owns
-        //it: PolyphaseChannelSourceManager.getSource() recomputes the centre from the channels being served and calls
-        //setFrequency().  So when a tuner is idle, its saved centre is simply wherever the last channel left it, and
-        //it can easily sit outside a min/max window set later.
-        //
-        //The min/max window, by contrast, IS a deliberate setting and is load bearing.  isTunable() checks each
-        //channel against it, which is how a tuner is kept off channels that belong to another tuner.  It must never
-        //be widened or cleared automatically.
-        //
-        //Previously the mismatch aborted this method: setFrequencyCorrection() re-validates the current frequency
-        //against the limits installed just above, so it threw InvalidFrequencyException out of apply(), and the PPM
-        //correction and auto-PPM enable were silently skipped for the whole session.  Seen on three of Baker's four
-        //RTL-2832 dongles at every start on 2026-09-22 (a leftover centre of 483.5125 MHz against a 170 MHz maximum,
-        //the same against 469 MHz, and 101.1 MHz against a 150 MHz minimum), reported only as one ERROR at startup.
-        //
-        //Now the disposable value gives way and the deliberate one is kept: the centre is moved to the nearest edge
-        //of the window, and the first channel allocation moves it again anyway.
-        long minimum = mFrequencyController.getMinimumFrequency();
-        long maximum = mFrequencyController.getMaximumFrequency();
-        long current = getFrequency();
-
-        if(minimum <= maximum && (current < minimum || current > maximum))
-        {
-            long clamped = (current < minimum) ? minimum : maximum;
-
-            mLog.warn("Tuner centre frequency [" + current + " Hz] is outside this tuner's configured frequency " +
-                    "range [" + minimum + "-" + maximum + " Hz] - moving it to [" + clamped + " Hz].  The centre " +
-                    "frequency of an idle tuner is a leftover from the last channel it served, so this is normal " +
-                    "after changing the range; the configured range is left as-is and channel allocation will set " +
-                    "the centre frequency when a channel claims this tuner.");
-
-            try
-            {
-                setFrequency(clamped);
-                config.setFrequency(clamped);
-            }
-            catch(Exception e)
-            {
-                mLog.warn("Unable to move tuner centre frequency into the configured range: " + e.getMessage());
-            }
-        }
-
         setFrequencyCorrection(config.getFrequencyCorrection());
         getTunerFrequencyErrorManager().setEnabled(config.getAutoPPMCorrectionEnabled());
     }
