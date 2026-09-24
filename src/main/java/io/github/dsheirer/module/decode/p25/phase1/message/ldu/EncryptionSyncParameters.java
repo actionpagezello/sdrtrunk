@@ -157,6 +157,19 @@ public class EncryptionSyncParameters implements IEncryptionSyncParameters
         return getEncryptionKey().getValue().isEncrypted();
     }
 
+    /**
+     * AP-fork: raw 8-bit algorithm ID exactly as it appears in the LDU2, before the all-zeros override in
+     * getEncryptionKey() and before it is mapped onto the {@link Encryption} enumeration.  An unrecognised
+     * value becomes Encryption.UNKNOWN, which isEncryptedAudio() treats as encrypted and mutes.  Kept so
+     * the audio module can log which value caused the mute.
+     *
+     * @return algorithm ID, 0-255.
+     */
+    public int getAlgorithmId()
+    {
+        return getMessage().getInt(ALGORITHM_ID);
+    }
+
     public List<Identifier> getIdentifiers()
     {
         if(mIdentifiers == null)

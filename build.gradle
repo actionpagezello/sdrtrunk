@@ -142,7 +142,10 @@ def jvmArgsWindows =
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
-         '-Xmx10g',                        //Set max heap size to 10GB
+         '-Xmx4g',                         //AP-fork: 4GB ceiling.  Fleet steady state peaks at ~1GB
+                                           //(Somerville, the busiest box, 1005MB).  10GB was runway rather than
+                                           //protection: the 2026-09-05 Paxton event froze for 6.5 minutes filling it.
+                                           //4GB leaves 4x headroom for a busy system and still fails fast.
          '-Dprism.order=d3d,sw',            //JavaFX: try D3D first, fall back to software rendering
          '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
 
@@ -157,7 +160,7 @@ def jvmArgsLinux =
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--enable-native-access=ALL-UNNAMED', //SDRPlay API library path
-         '-Xmx10g']                        //Set max heap size to 10GB
+         '-Xmx4g']                         //AP-fork: 4GB ceiling - see the Windows args above
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"

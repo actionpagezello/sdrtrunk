@@ -144,6 +144,20 @@ public class HeaderData
         return Encryption.fromValue(getMessage().getInt(ALGORITHM_ID));
     }
 
+    /**
+     * AP-fork: raw 8-bit algorithm ID exactly as it appears in the header, before it is mapped onto the
+     * {@link Encryption} enumeration.  getEncryption() collapses every unrecognised value to
+     * Encryption.UNKNOWN, and isEncryptedAudio() then treats UNKNOWN as encrypted and mutes the call.
+     * That is the correct safe default, but it discards the one number that says whether the mute was
+     * a real encrypted call or a decode error.  Kept so the audio module can log it.
+     *
+     * @return algorithm ID, 0-255.
+     */
+    public int getAlgorithmId()
+    {
+        return getMessage().getInt(ALGORITHM_ID);
+    }
+
     public boolean isEncryptedAudio()
     {
         return getEncryption() != Encryption.UNENCRYPTED;

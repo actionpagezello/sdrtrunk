@@ -5,6 +5,78 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.6] - 2026-09-24
+
+Four changes, each measured before it was written. Two correct a silent failure, one corrects a filter that
+was attenuating the wrong part of the spectrum, and one reduces a heap ceiling that was never protection.
+
+### Fixed
+- **A squelch close could be swallowed, stranding the stuck-call timer.** `NoiseSquelch` broadcast
+  `SquelchState.SQUELCH` only from inside the guard around emitting a trailing audio segment.
+  `mSquelchOpenIndex` is set by `findTransition()`, which indexes the delay buffer and can therefore exceed
+  `squelchCloseIndex`; when it did, the internal state went squelched with no listener told. Downstream that
+  meant `NBFMDecoder` never saw the close, so `mCallStartTimeMs` was never cleared, the squelch tail remover
+  never closed and the tone holdover never started. A stale `mCallStartTimeMs` then makes the *next* squelch
+  opening trip the 180-second watchdog immediately.
+
+  All eight watchdog trips on Baker and Audubon on 2026-09-22 carry that signature: the channel was silent
+  for the whole "call" — zero CTCSS survey lines where roughly fifty were due — with the last real activity
+  160 seconds to 29 minutes earlier. `UNSQUELCH` was already broadcast unconditionally; `SQUELCH` is now
+  symmetric with it.
+
+- **DCS rumble was being notched at the one frequency where it is not present.** ap-15.9.4 notched 134.4 Hz,
+  the DCS bit rate, reasoning that a 134.4 bit/second bitstream puts its energy there. That is backwards. For
+  an NRZ bitstream the bit rate is the *first null* of the sinc envelope — the quietest part of the spectrum.
+  DCS-125 sends a 23-bit codeword at 134.4 bit/s, so the word repeats at 134.4/23 = 5.843 Hz and the energy
+  appears as a comb of 5.843 Hz harmonics concentrated well below the bit rate.
+
+  Measured against ten Lynn Fire FG 3 (DCS-125) recordings on 2026-09-24: in the pauses, 13 of 13 measurable
+  peaks between 10 and 320 Hz landed on a 5.843 Hz harmonic, the strongest being the 10th through 13th at
+  58.6, 64.5, 70.3 and 76.2 Hz. The notch band (118–151 Hz at Q=4) measured −89 dBFS while 50–90 Hz measured
+  −57 dBFS. The notch was removing a slice that was already 30 dB down and leaving the actual rumble intact.
+
+  A high-pass is the right shape for spread energy — twenty harmonics cannot be notched. Filter choice was
+  measured against the same recordings:
+
+  | filter | DCS 20–300 Hz (pause) | 50–90 Hz (pause) | voice 300–3k (talk) |
+  |---|---|---|---|
+  | as shipped (notch only) | −51.5 | −57.2 | −16.5 |
+  | + 4-pole high-pass @ 250 Hz | −56.8 | **−102.9** | −16.6 (−0.1 dB) |
+  | + 4-pole high-pass @ 300 Hz | −60.2 | −109.3 | −16.7 (−0.2 dB) |
+
+  250 Hz was chosen: 45.7 dB of rumble removal for 0.1 dB of voice-band cost, and it stays further from the
+  voice band than 300 Hz. Implemented as two cascaded biquads (Butterworth section Q 0.54119610 and
+  1.30656296) in double precision — at 250 Hz on an 8 kHz stream the poles sit close enough to the unit
+  circle that float rounding in the feedback path shifts the corner. CTCSS channels are unaffected; this
+  path runs only when a channel is configured for DCS and no CTCSS tone is set.
+
+### Added
+- **P25 Phase 1 now warns on an unknown encryption algorithm ID.** `Encryption.fromValue()` collapses every
+  unrecognised 8-bit algorithm ID to `Encryption.UNKNOWN`, `isEncryptedAudio()` treats UNKNOWN as encrypted,
+  and `P25P1AudioModule.processAudio()` then drops every IMBE frame for the call. Muting on an ID that cannot
+  be identified is the correct default — decoding an actually-encrypted call produces noise — but the mute
+  left no trace at all. A channel went silent with nothing in the log saying why, and there was no way to
+  separate a genuinely encrypted talkgroup from a mis-decoded header.
+
+  A WARN now names the raw algorithm ID, the message type it came from (HDU or LDU2) and the talkgroup, once
+  per distinct ID per audio module so a fully encrypted talkgroup costs one line rather than one per call.
+  The two cases read differently: a real encrypted system repeats one ID call after call on the same
+  talkgroups, while a marginal signal produces scattered one-off values, and a talkgroup reporting several
+  different unknown IDs is almost certainly decode error rather than encryption.
+
+### Changed
+- **Heap ceiling reduced from 10 GB to 4 GB.** Fleet steady state peaks at about 1 GB — Somerville, the
+  busiest box, at 1005 MB. A 10 GB ceiling was runway, not protection: it lets a leak or a runaway queue
+  grow for minutes before anything fails, and the 2026-09-05 Paxton event spent 6.5 minutes frozen filling
+  it. 4 GB leaves roughly four times headroom for a busy system and still fails fast enough to be diagnosed.
+  Applied to both the Windows and Linux argument lists.
+
+### Diagnostics
+- The stuck-call watchdog WARN now reports the call age alongside the time since audio last reached the
+  resampler, and says `STALE CALL TIMER, not a stuck carrier` when the two disagree. A genuinely stuck
+  carrier delivers audio continuously, so the idle figure stays near zero. This is what would distinguish
+  the two cases if the squelch fix above ever proves incomplete.
+
 ## [0.6.2-ap-15.9.5] - 2026-09-21
 
 Two silent-failure fixes plus one new warning. The theme is the same as ap-15.9: each of these failed with

@@ -41,14 +41,6 @@ public class NBFMAudioFilters
     public static final double DEFAULT_TONE_NOTCH_Q = 12.0;
 
     /**
-     * Q for a DCS notch.  DCS is a 134.4 bit/second NRZ bitstream rather than a steady tone, so its
-     * energy is spread rather than concentrated and a notch can only take out the middle of it.  A
-     * wider notch catches more of that spread.  Attenuation is partial by nature - see
-     * setDcsNotch().
-     */
-    public static final double DCS_NOTCH_Q = 4.0;
-
-    /**
      * Maximum number of cascaded notch sections, one per configured tone.
      */
     private static final int MAXIMUM_TONE_NOTCHES = 4;
@@ -175,6 +167,10 @@ public class NBFMAudioFilters
     {
         // 0. Sub-audible tone notch - remove the CTCSS/DCS squelch tone from the audio.
         //    Runs first so the tone is gone before any gain or shelving stage can lift it.
+        if (mDcsHighPassEnabled) {
+            sample = processDcsHighPass(sample);
+        }
+
         if (mToneNotchEnabled) {
             sample = processToneNotch(sample);
         }
@@ -231,6 +227,82 @@ public class NBFMAudioFilters
         }
     }
     
+    // ========== 0b. DCS HIGH-PASS (spread-spectrum rumble) ==========
+
+    private boolean mDcsHighPassEnabled = false;
+    //Two cascaded biquads = 4th-order Butterworth.  double, not float: at 250 Hz on 8 kHz the poles
+    //sit close enough to the unit circle that float rounding in the feedback path shifts the corner.
+    private final double[] mDcsB0 = new double[2];
+    private final double[] mDcsB1 = new double[2];
+    private final double[] mDcsB2 = new double[2];
+    private final double[] mDcsA1 = new double[2];
+    private final double[] mDcsA2 = new double[2];
+    private final double[] mDcsX1 = new double[2];
+    private final double[] mDcsX2 = new double[2];
+    private final double[] mDcsY1 = new double[2];
+    private final double[] mDcsY2 = new double[2];
+
+    /**
+     * Builds a 4th-order Butterworth high-pass at {@link #DCS_HIGH_PASS_HZ} as two cascaded biquads.
+     * Butterworth Q values for a 4th-order section pair are 0.54119610 and 1.30656296.
+     */
+    private void setDcsHighPass(double sampleRate)
+    {
+        if(sampleRate <= 0 || DCS_HIGH_PASS_HZ >= sampleRate / 2.0)
+        {
+            mDcsHighPassEnabled = false;
+            return;
+        }
+
+        final double[] sectionQ = {0.54119610, 1.30656296};
+        double w0 = 2.0 * Math.PI * DCS_HIGH_PASS_HZ / sampleRate;
+        double cs = Math.cos(w0);
+        double sn = Math.sin(w0);
+
+        for(int x = 0; x < 2; x++)
+        {
+            double alpha = sn / (2.0 * sectionQ[x]);
+            double a0 = 1.0 + alpha;
+            mDcsB0[x] = ((1.0 + cs) / 2.0) / a0;
+            mDcsB1[x] = (-(1.0 + cs)) / a0;
+            mDcsB2[x] = ((1.0 + cs) / 2.0) / a0;
+            mDcsA1[x] = (-2.0 * cs) / a0;
+            mDcsA2[x] = (1.0 - alpha) / a0;
+            mDcsX1[x] = mDcsX2[x] = mDcsY1[x] = mDcsY2[x] = 0.0;
+        }
+
+        mDcsHighPassEnabled = true;
+    }
+
+    /**
+     * Applies the DCS high-pass cascade to one sample.
+     */
+    private float processDcsHighPass(float sample)
+    {
+        double in = sample;
+
+        for(int x = 0; x < 2; x++)
+        {
+            double out = mDcsB0[x] * in + mDcsB1[x] * mDcsX1[x] + mDcsB2[x] * mDcsX2[x]
+                    - mDcsA1[x] * mDcsY1[x] - mDcsA2[x] * mDcsY2[x];
+            mDcsX2[x] = mDcsX1[x];
+            mDcsX1[x] = in;
+            mDcsY2[x] = mDcsY1[x];
+            mDcsY1[x] = out;
+            in = out;
+        }
+
+        return (float)in;
+    }
+
+    /**
+     * Indicates if the DCS high-pass is active.
+     */
+    public boolean isDcsHighPassEnabled()
+    {
+        return mDcsHighPassEnabled;
+    }
+
     // ========== 0. SUB-AUDIBLE TONE NOTCH ==========
 
     /**
@@ -311,22 +383,40 @@ public class NBFMAudioFilters
     }
 
     /**
-     * Configures a notch for a DCS channel, centred on the 134.4 bit/second DCS symbol rate.
+     * Configures DCS rumble suppression: a 4th-order Butterworth high-pass, not a notch.
      *
-     * Unlike CTCSS this is a partial measure and is documented as such.  DCS transmits a continuous
-     * 23-bit NRZ codeword at 134.4 bit/second, so its energy is spread across a band rather than
-     * concentrated at one frequency.  A wide notch removes the centre of that band and reduces the
-     * audible rumble; it cannot remove it the way a notch removes a steady tone.
+     * ap-15.9.4 notched 134.4 Hz, the DCS bit rate, on the reasoning that this is where a 134.4
+     * bit/second bitstream puts its energy.  Measurement against ten Lynn Fire FG 3 (DCS-125)
+     * recordings on 2026-09-24 showed that is wrong: for an NRZ bitstream the BIT RATE is the first
+     * null of the sinc envelope - the quietest part of the spectrum, not the loudest.  DCS-125 sends
+     * a 23-bit codeword at 134.4 bit/s, so the word repeats at 134.4/23 = 5.843 Hz and the energy
+     * appears as a comb of 5.843 Hz harmonics concentrated well BELOW the bit rate.  In the pauses,
+     * 13 of 13 measurable peaks between 10 and 320 Hz landed on a 5.843 Hz harmonic, the strongest
+     * being the 10th to 13th at 58.6, 64.5, 70.3 and 76.2 Hz.  The notch band (118-151 Hz) measured
+     * -89 dBFS while 50-90 Hz measured -57 dBFS: the notch was removing a slice that was already
+     * 30 dB down and leaving the actual rumble untouched.
+     *
+     * A high-pass is the right shape for spread energy - you cannot notch twenty harmonics.  Filter
+     * choice was measured against the same recordings: a 4th-order Butterworth at 250 Hz takes
+     * 50-90 Hz from -57.2 to -102.9 dBFS (45.7 dB) for a voice-band cost of 0.1 dB.  300 Hz gains a
+     * further 6 dB on the rumble but sits closer to voice, so 250 Hz is used.
      *
      * @param sampleRate of the audio stream
      */
-    public void setDcsNotch(double sampleRate)
+    public void setDcsRumbleFilter(double sampleRate)
     {
-        setToneNotch(new double[]{DCS_SYMBOL_RATE_HZ}, sampleRate, DCS_NOTCH_Q);
+        setToneNotch(new double[0], sampleRate, DEFAULT_TONE_NOTCH_Q);
+        setDcsHighPass(sampleRate);
     }
 
     /**
-     * DCS symbol rate, and the centre of the notch used for DCS channels.
+     * Cutoff for the DCS high-pass, in Hz.  See {@link #setDcsRumbleFilter(double)}.
+     */
+    public static final double DCS_HIGH_PASS_HZ = 250.0;
+
+    /**
+     * DCS symbol rate.  Retained for reference; no longer used as a notch centre - see
+     * {@link #setDcsRumbleFilter(double)} for why notching it was the wrong target.
      */
     public static final double DCS_SYMBOL_RATE_HZ = 134.4;
 

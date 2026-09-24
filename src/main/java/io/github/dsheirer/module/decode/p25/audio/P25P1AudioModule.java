@@ -29,10 +29,13 @@ import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
+import io.github.dsheirer.module.decode.p25.reference.Encryption;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +49,12 @@ public class P25P1AudioModule extends ImbeAudioModule
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
     private volatile GraphicEqualizer mGraphicEQ;
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
+
+    /**
+     * AP-fork: algorithm IDs already reported by warnIfUnknownAlgorithm(), so a fully encrypted talkgroup
+     * logs one line rather than one per call.  Touched only from the message-processing thread.
+     */
+    private final Set<Integer> mReportedUnknownAlgorithms = new HashSet<>();
 
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
@@ -120,6 +129,8 @@ public class P25P1AudioModule extends ImbeAudioModule
                 {
                     mEncryptedCallStateEstablished = true;
                     mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
+                    warnIfUnknownAlgorithm(hdu.getHeaderData().getEncryption(),
+                        hdu.getHeaderData().getAlgorithmId(), "HDU");
                 }
                 else if(message instanceof LDU1Message ldu1)
                 {
@@ -133,6 +144,9 @@ public class P25P1AudioModule extends ImbeAudioModule
                     {
                         mEncryptedCallStateEstablished = true;
                         mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
+                        warnIfUnknownAlgorithm(
+                            Encryption.fromValue(ldu2.getEncryptionSyncParameters().getAlgorithmId()),
+                            ldu2.getEncryptionSyncParameters().getAlgorithmId(), "LDU2");
                     }
 
                     if(mEncryptedCallStateEstablished)
@@ -151,6 +165,39 @@ public class P25P1AudioModule extends ImbeAudioModule
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * AP-fork: reports an algorithm ID that does not map onto a known {@link Encryption} entry.
+     *
+     * Encryption.fromValue() collapses every unrecognised 8-bit algorithm ID to Encryption.UNKNOWN, and
+     * isEncryptedAudio() treats UNKNOWN as encrypted, so processAudio() drops every IMBE frame for the call.
+     * Muting on an ID we cannot identify is the right default - decoding an actually-encrypted call would
+     * produce noise - but until now the mute left no trace at all: a channel would simply go silent with
+     * nothing in the log saying why, and there was no way to tell a genuinely encrypted talkgroup from a
+     * mis-decoded header.
+     *
+     * The two cases look different in the log.  A real encrypted system repeats one ID, call after call, on
+     * the same talkgroups.  A decode error produces scattered one-off values - and a talkgroup that reports
+     * several different unknown IDs is almost certainly a marginal signal rather than an encrypted one.
+     *
+     * Logged at WARN once per distinct algorithm ID per audio module, so a fully encrypted talkgroup costs
+     * one line rather than one per call.
+     *
+     * @param encryption as resolved from the algorithm ID
+     * @param algorithmId raw 8-bit value carried in the message
+     * @param source message type the value came from, for the log line
+     */
+    private void warnIfUnknownAlgorithm(Encryption encryption, int algorithmId, String source)
+    {
+        if(encryption == Encryption.UNKNOWN && mReportedUnknownAlgorithms.add(algorithmId))
+        {
+            mLog.warn("P25 Phase 1 {} carries unknown encryption algorithm ID {} (0x{}) - audio is muted for " +
+                "this call because an unrecognised algorithm is assumed encrypted.  A repeating ID on the same " +
+                "talkgroup is a real encrypted system; scattered one-off IDs indicate a marginal signal and a " +
+                "mis-decoded header. Talkgroup(s): {}", source, algorithmId,
+                String.format("%02X", algorithmId & 0xFF), getIdentifierCollection().getIdentifiers());
         }
     }
 

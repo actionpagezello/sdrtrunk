@@ -172,6 +172,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private volatile boolean mWatchdogTripped = false;
 
     /**
+     * AP-fork: wall time that audio last reached processResampledAudio(), i.e. the last moment the squelch actually
+     * passed audio downstream.  Used only by the stuck-call watchdog to separate a real stuck carrier from a stale
+     * call timer.
+     */
+    private volatile long mLastResampledAudioTimeMs = 0;
+
+    /**
      * Constructs an instance
      *
      * @param config to setup the NBFM decoder and noise squelch control.
@@ -541,6 +548,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private void processResampledAudio(float[] resampledAudio)
     {
+        mLastResampledAudioTimeMs = System.currentTimeMillis();
+
         // Step 1: Feed audio to the active tone/code detector for analysis
         if(mCTCSSDetector != null)
         {
@@ -812,11 +821,22 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             // Stuck timer watchdog — force-end calls that exceed max duration
             if(mMaxCallDurationEnabled && !mWatchdogTripped && mCallStartTimeMs > 0)
             {
-                long elapsed = System.currentTimeMillis() - mCallStartTimeMs;
+                long now = System.currentTimeMillis();
+                long elapsed = now - mCallStartTimeMs;
                 if(elapsed > mMaxCallDurationMs)
                 {
-                    mLog.warn("[{}] Stuck timer watchdog: call exceeded {}s max duration, forcing end",
-                        mChannelLabel, mMaxCallDurationMs / 1000);
+                    //AP-fork: report how long ago audio last reached the resampler alongside the call age.  A genuinely
+                    //stuck carrier delivers audio continuously, so idleMs stays near zero; a large idleMs means the
+                    //call timer is stale - the squelch closed without this decoder being told, so mCallStartTimeMs was
+                    //never cleared and the next opening trips the watchdog at once.  The swallowed SquelchState.SQUELCH
+                    //broadcast that caused it is fixed in NoiseSquelch; this line is what distinguishes the two cases
+                    //if it ever happens again.
+                    long idleMs = mLastResampledAudioTimeMs > 0 ? now - mLastResampledAudioTimeMs : -1;
+                    mLog.warn("[{}] Stuck timer watchdog: call exceeded {}s max duration, forcing end " +
+                        "(call age {}s, audio last seen {}s ago{})",
+                        mChannelLabel, mMaxCallDurationMs / 1000, elapsed / 1000,
+                        idleMs < 0 ? "never" : String.valueOf(idleMs / 1000),
+                        idleMs > 5000 ? " - STALE CALL TIMER, not a stuck carrier" : "");
                     mWatchdogTripped = true;
                     broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.END, State.CALL, 0));
                 }
@@ -1271,12 +1291,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         }
         else if(hasDcs)
         {
-            mAudioFilters.setDcsNotch(sampleRate);
+            mAudioFilters.setDcsRumbleFilter(sampleRate);
 
-            mLog.info("[{}] DCS tone notch ENABLED at {} Hz (Q={}) - DCS is a {} bit/second bitstream " +
-                    "rather than a steady tone, so its energy is spread and this reduces the audible " +
-                    "rumble rather than removing it", mChannelLabel, NBFMAudioFilters.DCS_SYMBOL_RATE_HZ,
-                    NBFMAudioFilters.DCS_NOTCH_Q, NBFMAudioFilters.DCS_SYMBOL_RATE_HZ);
+            mLog.info("[{}] DCS rumble filter ENABLED - 4th order high-pass at {} Hz.  DCS sends a " +
+                    "23 bit codeword at {} bit/second, so the word repeats at {} Hz and its energy is a " +
+                    "comb of harmonics spread from a few Hz up toward the bit rate.  A high-pass removes " +
+                    "the whole comb; the {} Hz notch it replaces sat on the sinc null where there was " +
+                    "nothing to remove", mChannelLabel, NBFMAudioFilters.DCS_HIGH_PASS_HZ,
+                    NBFMAudioFilters.DCS_SYMBOL_RATE_HZ,
+                    String.format("%.3f", NBFMAudioFilters.DCS_SYMBOL_RATE_HZ / 23.0),
+                    NBFMAudioFilters.DCS_SYMBOL_RATE_HZ);
         }
     }
 
