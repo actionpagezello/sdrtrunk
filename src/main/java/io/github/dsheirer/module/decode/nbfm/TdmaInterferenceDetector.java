@@ -117,6 +117,13 @@ public class TdmaInterferenceDetector
     private volatile boolean mInterferenceDetected = false;
     private volatile float mLastScore = 0.0f;
 
+    /**
+     * AP-fork: the comb score that latched mInterferenceDetected, retained for the duration of the latch.
+     * mLastScore tracks the most recent window and decays while the latch is held, so it is misleading in any
+     * message about why the gate is closed.  See updateState().
+     */
+    private volatile float mTriggerScore = 0.0f;
+
     private String mChannelLabel = "";
 
     /**
@@ -160,6 +167,28 @@ public class TdmaInterferenceDetector
     public float getLastScore()
     {
         return mLastScore;
+    }
+
+    /**
+     * AP-fork: the comb score that latched the current interference state, or 0 when not latched.  Prefer this over
+     * getLastScore() in any message explaining why the tone gate is closed - see the field note on mTriggerScore.
+     *
+     * @return triggering comb score.
+     */
+    public float getTriggerScore()
+    {
+        return mTriggerScore;
+    }
+
+    /**
+     * AP-fork: the comb score at or above which interference is declared, exposed so log messages can state the
+     * threshold alongside the measured score rather than leaving the reader to guess it.
+     *
+     * @return detection threshold.
+     */
+    public static float getDetectionThreshold()
+    {
+        return DETECTION_THRESHOLD;
     }
 
     /**
@@ -341,6 +370,11 @@ public class TdmaInterferenceDetector
             if(!mInterferenceDetected && mAboveCount >= CONFIRMATION_WINDOWS)
             {
                 mInterferenceDetected = true;
+                //AP-fork: remember the score that actually latched the detector.  Consumers log getLastScore(),
+                //which by then has decayed to whatever the current window measured - the 2026-09-23 Daly log shows
+                //gate closures reporting scores as low as 0.4 against a DETECTION_THRESHOLD of 20.0, which reads as
+                //a broken threshold and is in fact just a stale figure.  getTriggerScore() reports the real one.
+                mTriggerScore = score;
                 LOGGER.debug("[{}] TDMA digital interference detected (comb score={}) — tone gate vetoed",
                         mChannelLabel, String.format("%.1f", score));
             }

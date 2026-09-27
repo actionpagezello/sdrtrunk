@@ -133,10 +133,28 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         //Set the decimated sample rate to use for PLL error reporting.
         setDecimatedSampleRate(decimatedSampleRate);
 
+        //AP-fork, adopted from upstream PR #2461 (unmerged at the time of writing): FilterFactory
+        //.getRootRaisedCosine() halves its samples-per-symbol argument on its first line, so the previous call with
+        //the actual value (4.0) designed a 9600 baud, alpha 0.2 filter rather than the intended ~4800 baud one -
+        //admitting roughly twice the noise bandwidth of the C4FM signal.  Passing 1.5x the actual value with
+        //alpha 0.5 designs at 6400 baud.  Upstream measured a sweep of design rate and roll-off against an
+        //independent IQ oracle and by control-channel content corroboration: a plateau at 6400 baud with alpha
+        //0.5-0.7 recovered +8.7 to 9.4% corroborated TSBKs on the weakest control channel in their set, with no
+        //change on the stronger one, marginal and clean voice recall unchanged, and refuted claims unchanged.  A true
+        //4800 baud alpha 0.2 design is too narrow for C4FM and costs ~4 points of marginal voice recall.
+        //
+        //Fleet expectation to verify: the ap-15.9.6 unknown-ALG-ID WARN showed scattered one-off algorithm IDs on
+        //marginal talkgroups (Somerville Arlington Police 10 distinct IDs, Watertown 9, Winthrop 5; Daly North
+        //Andover 7).  Those are corrupt encryption sync fields from bad symbol decisions, so if this filter is
+        //correct those counts should fall.  tools/fleetcheck.py reports them.
+        //
+        //NOT applied to P25P1DecoderLSM or DMRDecoder, which call the same method the same way and have the same
+        //mis-design: LSM is not C4FM and DMR is 4FSK, so these constants do not transfer and each needs its own
+        //measurement.  See the upstream-PR section in CLAUDE.md.
         int symbolLength = 16;
-        float rrcAlpha = 0.2f;
+        float rrcAlpha = 0.5f;
 
-        float[] taps = FilterFactory.getRootRaisedCosine(decimatedSampleRate / SYMBOL_RATE,
+        float[] taps = FilterFactory.getRootRaisedCosine(1.5 * decimatedSampleRate / SYMBOL_RATE,
                 symbolLength, rrcAlpha);
         mPulseShapingFilterI = new RealFIRFilter(taps);
         mPulseShapingFilterQ = new RealFIRFilter(taps);

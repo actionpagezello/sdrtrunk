@@ -5,6 +5,97 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.7] - 2026-09-26
+
+Ships the squelch-close fix that was lost from ap-15.9.6, takes one upstream P25 filter correction, and adds
+two diagnostics for failures that were previously invisible.
+
+### Fixed
+- **The ap-15.9.6 squelch-close fix was never in the build.** `NoiseSquelch.java` does not appear in
+  `ap-15.9.6.patch` at all. The change was recovered from a reverted commit with `git apply --3way`, which
+  failed on `NBFMDecoder.java` and — being atomic — rolled back the `NoiseSquelch.java` hunk that had already
+  applied cleanly. Only the other half was re-applied, and the delivered patch was never checked against the
+  files it claimed to touch. The ap-15.9.6 changelog entry and release notes both state this fix is present;
+  they are wrong.
+
+  The diagnostic that *did* ship is what caught it. On 2026-09-25, across five machines on ap-15.9.6: 11
+  stuck-call watchdog trips, **10 flagged `STALE CALL TIMER`** — Somerville 8 (7 stale), Baker 2 (2), Stoneham
+  1 (1), Beauport 0, Daly 0. Somerville is unchanged from its 09-22 baseline of exactly 8 trips, which is what
+  a missing fix predicts. Idle times on the stale trips ran 194 s to 977 s.
+
+  The fix itself is unchanged from its description in ap-15.9.6: `broadcast(SquelchState.SQUELCH)` moves out of
+  the `if(mSquelchOpenIndex < squelchCloseIndex)` guard so the close is always announced, symmetric with
+  `UNSQUELCH`. `mSquelchOpenIndex` comes from `findTransition()`, which indexes the delay buffer and can exceed
+  `squelchCloseIndex`; when it did, the state went squelched with no listener told, `mCallStartTimeMs` was never
+  cleared, and the next squelch opening tripped the 180-second watchdog at once.
+
+- **P25 Phase 1 C4FM matched filter designed for the wrong symbol rate.** Adopted from upstream PR #2461,
+  unmerged at the time of writing. `FilterFactory.getRootRaisedCosine()` halves its samples-per-symbol argument
+  on its first line, so `P25P1DecoderC4FM` passing the actual value (4.0) designed a **9600 baud, alpha 0.2**
+  filter instead of the intended ~4800 baud one, admitting roughly twice the noise bandwidth of the signal.
+  Now passes 1.5x the actual value with alpha 0.5, designing at 6400 baud.
+
+  Upstream measured a sweep of design rate and roll-off against an independent IQ oracle and by
+  control-channel content corroboration: a plateau at 6400 baud with alpha 0.5 to 0.7 recovered +8.7 to 9.4%
+  corroborated TSBKs on the weakest control channel in their set, no change on the stronger one, marginal and
+  clean voice recall unchanged, refuted claims unchanged. A true 4800 baud alpha 0.2 design is too narrow for
+  C4FM and costs about 4 points of marginal voice recall.
+
+  **Verifiable on this fleet:** the ap-15.9.6 unknown-ALG-ID warning showed scattered one-off algorithm IDs on
+  marginal talkgroups — Somerville Arlington Police 10 distinct IDs, Watertown 9, Winthrop 5; Daly North
+  Andover 7. Those are corrupt encryption sync fields from bad symbol decisions. If this filter is right those
+  counts should fall, and `tools/fleetcheck.py` reports them.
+
+  **Deliberately not applied to `P25P1DecoderLSM` or `DMRDecoder`**, which call the same method the same way
+  and carry the same mis-design. LSM is not C4FM and DMR is 4FSK, so these constants do not transfer; each
+  needs its own measurement. Cambridge CoMIRS is P25 Phase 1 Simulcast (LSM) and is the system to measure
+  against.
+
+### Diagnostics
+- **Tuner frequency error is now logged.** A Daly RTL-2832 was running at 10 PPM — about 4.8 kHz at 483 MHz,
+  roughly twice the peak deviation of a narrowband channel — which put the carrier near the edge of the channel
+  filter, distorted the demodulated audio, and collapsed the CTCSS tone discrimination margin. Methuen Fire,
+  Andover Fire and Lawrence Fire were all affected; setting the PPM to 0 fixed them. **Nothing logged this at
+  any level.** The measured error was already computed and handed to the tuner controller, and then discarded.
+
+  It is now reported at INFO every 5 minutes per tuner, with the implied residual PPM against the configured
+  value and whether auto-PPM is enabled. Additionally, a tuner that receives **no** frequency error measurement
+  for 5 minutes now warns once, explaining that auto-PPM cannot correct it: frequency error is measured only by
+  decoders that track a carrier, and `NBFMDecoder` has no such measurement because FM has no reference carrier
+  phase to lock to. An NBFM-only tuner's PPM can only be set by hand, and previously nothing said so.
+
+- **The TDMA interference gate closure now reports the score that latched it.** It logged
+  `getLastScore()`, which decays while the latch is held, so the 09-23 Daly log shows closures reporting comb
+  scores as low as 0.4 against a `DETECTION_THRESHOLD` of 20.0 — which reads as a broken threshold and is only
+  a stale figure. The line now gives the latching score, the current score and the threshold, so a reader can
+  tell live interference from a latch running out its `RELEASE_WINDOWS`. No behaviour change: the latch, the
+  threshold and the 1-window-to-confirm / 3-windows-to-release asymmetry are untouched pending measurement of
+  whether the detections are correct. Daly logged 5,324 closures on Lawrence Fire and 370 on Andover Fire in a
+  day, and some of that may have been the off-tune audio above.
+
+### tools/fleetcheck.py
+- **ThinLine / Rdio Scanner call upload.** The script missed 63,414 upload failures on Cambridge across four
+  days because it had no such section. It now counts failures per endpoint with the error code, names
+  Cloudflare codes (1033, 530, 521, 522) as origin-side rather than SDRTrunk faults, and reports whether the
+  feed ever connected at all.
+- **Per-serial tuner reliability** — sessions, removals, uptime and removals per hour, broken out by serial
+  number. On Daly 09-25 this separates `RSP1B SER#24040A4B60` at 15.5 removals per hour of uptime from
+  `SER#24050F5260` at 0.79, on the same machine and the same bus, which is how a faulty device is told from a
+  faulty port.
+- Reports the new frequency-error and no-measurement lines, so a fleet-wide PPM audit is a log analysis rather
+  than a visit to ten machines.
+
+### Not in this release
+- **No Rdio Scanner retry backoff.** Proposed after the Cambridge finding; the BAPERN channel was enabled
+  accidentally and has been disabled, so the 15,700 retries per day were a misconfiguration, not a defect.
+- **No CTCSS detector resolution change.** The measurement that justified it — Andover Fire's 146.2 Hz at
+  16.7 dB against 141.3 Hz at 16.3 dB — was taken on a signal roughly 4.8 kHz off tune and is contaminated.
+  Re-measure on a correctly tuned signal before deciding whether the longer window and its added confirmation
+  latency are needed at all.
+- **No P25 Phase 2 changes.** Upstream PRs #2460 and #2459 apply, and Cambridge does allocate 35 to 70 Phase 2
+  traffic channels a day, but both PRs were measured at 0 dB SNR and reported no change on clean signals, and
+  it is not yet established whether Cambridge's Phase 2 audio decodes at all.
+
 ## [0.6.2-ap-15.9.6] - 2026-09-24
 
 Four changes, each measured before it was written. Two correct a silent failure, one corrects a filter that

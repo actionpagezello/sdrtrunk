@@ -572,8 +572,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             if(mToneMatch)
             {
-                mLog.debug("[{}] Closing tone gate — TDMA digital interference (comb score={})",
-                        mChannelLabel, String.format("%.1f", mTdmaDetector.getLastScore()));
+                //AP-fork: report the score that LATCHED the detector, plus the current one, and say the threshold.
+                //This previously logged only getLastScore(), which decays while the latch is held - the 2026-09-23
+                //Daly log shows closures reporting 0.4 against a threshold of 20.0, which reads as a broken
+                //threshold and is only a stale figure.  Both numbers together say whether the interference is still
+                //present or the latch is simply running out its RELEASE_WINDOWS.
+                mLog.debug("[{}] Closing tone gate — TDMA digital interference (latched at comb score={}, " +
+                                "currently {}, threshold {})",
+                        mChannelLabel, String.format("%.1f", mTdmaDetector.getTriggerScore()),
+                        String.format("%.1f", mTdmaDetector.getLastScore()),
+                        String.format("%.1f", TdmaInterferenceDetector.getDetectionThreshold()));
                 mToneMatch = false;
                 mHoldoverOpenTime = 0;
 

@@ -60,6 +60,19 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
      */
     private static final int BASELINE_REACQUIRE_AFTER_REJECTIONS = 12;
 
+    /**
+     * AP-fork: how many timer intervals between measured-frequency-error reports at INFO.  At
+     * TIMER_INTERVAL_SECONDS = 5 this is one line every 5 minutes per tuner, which is cheap enough to leave on
+     * permanently and is the only way a wrong PPM becomes visible outside the GUI.
+     */
+    private static final int REPORT_INTERVAL_COUNT = 60;
+
+    /**
+     * AP-fork: how many consecutive intervals with no frequency error measurement before warning that auto-PPM
+     * cannot correct this tuner.  5 minutes at TIMER_INTERVAL_SECONDS = 5.
+     */
+    private static final int NO_MEASUREMENT_WARN_INTERVALS = 60;
+
     private final List<ChannelFrequencyErrorManager> mChannelManagers = new ArrayList<>();
     private final TunerController mTunerController;
     private ScheduledFuture<?> mScheduledFuture;
@@ -70,6 +83,11 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
 
     //AP-fork: baseline PPM tracking with EMA for sanity checks
     private double mBaselinePPM = Double.NaN;
+
+    //AP-fork: periodic measured-error reporting and the no-measurement warning.  See the constants above.
+    private int mReportIntervalCounter = 0;
+    private int mNoMeasurementIntervals = 0;
+    private boolean mNoMeasurementWarned = false;
 
     //AP-fork: consecutive rejections against the current baseline - see BASELINE_REACQUIRE_AFTER_REJECTIONS
     private int mConsecutiveRejections = 0;
@@ -177,11 +195,49 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                 //scheduled task, permanently cancels frequency error correction for this tuner.
                 if(count == 0)
                 {
+                    //AP-fork: no channel on this tuner reported a frequency error this interval.  That is normal for
+                    //an idle tuner, but it is PERMANENT for a tuner carrying only NBFM channels: frequency error is
+                    //measured by decoders that track a carrier (P25, DMR), and NBFMDecoder has no such measurement
+                    //because FM has no reference carrier phase to lock to.  Such a tuner's PPM can only be set by
+                    //hand, and nothing previously said so at any log level - which is how a Daly RTL-2832 ran at
+                    //10 PPM (~4.8 kHz at 483 MHz, roughly twice the peak deviation of a narrowband channel) long
+                    //enough to break the CTCSS tone gate on Methuen Fire, Andover Fire and Lawrence Fire.  Warn once.
+                    if(++mNoMeasurementIntervals >= NO_MEASUREMENT_WARN_INTERVALS && !mNoMeasurementWarned)
+                    {
+                        mNoMeasurementWarned = true;
+                        LOG.warn("Tuner [{}] has received NO frequency error measurement in {} minutes at PPM {} - " +
+                                        "auto-PPM cannot correct this tuner.  Only carrier-tracking decoders (P25, " +
+                                        "DMR) measure frequency error; NBFM channels never do.  If this tuner " +
+                                        "carries only NBFM channels its PPM must be set manually, and an incorrect " +
+                                        "value silently degrades every channel on it.",
+                                mTunerController.getClass().getSimpleName(),
+                                (NO_MEASUREMENT_WARN_INTERVALS * TIMER_INTERVAL_SECONDS) / 60,
+                                DF.format(mTunerController.getFrequencyCorrection()));
+                    }
+
                     return;
                 }
 
+                mNoMeasurementIntervals = 0;
+
                 requestedChangeHz /= count;
                 mTunerController.setMeasuredFrequencyError((int)requestedChangeHz);
+
+                //AP-fork: report the measured error periodically at INFO.  This value was already computed and handed
+                //to the tuner controller but never logged, so a tuner sitting at a wrong PPM was invisible outside the
+                //GUI - see the note above.  Logging it makes a fleet-wide PPM audit a log analysis rather than a visit
+                //to ten machines, and makes slow drift visible instead of silent.
+                if(++mReportIntervalCounter >= REPORT_INTERVAL_COUNT)
+                {
+                    mReportIntervalCounter = 0;
+                    double impliedPPM = requestedChangeHz / (mTunerController.getFrequency() * PPM_DIVISOR);
+                    LOG.info("Tuner [{}] frequency error {} Hz at {} Hz over {} channel(s) - implies {} PPM of " +
+                                    "residual error against the configured {} PPM (auto-PPM {})",
+                            mTunerController.getClass().getSimpleName(), requestedChangeHz,
+                            mTunerController.getFrequency(), count, DF.format(impliedPPM),
+                            DF.format(mTunerController.getFrequencyCorrection()),
+                            mEnabled ? "enabled" : "DISABLED");
+                }
 
                 if(Math.abs(requestedChangeHz) > MINIMUM_CORRECTION_THRESHOLD_HZ)
                 {

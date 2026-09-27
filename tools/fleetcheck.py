@@ -90,6 +90,22 @@ TUNER_ID = re.compile(r'(SER#\w+|\b(?:RSP1B|RSP1A|RSPdx|RSPduo|RTL-?2832\S*)\b)'
 
 P25_ALG = re.compile(r'unknown encryption algorithm ID (\d+) \(0x([0-9A-Fa-f]+)\).*?Talkgroup\(s\): (.*)$')
 
+# ThinLine / Rdio Scanner call upload.  A feed that cannot reach its endpoint retries every 5 seconds
+# indefinitely and writes one WARN each time; 63,414 of these hid in four days of Cambridge logs before this
+# section existed.  The endpoint and the error code are what identify the fault (1033 and 530 are Cloudflare).
+RDIO_FAIL = re.compile(r'Rdio Scanner connection test failed for \[([^\]]+)\].*?(?:error code|Status Code)[: ]\s*(\d+)')
+RDIO_OK = re.compile(r'Rdio Scanner reconnected to \[([^\]]+)\]')
+
+# Tuner frequency error, ap-15.9.7 and later.  Absent on earlier builds, where a wrong PPM is invisible.
+FREQ_ERR = re.compile(r'Tuner \[([^\]]+)\] frequency error (-?\d+) Hz at (\d+) Hz over (\d+) channel')
+FREQ_ERR_PPM = re.compile(r'implies (-?[\d.]+) PPM .*?configured (-?[\d.]+) PPM')
+NO_FREQ_MEAS = re.compile(r'Tuner \[([^\]]+)\] has received NO frequency error measurement')
+
+# Per-serial tuner sessions, for telling a bad device from a bad port.
+TUNER_ADD = re.compile(r'Tuner: (\S+) SER#(\w+) - Added / (\w+)')
+TUNER_GONE = re.compile(r'TUNER REMOVED FROM SYSTEM \[(\S+) SER#(\w+)\]')
+TUNER_STOP = re.compile(r'Stopping Tuner: (\S+) SER#(\w+)')
+
 # CTCSS detector internals are the one thing here that DEBUG gates.  A stock INFO log carries the
 # per-channel configuration line but not the per-detection line, so the tone-confusion section
 # below simply stays quiet unless DEBUG was on for i.g.d.m.d.nbfm.CTCSSDetector.
@@ -143,6 +159,12 @@ class Findings:
         self.ctcss_seen = collections.defaultdict(collections.Counter)
         self.dcs_channels = set()
         self.have_ctcss_debug = False
+        self.rdio_fail = collections.Counter()      # (endpoint, code) -> count
+        self.rdio_ok = collections.Counter()
+        self.freq_err = collections.defaultdict(list)   # tuner -> [(error_hz, implied_ppm, configured_ppm)]
+        self.no_freq_meas = set()
+        self.tuner_sessions = []                    # (serial, start_t, end_t, how)
+        self._tuner_open = {}
         self.lines = 0
 
 
@@ -211,6 +233,42 @@ def scan(path):
             f.tuner.append((label, kind, ident.group(1) if ident else subject[:28]))
             continue
 
+        r = RDIO_FAIL.search(msg)
+        if r:
+            f.rdio_fail[(r.group(1), r.group(2))] += 1
+            continue
+        r = RDIO_OK.search(msg)
+        if r:
+            f.rdio_ok[r.group(1)] += 1
+            continue
+
+        fe = FREQ_ERR.search(msg)
+        if fe:
+            pm = FREQ_ERR_PPM.search(msg)
+            f.freq_err[fe.group(1)].append((int(fe.group(2)), int(fe.group(3)),
+                                           float(pm.group(1)) if pm else None,
+                                           float(pm.group(2)) if pm else None))
+            continue
+        nm = NO_FREQ_MEAS.search(msg)
+        if nm:
+            f.no_freq_meas.add(nm.group(1))
+            continue
+
+        ta = TUNER_ADD.search(msg)
+        if ta and ta.group(3) == 'Starting':
+            f._tuner_open[ta.group(2)] = (t, ta.group(1))
+            continue
+        tg = TUNER_GONE.search(msg)
+        if tg and tg.group(2) in f._tuner_open:
+            st, model = f._tuner_open.pop(tg.group(2))
+            f.tuner_sessions.append((tg.group(2), model, st, t, 'REMOVED'))
+            continue
+        tsp = TUNER_STOP.search(msg)
+        if tsp and tsp.group(2) in f._tuner_open:
+            st, model = f._tuner_open.pop(tsp.group(2))
+            f.tuner_sessions.append((tsp.group(2), model, st, t, 'stopped'))
+            continue
+
         p = P25_ALG.search(msg)
         if p:
             f.p25[p.group(3).strip()[:60]][f"{p.group(1)} (0x{p.group(2).upper()})"] += 1
@@ -233,6 +291,9 @@ def scan(path):
                 #target=NO is the detector's own verdict that this is not a configured tone for the
                 #channel, which is more reliable than comparing against the configuration line.
                 f.ctcss_seen[subject][(nearest_tone(float(cd.group(1))), cd.group(3) == 'YES')] += 1
+
+    for serial, (st, model) in f._tuner_open.items():
+        f.tuner_sessions.append((serial, model, st, None, 'still running'))
 
     return f
 
@@ -323,6 +384,68 @@ def report(f, verbose):
             print(f"              ... {len(f.tuner) - 25} more (--verbose for all)")
     else:
         print("  tuner     clean")
+
+    # --- ThinLine / Rdio Scanner -------------------------------------------------------------
+    if f.rdio_fail:
+        hit = True
+        total = sum(f.rdio_fail.values())
+        print(f"  THINLINE  {total:,} call-upload connection failures - calls from this machine are NOT reaching")
+        print("            the server.  A failing feed retries every 5 s indefinitely and logs each attempt.")
+        for (endpoint, code), n in f.rdio_fail.most_common(6):
+            hint = ''
+            if code in ('1033', '530', '521', '522'):
+                hint = '   <- Cloudflare: tunnel/origin not reachable, not an SDRTrunk fault'
+            print(f"              {endpoint}")
+            print(f"                 error {code}  x{n:,}{hint}")
+        if f.rdio_ok:
+            print("            reconnections: " + ", ".join(f"{k} x{v}" for k, v in f.rdio_ok.most_common(4)))
+        else:
+            print("            no successful connection at any point in this log.")
+    elif f.rdio_ok:
+        print("  thinline  connected (" + ", ".join(f"{k} x{v}" for k, v in f.rdio_ok.most_common(3)) + ")")
+
+    # --- tuner frequency error / PPM ---------------------------------------------------------
+    if f.freq_err:
+        print("  ppm       measured frequency error per tuner (ap-15.9.7+).  A tuner sitting at the wrong PPM")
+        print("            degrades every channel on it and is otherwise invisible outside the GUI:")
+        for tuner, rows in sorted(f.freq_err.items()):
+            errs = [r[0] for r in rows]
+            ppms = [r[2] for r in rows if r[2] is not None]
+            cfg = next((r[3] for r in rows if r[3] is not None), None)
+            med = sorted(errs)[len(errs) // 2]
+            flag = '   <<< investigate' if ppms and abs(sorted(ppms)[len(ppms) // 2]) >= 2.0 else ''
+            line = f"              {tuner:28s} median error {med:+7d} Hz over {len(rows):4d} report(s)"
+            if ppms:
+                line += f", implies {sorted(ppms)[len(ppms)//2]:+6.2f} PPM residual"
+            if cfg is not None:
+                line += f" (configured {cfg:+.2f})"
+            print(line + flag)
+    if f.no_freq_meas:
+        print("  ppm       NO frequency error measurement available for: " + ", ".join(sorted(f.no_freq_meas)))
+        print("            Auto-PPM cannot correct these - only carrier-tracking decoders (P25, DMR) measure error,")
+        print("            NBFM never does.  Their PPM must be set manually and verified by hand.")
+
+    # --- per-serial tuner reliability --------------------------------------------------------
+    if f.tuner_sessions:
+        by = collections.defaultdict(list)
+        for serial, model, st, en, how in f.tuner_sessions:
+            by[(model, serial)].append((st, en, how))
+        interesting = {k: v for k, v in by.items() if any(h == 'REMOVED' for _, _, h in v)}
+        if interesting:
+            hit = True
+            print("  TUNER     per-serial sessions - this separates a faulty device from a faulty port:")
+            print(f"              {'device':34s} {'sessions':>8} {'removals':>9} {'uptime':>10} {'per hour':>9}")
+            rows = []
+            for (model, serial), sess in by.items():
+                up = sum((en - st) for st, en, _ in sess if en is not None)
+                rem = sum(1 for _, _, h in sess if h == 'REMOVED')
+                rows.append((f"{model} SER#{serial}", len(sess), rem, up,
+                             rem / (up / 3600) if up > 0 else float('inf')))
+            for name, n, rem, up, rate in sorted(rows, key=lambda r: -r[4]):
+                r = f"{rate:9.2f}" if rate != float('inf') else "      inf"
+                print(f"              {name:34s} {n:8d} {rem:9d} "
+                      f"{int(up // 3600):4d}h{int(up % 3600 // 60):02d}m {r}")
+            print("            A device failing far more than another on the same machine is the device, not the bus.")
 
     # --- P25 ---------------------------------------------------------------------------------
     if f.p25:
