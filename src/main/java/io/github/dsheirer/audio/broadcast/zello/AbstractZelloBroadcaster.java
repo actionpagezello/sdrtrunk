@@ -71,7 +71,18 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
     private static final int MAX_GHOST_STREAMS_BEFORE_RECONNECT = 3;
     private static final int MAX_CONSECUTIVE_3008_BEFORE_RECONNECT = 3;
+    /**
+     * AP-fork: safety net only, since ap-15.9.8. The seq-keyed ack for our own stop_stream is what
+     * normally releases a pending stop - see {@link #handleStopStreamAck(String)}. This fires only when
+     * that ack is lost, so it must stay comfortably longer than a round trip plus ENCODER_DRAIN_MS.
+     */
     private static final long PENDING_STOP_TIMEOUT_MS = 500;
+
+    /**
+     * Prefix of the command string tracked against a stop_stream seq. The tracked value carries the
+     * stream id as well, so this is a prefix test rather than an equality test.
+     */
+    private static final String STOP_STREAM_COMMAND = "stop_stream";
     /**
      * AP-fork: a stream that has been open this long with no audio arriving is orphaned - every real
      * call delivers buffers continuously, and the relaxation hold-over (default 700 ms) is far shorter.
@@ -629,6 +640,25 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
         mStreamActive.set(false);
 
+        //AP-fork: mark the stop as pending HERE, at stop-begin, not in finishStopRealTimeStream after the
+        //encoder drain. Between mStreamActive going false and the old marking point there was a window of
+        //ENCODER_DRAIN_MS plus the tail-frame send loop in which mStreamActive was already false and
+        //mPendingStopStreamId was still -1, so both guards in beginStreamInternal passed and a new segment
+        //opened a second stream while the first was still closing. The server then rejected one of them
+        //with "channel busy" (3008) - Stoneham ~740 lost transmissions/day, Somerville ~440. Zello Support
+        //confirmed (2026-09-30) that the busy rejections are this client-side race and not channel
+        //contention: these channels have exactly one sender, so extra channel priority cannot help.
+        //
+        //The watchdog is armed here too, so the pending mark can never outlive it if
+        //finishStopRealTimeStream does not run. finishStopRealTimeStream re-arms it from the actual
+        //stop_stream send, which is the round trip the ack is measured against.
+        long stoppingStreamId = mCurrentStreamId.get();
+        if(stoppingStreamId > 0)
+        {
+            mPendingStopStreamId.set(stoppingStreamId);
+            schedulePendingStopTimeout();
+        }
+
         if(mRelaxationFuture != null)
         {
             mRelaxationFuture.cancel(false);
@@ -813,10 +843,17 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             long pending = mPendingStopStreamId.getAndSet(-1);
             if(pending > 0)
             {
-                // DEBUG, not WARN: the server never sends on_stream_stop for client-initiated
-                // stops, so this timeout fires on essentially every stream stop by design
-                // (ap-15.6 soak logs: ~53,000 of these per 3 days at WARN).
-                mLog.debug("{}Zello on_stream_stop timeout — clearing pending stop for stream_id={}", ch(), pending);
+                // Zello Support confirmed (2026-09-30) that on_stream_stop is never sent to acknowledge
+                // the sender's own stop_stream - only for server-initiated stops and for incoming
+                // streams from other senders. We had inferred that from the ap-15.6 soak logs, where
+                // this fired on essentially every stream stop (~53,000 per 3 days).
+                //
+                // Since ap-15.9.8 the seq-keyed stop_stream ack releases the pending stop instead, so
+                // reaching this point means that ack was lost. That is worth noticing: WARN, and the
+                // rate is the signal. If these return to soak-log volume, handleStopStreamAck is not
+                // being reached and the 500 ms wait is back.
+                mLog.warn("{}Zello stop_stream ack not received within {} ms — clearing pending stop for " +
+                    "stream_id={}", ch(), PENDING_STOP_TIMEOUT_MS, pending);
                 maybeSchedulePendingStreamStart();
             }
         }, PENDING_STOP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
@@ -1553,6 +1590,47 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         mKeepaliveMissedAcks = 0;
     }
 
+    /**
+     * True when a seq-keyed ack belongs to a stop_stream command this broadcaster sent.
+     *
+     * @param command the tracked command string recovered from {@link #mPendingCommands}, or null
+     */
+    private static boolean isStopStreamAckCommand(String command)
+    {
+        return command != null && command.startsWith(STOP_STREAM_COMMAND);
+    }
+
+    /**
+     * Releases a pending stop on the seq-keyed ack for our own stop_stream.
+     *
+     * <p>AP-fork: Zello Support confirmed (2026-09-30) that {@code on_stream_stop} is sent only for
+     * server-initiated stops and for incoming streams from other senders - it is <b>never</b> sent to
+     * acknowledge the sender's own {@code stop_stream}. The authoritative confirmation is the seq-keyed
+     * {@code {"seq":n,"success":true}} response to the stop_stream command itself, and the server has
+     * processed the stop as soon as that ack arrives.
+     *
+     * <p>Before this, nothing released the pending stop and every stop fell through to the
+     * PENDING_STOP_TIMEOUT_MS watchdog, so the next transmission on the channel waited a fixed 500 ms
+     * whether the server was ready or not. Field evidence: 43,745 stops across the fleet with zero
+     * on_stream_stop acknowledgements, delaying 28-32% of follow-up transmissions. The watchdog stays as
+     * a safety net for a lost ack; it is no longer the normal path.
+     */
+    private synchronized void handleStopStreamAck(String ackCmd)
+    {
+        long pending = mPendingStopStreamId.get();
+
+        if(pending <= 0)
+        {
+            //Already released - by a server-initiated on_stream_stop, an error path, or the watchdog.
+            return;
+        }
+
+        mPendingStopStreamId.set(-1);
+        cancelPendingStopTimeout();
+        mLog.debug("{}Zello stop_stream acknowledged by seq for stream_id={} ({})", ch(), pending, ackCmd);
+        maybeSchedulePendingStreamStart();
+    }
+
     protected void sendLogon()
     {
         if(mWebSocket == null)
@@ -1653,7 +1731,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         else
         {
             seq = nextSequence();
-            trackPendingCommand(seq, "stop_stream(id=" + streamId + ")");
+            trackPendingCommand(seq, STOP_STREAM_COMMAND + "(id=" + streamId + ")");
         }
 
         cmd.addProperty("seq", seq);
@@ -2217,6 +2295,10 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     if(isKeepaliveAckCommand(ackCmd))
                     {
                         handleKeepaliveAck();
+                    }
+                    else if(isStopStreamAckCommand(ackCmd))
+                    {
+                        handleStopStreamAck(ackCmd);
                     }
                 }
 

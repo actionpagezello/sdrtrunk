@@ -65,6 +65,12 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
     protected TunerFrequencyErrorManager mTunerFrequencyErrorManager;
 
     /**
+     * AP-fork: the Tuner that owns this controller, registered by {@link Tuner}'s constructor so that log
+     * lines emitted from controller level can name the physical device. Null until then.
+     */
+    private Tuner mTuner;
+
+    /**
      * Abstract tuner controller class.  The tuner controller manages frequency bandwidth and currently tuned channels
      * that are being fed samples from the tuner.
      * @param tunerErrorListener to monitor errors produced from this tuner controller
@@ -75,6 +81,55 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         mFrequencyController = new FrequencyController(this);
         mSourceEventListener = new SourceEventListenerToProcessorAdapter(this);
         mTunerFrequencyErrorManager = new TunerFrequencyErrorManager(this);
+    }
+
+    /**
+     * AP-fork: registers the owning Tuner. Called by {@link Tuner}'s constructor.
+     *
+     * @param tuner that owns this controller
+     */
+    void setTuner(Tuner tuner)
+    {
+        mTuner = tuner;
+    }
+
+    /**
+     * AP-fork: a label identifying this tuner in log lines, preferring the device name - which carries the
+     * serial number, e.g. "RSP1B SER#24050F5260" - over the controller class name.
+     *
+     * <p>The class name alone is not an identity: a machine with four RTL-2832 dongles produced four
+     * streams of frequency-error reports all labelled "RTL2832TunerController", so a fleet-wide PPM audit
+     * could not tell which physical dongle was off. A Daly dongle running at 10 PPM (about 4.8 kHz at
+     * 483 MHz) was found by hand for exactly this reason.
+     *
+     * <p>Resolved lazily rather than cached at construction: this controller is built before the Tuner
+     * that wraps it, and {@code getPreferredName()} is abstract, so it is not safe to call until the
+     * subclass is fully constructed. Falls back to the class name whenever the name is not yet available.
+     *
+     * @return device name with serial where available, otherwise the controller class name
+     */
+    public String getTunerLabel()
+    {
+        Tuner tuner = mTuner;
+
+        if(tuner != null)
+        {
+            try
+            {
+                String name = tuner.getPreferredName();
+
+                if(name != null && !name.isEmpty())
+                {
+                    return name;
+                }
+            }
+            catch(Exception e)
+            {
+                //Fall through to the class name - the tuner is not yet able to name itself.
+            }
+        }
+
+        return getClass().getSimpleName();
     }
 
     /**

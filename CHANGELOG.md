@@ -5,6 +5,75 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.8] - 2026-09-30
+
+Acts on Zello Support's answers of 2026-09-30. Two Zello streaming defects are fixed — one of them a
+five-hundred-millisecond wait on an acknowledgement that, we now know, is never sent — and the tuner
+frequency-error lines finally name the tuner.
+
+### Fixed
+- **We waited 500 ms after every stream stop for an acknowledgement the server never sends.** Zello Support
+  confirmed that `on_stream_stop` is sent only for server-initiated stops and for incoming streams from other
+  senders; it is **never** sent to acknowledge the sender's own `stop_stream`. That matches the field
+  evidence exactly: 43,745 stops across the fleet with zero `on_stream_stop` acknowledgements, and 28–32% of
+  follow-up transmissions delayed. Every stop fell through to the `PENDING_STOP_TIMEOUT_MS` watchdog, so the
+  next transmission on a channel waited a fixed 500 ms whether the server was ready or not.
+
+  The authoritative confirmation is the seq-keyed `{"seq":n,"success":true}` response to the `stop_stream`
+  command itself, and the stop is processed server-side as soon as it arrives. **We were already receiving
+  that ack and discarding it.** `sendStopStream` records the command against its seq, and `handleTextMessage`
+  resolves the ack back to `stop_stream(id=…)`, asks `isKeepaliveAckCommand` whether it is a keepalive, gets
+  no, and drops it. A new `handleStopStreamAck` branch now releases the pending stop, cancels the watchdog and
+  releases any queued start. A 500 ms fixed wait becomes one round trip.
+
+  The watchdog stays as a safety net for a lost ack, but its log line moves from DEBUG to **WARN**: it now
+  fires only on a genuine anomaly, and its rate is the signal that the ack path is working. If these return
+  to soak-log volume (~53,000 per 3 days on ap-15.6), `handleStopStreamAck` is not being reached.
+
+- **A stream stop left a window in which a new stream could open on top of it.** `doStopRealTimeStream` set
+  `mStreamActive` false, then scheduled `finishStopRealTimeStream` `ENCODER_DRAIN_MS` (15 ms) later, and only
+  there marked `mPendingStopStreamId` — after the tail-frame send loop. For that whole window `mStreamActive`
+  was already false and `mPendingStopStreamId` was still `-1`, so both guards in `beginStreamInternal` passed
+  and a second stream opened while the first was still closing. The server rejected one of the two as
+  "channel busy" (3008). Stoneham lost roughly 740 transmissions a day to this, Somerville roughly 440.
+
+  The pending mark and its watchdog now happen at stop-begin. Zello Support independently confirmed the
+  diagnosis: these channels have exactly one sender, so the busy rejections cannot be floor contention, and
+  extra channel priority — which we had on the remedy list — makes no difference at any configuration. The
+  3008s were ours.
+
+### Diagnostics
+- **Tuner frequency-error log lines now name the tuner, not its controller class.** The lines added in
+  ap-15.9.7 identified a tuner by `getClass().getSimpleName()`, so a machine with four RTL-2832 dongles
+  produced four streams of reports all labelled `RTL2832TunerController` and a fleet-wide PPM audit could not
+  say which physical dongle was off. They now carry the device name and its serial, e.g.
+  `RSP1B SER#24050F5260`.
+
+  `TunerController` gains a `getTunerLabel()` that prefers the owning `Tuner`'s preferred name and falls back
+  to the class name. `Tuner`'s constructor registers itself with the controller; the name is resolved lazily
+  at log time rather than cached at construction, because the controller is built before the `Tuner` that
+  wraps it and `getPreferredName()` is abstract. All four call sites in `TunerFrequencyErrorManager` use it.
+
+### Confirmed, no change needed
+- Zello's published limits match what we already do. New connections are capped at **10 per minute per IP**,
+  which is the figure `BroadcastModel.computeStartupDelayMs` already batches against, so a 20-channel machine
+  already ramps legally at cold start. One connection may **receive** up to 100 channels but **sends** one
+  stream at a time, serialized — which confirms one-connection-per-channel was the right design rather than a
+  workaround. Inbound audio is paced to **≤1.5x real time**, which the 8-immediate/55 ms scheme respects.
+  These are identical for Zello Work and Zello Consumer.
+
+### Not in this release
+- **No RSP1B removal verification.** Deferred by decision, not oversight. The Daly evidence is that the
+  SDRplay API raises spurious `processDeviceRemoval` callbacks — Windows Event Viewer was empty for both the
+  03:16 and 07:16 windows on 09-28, both devices reported `Status: OK`, and the API service was running —
+  and that our permanent removal with no rescan turns a spurious callback into an 11 h 20 min outage across
+  eight feeds. The remedy under consideration is to query the API's device list before acting on the
+  callback. It is not here yet.
+- **No pooled-mode equivalent of the stop-ack fix.** In pooled mode the seq comes from
+  `ZelloConnectionPool.nextSequenceFor` and `trackPendingCommand` is not called, so the pool cannot resolve
+  an ack back to a command. `use_shared_pool` is default-false and unused on the fleet; this is recorded as a
+  known gap rather than fixed blind.
+
 ## [0.6.2-ap-15.9.7] - 2026-09-26
 
 Ships the squelch-close fix that was lost from ap-15.9.6, takes one upstream P25 filter correction, and adds

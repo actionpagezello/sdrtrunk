@@ -162,7 +162,7 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
         catch(Throwable t)
         {
             LOG.error("Error processing tuner frequency error correction for tuner [" +
-                    mTunerController.getClass().getSimpleName() + "] - correction continues on the next interval", t);
+                    mTunerController.getTunerLabel() + "] - correction continues on the next interval", t);
         }
     }
 
@@ -210,7 +210,7 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                                         "DMR) measure frequency error; NBFM channels never do.  If this tuner " +
                                         "carries only NBFM channels its PPM must be set manually, and an incorrect " +
                                         "value silently degrades every channel on it.",
-                                mTunerController.getClass().getSimpleName(),
+                                mTunerController.getTunerLabel(),
                                 (NO_MEASUREMENT_WARN_INTERVALS * TIMER_INTERVAL_SECONDS) / 60,
                                 DF.format(mTunerController.getFrequencyCorrection()));
                     }
@@ -233,7 +233,7 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                     double impliedPPM = requestedChangeHz / (mTunerController.getFrequency() * PPM_DIVISOR);
                     LOG.info("Tuner [{}] frequency error {} Hz at {} Hz over {} channel(s) - implies {} PPM of " +
                                     "residual error against the configured {} PPM (auto-PPM {})",
-                            mTunerController.getClass().getSimpleName(), requestedChangeHz,
+                            mTunerController.getTunerLabel(), requestedChangeHz,
                             mTunerController.getFrequency(), count, DF.format(impliedPPM),
                             DF.format(mTunerController.getFrequencyCorrection()),
                             mEnabled ? "enabled" : "DISABLED");
@@ -259,7 +259,7 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                                 //and re-acquire, otherwise correction for this tuner is disabled permanently.
                                 LOG.warn("Tuner [{}] PPM baseline {} rejected {} consecutive measurements (latest {}) " +
                                                 "- discarding baseline and re-acquiring",
-                                        mTunerController.getClass().getSimpleName(), DF.format(mBaselinePPM),
+                                        mTunerController.getTunerLabel(), DF.format(mBaselinePPM),
                                         mConsecutiveRejections, DF.format(proposedPPM));
                                 mBaselinePPM = Double.NaN;
                                 mConsecutiveRejections = 0;
