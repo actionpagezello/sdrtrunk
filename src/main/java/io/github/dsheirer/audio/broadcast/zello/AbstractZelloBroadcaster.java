@@ -83,6 +83,12 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
      * stream id as well, so this is a prefix test rather than an equality test.
      */
     private static final String STOP_STREAM_COMMAND = "stop_stream";
+
+    /**
+     * AP-fork: how long to wait for an answer to start_stream before resending it once. See
+     * {@link #scheduleStartStreamRetry()} for why this is a margin rather than a measured percentile.
+     */
+    private static final long START_STREAM_RETRY_MS = 750;
     /**
      * AP-fork: a stream that has been open this long with no audio arriving is orphaned - every real
      * call delivers buffers continuously, and the relaxation hold-over (default 700 ms) is far shorter.
@@ -159,6 +165,10 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private final AtomicBoolean mFlushDrainActive = new AtomicBoolean(false);
     private ScheduledFuture<?> mFlushDrainFuture;
     private final AtomicLong mPendingStopStreamId = new AtomicLong(-1);
+
+    //AP-fork: one-shot retry of an unanswered start_stream - see scheduleStartStreamRetry()
+    private ScheduledFuture<?> mStartStreamRetryFuture;
+    private volatile boolean mStartStreamRetried = false;
     private volatile long mLastKnownStreamId = -1;
     private volatile int mConsecutive3008Errors = 0;
     private ScheduledFuture<?> mPendingStopTimeoutFuture;
@@ -553,7 +563,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         cancelFlushDrain();
         mPendingOpusFrames.clear();
 
+        mStartStreamRetried = false;
         sendStartStream();
+        scheduleStartStreamRetry();
 
         if(mEncoderFuture == null || mEncoderFuture.isDone())
         {
@@ -639,6 +651,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         }
 
         mStreamActive.set(false);
+        cancelStartStreamRetry();
 
         //AP-fork: mark the stop as pending HERE, at stop-begin, not in finishStopRealTimeStream after the
         //encoder drain. Between mStreamActive going false and the old marking point there was a window of
@@ -860,6 +873,60 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     }
 
     /**
+     * AP-fork: resends start_stream once when the server has not answered the first one.
+     *
+     * <p>Zello Support confirmed (2026-10-03) that on an established session a start_stream always
+     * returns either the stream_id or a seq-keyed error, that a response with neither is unusual, and
+     * that the right handling is one retry after a short backoff rather than a full reconnect - the
+     * socket is healthy when it happens.
+     *
+     * <p>Scheduling matters here. The ghost-stream warning fires at STOP time, by which point the
+     * segment is over and a retry would only open a stream nobody owns. So the retry is timed from the
+     * start instead, and fires only while the segment is still live.
+     *
+     * <p>On ap-15.9.7 this condition looked common - 1,687 "ghost" cases in a day across three machines
+     * - but the median interval from start to detection was 13 to 16 ms against an ENCODER_DRAIN_MS of
+     * 15, so those were transmissions shorter than a round trip, not a silent server. The ap-15.9.8 race
+     * fix removed that whole population (6 cases in two days fleet-wide), and all six survivors ran 1.7 s
+     * to 5.0 s with no response - the real condition Zello describes.
+     *
+     * <p>START_STREAM_RETRY_MS is deliberately a large multiple of a plausible round trip rather than a
+     * measured percentile: stream_id arrival is not logged, so normal latency was never measured
+     * directly. The retry logs when it fires, so if it ever triggers on a healthy start the first day of
+     * logs will say so.
+     */
+    private synchronized void scheduleStartStreamRetry()
+    {
+        cancelStartStreamRetry();
+
+        mStartStreamRetryFuture = ThreadPool.SCHEDULED.schedule(() ->
+        {
+            synchronized(this)
+            {
+                if(mStreamActive.get() && mCurrentStreamId.get() <= 0 && !mStartStreamRetried)
+                {
+                    mStartStreamRetried = true;
+                    mLog.warn("{}Zello start_stream unanswered after {} ms - retrying once", ch(),
+                        START_STREAM_RETRY_MS);
+                    sendStartStream();
+                }
+            }
+        }, START_STREAM_RETRY_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Cancels any pending start_stream retry.
+     */
+    private void cancelStartStreamRetry()
+    {
+        if(mStartStreamRetryFuture != null)
+        {
+            mStartStreamRetryFuture.cancel(false);
+            mStartStreamRetryFuture = null;
+        }
+    }
+
+    /**
      * Cancels any pending stop timeout.
      */
     private void cancelPendingStopTimeout()
@@ -876,6 +943,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
      */
     private synchronized void handleStartStreamFailure(String error, int seq, String originCmd)
     {
+        //AP-fork: the server answered, so the one-shot start_stream retry is no longer wanted.
+        cancelStartStreamRetry();
+
         if(mEncoderFuture != null)
         {
             mEncoderFuture.cancel(false);
@@ -2146,6 +2216,40 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     String originCmd = seq > 0 ? mPendingCommands.remove(seq) : null;
                     int bridgeCode = ZelloProtocolUtil.mapBridgeErrorCode(errorMsg);
 
+                    //AP-fork: a faulted session is never retried, and is checked FIRST so that a
+                    //shared bridge code cannot route it into either branch below.
+                    if(ZelloProtocolUtil.isSessionError(errorMsg))
+                    {
+                        mLog.error("{}Zello [{}]: session error=\"{}\" seq={} command={} - not retrying",
+                            ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");
+                        updateStreamErrorDetail("[" + bridgeCode + "] " + errorMsg);
+                        return;
+                    }
+
+                    //AP-fork: an error keyed to our own stop_stream means the server had already closed
+                    //that stream - Zello Support confirmed (2026-10-03) that "bad mid", "invalid stream
+                    //id" and "failed to stop stream" all mean the id is already gone, that there is
+                    //nothing to retry, and that they must not gate the next start_stream.
+                    //
+                    //Before this, these fell into the transient branch below, which ends in
+                    //scheduleStreamCooldown() and so restarted mPauseUntilTime and mStreamGuardUntilTime
+                    //from the moment the error arrived - a second cooldown for a stream that had already
+                    //ended, delaying the next transmission on the channel by the configured pause again.
+                    //About 22 a day fleet-wide on 2026-10-02/03.
+                    //
+                    //Dispatch is on the ORIGIN COMMAND, not the error string or its numeric code: any
+                    //error answering a stop_stream is an already-closed stream by definition, which also
+                    //means a new error string for this condition needs no code change. mStreamActive and
+                    //mCurrentStreamId are deliberately NOT touched - this error can arrive after a new
+                    //stream has already started on the channel, and clearing them would kill it.
+                    if(isStopStreamAckCommand(originCmd))
+                    {
+                        mLog.debug("{}Zello stop_stream answered with error=\"{}\" [{}] seq={} ({}) - stream " +
+                            "already closed, clearing pending stop", ch(), errorMsg, bridgeCode, seq, originCmd);
+                        handleStopStreamAck(originCmd);
+                        return;
+                    }
+
                     if(ZelloProtocolUtil.isTransientStreamError(errorMsg))
                     {
                         if("start_stream".equals(originCmd))
@@ -2307,6 +2411,46 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     if(json.get("success").getAsBoolean())
                     {
                         long streamId = json.get("stream_id").getAsLong();
+
+                        //AP-fork: do not adopt a stream whose segment has already ended. The server can
+                        //take seconds to answer a start_stream - measured 1.7 s to 5.0 s on the six
+                        //ghost-stream cases across the fleet on 2026-10-02/03 - and the squelch segment
+                        //that asked for it is long over by then.
+                        //
+                        //Before this there was no such check: the late stream_id was adopted as the
+                        //current stream, the ghost counter was reset, and flushPendingFramesPaced()
+                        //pushed buffered audio into a stream no segment owned. Nothing ever stopped it,
+                        //so it stayed open server-side - and because one sender may hold only one stream,
+                        //that orphan is what makes the NEXT transmission on the channel fail. Same family
+                        //as the orphaned-stream collisions fixed in ap-15.4.
+                        //
+                        //Now the stream is closed immediately instead. The ack for that stop lands in
+                        //handleStopStreamAck(), which sees no pending stop and returns, so this does not
+                        //gate the next start.
+                        if(!mStreamActive.get())
+                        {
+                            mLastKnownStreamId = streamId;
+                            mLog.warn("{}Zello start_stream answered after the segment ended (id={}) - " +
+                                "closing it rather than streaming into an unowned stream", ch(), streamId);
+                            sendStopStream(streamId);
+                            return;
+                        }
+
+                        //AP-fork: scheduleStartStreamRetry() can put two start_stream commands on the
+                        //wire, so both may be answered. Keep the stream already adopted and close the
+                        //duplicate - without this the retry would trade one orphan for another, since
+                        //overwriting mCurrentStreamId abandons the first stream with nothing to stop it.
+                        long adopted = mCurrentStreamId.get();
+
+                        if(adopted > 0 && adopted != streamId)
+                        {
+                            mLog.warn("{}Zello start_stream answered twice (keeping id={}, closing " +
+                                "duplicate id={})", ch(), adopted, streamId);
+                            sendStopStream(streamId);
+                            return;
+                        }
+
+                        cancelStartStreamRetry();
                         mCurrentStreamId.set(streamId);
                         mLastKnownStreamId = streamId;
                         mConsecutiveGhostStreams = 0;

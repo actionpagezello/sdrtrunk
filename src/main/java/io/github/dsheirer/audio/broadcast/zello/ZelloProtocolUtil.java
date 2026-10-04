@@ -48,6 +48,21 @@ public final class ZelloProtocolUtil
         "bad mid"
     );
 
+    /**
+     * AP-fork: errors that are NOT transient and must never be retried, even though the server maps them
+     * to a bridge code shared with a transient error.
+     *
+     * <p>Zello Support warned (2026-10-03) that "unable to decrypt" shares a numeric code with "bad mid"
+     * but is a session problem rather than a passing one, and that a client must not blanket-retry by
+     * code. This fork never dispatched on the numeric code - {@link #isTransientStreamError(String)}
+     * matches on the error string and {@link #mapBridgeErrorCode(String)} is display-only - so the
+     * behaviour was already correct. Naming the error here makes that deliberate, and stops it being
+     * swept into TRANSIENT_STREAM_ERRORS by a later change.
+     */
+    private static final Set<String> SESSION_ERRORS = Set.of(
+        "unable to decrypt"
+    );
+
     /** Minimum backoff when the server rejects start_stream with channel busy. */
     private static final int CHANNEL_BUSY_BACKOFF_MS = 750;
 
@@ -92,6 +107,18 @@ public final class ZelloProtocolUtil
     public static boolean isTransientStreamError(String errorMsg)
     {
         return errorMsg != null && TRANSIENT_STREAM_ERRORS.contains(errorMsg);
+    }
+
+    /**
+     * AP-fork: true for an error that indicates a broken session rather than a passing condition. These
+     * must be surfaced and never retried - see {@link #SESSION_ERRORS}.
+     *
+     * @param errorMsg error string from the server, or null
+     * @return true when the error means the session itself is faulted
+     */
+    public static boolean isSessionError(String errorMsg)
+    {
+        return errorMsg != null && SESSION_ERRORS.contains(errorMsg);
     }
 
     /**

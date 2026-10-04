@@ -80,6 +80,17 @@ public class ZelloBroadcaster extends AbstractZelloBroadcaster<ZelloConfiguratio
     @Override
     protected void onInboundPing(WebSocket ws, ByteBuffer msg)
     {
+        //AP-fork: an inbound ping is proof the socket is alive, so it resets the liveness deadline -
+        //not only our own JSON keepalive ack. Zello Support confirmed (2026-10-03) that their keepalive
+        //is server-driven: they ping every 30 s and close the connection if a Pong does not come back
+        //within 30 s, and they recommend a read deadline reset on each inbound frame.
+        //
+        //The pong below is the load-bearing part and was already correct. What was missing is this
+        //reset: with it, a channel that is receiving Zello's pings can never accumulate missed acks
+        //toward the reconnect threshold. ZelloConsumerBroadcaster already did this; the Work
+        //broadcaster did not, because its deadline was driven solely by acks to its own keepalive
+        //command.
+        handleKeepaliveAck();
         ws.sendPong(msg);
         ws.request(1);
     }
@@ -87,6 +98,7 @@ public class ZelloBroadcaster extends AbstractZelloBroadcaster<ZelloConfiguratio
     @Override
     protected CompletionStage<?> onInboundPong(WebSocket ws, ByteBuffer msg)
     {
+        handleKeepaliveAck();
         ws.request(1);
         return null;
     }

@@ -5,6 +5,112 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.9] - 2026-10-03
+
+Acts on Zello Support's second round of answers (2026-10-03) and on the ap-15.9.8 field result. Four
+changes to the Zello client, all small; no tuner or decoder changes.
+
+### Context: what ap-15.9.8 achieved
+
+Across 2026-10-02 and 10-03, three machines on ap-15.9.8 logged **92,774 stream stops and one
+"channel busy" rejection**. Stoneham is the strongest evidence: it ran ap-15.9.7 through 10-01 (720
+rejections in 10,003 stops, 72.0 per thousand) and ap-15.9.8 from then on (0 in 15,976 stops). Somerville
+was 24.6 per thousand before, Daly 11.4; both are now zero. Ghost streams fell from 1,687 in a day across
+three machines to 6 in two days, and `session appears dead` no longer fires at all.
+
+### Fixed
+- **An error answering our own `stop_stream` no longer gates the next transmission.** `bad mid`,
+  `invalid stream id`, `failed to stop stream` and `failed to stop sending message` all mean the server
+  had already closed that stream. Zello Support confirmed there is nothing to retry and that these must
+  not block the next `start_stream`. They were falling into the generic transient branch, which ends in
+  `scheduleStreamCooldown(...)` and so restarted `mPauseUntilTime` and `mStreamGuardUntilTime` from the
+  moment the error arrived — a second cooldown for a stream that had already ended, delaying the next
+  transmission on that channel by the configured pause all over again. About 22 a day fleet-wide.
+
+  Dispatch is on the **origin command**, not the error string or its numeric code: any error answering a
+  `stop_stream` is an already-closed stream by definition, so a new error string for this condition needs
+  no code change. `mStreamActive` and `mCurrentStreamId` are deliberately left alone — the error can
+  arrive after a new stream has started on the channel, and clearing them would kill it.
+
+- **A late `start_stream` response no longer orphans a stream.** On success we adopted the `stream_id`,
+  reset the ghost counter and flushed buffered audio into it, with no check that the segment still
+  existed. The server can take seconds to answer — all six surviving ghost cases ran 1.7 s to 5.0 s — by
+  which time the squelch segment is long over. The adopted stream then had no owner and nothing ever
+  stopped it, so it stayed open server-side; and since one sender may hold only one stream, that orphan
+  is what makes the *next* transmission on the channel fail. Same family as the orphaned-stream
+  collisions fixed in ap-15.4. The stream is now closed immediately instead.
+
+- **An unanswered `start_stream` is retried once.** Zello Support confirmed that on an established
+  session a `start_stream` always returns either the `stream_id` or a seq-keyed error, that a response
+  with neither is unusual, and that one retry after a short backoff is the right handling since the
+  socket is healthy. The retry is timed from the start (`START_STREAM_RETRY_MS` = 750 ms), not from the
+  ghost warning, which fires at stop time when a retry could only open a stream nobody owns.
+
+  **Correction to the ap-15.9.8 notes.** This condition looked common on ap-15.9.7 — 1,687 ghosts in a
+  day — but the median interval from `stream started` to ghost detection was **13 to 16 ms** against an
+  `ENCODER_DRAIN_MS` of 15, so those were transmissions shorter than a network round trip, not a silent
+  server. The ap-15.9.8 race fix removed that entire population. The 6 survivors are the real condition.
+  Zello was told the inflated figure and has been corrected.
+
+  Because the retry can put two `start_stream` commands on the wire, a second answered `stream_id` is now
+  closed as a duplicate rather than overwriting `mCurrentStreamId` — otherwise the retry would trade one
+  orphan for another.
+
+- **The Work broadcaster's liveness deadline now resets on any inbound frame.** Zello's keepalive is
+  server-driven: they ping every 30 s and close the connection if a Pong does not return within 30 s.
+  The pong itself was already correct on both Work and Consumer, which is why we never saw mass closures.
+  What was missing is the reset: `ZelloConsumerBroadcaster` already treated an inbound ping as proof of
+  life, while `ZelloBroadcaster` counted only acks to its own JSON `keepalive` command, so a channel
+  receiving Zello's pings could still accumulate missed acks toward the reconnect threshold.
+
+- **`unable to decrypt` is named as a session error.** Zello Support warned it shares a numeric code with
+  `bad mid` but is a session fault, and that a client must not blanket-retry by code. This fork never
+  dispatched on the number — `isTransientStreamError` matches the error string and `mapBridgeErrorCode`
+  is display-only — so the behaviour was already correct. It is now checked first and explicitly, so the
+  intent is recorded and it cannot be swept into `TRANSIENT_STREAM_ERRORS` later.
+
+### Confirmed, no change needed
+- **Close code 1006 is expected.** The Channel API caps any single WebSocket at 24 hours and tears it
+  down with no close frame; connections may also be drained during maintenance. One connection per
+  channel means roughly one teardown per channel per day, which is what the logs show — Somerville 31 and
+  38, Stoneham 32 and 38, Daly 19 and 25 over the two days. Our reconnect has base-plus-jitter backoff
+  already, which is what Zello asks for to avoid a fleet-wide drain becoming a retry storm, and the
+  staggered cold start keeps the 24-hour expiries spread out rather than simultaneous.
+- **No TCP keepalive on the socket.** `java.net.http.HttpClient` exposes no socket-option API, so
+  `SO_KEEPALIVE` cannot be set without replacing the WebSocket client. The read-deadline reset above
+  catches the same half-open condition.
+
+### Measured, not changed
+- **Daly tuner PPM baseline**, from the per-serial logging added in ap-15.9.8:
+  `RSP1B SER:24040A4B60` −601.8 Hz mean at 483.5625 MHz (**−1.245 PPM**, n=12);
+  `RSP1B SER:24050F5260` −159.9 Hz at 154.9850 MHz (**−1.032 PPM**, n=354);
+  `RTL-2832/R820T 00002005` +127.7 Hz at 483.7625 MHz (**+0.264 PPM**, n=188, range −694 to +428).
+
+  **Deliberately not corrected.** 600 Hz is about 5% of a 12.5 kHz channel and sits well inside the
+  channel filter, and an FM carrier offset appears as a DC bias in the demodulated output — removed
+  downstream — not as a shift in audio or CTCSS tone frequency. This is a different order of problem from
+  the Daly dongle at 10 PPM, where 4.8 kHz was comparable to the filter's half-bandwidth. A hand-entered
+  PPM is also a value nothing re-measures, which is how that dongle sat wrong for weeks. These figures
+  are recorded as a baseline so a future drift is visible.
+
+### Known residuals
+- **Pooled mode gets none of these fixes.** `handlePooledMessage` has its own copy of the `stream_id`
+  handling and the pool cannot resolve a seq back to a command, so neither the orphan guard nor the
+  stop-ack path applies there. `use_shared_pool` is default-false and unused on the fleet.
+- **A response to a superseded `start_stream` can still be adopted by a later segment.** The success
+  handler tests `mStreamActive` but not `mStreamSessionEpoch`, so a very late answer arriving after a new
+  segment has begun would be taken as that segment's stream. The ap-15.9.8 stop-begin guard and the
+  750 ms retry both narrow the window; closing it properly needs the epoch carried through the command
+  map.
+- **Missing stop acks are rising on specific channels.** 132 fleet-wide over the two days; Somerville went
+  from 1.6 to 3.2 per thousand stops. Not volume-driven (Everett MA Police: 2,079 stops, zero) and not
+  the 1006 teardowns (1 of 45 within a minute of one). Concentrated on a few channels, worst on Massport
+  at 24.3 per thousand, which is on the consumer network. Raised with Zello; the watchdog catches each
+  one, so it costs latency rather than audio.
+- **No RSP1B removal verification.** Still deferred. Daly logged no device-removal callbacks at all on
+  10-02 or 10-03, two clean days after the 33-callback burst on 10-01, so the fault is intermittent
+  rather than resolved.
+
 ## [0.6.2-ap-15.9.8] - 2026-09-30
 
 Acts on Zello Support's answers of 2026-09-30. Two Zello streaming defects are fixed — one of them a
