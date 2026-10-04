@@ -21,6 +21,10 @@ package io.github.dsheirer.channel.metadata;
 
 import com.google.common.base.Joiner;
 import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.module.decode.am.AMTalkgroup;
+import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog;
+import io.github.dsheirer.module.decode.nbfm.NBFMTalkgroup;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelModel;
@@ -498,6 +502,30 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
             return toAliases.get(0);
         }
 
+        //AP-fork: for a conventional analog channel the governing alias is not something to be guessed
+        //from the alias list - it is the channel's CONFIGURED talkgroup, which DecodeConfigAnalog holds
+        //as static configuration and NBFMDecoderState/AMDecoderState publish on every call.
+        //
+        //The rules above consult only the LIVE TO identifier, which for NBFM exists solely during a
+        //transmission - and since ap-15.9.7's squelch-close fix that identifier is cleared promptly at
+        //the end of each one instead of lingering, so a right-click between transmissions reliably finds
+        //nothing. Resolution then fell to the alias-list rule below, which requires the list to hold
+        //exactly ONE alias. Stoneham's Wakefield list holds three (Wakefield MA Fire, Wakefield MA
+        //Police, Atlantic Amb 4), so Atlantic 4 resolved to null and its mute went to the per-channel
+        //store - which does not gate the audio, because AudioSegment takes the LOWEST playback priority
+        //across every attached alias. The channel stayed silent with the right-click unable to change it,
+        //while Littleton Fire on a single-alias list worked. That was the whole difference.
+        //
+        //Lookup is keyed by protocol first (AliasList.mTalkgroupProtocolMap) and returns at most one
+        //alias per talkgroup, so an NBFM talkgroup can only ever match an NBFM alias in this channel's
+        //own list - never a P25 or DMR alias at the same number, and never more than one.
+        Alias configuredAlias = resolveConfiguredTalkgroupAlias(channel);
+
+        if(configuredAlias != null)
+        {
+            return configuredAlias;
+        }
+
         List<Alias> fromAliases = metadata.getFromIdentifierAliases();
 
         if(fromAliases != null && fromAliases.size() == 1)
@@ -529,6 +557,60 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         }
 
         return null;
+    }
+
+    /**
+     * AP-fork: resolves the alias for an analog channel's configured talkgroup, or null.
+     *
+     * Returns null for any channel whose decode configuration has no configured talkgroup - every
+     * trunked system - so those keep resolving from their live TO identifier, which is correct: a
+     * trunked channel's identity genuinely is whichever talkgroup is transmitting.
+     *
+     * Also returns null when no alias in the channel's list carries that talkgroup, which is the
+     * un-aliased case: a channel being auditioned before an alias exists for it falls through to the
+     * per-channel mute store and stays independent of everything else.
+     *
+     * @param channel to resolve for
+     * @return the alias for the channel's configured talkgroup, or null
+     */
+    private Alias resolveConfiguredTalkgroupAlias(Channel channel)
+    {
+        if(!(channel.getDecodeConfiguration() instanceof DecodeConfigAnalog analogConfig))
+        {
+            return null;
+        }
+
+        String aliasListName = channel.getAliasListName();
+
+        if(aliasListName == null || aliasListName.isEmpty())
+        {
+            return null;
+        }
+
+        AliasList aliasList = mPlaylistManager.getAliasModel().getAliasList(aliasListName);
+
+        if(aliasList == null)
+        {
+            return null;
+        }
+
+        //The identifier must carry the same protocol the decoder publishes, because alias lookup is
+        //keyed on protocol: NBFM channels produce NBFMTalkgroup, AM channels AMTalkgroup.
+        Identifier talkgroup = switch(analogConfig.getDecoderType())
+        {
+            case NBFM -> new NBFMTalkgroup(analogConfig.getTalkgroup());
+            case AM -> new AMTalkgroup(analogConfig.getTalkgroup());
+            default -> null;
+        };
+
+        if(talkgroup == null)
+        {
+            return null;
+        }
+
+        List<Alias> aliases = aliasList.getAliases(talkgroup);
+
+        return (aliases != null && aliases.size() == 1) ? aliases.get(0) : null;
     }
 
     /**
@@ -936,12 +1018,19 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                                 // alias this is a shortcut to that alias's Listen toggle; when it
                                 // has none it is a per-channel mute, which is what makes this work
                                 // on a bare channel being auditioned before it gets an alias.
+                                //AP-fork: the label is just "Mute"/"Unmute". The row the user
+                                //right-clicked already names the talkgroup, so repeating it here said
+                                //nothing and - with getShortTitle() being System/Site/Name - ran off the
+                                //menu edge. What the click will change goes in the tooltip, where it is
+                                //there to check without cluttering the menu.
                                 Alias governingAlias = resolveChannelAlias(metadata, channel);
                                 boolean isMuted = isChannelMuted(metadata, channel);
-                                String target = governingAlias != null
-                                    ? "alias: " + governingAlias.getName()
-                                    : "channel: " + channel.getShortTitle();
-                                JMenuItem muteItem = new JMenuItem((isMuted ? "Unmute " : "Mute ") + target);
+                                JMenuItem muteItem = new JMenuItem(isMuted ? "Unmute" : "Mute");
+                                muteItem.setToolTipText(governingAlias != null
+                                    ? "Alias Listen toggle for " + governingAlias.getName() +
+                                        " - persisted in the playlist"
+                                    : "This channel only (" + channel.getShortTitle() +
+                                        ") - no alias, not persisted");
                                 muteItem.addActionListener(e2 -> setChannelMuted(metadata, channel, !isMuted));
                                 popupMenu.add(muteItem);
 

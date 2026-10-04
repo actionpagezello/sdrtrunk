@@ -85,10 +85,27 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private static final String STOP_STREAM_COMMAND = "stop_stream";
 
     /**
-     * AP-fork: how long to wait for an answer to start_stream before resending it once. See
-     * {@link #scheduleStartStreamRetry()} for why this is a margin rather than a measured percentile.
+     * AP-fork: how long to wait for an answer to start_stream before resending it once.
+     *
+     * <p>Measured from the 2026-10-04 logs (ap-15.9.9, three machines, 20,592 streams). Normal
+     * start_stream latency, taken from "stream started" to the "stream_id=" flush line:
+     *
+     * <pre>
+     *   Work broadcaster     median 43-51 ms   p99  77-89 ms   max 330-1390 ms
+     *   Consumer broadcaster median 43-55 ms   p99 523-662 ms  max 523-922 ms
+     * </pre>
+     *
+     * <p>ap-15.9.9 used 750 ms, described in its own notes as "a large multiple of a plausible round
+     * trip". It is not: it sits INSIDE the normal tail. All seven retries that fired that day were on
+     * healthy-but-slow starts, each opening a second stream that the duplicate and orphan guards then
+     * had to close. No audio was lost, but nothing was recovered either.
+     *
+     * <p>3000 ms is above every healthy start observed (max 1390 ms) and below every genuinely silent
+     * one (the six ghost cases ran 1.7 s to 5.0 s), so it separates the two populations. Most segments
+     * end before it elapses, and the retry checks mStreamActive, so it self-limits to long transmissions
+     * that are genuinely stuck.
      */
-    private static final long START_STREAM_RETRY_MS = 750;
+    private static final long START_STREAM_RETRY_MS = 3000;
     /**
      * AP-fork: a stream that has been open this long with no audio arriving is orphaned - every real
      * call delivers buffers continuously, and the relaxation hold-over (default 700 ms) is far shorter.
@@ -890,10 +907,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
      * fix removed that whole population (6 cases in two days fleet-wide), and all six survivors ran 1.7 s
      * to 5.0 s with no response - the real condition Zello describes.
      *
-     * <p>START_STREAM_RETRY_MS is deliberately a large multiple of a plausible round trip rather than a
-     * measured percentile: stream_id arrival is not logged, so normal latency was never measured
-     * directly. The retry logs when it fires, so if it ever triggers on a healthy start the first day of
-     * logs will say so.
+     * <p>See {@link #START_STREAM_RETRY_MS} for the measured latency this threshold is set against.
+     * ap-15.9.9's note here claimed normal latency could not be measured because stream_id arrival was
+     * not logged. It is logged, by flushPendingFramesPaced, and that claim was simply not checked.
      */
     private synchronized void scheduleStartStreamRetry()
     {
@@ -2226,38 +2242,48 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                         return;
                     }
 
-                    //AP-fork: an error keyed to our own stop_stream means the server had already closed
-                    //that stream - Zello Support confirmed (2026-10-03) that "bad mid", "invalid stream
-                    //id" and "failed to stop stream" all mean the id is already gone, that there is
-                    //nothing to retry, and that they must not gate the next start_stream.
+                    //AP-fork: a transient error answering our own start_stream is a start failure, and is
+                    //checked before the already-closed branch below because "bad mid" can answer either
+                    //command. Field case: Boston MA EMS 2026-10-04 13:42, error="bad mid" seq=4617
+                    //command=start_stream.
+                    if("start_stream".equals(originCmd) && ZelloProtocolUtil.isTransientStreamError(errorMsg))
+                    {
+                        handleStartStreamFailure(errorMsg, seq, originCmd);
+                        return;
+                    }
+
+                    //AP-fork: the server had already closed the stream this referred to. Zello Support
+                    //confirmed (2026-10-03) that "bad mid", "invalid stream id" and "failed to stop
+                    //stream" all mean the id is already gone, that there is nothing to retry, and that
+                    //they must not gate the next start_stream.
                     //
-                    //Before this, these fell into the transient branch below, which ends in
+                    //These were falling into the transient branch below, which ends in
                     //scheduleStreamCooldown() and so restarted mPauseUntilTime and mStreamGuardUntilTime
                     //from the moment the error arrived - a second cooldown for a stream that had already
                     //ended, delaying the next transmission on the channel by the configured pause again.
-                    //About 22 a day fleet-wide on 2026-10-02/03.
                     //
-                    //Dispatch is on the ORIGIN COMMAND, not the error string or its numeric code: any
-                    //error answering a stop_stream is an already-closed stream by definition, which also
-                    //means a new error string for this condition needs no code change. mStreamActive and
-                    //mCurrentStreamId are deliberately NOT touched - this error can arrive after a new
-                    //stream has already started on the channel, and clearing them would kill it.
-                    if(isStopStreamAckCommand(originCmd))
+                    //ap-15.9.9 dispatched this on the origin command rather than the error string,
+                    //reasoning that any error answering a stop_stream is an already-closed stream by
+                    //definition. The 2026-10-04 logs refuted that: the server sends these unsolicited
+                    //with no seq - error="failed to stop stream" seq=-1 command=unknown - so there was no
+                    //origin command to match and the branch never fired. Eight occurrences across the
+                    //fleet that day all took the old path. Matching the string is correct here, and is
+                    //what isTransientStreamError already does; Zello's caution was against retrying by
+                    //numeric CODE, which this does not do.
+                    //
+                    //mStreamActive and mCurrentStreamId are deliberately NOT touched - these can arrive
+                    //after a new stream has started on the channel, and clearing them would kill it.
+                    if(isStopStreamAckCommand(originCmd) || ZelloProtocolUtil.isAlreadyClosedStreamError(errorMsg))
                     {
-                        mLog.debug("{}Zello stop_stream answered with error=\"{}\" [{}] seq={} ({}) - stream " +
-                            "already closed, clearing pending stop", ch(), errorMsg, bridgeCode, seq, originCmd);
-                        handleStopStreamAck(originCmd);
+                        mLog.debug("{}Zello error=\"{}\" [{}] seq={} ({}) - stream already closed, clearing " +
+                            "pending stop", ch(), errorMsg, bridgeCode, seq,
+                            originCmd != null ? originCmd : "unsolicited");
+                        handleStopStreamAck(originCmd != null ? originCmd : STOP_STREAM_COMMAND);
                         return;
                     }
 
                     if(ZelloProtocolUtil.isTransientStreamError(errorMsg))
                     {
-                        if("start_stream".equals(originCmd))
-                        {
-                            handleStartStreamFailure(errorMsg, seq, originCmd);
-                            return;
-                        }
-
                         mLog.debug("{}Zello [{}]: error=\"{}\" seq={} command={}",
                             ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");
                         updateStreamErrorDetail("[" + bridgeCode + "] " + errorMsg +

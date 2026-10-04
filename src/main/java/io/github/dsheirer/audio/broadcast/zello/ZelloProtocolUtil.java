@@ -49,6 +49,30 @@ public final class ZelloProtocolUtil
     );
 
     /**
+     * AP-fork: errors meaning the server had already closed the stream the command referred to.
+     *
+     * <p>Zello Support confirmed (2026-10-03) that "bad mid" ("mid" = message/stream id, already gone),
+     * "invalid stream id" and "failed to stop stream" are all this condition, that there is nothing to
+     * retry, and that they must not gate the next start_stream.
+     *
+     * <p>Dispatched on the error STRING, not the numeric code. ap-15.9.9 dispatched on the origin command
+     * instead, reasoning that any error answering a stop_stream is an already-closed stream by
+     * definition. The field logs refuted that: the server sends these unsolicited, with no seq -
+     * {@code error="failed to stop stream" seq=-1 command=unknown} - so there is no origin command to
+     * match and that branch never fired. Zello's caution was against retrying by numeric code, which
+     * this does not do; matching the string is what {@link #isTransientStreamError(String)} already does.
+     *
+     * <p>Note that "bad mid" can ALSO answer a start_stream, where it is a genuine start failure. The
+     * origin-command check for start_stream therefore runs before this one.
+     */
+    private static final Set<String> ALREADY_CLOSED_STREAM_ERRORS = Set.of(
+        "bad mid",
+        "invalid stream id",
+        "failed to stop stream",
+        "failed to stop sending message"
+    );
+
+    /**
      * AP-fork: errors that are NOT transient and must never be retried, even though the server maps them
      * to a bridge code shared with a transient error.
      *
@@ -119,6 +143,18 @@ public final class ZelloProtocolUtil
     public static boolean isSessionError(String errorMsg)
     {
         return errorMsg != null && SESSION_ERRORS.contains(errorMsg);
+    }
+
+    /**
+     * AP-fork: true for an error meaning the stream the command referred to was already closed server
+     * side - see {@link #ALREADY_CLOSED_STREAM_ERRORS}.
+     *
+     * @param errorMsg error string from the server, or null
+     * @return true when there is nothing left to stop
+     */
+    public static boolean isAlreadyClosedStreamError(String errorMsg)
+    {
+        return errorMsg != null && ALREADY_CLOSED_STREAM_ERRORS.contains(errorMsg);
     }
 
     /**

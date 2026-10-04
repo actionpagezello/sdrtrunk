@@ -5,6 +5,117 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.10] - 2026-10-04
+
+Corrects two mistakes in ap-15.9.9, fixes the Now Playing mute on channels whose alias list holds more
+than one alias, and stops the "To" column blanking between transmissions.
+
+### Context: what ap-15.9.9 achieved
+
+Over 14 hours on 2026-10-04, three machines logged **20,592 stream stops and one "channel busy"
+rejection**. Zero ghost streams (6 over the preceding two days), zero `session appears dead`, 8 watchdog
+trips. Missing stop acks improved — Somerville 1.94 per thousand stops against 3.23 on 10-03, Stoneham
+0.33 against 0.95. Only 8 close-1006 events fleet-wide, because every connection was under 24 hours old
+following the 23:15 restart, which independently confirms Zello's 24-hour connection cap.
+
+### Fixed — corrections to ap-15.9.9
+- **`START_STREAM_RETRY_MS` raised from 750 ms to 3000 ms.** 750 ms was described in the ap-15.9.9 notes
+  as "a large multiple of a plausible round trip". It is not — it sits inside the normal latency tail.
+  Measured over 20,592 streams on 2026-10-04, from `stream started` to the `stream_id=` flush line:
+
+  | broadcaster | median | p99 | max |
+  |---|---|---|---|
+  | Work | 43–51 ms | 77–89 ms | 330–1390 ms |
+  | Consumer | 43–55 ms | 523–662 ms | 523–922 ms |
+
+  All seven retries that fired were on healthy-but-slow starts, each opening a second stream that the
+  duplicate and orphan guards then closed. No audio was lost, but nothing was recovered either — the
+  retry was pure churn. 3000 ms is above every healthy start observed and below every genuinely silent
+  one (the six ghost cases ran 1.7 s to 5.0 s), so it separates the two populations.
+
+  The ap-15.9.9 comment also claimed normal latency "was never measured directly" because `stream_id`
+  arrival is not logged. It is logged, by `flushPendingFramesPaced`, in a method that had already been
+  read. The claim was simply not checked.
+
+- **Already-closed-stream errors now dispatch on the error string.** ap-15.9.9 dispatched on the origin
+  command, reasoning that any error answering a `stop_stream` is an already-closed stream by definition.
+  The field logs refuted it: the server sends these **unsolicited, with no seq** —
+  `error="failed to stop stream" seq=-1 command=unknown` — so there was no origin command to match and
+  the branch never fired. All eight occurrences on 2026-10-04 took the old path and still applied the
+  cooldown. Matching the string is correct and is what `isTransientStreamError` already does; Zello's
+  caution was against retrying by numeric **code**, which this does not do.
+
+  One ordering detail preserved: `bad mid` can also answer a `start_stream`, where it is a genuine start
+  failure (Boston MA EMS, 2026-10-04 13:42, seq=4617). That origin-command check now runs first.
+
+### Fixed — Now Playing mute
+- **The mute toggle now works on channels whose alias list holds more than one alias.** On Stoneham,
+  Atlantic 4 could be muted and unmuted from Now Playing with no effect on the audio and no
+  correspondence to the alias Listen toggle, while Littleton Fire on another machine worked correctly.
+  The difference was the alias list: Littleton's holds one alias, Stoneham's Wakefield list holds three
+  (Wakefield MA Fire, Wakefield MA Police, Atlantic Amb 4).
+
+  `resolveChannelAlias` consulted only the **live** TO identifier, which for NBFM exists solely during a
+  transmission — and since ap-15.9.7's squelch-close fix that identifier is cleared promptly at the end
+  of each one instead of lingering, so a right-click between transmissions reliably found nothing.
+  Resolution then fell to the rule requiring the alias list to hold exactly one alias, which fails on a
+  three-alias list, and the mute went to the per-channel store. That store does not gate the audio:
+  `AudioSegment` takes the **lowest** playback priority across every attached alias, so one alias at
+  `DO_NOT_MONITOR` silences the channel and nothing in the Now Playing menu could see or clear it.
+
+  For a conventional analog channel the governing alias is not something to guess from the alias list —
+  it is the channel's **configured talkgroup**, which `DecodeConfigAnalog` holds as static configuration
+  and which `NBFMDecoderState`/`AMDecoderState` publish on every call. `resolveConfiguredTalkgroupAlias`
+  now looks that up directly, so right-click and the alias Listen toggle are two switches on one state
+  regardless of list size or whether anyone is talking.
+
+  Scope is narrow by construction. `AliasList` keys talkgroup lookup by **protocol first** and returns at
+  most one alias per talkgroup, so an NBFM talkgroup can only match an NBFM alias in that channel's own
+  list — never a P25 or DMR alias at the same number, and never more than one. Trunked channels have no
+  configured talkgroup, so they are unaffected and keep resolving from the live TO, which is correct for
+  them. A channel with no matching alias — one being auditioned before an alias exists — still falls
+  through to the per-channel store and stays independent of everything else.
+
+  **Behaviour change worth knowing:** on an analog channel with an alias, right-click mute now writes
+  `DO_NOT_MONITOR` into the playlist exactly as the Listen toggle does, so it persists across restarts.
+  Previously it was a session-local per-channel flag. A stale per-channel entry from the old behaviour is
+  discarded the first time a channel is toggled.
+
+- **The mute menu item is now just "Mute" / "Unmute".** The row already names the talkgroup, so repeating
+  it said nothing, and `getShortTitle()` is System/Site/Name — long enough to run off the menu edge.
+  What the click will change moved to the tooltip, which also distinguishes a persisted alias toggle from
+  a channel-local mute.
+
+### Fixed — Now Playing display
+- **The "To" column no longer blanks between transmissions on analog channels.** `endCallEvent()` calls
+  `resetState()`, which is `mIdentifierCollection.remove(IdentifierClass.USER)` — and a
+  `TalkgroupIdentifier` is USER class, so the talkgroup went with it. The column showed `-----` the
+  instant a transmission ended, against a row still highlighted through the CALL-to-FADE hang period.
+
+  The configured talkgroup is re-applied after `resetState()`, on `REQUEST_RESET`, and at `start()`.
+  For a conventional channel it describes what the channel **is**, not a decoded identity that arrives
+  and departs with each call; clearing it is right for a trunked system and wrong here.
+
+  This also explains why it appeared to work before ap-15.9.7: the swallowed `SquelchState.SQUELCH` meant
+  `notifyCallEnd()` often never ran, so the talkgroup stayed on screen because the state machine was
+  broken. Fixing the squelch close made the column blank correctly, which is when this surfaced.
+
+  Note this is **not** the cause of the Salisbury report on ap-15.7, where a P25 channel showed no
+  talkgroup. P25 does not use `AnalogDecoderState`, and 15.7 predates every fork change to the metadata
+  panel. That remains open.
+
+### Known residuals
+- Pooled mode still gets none of the Zello fixes; `use_shared_pool` is default-false and unused.
+- A response to a superseded `start_stream` can still be adopted by a later segment — the success handler
+  tests `mStreamActive` but not `mStreamSessionEpoch`.
+- Missing stop acks remain concentrated on a few channels, worst on Massport (consumer network). Raised
+  with Zello.
+- No RSP1B removal verification. Daly logged no device-removal callbacks on 10-02, 10-03 or 10-04 — three
+  clean days after the 33-callback burst on 10-01, so the fault is intermittent rather than resolved.
+- `tools/fleetcheck.py` still parses none of the log lines added since ap-15.9.7, and its CTCSS section
+  still counts transition events against a counter that drops to TRACE on success — the measurement that
+  produced the retracted tone-confusion percentages. It should be fixed or removed.
+
 ## [0.6.2-ap-15.9.9] - 2026-10-03
 
 Acts on Zello Support's second round of answers (2026-10-03) and on the ap-15.9.8 field result. Four
