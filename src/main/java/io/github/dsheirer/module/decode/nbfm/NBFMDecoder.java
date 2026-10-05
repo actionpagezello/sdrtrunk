@@ -482,6 +482,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      * @param listener to receive states or pass null to de-register a listener.
      */
     @Override
+    public void setNoiseSquelchStateListener(Listener<NoiseSquelchState> listener)
+    {
+        mNoiseSquelch.setNoiseSquelchStateListener(listener);
+    }
+
     /**
      * AP-fork: records the outcome of an episode in which the holdover confirmation deadline was
      * exceeded. Called whenever the target tone or code is confirmed again.
@@ -500,17 +505,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         if(exceededAt > 0)
         {
+            long overshoot = System.currentTimeMillis() - exceededAt;
             mHoldoverDeadlineExceededTime = 0;
             mLog.warn("[{}] CTCSS holdover FALSE POSITIVE: target re-confirmed {}ms after the deadline " +
                             "would have closed the gate - a deadline of {}ms or more would have kept this call",
-                    mChannelLabel, System.currentTimeMillis() - exceededAt,
-                    HOLDOVER_CONFIRM_DEADLINE_MS + (System.currentTimeMillis() - exceededAt));
+                    mChannelLabel, overshoot, HOLDOVER_CONFIRM_DEADLINE_MS + overshoot);
         }
-    }
-
-    public void setNoiseSquelchStateListener(Listener<NoiseSquelchState> listener)
-    {
-        mNoiseSquelch.setNoiseSquelchStateListener(listener);
     }
 
     /**
