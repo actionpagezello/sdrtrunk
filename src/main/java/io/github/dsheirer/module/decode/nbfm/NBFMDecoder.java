@@ -135,6 +135,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     /** Timestamp the gate was opened via holdover, or 0 when not in a holdover-opened state. */
     private volatile long mHoldoverOpenTime = 0;
 
+    /**
+     * AP-fork: when the holdover confirmation deadline was first exceeded in the current episode, or 0.
+     * Measurement only - see the "WOULD CLOSE" block in processResampledAudio() and
+     * {@link #noteHoldoverReconfirmed()}.
+     */
+    private volatile long mHoldoverDeadlineExceededTime = 0;
+
     // Channel identification for log messages
     private volatile String mChannelLabel = "";
     private volatile long mChannelFrequencyHz = 0;
@@ -288,6 +295,20 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 if(!mToneFilterEnabled || mToneMatch)
                 {
                     notifyCallEnd();
+                }
+
+                //AP-fork: the episode ended without the target ever being re-confirmed, so closing the
+                //gate at the deadline would have been correct - this is the interference case the
+                //backstop exists for. Counted here against the FALSE POSITIVE line so a day of logs
+                //gives both populations. Measurement only; see the "WOULD CLOSE" block.
+                long deadlineExceededAt = mHoldoverDeadlineExceededTime;
+
+                if(deadlineExceededAt > 0)
+                {
+                    mHoldoverDeadlineExceededTime = 0;
+                    mLog.warn("[{}] CTCSS holdover TRUE POSITIVE: gate passed {}ms of unconfirmed audio " +
+                                    "past the deadline and the target was never re-confirmed",
+                            mChannelLabel, System.currentTimeMillis() - deadlineExceededAt);
                 }
 
                 // End of transmission — report what the hum diagnostic measured, if it is running
@@ -461,6 +482,32 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      * @param listener to receive states or pass null to de-register a listener.
      */
     @Override
+    /**
+     * AP-fork: records the outcome of an episode in which the holdover confirmation deadline was
+     * exceeded. Called whenever the target tone or code is confirmed again.
+     *
+     * <p>This is the false-positive counter for the measurement-only deadline. If the target confirms
+     * after the deadline had already passed, then closing the gate at the deadline would have cut a
+     * legitimate call short, and the margin printed here is how much longer the deadline needed to be
+     * to avoid that. Episodes that end without ever reaching this are the true positives - interference
+     * holding a gate open that should have shut.
+     *
+     * <p>Reported at WARN so the two populations are countable in a day's logs without DEBUG enabled.
+     */
+    private void noteHoldoverReconfirmed()
+    {
+        long exceededAt = mHoldoverDeadlineExceededTime;
+
+        if(exceededAt > 0)
+        {
+            mHoldoverDeadlineExceededTime = 0;
+            mLog.warn("[{}] CTCSS holdover FALSE POSITIVE: target re-confirmed {}ms after the deadline " +
+                            "would have closed the gate - a deadline of {}ms or more would have kept this call",
+                    mChannelLabel, System.currentTimeMillis() - exceededAt,
+                    HOLDOVER_CONFIRM_DEADLINE_MS + (System.currentTimeMillis() - exceededAt));
+        }
+    }
+
     public void setNoiseSquelchStateListener(Listener<NoiseSquelchState> listener)
     {
         mNoiseSquelch.setNoiseSquelchStateListener(listener);
@@ -618,29 +665,56 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             if(confirmed != null || dcsConfirmed)
             {
                 // Re-confirmed — the gate is standing on its own again
+                noteHoldoverReconfirmed();
                 mHoldoverOpenTime = 0;
             }
             else
             {
                 // Audio passing via holdover or stale match — not actively confirmed
                 long now = System.currentTimeMillis();
-                long openFor = mHoldoverOpenTime > 0 ? now - mHoldoverOpenTime : 0;
 
-                if(mHoldoverOpenTime > 0 && openFor > HOLDOVER_CONFIRM_DEADLINE_MS)
+                //AP-fork: start the clock on ANY unconfirmed gate, not only one opened by the
+                //holdover branch at squelch-open.
+                //
+                //mHoldoverOpenTime was armed in exactly one place - the squelch-open path - and was
+                //zeroed by every genuine tone confirmation, including the one that made the gate
+                //legitimate in the first place. So the common case had no clock at all: a real
+                //transmission confirms the target, mToneMatch stays true after it ends, and when an
+                //adjacent signal later opens the squelch during a CONTINUOUS transmission the
+                //squelch-open path never re-runs. The gate then passed audio indefinitely on a stale
+                //match while the deadline below sat permanently disarmed.
+                //
+                //Summit 2026-10-04, Bolton Fire 453.600 against Trinity 453.6125: 99 "gate OPEN via
+                //holdover" lines with ages to 1248 ms, and ZERO "deadline exceeded" lines against a
+                //600 ms deadline. The backstop could not see the case it was written for.
+                if(mHoldoverOpenTime == 0)
                 {
-                    mLog.debug("[{}] CTCSS holdover deadline exceeded ({}ms without confirmation) — closing gate",
-                            mChannelLabel, openFor);
-                    mToneMatch = false;
-                    mHoldoverOpenTime = 0;
-                    clearPendingToneAudio();
+                    mHoldoverOpenTime = now;
+                }
 
-                    if(mAudioFilters != null)
-                    {
-                        mAudioFilters.reset();
-                    }
+                long openFor = now - mHoldoverOpenTime;
 
-                    notifyCallEnd();
-                    return;
+                //AP-fork: MEASUREMENT ONLY for now - the gate is NOT closed here yet.
+                //
+                //Arming the clock above makes this deadline live on every tone-filtered NBFM channel
+                //in the fleet for the first time, and HOLDOVER_CONFIRM_DEADLINE_MS has never run in
+                //production, so its value has never been tested against real traffic. If 600 ms is
+                //too tight the failure mode is audio clipped mid-call, which is worse than the
+                //interference it suppresses.
+                //
+                //So this records what it WOULD have done. noteHoldoverReconfirmed() reports the
+                //false positives directly: if the target tone is confirmed after this point in the
+                //same episode, closing the gate here would have cut a legitimate call short, and the
+                //log says so with the margin by which it missed. An episode that ends without
+                //re-confirmation is a true positive. One day of both counts sets the deadline.
+                if(openFor > HOLDOVER_CONFIRM_DEADLINE_MS && mHoldoverDeadlineExceededTime == 0)
+                {
+                    mHoldoverDeadlineExceededTime = now;
+                    CTCSSCode rawAtDeadline = mCTCSSDetector != null ? mCTCSSDetector.getRawDetectedCode() : null;
+                    mLog.warn("[{}] CTCSS holdover WOULD CLOSE gate: {}ms unconfirmed (deadline {}ms) raw={} " +
+                                    "- measurement only, gate left open",
+                            mChannelLabel, openFor, HOLDOVER_CONFIRM_DEADLINE_MS,
+                            rawAtDeadline != null ? rawAtDeadline.getDisplayString() : "none");
                 }
 
                 if(mCTCSSDetector != null)
@@ -1010,6 +1084,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mToneMatch = true;
                     mLastToneMatchTime = System.currentTimeMillis();
                     // Confirmed detection — the gate no longer rests on holdover trust
+                    noteHoldoverReconfirmed();
                     mHoldoverOpenTime = 0;
 
                     // If we were previously blocked, fire a call start and flush
@@ -1087,6 +1162,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mToneMatch = true;
                     mLastToneMatchTime = System.currentTimeMillis();
                     // Confirmed detection — the gate no longer rests on holdover trust
+                    noteHoldoverReconfirmed();
                     mHoldoverOpenTime = 0;
 
                     if(wasBlocked)

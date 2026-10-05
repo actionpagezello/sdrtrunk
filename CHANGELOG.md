@@ -5,6 +5,88 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.11] - 2026-10-04
+
+One change, and it deliberately does not fix anything yet: it arms a dead backstop and records what that
+backstop would have done, so the next release can set its threshold from data rather than from a guess.
+
+### The defect
+
+On the Summit machine, Bolton Fire (453.600, CTCSS 74.4) gargles whenever PrideStar/Trinity transmits on
+453.6125 with CTCSS 77.0. The waterfall shows Trinity's signal with a solid core spanning roughly 453.607
+to 453.618 and skirts reaching past 453.605, so real energy lands inside Bolton Fire's 7.5 kHz passband —
+already the narrowest FM option, and gain reduction did not help, so this is not front-end overload. That
+part is RF and cannot be fixed in software.
+
+What *is* ours is that the tone gate lets it through. Bolton Fire has tone filtering enabled on 74.4, and
+the 2026-10-04 log carries 99 of these:
+
+```
+CTCSS gate OPEN via holdover: confirmed=null raw=WA lossCounter=2 holdoverAge=1248ms
+```
+
+`confirmed=null` means no tone is currently confirmed — the gate is standing on a stale `mToneMatch` from
+an earlier genuine confirmation. A backstop for exactly this already existed,
+`HOLDOVER_CONFIRM_DEADLINE_MS = 600`, and it fired **zero times** in that log while holdover ages ran to
+652, 800, 1051 and 1248 ms.
+
+It could not fire. `mHoldoverOpenTime`, the field that arms the deadline, was set in exactly one place —
+the squelch-open path, when the gate opens via holdover — and was zeroed by **every** genuine tone
+confirmation, including the one that legitimately opened the gate:
+
+```java
+mToneMatch = true;
+mLastToneMatchTime = System.currentTimeMillis();
+// Confirmed detection — the gate no longer rests on holdover trust
+mHoldoverOpenTime = 0;
+```
+
+So the common case had no clock at all. A real transmission confirms the target; `mToneMatch` stays true
+after it ends; an adjacent signal later opens the squelch during a *continuous* transmission, so the
+squelch-open path never re-runs; and the gate passes audio for the whole of it with the deadline
+permanently disarmed. The backstop was structurally unable to see the case it was written for.
+
+### What this release does
+
+- **Arms the clock on any unconfirmed gate**, not only one opened by the holdover branch. This is the
+  actual fix and it is one line.
+
+- **Does not close the gate.** Arming the clock makes that deadline live on every tone-filtered NBFM
+  channel in the fleet for the first time, and 600 ms has never run in production, so it has never been
+  tested against real traffic. If it is too tight the failure mode is audio clipped mid-call, which is
+  worse than the interference it suppresses. The detector is also logging `confirm=1/3` repeatedly for
+  74.4 — reaching one confirmation of three and resetting — and nothing in this log says whether that is
+  Trinity's interference or how the channel behaves normally. That difference decides the threshold.
+
+- **Reports both outcomes at WARN**, so one day of logs settles it without DEBUG enabled:
+  - `CTCSS holdover WOULD CLOSE gate: Nms unconfirmed (deadline 600ms) raw=X — measurement only`
+  - `CTCSS holdover FALSE POSITIVE: target re-confirmed Nms after the deadline would have closed the
+    gate — a deadline of Nms or more would have kept this call` — a legitimate call that closing would
+    have cut short, with the margin by which 600 ms missed.
+  - `CTCSS holdover TRUE POSITIVE: gate passed Nms of unconfirmed audio past the deadline and the target
+    was never re-confirmed` — the interference case, counted at squelch close.
+
+  The false-positive line is the one that matters: it names the deadline that would have been safe for
+  each call it would have clipped. Take the maximum across a day and the threshold picks itself.
+
+### Also worth trying on that channel, no code needed
+The raw detections come back as DCS codes (`WA`, `YZ`, `NZ`) and a spurious 107.2 Hz reads 12.6 dB while
+the real 74.4 reads 7.6 dB — the garbled signal being decoded as tones that are not there. If Bolton Fire
+has DCS codes configured alongside CTCSS, removing them cuts off one source of spurious matches.
+
+### Not addressed
+- **CTCSS cannot distinguish 74.4 from 77.0 and this is not the fix for it.** The detector's block is
+  `max(5 cycles of the lowest tone, sampleRate/12)` = 666 samples at 8 kHz, so bins are 12 Hz wide. The
+  two tones are 2.6 Hz apart, 0.22 of a bin: a 77.0 tone measured by the 74.4 detector returns about 92%
+  of full response, **0.7 dB** down. For comparison the 127.3/131.8 pair is 4.5 Hz apart, about 2.1 dB,
+  matching the 2.0 dB measured previously. Resolving 2.6 Hz needs roughly 3,100 samples, 385 ms per
+  block, over a second with the three-block confirmation — unusable for dispatch audio.
+- **Alias deletion requiring a restart** (reported on ap-15.7, selecting an alias list from the dropdown
+  with no search text). `AliasConfigurationEditor.java` is pristine upstream — one commit, the initial
+  import — so this is not a fork regression and will reproduce on any version. The suspect is the
+  `FilteredList` whose single long-lived `AliasPredicate` is mutated in place, which is why `update()`
+  has to do `setPredicate(null)` then set it back to force re-evaluation. Not yet reproduced here.
+
 ## [0.6.2-ap-15.9.10] - 2026-10-04
 
 Corrects two mistakes in ap-15.9.9, fixes the Now Playing mute on channels whose alias list holds more
