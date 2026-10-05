@@ -63,9 +63,6 @@ public abstract class AnalogDecoderState extends DecoderState implements ISource
             case REQUEST_RESET ->
                     {
                         getIdentifierCollection().update(getChannelNameIdentifier());
-                        //AP-fork: see endCallEvent() - the configured talkgroup is static configuration
-                        //and belongs in the collection whether or not a call is in progress.
-                        getIdentifierCollection().update(getTalkgroupIdentifier());
                     }
             case START ->
                     {
@@ -143,24 +140,6 @@ public abstract class AnalogDecoderState extends DecoderState implements ISource
 
         //Remove any user identifiers from the identifier collection
         resetState();
-
-        //AP-fork: put the configured talkgroup straight back. resetState() is
-        //mIdentifierCollection.remove(IdentifierClass.USER), and a TalkgroupIdentifier is USER class, so
-        //it takes the talkgroup with it - which blanks the "To" column in the Now Playing window the
-        //instant a transmission ends, showing "-----" against a row that is still highlighted through
-        //the CALL-to-FADE hang period.
-        //
-        //For a conventional analog channel that is wrong on its own terms: the talkgroup comes from
-        //DecodeConfigAnalog.getTalkgroup(), so it is static configuration describing what the channel IS,
-        //not a decoded identity that arrives and departs with each call. Clearing it is right for a
-        //trunked system, where the live talkgroup genuinely stops being meaningful; it is not right
-        //here.
-        //
-        //This also restores what ap-15.9.6 and earlier appeared to do. Back then the swallowed
-        //SquelchState.SQUELCH meant notifyCallEnd() often never ran, so the talkgroup simply stayed on
-        //screen - the display looked correct because the state machine was broken. ap-15.9.7 fixed the
-        //squelch close and the column started blanking properly, which is when this surfaced.
-        getIdentifierCollection().update(getTalkgroupIdentifier());
     }
 
     @Override
@@ -168,8 +147,6 @@ public abstract class AnalogDecoderState extends DecoderState implements ISource
     {
         super.start();
         getIdentifierCollection().update(getChannelNameIdentifier());
-        //AP-fork: present from the moment the channel starts, not only once a call has been decoded.
-        getIdentifierCollection().update(getTalkgroupIdentifier());
     }
 
     @Override

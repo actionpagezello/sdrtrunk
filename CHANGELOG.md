@@ -5,6 +5,30 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.12] - 2026-10-05
+
+### Reverted
+- **The "To" column no longer holds the configured talkgroup between transmissions.** Reverts the
+  `AnalogDecoderState` change from ap-15.9.10; the file is byte-identical to its ap-15.9.9 state and the
+  column blanks at call end as it did before.
+
+  Reverted at Armen's request: there is no need for the Now Playing row to carry the talkgroup, since
+  the row is the talkgroup, and he does not want that behaviour as a precedent for trunked systems whose
+  talkgroup legitimately changes call to call.
+
+  Note on how it got in. He reported the column blanking as a fault; the analog mechanism was found while
+  investigating and offered alongside the ap-15.9.10 mute fix because the two share a root cause — only
+  the live identifier is ever consulted, never the configured one. Sharing a cause is not the same as
+  being one change, and presenting them together implied a dependency that did not exist. The mute fix
+  reads the talkgroup directly from `DecodeConfigAnalog` and never depended on this.
+
+  **The Now Playing mute is unaffected** and still resolves the governing alias from the channel's
+  configured talkgroup. Atlantic 4 and Littleton Fire both keep working.
+
+  Also still open: the original report was Salisbury on ap-15.7 with a **P25** channel showing no
+  talkgroup. P25 does not use `AnalogDecoderState`, and ap-15.7 predates every fork change to the
+  metadata panel, so that was never addressed by this and remains unexplained.
+
 ## [0.6.2-ap-15.9.11] - 2026-10-04
 
 One change, and it deliberately does not fix anything yet: it arms a dead backstop and records what that
