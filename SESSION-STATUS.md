@@ -3,7 +3,94 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.9.4 (2026-09-17) — INSTALL THIS ONE
+## Current Release: ap-15.9.15 (2026-10-05)
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.15\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.15.zip`
+- Built 2026-10-05, JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean build -x test` then `.\gradlew runtimeZipWindows`
+- Tree `949657b53f2cf326ac2e0a7950fec4f773a4cef8`
+- **Deployed to Summit VHF/UHF only.** Under observation — the Bolton/Trinity result is not yet confirmed.
+
+**Closes the holdover gate when no target tone has won a bin in the episode.** ap-15.9.14 fixed the tone
+decision and the Summit 2026-10-05 log confirms it — the win score pins at −8 and the suppression line fires
+378–812 times an hour. But the gate was never opened by the tone decision: all 977 `gate OPEN via holdover`
+lines on Bolton Fire that day carried `confirmed=null`, and four of the six recordings produced were Trinity
+453.6125 splashover admitted by that path. Acton Police 154.8150 shows the same pattern with 745 unconfirmed
+opens.
+
+Closing on elapsed time does not work and the log says so: real calls spend long stretches with a non-target
+raw winner (median 1249 ms, max 2100 ms across 16 confirmed-real episodes), so a 600 ms grace truncates 14 of
+16 real calls and 1500 ms still truncates 5. The 600 ms deadline carried since ap-15.9.11 would have cut 14 of
+16 had it ever fired.
+
+What separates the populations is whether the target ever wins a bin at all. Of 12 bleed episodes, 9 never saw
+it — including all four flagged recordings — while all 16 real episodes did. So `NBFMDecoder` latches
+`mRawTargetWonThisEpisode` on first sight and the veto closes the gate when the holdover is passing
+unconfirmed audio and that flag was never set. Replayed against the log: **0 of 16 real episodes affected, 9
+of 12 bleed episodes closed.** The three survivors each had 74.4 genuinely win a bin briefly; ambiguous gates
+are left open.
+
+> **Baseline to beat, Summit 2026-10-05 (ap-15.9.14):** 16 real Bolton episodes, 12 bleed episodes, 4 of
+> which produced recordings. Keep that log — it is the before-figure for this channel pair.
+
+### Open after ap-15.9.15
+- **Bolton/Trinity unconfirmed.** Watch for `Closing tone gate — holdover with no confirmation and no target
+  bin win this episode` on Trinity keyups, and `targetWon=true` on real Bolton calls. Real calls getting
+  clipped means the latch is resetting somewhere unaccounted for.
+- **DCS path is reasoned, not measured.** The first draft of the veto would have cut every DCS call on each
+  code dropout; a DCS confirmation now latches the flag and the veto is guarded on `mCTCSSDetector != null`.
+  Needs confirming on a real DCS channel.
+- **Somerville 131.8 and the data bursts are unmeasured.** ap-15.9.14 should help 127.3/131.8 partially — the
+  pair is ~2.1 dB apart against the old 2.0 dB override, so it fired intermittently there rather than
+  unconditionally as on Bolton's 74.4/77.0 at 0.7 dB. Whether the ap-15.9.15 veto helps the bursts is unknown:
+  broadband energy may let the target win a bin by chance and latch the flag. `TdmaInterferenceDetector`
+  remains the designed defence. A Somerville log covering bursts would settle both.
+- **`tools/fleetcheck.py` parses none of the log lines added since ap-15.9.7** and its CTCSS section measures
+  the wrong thing. Fix or remove.
+
+## Fleet versions as reported
+| Machine | Version | Reported |
+|---|---|---|
+| Summit VHF/UHF | ap-15.9.15 | 2026-10-05 |
+| Stoneham | ap-15.9.9 | 2026-10-03 |
+| Somerville | ap-15.9.8 | 2026-09-30 |
+| Daly | ap-15.9.8 | 2026-09-30 |
+| Baker | ap-15.9.4 | 2026-09-17 |
+| Beauport | ap-15.9.1 | 2026-09-17 |
+| Monson | ap-15.7 or earlier | — |
+
+Anything not listed has not been reported this cycle. Do not assume a machine took a build it was not
+confirmed to have taken.
+
+## Releases ap-15.9.5 → ap-15.9.14 (see CHANGELOG.md for full detail)
+- **ap-15.9.14** — gates the adjacent-tone leakage preference on a per-target win score. The preference
+  overrode the Goertzel winner whenever a target sat within 2 dB, and 2 dB is wider than the separation
+  between any adjacent CTCSS pair, so for adjacent tones it fired unconditionally. Root cause of the Bolton
+  bleed and of the long-standing 127.3/131.8 limitation.
+- **ap-15.9.13** — CTCSS confirmation becomes a sliding window (3 of the last 5 blocks) instead of a
+  consecutive run. Cut `WOULD CLOSE` from 6.0/h to ~1.1/h and holdover gate-opens from 410/h to ~190/h. Real
+  improvement, not the fix.
+- **ap-15.9.12** — reverts the ap-15.9.10 `AnalogDecoderState` change; the "To" column no longer holds the
+  configured talkgroup between transmissions. The file is byte-identical to its ap-15.9.9 state. It was
+  bundled with the mute fix without depending on it, which was a mistake.
+- **ap-15.9.11** — arms the dead holdover backstop and logs what it *would* have done, closing nothing.
+  Measurement by design. This is what identified the ap-15.9.15 defect.
+- **ap-15.9.10** — corrects two ap-15.9.9 mistakes (`START_STREAM_RETRY_MS` 750 → 3000 against measured
+  latency; already-closed-stream errors dispatched on the error string, since the server sends them
+  unsolicited with `seq=-1`), and fixes Now Playing mute on channels whose alias list holds more than one
+  alias.
+- **ap-15.9.9** — acts on Zello Support's second round of answers and the ap-15.9.8 field result. Four small
+  Zello client changes.
+- **ap-15.9.8** — acts on Zello Support's answers of 2026-09-30. Removes a 500 ms wait on an acknowledgement
+  that is never sent. **Confirmed by measurement:** 92,774 stops across three machines produced one
+  channel-busy event, against 72.0 per thousand on Stoneham's last ap-15.9.7 day; ghosts fell from 1,687/day
+  to 6 in two days. Stoneham was an accidental control — files copied but never restarted.
+- **ap-15.9.7** — ships the squelch-close fix lost from ap-15.9.6, one upstream P25 filter correction, two
+  diagnostics.
+- **ap-15.9.6** — four changes, each measured first: two silent failures, one filter attenuating the wrong
+  part of the spectrum, one heap ceiling that was never protection.
+- **ap-15.9.5** — two silent-failure fixes plus one new warning. The Zello wedge ran four days across two
+  machines with no log line at any level.
+
+## Superseded: ap-15.9.4 (2026-09-17)
 - GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.9.4
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.4\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.4.zip`
 - Built and pushed 2026-09-17 with JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean runtimeZipWindows`
@@ -187,7 +274,11 @@ Both fail silently, so they are code-reading findings with no log evidence eithe
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew clean runtimeZipWindows` (archiveVersion finalizer copies the zip to
   `sdrtrunk-ap-versions\v<version>\` automatically)
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9.1`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9.15`
+- Patch workflow: work is delivered as `git format-patch` and applied on Windows with
+  `git am --keep-cr --3way ap-<version>.patch`, then the tree hash is checked against the one recorded for
+  that release. Git is never run against this repo through the device bridge — CRLF causes mass false-positive
+  staging. The cloud sandbox cannot push (proxy 403), so every push happens from Windows.
 - 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
 
 ## Changes in ap-15.8 (deployed to Somerville 2026-08-22)
@@ -263,7 +354,69 @@ Genuinely outstanding:
   it wholesale would also clobber `-Xmx10g`, `-Dprism.order=d3d,sw` and the ap-fork lazy platform
   configuration in `runtimeZipCurrent` — hand-merge required.
 
-## Queued for ap-15.9
+## Carried open items (not release-specific)
+- **Alias deletion sometimes requires a program restart** — deleted aliases do not always disappear from the
+  list. Upstream `AliasConfigurationEditor.java`; the suspect is the mutated-in-place `AliasPredicate` in a
+  `FilteredList`. Reported on ap-15.7 on a test system, selecting the alias from the dropdown rather than
+  searching for it. Unconfirmed whether a filter or dropdown selection is required to reproduce.
+- **Salisbury P25 talkgroup not displaying on ap-15.7** — not the analog path, and predates every fork panel
+  change. Unexplained.
+- **Daly RSP1B removal verification** — deferred by decision after three clean days following the 10-01
+  33-callback burst.
+- **Zello needs a correction** — the ghost figure reported to them was inflated; most of the silent-start
+  count was an artefact of our own 15 ms measurement.
+- **Missing stop acks concentrate on specific channels**, worst on Massport (consumer network). Not chased.
+
+## HydraSDR RF One
+Supported in the fork already, pulled from upstream: `source/tuner/hydrasdr/`, VID `38af` PID `0001`,
+`TunerType.HYDRASDR_R828D`. Usable bandwidth is enforced per sample rate in `HydraSdrTunerController`
+(lines 289–305) and the same table applies to Airspy, which shares the controller shape:
+
+| Rate | Usable % | Usable BW |
+|---|---|---|
+| 10 MSPS | 90% | 9.00 MHz |
+| 6 MSPS | 83% | 4.98 MHz |
+| 3 MSPS | 66% | 1.98 MHz |
+| 2.5 MSPS | 60% | 1.50 MHz |
+
+RTL R820T is 98% (`R8xEmbeddedTuner.USABLE_BANDWIDTH_PERCENT`), max listed rate 2.880 MHz.
+
+**Leave sample packing off.** `setSamplePacking(false)` at init is correct: packing forces
+`ScalarPackedSampleConverter` and there is no vectorized packed converter, so it trades the SIMD path for 25%
+of USB bandwidth. Only reach for it if a 10 MSPS device actually starves — USB starvation logs
+`USB transfer [...] submit attempt failed` and, at the limit, `Maximum USB transfer buffer errors reached`,
+whereas scalar conversion costs CPU and logs nothing.
+
+HydraSDR maintains its own sdrtrunk fork (`hydrasdr/sdrtrunk`) replacing the pure-Java USB path with a JNI
+bridge to `libhydrasdr`, claiming ~25× lower streaming CPU. Unverified vendor claim; adopting it means a
+native DLL in the build and runtime zip on every machine. Not done.
+
+## Denmark, ME build plan (not yet installed)
+Dell OptiPlex 9020, i7-4790, 32 GB. Antenna → 20 ft Belden 400 → ZX60-P103LN+ (+25 dB at VHF, NF 0.4–0.6 dB,
+own 5 V supply — Bias-T is useless in this topology) → FM broadcast filter + SLP-550+ → Anzac DS-4 four-way.
+Filters go **after** the LNA: their loss would land directly on a 1.1 dB system noise figure ahead of it, and
+the ZX60's input P1dB near +0.9 dBm means it will not compress on anything that site presents. `LINEARITY`
+mode, low steps, both AGCs off, no attenuator — keep a 3 and 6 dB pad on the shelf for a single leg only.
+
+Coverage of the 100-frequency list, exhaustive over window placements at 9.0 MHz: 1 device 73%, 2 devices 84%,
+3 devices 91%, 4 devices 98%.
+
+| Device | Rate | Center | Ch |
+|---|---|---|---|
+| HydraSDR #1 | 10 MSPS | 154.9625 | 73 |
+| HydraSDR #2 | 10 MSPS | 171.2562 | 11 |
+| Airspy Mini | 3 MSPS | 160.2450 | 6 |
+| Nooelec | 2.4 MSPS | 461.3375 | 5 |
+| Nooelec | 2.4 MSPS | 453.5375 | 3 |
+
+Five devices, 98 of 100. Skip a device for 163.5750 — Augusta RCC South is already covered at 169.6625.
+Start with the two HydraSDRs (84%) and add the rest only where a survey shows traffic. The RF One is USB 2.0
+and moves ~40 MB/s at 10 MSPS against a ~40 MB/s per-controller ceiling, so each 10 MSPS device wants its own
+host controller; a StarTech PEXUSB3S44V (four independent Renesas µPD720202 controllers, PCIe x4, aux power
+connected) solves that if a third or fourth device is added. It does nothing for CPU, which is the remaining
+unknown.
+
+## Queued
 - **Audit every tuner's sample rate across the fleet** — an RTL-2832 above ~2.56 MSPS drops USB
   samples; see the RTL-2832 section in CLAUDE.md. On Daly, Methuen Police went from 1 call to 246
   in the same clock window by moving 2.88 -> 2.4 MSPS. Configuration change, not code, and the
