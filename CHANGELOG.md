@@ -5,6 +5,84 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.14] - 2026-10-05
+
+The adjacent-tone leakage preference no longer overrules the detector unconditionally. This is the actual
+cause of the Bolton Fire bleed, and of the 127.3/131.8 limitation that has been on the books since the
+start of this work.
+
+### The defect
+
+Summit's 2026-10-05 log, Bolton Fire 453.600 (CTCSS 74.4) against Trinity 453.6125 (CTCSS 77.0). The tone
+survey, which scans every bin, reports the truth through whole episodes:
+
+```
+092131.711  CTCSS survey: #1 77.0 Hz (77.0 Hz) 25.2 dB
+092147.011  CTCSS survey: #1 77.0 Hz (77.0 Hz) 24.0 dB
+092154.461  CTCSS survey: #1 77.0 Hz (77.0 Hz) 25.2 dB
+```
+
+While the detector reports, and **confirms**, something else:
+
+```
+092145.861  CTCSS tone 74.4 Hz (74.4 Hz) detected: SNR=24 ...
+092145.962  Flushed 3 buffered audio chunks (192ms) after tone confirmation
+```
+
+Those are confirmed detections opening the gate — not holdover. The Goertzel identifies Trinity's 77.0
+correctly and then this heuristic in `analyzeBlock` overrules it:
+
+```java
+// If a target tone is within 2 bins of the winner and within 2 dB,
+// prefer the target tone — it's almost certainly the real tone.
+if(diffDB < 2.0f) { detected = mScanCodeArray[belowIdx]; }
+```
+
+**2 dB is wider than the separation between any adjacent CTCSS pair** — 74.4 against 77.0 is 0.7 dB,
+127.3 against 131.8 is 2.1 dB. So for an adjacent neighbour the override fired every block,
+unconditionally. An adjacent-channel transmitter using the neighbouring PL was indistinguishable from our
+own station by construction. That is the 127.3/131.8 problem: not the 12 Hz bin width alone, but this
+heuristic erasing what the bins did resolve.
+
+### Fixed
+- **The preference is now gated on evidence that the target is really present.** A tone that is present
+  wins its OWN bin outright, because leakage into a neighbour is always a fraction of the peak. So a
+  per-target score rises when the target wins outright and falls when a contested neighbour wins, clamped
+  to ±8, and the override applies only while that score is positive.
+
+  Simulated against the measured behaviour before shipping:
+
+  | scenario | reported |
+  |---|---|
+  | Trinity present, 77.0 wins every block | 77.0 → **rejected** |
+  | real 74.4, occasional noise flip to 77.0 | 74.4 throughout — preference still rescues the flipped blocks |
+  | real 74.4 from cold start | 74.4 immediately |
+  | genuinely ambiguous, target never wins its own bin | rejected |
+  | Trinity, then a real Bolton call starts | switches to 74.4 **in the same block** |
+
+  The last row is the safety property: **the score gates only the override, never direct detection.** A
+  tone that is actually present wins its own bin and never needs rescuing, so a negative score cannot lock
+  out a real call. The original purpose of the preference — noise flipping which bin wins when a real
+  target is leaking — is preserved, as the second row shows.
+
+  A DEBUG line reports suppression on transition only: `CTCSS NOT preferring target X over winner Y` with
+  the dB gap and the score.
+
+### Why the earlier releases did not fix this
+- ap-15.9.11's holdover deadline measured nine false positives to one true positive and was never enabled.
+  Correctly so: the gate was not riding holdover for these calls, it was being opened by confirmed
+  detections of the wrong tone.
+- ap-15.9.13's windowed confirmation cut deadline breaches from 6.0/h to ~1.1/h and holdover-carried gates
+  from 410/h to ~190/h, which is a real improvement to a real defect — but it made confirmation easier,
+  so for this particular path it was marginally more permissive. Both releases were treating symptoms
+  downstream of this.
+
+### Unchanged
+- The RF half is not fixable here. Trinity's signal spans roughly 453.607 to 453.618 with skirts past
+  453.605, putting real energy inside Bolton Fire's passband at the narrowest FM bandwidth SDRTrunk
+  offers. What changes is that the tone filter now rejects it instead of adopting it.
+- The holdover deadline remains measurement-only and closes nothing.
+
 ## [0.6.2-ap-15.9.13] - 2026-10-05
 
 CTCSS confirmation becomes a sliding window instead of a consecutive run. The holdover deadline is still

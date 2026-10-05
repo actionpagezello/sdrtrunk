@@ -23,6 +23,8 @@ import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -54,6 +56,32 @@ public class CTCSSDetector
      * so we allow preferring a nearby target bin over the peak bin if within 2 dB.
      */
     private static final float LOW_FREQ_NARROWBAND_CUTOFF = 120.0f;
+
+    /**
+     * AP-fork: bound on the per-target running score that gates the leakage preference below.
+     *
+     * <p>The preference exists because a real target tone leaks into its neighbouring bins, and with
+     * 12 Hz bins against a standard tone list spaced ~3.4% apart, noise can flip which bin wins in any
+     * single block. Rescuing the target in that case is correct.
+     *
+     * <p>But the 2 dB window it used is WIDER than the discrimination between any adjacent CTCSS pair -
+     * 74.4 against 77.0 is 0.7 dB, 127.3 against 131.8 is 2.1 dB - so for adjacent tones it fired every
+     * time, unconditionally converting a neighbour into the target. That made an adjacent-channel
+     * transmitter using the neighbouring PL indistinguishable from our own station by construction, and
+     * is the long-standing 127.3/131.8 limitation.
+     *
+     * <p>Summit 2026-10-05, Bolton Fire 453.600 (74.4) against Trinity 453.6125 (77.0): the survey
+     * reported 77.0 at #1 with 18-25 dB through whole episodes while the detector reported 74.4 and
+     * confirmed it, flushing buffered audio and opening the gate. The Goertzel identified the right tone
+     * and this heuristic overruled it.
+     *
+     * <p>A single block cannot separate the two cases at 0.7 dB, but many blocks can: a tone that is
+     * really present wins its OWN bin outright, since leakage to a neighbour is always a fraction of the
+     * peak. So the score rises when a target wins outright and falls when a non-target neighbour does,
+     * and the preference is only applied while the score shows the target has genuinely been winning.
+     * Clamped so a long run in either direction cannot make it slow to respond.
+     */
+    private static final int TARGET_WIN_SCORE_LIMIT = 8;
 
     /**
      * Number of consecutive detections required before reporting a match.
@@ -139,6 +167,16 @@ public class CTCSSDetector
      * "what did the last block actually see" value that getRawDetectedCode() reports.
      */
     private CTCSSCode mLastRawCode = null;
+
+    /**
+     * AP-fork: per-target evidence that the tone is genuinely present rather than being leakage from a
+     * neighbour. Rises when the target wins its own bin outright, falls when a non-target neighbour wins
+     * a contest the preference would otherwise have overridden. See TARGET_WIN_SCORE_LIMIT.
+     */
+    private final Map<CTCSSCode,Integer> mTargetWinScore = new HashMap<>();
+
+    /** AP-fork: last code whose preference override was suppressed, so the log reports transitions only. */
+    private CTCSSCode mLastSuppressedCode = null;
 
     // Tone survey: log top tones periodically regardless of threshold
     private static final int SURVEY_INTERVAL_BLOCKS = 40; // ~every 3 seconds at 75ms/block
@@ -410,10 +448,26 @@ public class CTCSSDetector
 
             CTCSSCode detected = mScanCodeArray[maxIndex];
 
+            //AP-fork: a target that wins its own bin outright is genuinely present - leakage into a
+            //neighbour is always a fraction of the peak - so this is the evidence the preference below
+            //is gated on.
+            if(mTargetCodes.contains(detected))
+            {
+                adjustTargetWinScore(detected, +1);
+                mLastSuppressedCode = null;
+            }
+
             // For low-frequency tones, spectral leakage can cause a neighboring non-target bin
             // to narrowly beat the actual target bin. If a target tone is within 2 bins of the
             // winner and within 2 dB, prefer the target tone — it's almost certainly the real tone.
             // Skip guard indices during preference search.
+            //
+            //AP-fork: "almost certainly" only holds when the target is actually present. The 2 dB
+            //window is wider than the separation between any adjacent CTCSS pair, so for an adjacent
+            //neighbour this fired unconditionally and converted it into the target every time - which
+            //is how Trinity's 77.0 was being reported, confirmed and streamed as Bolton Fire's 74.4.
+            //The preference now requires the target to have won its own bin outright recently; when it
+            //has not, the winner stands and the non-target is rejected as it should be.
             if(!mTargetCodes.contains(detected) && mScanFrequencies[maxIndex] <= LOW_FREQ_NARROWBAND_CUTOFF)
             {
                 for(int offset = 1; offset <= 2; offset++)
@@ -421,32 +475,56 @@ public class CTCSSDetector
                     int belowIdx = maxIndex - offset;
                     int aboveIdx = maxIndex + offset;
 
+                    int preferIdx = -1;
+
                     if(belowIdx >= 0 && !isGuardIndex(belowIdx) && mTargetCodes.contains(mScanCodeArray[belowIdx]))
                     {
-                        float diffDB = (float)(10.0 * Math.log10((maxPower / (powers[belowIdx] + 1e-10f)) + 1e-10));
-                        if(diffDB < 2.0f)
-                        {
-                            LOGGER.trace("{}CTCSS preferring target {} over winner {} (diff={} dB)",
-                                    mChannelLabel, mScanCodeArray[belowIdx], detected, String.format("%.1f", diffDB));
-                            detected = mScanCodeArray[belowIdx];
-                            maxIndex = belowIdx;
-                            maxPower = powers[belowIdx];
-                            break;
-                        }
+                        preferIdx = belowIdx;
                     }
-                    if(aboveIdx < mScanCodeArray.length && !isGuardIndex(aboveIdx) && mTargetCodes.contains(mScanCodeArray[aboveIdx]))
+                    else if(aboveIdx < mScanCodeArray.length && !isGuardIndex(aboveIdx)
+                            && mTargetCodes.contains(mScanCodeArray[aboveIdx]))
                     {
-                        float diffDB = (float)(10.0 * Math.log10((maxPower / (powers[aboveIdx] + 1e-10f)) + 1e-10));
-                        if(diffDB < 2.0f)
-                        {
-                            LOGGER.trace("{}CTCSS preferring target {} over winner {} (diff={} dB)",
-                                    mChannelLabel, mScanCodeArray[aboveIdx], detected, String.format("%.1f", diffDB));
-                            detected = mScanCodeArray[aboveIdx];
-                            maxIndex = aboveIdx;
-                            maxPower = powers[aboveIdx];
-                            break;
-                        }
+                        preferIdx = aboveIdx;
                     }
+
+                    if(preferIdx < 0)
+                    {
+                        continue;
+                    }
+
+                    CTCSSCode candidate = mScanCodeArray[preferIdx];
+                    float diffDB = (float)(10.0 * Math.log10((maxPower / (powers[preferIdx] + 1e-10f)) + 1e-10));
+
+                    if(diffDB >= 2.0f)
+                    {
+                        continue;
+                    }
+
+                    //The contested neighbour won, so this is evidence AGAINST the target being real.
+                    adjustTargetWinScore(candidate, -1);
+
+                    if(mTargetWinScore.getOrDefault(candidate, 0) >= 1)
+                    {
+                        LOGGER.trace("{}CTCSS preferring target {} over winner {} (diff={} dB, score={})",
+                                mChannelLabel, candidate, detected, String.format("%.1f", diffDB),
+                                mTargetWinScore.getOrDefault(candidate, 0));
+                        detected = candidate;
+                        maxIndex = preferIdx;
+                        maxPower = powers[preferIdx];
+                        mLastSuppressedCode = null;
+                    }
+                    else if(mLastSuppressedCode != detected)
+                    {
+                        mLastSuppressedCode = detected;
+                        LOGGER.debug("{}CTCSS NOT preferring target {} over winner {} ({} Hz, diff={} dB, " +
+                                        "score={}) - the target has not been winning its own bin, so the " +
+                                        "winner is treated as a real non-target tone",
+                                mChannelLabel, candidate, detected,
+                                String.format("%.1f", mScanFrequencies[maxIndex]),
+                                String.format("%.1f", diffDB), mTargetWinScore.getOrDefault(candidate, 0));
+                    }
+
+                    break;
                 }
             }
 
@@ -641,6 +719,18 @@ public class CTCSSDetector
      *
      * @param hit true when this block detected the tracked code
      */
+    /**
+     * AP-fork: moves a target's win score, clamped to +/- TARGET_WIN_SCORE_LIMIT.
+     *
+     * @param code target whose score to adjust
+     * @param delta +1 when the target won its own bin outright, -1 when a contested neighbour won
+     */
+    private void adjustTargetWinScore(CTCSSCode code, int delta)
+    {
+        int score = mTargetWinScore.getOrDefault(code, 0) + delta;
+        mTargetWinScore.put(code, Math.max(-TARGET_WIN_SCORE_LIMIT, Math.min(TARGET_WIN_SCORE_LIMIT, score)));
+    }
+
     private void shiftConfirmationWindow(boolean hit)
     {
         int mask = (1 << CONFIRMATION_WINDOW) - 1;
@@ -693,6 +783,8 @@ public class CTCSSDetector
         mRejectCode = null;
         mRejectCounter = 0;
         mLastRawCode = null;
+        mTargetWinScore.clear();
+        mLastSuppressedCode = null;
     }
 
     /**
