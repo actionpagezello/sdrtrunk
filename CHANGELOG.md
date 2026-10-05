@@ -5,6 +5,68 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.15] - 2026-10-05
+
+The holdover path no longer passes audio on a gate that has no evidence behind it. 15.9.14 fixed the tone
+decision; this fixes the gate, which turns out to have been opening independently of it.
+
+### The defect
+
+15.9.14 works. The Summit 2026-10-05 log, with the fork running from 10:09:09, shows the win score pinned
+at `-8` on Bolton Fire and the suppression line firing 378–812 times an hour. The detector is correctly
+refusing to convert Trinity's 77.0 Hz into Bolton's 74.4 Hz.
+
+The gate opened anyway. Every one of the 977 `gate OPEN via holdover` lines on Bolton that day carried
+`confirmed=null` — not one fired with a tone confirmed. By raw winner: 361 at 74.4, 352 at 71.9, 191 at
+77.0, 21 other. Four of the six recordings produced in that window were Trinity splashover admitted by
+this path. Acton Police 154.8150 shows the identical pattern with 745 unconfirmed opens, so this is not
+specific to Bolton.
+
+This is the path 15.9.11 instrumented and deliberately left open, logging `WOULD CLOSE` rather than
+closing. The instrumentation did its job: it identified the cause.
+
+### Why the obvious fix was rejected
+
+Closing the gate once the raw winner has been a non-target for some interval does not work, and the log
+says so. Across the 16 confirmed-real episodes, the longest stretch in which the raw winner was not the
+target ran to a median of 1249 ms and a maximum of 2100 ms — real calls spend long periods losing the bin
+contest to noise and to Trinity. Replayed against the log:
+
+| grace period | real calls truncated | bleed episodes closed |
+|---|---|---|
+| 600 ms | 14 of 16 | 10 of 12 |
+| 1000 ms | 13 of 16 | 10 of 12 |
+| 1500 ms | 5 of 16 | 9 of 12 |
+
+No value separates the populations. The 600 ms deadline carried since 15.9.11 would have cut 14 of 16
+real calls had it ever been allowed to fire.
+
+### The change
+
+Evidence, not elapsed time. `CTCSSDetector.isTargetCode()` is exposed, and `NBFMDecoder` latches
+`mRawTargetWonThisEpisode` the first time one of the channel's configured tones wins the Goertzel bin
+contest outright in the current squelch episode — or is confirmed, including a DCS confirmation. When the
+holdover is passing audio with nothing confirmed and that flag has never been set, the gate closes.
+
+The flag resets in the full-reset branch at squelch-open and is deliberately preserved across a
+holdover-opened episode: holdover means trusting the previous call's confirmation, so it inherits that
+call's bin-contest evidence too. A keyup arriving more than `TONE_HOLDOVER_MS` after the previous call
+starts with no evidence, which is what makes an isolated splashover keyup close.
+
+Replayed against the Summit log: **0 of 16 real episodes affected, 9 of 12 bleed episodes closed**,
+including all four recordings identified as splashover (13:52:56, 15:46:28, 16:21:01, 16:56:23). Both real
+recordings (13:14:04, 13:14:10) sit in episodes where 74.4 won a bin and are preserved. The three
+surviving bleed episodes each had 74.4 genuinely win a bin briefly; those are ambiguous, and an ambiguous
+gate is left open.
+
+The `WOULD CLOSE` / `TRUE POSITIVE` / `FALSE POSITIVE` deadline logging is retained for continued
+measurement, but no longer drives any decision. The `gate OPEN via holdover` line gains `targetWon=`.
+
+### Files
+
+- `CTCSSDetector.java` — added `isTargetCode(CTCSSCode)`
+- `NBFMDecoder.java` — added `mRawTargetWonThisEpisode`, its latch points, its reset, and the veto
+
 ## [0.6.2-ap-15.9.14] - 2026-10-05
 
 The adjacent-tone leakage preference no longer overrules the detector unconditionally. This is the actual

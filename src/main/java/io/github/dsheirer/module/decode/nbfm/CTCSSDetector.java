@@ -812,4 +812,22 @@ public class CTCSSDetector
     {
         return mLastRawCode;
     }
+
+    /**
+     * AP-fork: is this code one of the channel's configured target tones?
+     *
+     * Exposed so the gate logic in NBFMDecoder can distinguish "the raw winner is our tone, just not
+     * yet confirmed" from "the raw winner is somebody else's tone". Those two cases look identical
+     * through getRawDetectedCode() alone and they demand opposite decisions: the first is a real call
+     * whose tone is momentarily losing the bin contest to noise, the second is an adjacent-channel
+     * signal. mTargetCodes is private and is either the configured set or STANDARD_CODES when the
+     * channel has no tone configured.
+     *
+     * @param code to test; null returns false
+     * @return true if the code is a configured target for this channel
+     */
+    public boolean isTargetCode(CTCSSCode code)
+    {
+        return code != null && mTargetCodes.contains(code);
+    }
 }

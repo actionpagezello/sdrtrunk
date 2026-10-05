@@ -142,6 +142,37 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private volatile long mHoldoverDeadlineExceededTime = 0;
 
+    /**
+     * AP-fork: has one of the channel's target tones won the Goertzel bin contest outright at any
+     * point in the current squelch episode?
+     *
+     * This is the evidence the holdover veto below stands on. 15.9.14 stopped the detector converting
+     * an adjacent tone into the target, and the Summit 2026-10-05 log confirms it: the score pins at
+     * -8 and the suppression line fires several hundred times an hour. But the gate was never opened
+     * by the tone decision in the first place - all 977 holdover gate-opens on Bolton Fire that day
+     * carried confirmed=null, so the holdover path was passing audio with nothing confirmed, and four
+     * of the six recordings Armen identified were Trinity splashover admitted this way.
+     *
+     * The obvious fix - close the gate once the raw winner has been a non-target for N ms - does not
+     * survive measurement. Real Bolton calls spend long stretches with a non-target raw winner: median
+     * 1249 ms, max 2100 ms across the 16 confirmed-real episodes in that log. Any grace period tight
+     * enough to catch the bleed (400-1000 ms) truncates 13 or 14 of those 16 calls. Timing cannot
+     * separate the two populations.
+     *
+     * What does separate them is whether the target EVER wins a bin. Of 12 bleed episodes, 9 never saw
+     * the target as raw winner at all - including every one of the four flagged recordings - while all
+     * 16 real episodes did. So the flag latches on first sight and holds for the episode: 0 of 16 real
+     * episodes affected, 9 of 12 bleed episodes closed. The 3 survivors each had the target genuinely
+     * win a bin briefly, which is ambiguous, and leaving an ambiguous gate open is the safe direction.
+     *
+     * Reset in the full-reset branch at squelch-open, alongside CTCSSDetector.reset(). Deliberately
+     * PRESERVED across a holdover-opened squelch episode: holdover means "trust the confirmation from
+     * the call this is continuing", so it inherits that call's bin-contest evidence too. A keyup
+     * arriving more than TONE_HOLDOVER_MS after the previous call takes the full-reset branch and
+     * starts with no evidence, which is what makes an isolated splashover keyup close.
+     */
+    private volatile boolean mRawTargetWonThisEpisode = false;
+
     // Channel identification for log messages
     private volatile String mChannelLabel = "";
     private volatile long mChannelFrequencyHz = 0;
@@ -357,6 +388,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         // Channel stays idle until detector confirms the correct tone.
                         mToneMatch = false;
                         mHoldoverOpenTime = 0;
+
+                        //AP-fork: new episode with no inherited trust, so no inherited bin-contest
+                        //evidence either. See mRawTargetWonThisEpisode.
+                        mRawTargetWonThisEpisode = false;
 
                         // Reset audio filter state to clear stale IIR values from previous transmission
                         if(mAudioFilters != null)
@@ -667,6 +702,20 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 // Re-confirmed — the gate is standing on its own again
                 noteHoldoverReconfirmed();
                 mHoldoverOpenTime = 0;
+
+                //AP-fork: a confirmation of one of our own tones is the strongest possible form of
+                //"the target won its bin", so latch the evidence here too rather than relying on the
+                //unconfirmed branch below having seen it first.
+                //
+                //dcsConfirmed latches it as well. A DCS-coded channel never produces a CTCSS bin win,
+                //so without this a DCS call would arrive at the veto below with no evidence and be cut
+                //every time the code dropped for a block. The veto is additionally guarded on
+                //mCTCSSDetector != null for the DCS-only case, but a channel carrying both wants the
+                //DCS confirmation to count as evidence in its own right.
+                if((mCTCSSDetector != null && mCTCSSDetector.isTargetCode(confirmed)) || dcsConfirmed)
+                {
+                    mRawTargetWonThisEpisode = true;
+                }
             }
             else
             {
@@ -721,9 +770,52 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 {
                     CTCSSCode raw = mCTCSSDetector.getRawDetectedCode();
                     int lossCount = mCTCSSDetector.getLossCounter();
-                    mLog.debug("[{}] CTCSS gate OPEN via holdover: confirmed=null raw={} lossCounter={} holdoverAge={}ms",
+
+                    //AP-fork: latch the evidence. The raw winner is whatever actually took the bin
+                    //contest this block, before any preference or confirmation logic - so if it is one
+                    //of our tones, our tone is genuinely present in the passband.
+                    if(mCTCSSDetector.isTargetCode(raw))
+                    {
+                        mRawTargetWonThisEpisode = true;
+                    }
+
+                    mLog.debug("[{}] CTCSS gate OPEN via holdover: confirmed=null raw={} lossCounter={} " +
+                                    "holdoverAge={}ms targetWon={}",
                             mChannelLabel, raw != null ? raw.getDisplayString() : "none", lossCount,
-                            now - mLastToneMatchTime);
+                            now - mLastToneMatchTime, mRawTargetWonThisEpisode);
+                }
+
+                //AP-fork: THE VETO. Nothing is confirmed and no target tone has won a bin outright at
+                //any point in this episode, so there is no evidence our tone is present at all. Close
+                //the gate. This is the adjacent-channel splashover case: Trinity 453.6125 keys up, its
+                //77.0 Hz arrives on Bolton Fire 453.600 strongly enough to open the squelch, and the
+                //holdover lets it through on trust inherited from nothing.
+                //
+                //Replaces the 15.9.11 "WOULD CLOSE" measurement, whose 600 ms deadline the Summit
+                //2026-10-05 log shows would have cut 14 of 16 real calls. The deadline logging above is
+                //kept because the two populations it separates are still worth counting, but the
+                //closure decision is now made here, on evidence rather than on elapsed time.
+                //Guarded on mCTCSSDetector != null: on a DCS-only channel there are no CTCSS bins to
+                //win, so the evidence this veto wants cannot exist and the veto must not run.
+                if(mCTCSSDetector != null && !mRawTargetWonThisEpisode)
+                {
+                    CTCSSCode raw = mCTCSSDetector.getRawDetectedCode();
+                    mLog.debug("[{}] Closing tone gate — holdover with no confirmation and no target bin " +
+                                    "win this episode (raw={}, unconfirmed for {}ms)",
+                            mChannelLabel, raw != null ? raw.getDisplayString() : "none", openFor);
+
+                    mToneMatch = false;
+                    mHoldoverOpenTime = 0;
+                    mHoldoverDeadlineExceededTime = 0;
+
+                    if(mAudioFilters != null)
+                    {
+                        mAudioFilters.reset();
+                    }
+
+                    notifyCallEnd();
+                    clearPendingToneAudio();
+                    return;
                 }
             }
         }
