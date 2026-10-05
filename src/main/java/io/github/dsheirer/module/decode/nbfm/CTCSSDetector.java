@@ -63,6 +63,27 @@ public class CTCSSDetector
     private static final int CONFIRMATION_COUNT = 3;
 
     /**
+     * AP-fork: how many of the most recent blocks CONFIRMATION_COUNT target detections must fall within.
+     *
+     * <p>Confirmation used to require three strictly CONSECUTIVE blocks on the same code: any different
+     * code reset the counter to 1 and replaced the tracked code. An adjacent transmitter putting energy
+     * into the channel lights up random CTCSS bins between genuine detections of the real tone, so the
+     * sequence becomes 74.4, 151.4, 74.4, 82.5, 74.4 ... and the counter never reaches three. The
+     * detector sees the correct tone repeatedly and can never confirm it.
+     *
+     * <p>Summit 2026-10-04, Bolton Fire 453.600 against Trinity 453.6125: episodes read
+     * {@code 107.2(0) 74.4*(1)} over and over, and across the log consecutive-target runs were 26 of
+     * length one against 16 reaching three. Every legitimate call rode on holdover from start to finish,
+     * which is also why the holdover deadline measured 9 false positives to 1 true positive.
+     *
+     * <p>Three of the last five tolerates one interleaved spurious block between genuine detections
+     * while still requiring real repetition. This does NOT relax the ap-15.8 rule that the loss counter
+     * resets only on a CONFIRMED detection - that still holds, so interference cannot keep the gate open
+     * without actually producing the target tone three times in five blocks.
+     */
+    private static final int CONFIRMATION_WINDOW = 5;
+
+    /**
      * Number of consecutive misses before declaring tone lost.
      */
     private static final int LOSS_COUNT = 4;
@@ -97,6 +118,27 @@ public class CTCSSDetector
     private CTCSSCode mDetectedCode = null;
     private int mConfirmationCounter = 0;
     private int mLossCounter = 0;
+
+    /**
+     * AP-fork: the last CONFIRMATION_WINDOW block outcomes for the code currently being confirmed, as a
+     * bit per block - bit 0 is the most recent. A set bit means that block detected mDetectedCode.
+     * mConfirmationCounter is the population count of this window, so it can fall as well as rise.
+     */
+    private int mConfirmationWindow = 0;
+
+    /**
+     * AP-fork: rejection tracking, kept separate from the confirmation state so that counting repeats of
+     * a wrong tone cannot disturb a target confirmation in progress.
+     */
+    private CTCSSCode mRejectCode = null;
+    private int mRejectCounter = 0;
+
+    /**
+     * AP-fork: the last code any block detected, target or not. Diagnostics only - mDetectedCode is now
+     * the code being confirmed and no longer tracks every spurious block, so this preserves the honest
+     * "what did the last block actually see" value that getRawDetectedCode() reports.
+     */
+    private CTCSSCode mLastRawCode = null;
 
     // Tone survey: log top tones periodically regardless of threshold
     private static final int SURVEY_INTERVAL_BLOCKS = 40; // ~every 3 seconds at 75ms/block
@@ -491,6 +533,8 @@ public class CTCSSDetector
      */
     private void handleDetection(CTCSSCode code)
     {
+        mLastRawCode = code;
+
         // Only accept tones that are in our allowed set
         if(!mTargetCodes.contains(code))
         {
@@ -499,14 +543,25 @@ public class CTCSSDetector
             // If we reset mLossCounter here, it would never reach LOSS_COUNT, and a prior
             // target match (held over from a valid transmission) would stay active forever.
 
-            // Track confirmed rejections — only notify after same wrong tone seen CONFIRMATION_COUNT times
-            if(mDetectedCode == code)
+            //AP-fork: a spurious tone arriving mid-confirmation of a TARGET is a MISS in that
+            //target's window, not a reason to abandon it. Before this it replaced mDetectedCode
+            //outright and reset the counter to 1, so an adjacent transmitter lighting up random
+            //bins between genuine detections meant the real tone could never reach three in a row.
+            //See CONFIRMATION_WINDOW.
+            if(mDetectedCode != null && mTargetCodes.contains(mDetectedCode))
             {
-                if(mConfirmationCounter < CONFIRMATION_COUNT)
-                {
-                    mConfirmationCounter++;
+                shiftConfirmationWindow(false);
+            }
 
-                    if(mConfirmationCounter >= CONFIRMATION_COUNT && mListener != null)
+            // Track confirmed rejections — only notify after same wrong tone seen CONFIRMATION_COUNT
+            // times. Kept on its own state so it cannot disturb a target confirmation in progress.
+            if(mRejectCode == code)
+            {
+                if(mRejectCounter < CONFIRMATION_COUNT)
+                {
+                    mRejectCounter++;
+
+                    if(mRejectCounter >= CONFIRMATION_COUNT && mListener != null)
                     {
                         mListener.ctcssRejected(code);
                     }
@@ -515,11 +570,23 @@ public class CTCSSDetector
             }
             else
             {
-                mDetectedCode = code;
-                mConfirmationCounter = 1;
+                mRejectCode = code;
+                mRejectCounter = 1;
             }
+
+            //Nothing was being confirmed, so track the spurious tone as before.
+            if(mDetectedCode == null || !mTargetCodes.contains(mDetectedCode))
+            {
+                mDetectedCode = code;
+                mConfirmationWindow = 0;
+                mConfirmationCounter = 0;
+            }
+
             return;
         }
+
+        mRejectCode = null;
+        mRejectCounter = 0;
 
         // TARGET tone detected.
         //
@@ -533,23 +600,17 @@ public class CTCSSDetector
         // 791 confirmed opens as a result.
         if(mDetectedCode == code)
         {
-            // Same tone detected again — increment confirmation
-            if(mConfirmationCounter < CONFIRMATION_COUNT)
-            {
-                mConfirmationCounter++;
+            shiftConfirmationWindow(true);
 
-                if(mConfirmationCounter >= CONFIRMATION_COUNT)
-                {
-                    mLossCounter = 0;
-
-                    if(mListener != null)
-                    {
-                        mListener.ctcssDetected(code);
-                    }
-                }
-            }
-            // Already confirmed — keep the gate alive and keep reporting
-            else
+            //Confirmed - newly or still. Either way the gate stays alive and the listener keeps being
+            //told, which is what resets the loss counter.
+            //
+            //When the window falls back below the threshold the tone is simply not re-reported, so the
+            //loss counter resumes climbing toward LOSS_COUNT exactly as it would on a run of misses.
+            //ap-15.8's rule that only a CONFIRMED detection resets the loss counter is unchanged. No log
+            //line here: on an interfered channel the count oscillates around the threshold every other
+            //block, and the existing "confirm=n/3" detection line already carries the same information.
+            if(mConfirmationCounter >= CONFIRMATION_COUNT)
             {
                 mLossCounter = 0;
 
@@ -564,8 +625,27 @@ public class CTCSSDetector
             // Different tone — restart confirmation. Loss counter is intentionally NOT reset:
             // an unconfirmed switch between adjacent bins must not keep the gate open.
             mDetectedCode = code;
-            mConfirmationCounter = 1;
+            mConfirmationWindow = 0;
+            mConfirmationCounter = 0;
+            shiftConfirmationWindow(true);
         }
+    }
+
+    /**
+     * AP-fork: records one block's outcome for the code currently being confirmed and recomputes the
+     * confirmation count as the number of hits in the last CONFIRMATION_WINDOW blocks.
+     *
+     * <p>Because the count is a population over a sliding window rather than a monotonic run length, it
+     * can fall as well as rise - a confirmed tone that stops being detected loses confirmation after
+     * enough misses, with no separate decay path needed.
+     *
+     * @param hit true when this block detected the tracked code
+     */
+    private void shiftConfirmationWindow(boolean hit)
+    {
+        int mask = (1 << CONFIRMATION_WINDOW) - 1;
+        mConfirmationWindow = ((mConfirmationWindow << 1) | (hit ? 1 : 0)) & mask;
+        mConfirmationCounter = Integer.bitCount(mConfirmationWindow);
     }
 
     /**
@@ -573,6 +653,15 @@ public class CTCSSDetector
      */
     private void handleNoDetection()
     {
+        mLastRawCode = null;
+
+        //AP-fork: a silent block is a miss in the confirmation window, so a tone that stops being
+        //detected loses confirmation on the same sliding count as one displaced by interference.
+        if(mDetectedCode != null)
+        {
+            shiftConfirmationWindow(false);
+        }
+
         if(mDetectedCode != null)
         {
             mLossCounter++;
@@ -580,6 +669,7 @@ public class CTCSSDetector
             if(mLossCounter >= LOSS_COUNT)
             {
                 mDetectedCode = null;
+                mConfirmationWindow = 0;
                 mConfirmationCounter = 0;
 
                 if(mListener != null)
@@ -597,8 +687,12 @@ public class CTCSSDetector
     {
         mSampleIndex = 0;
         mDetectedCode = null;
+        mConfirmationWindow = 0;
         mConfirmationCounter = 0;
         mLossCounter = 0;
+        mRejectCode = null;
+        mRejectCounter = 0;
+        mLastRawCode = null;
     }
 
     /**
@@ -624,6 +718,6 @@ public class CTCSSDetector
      */
     public CTCSSCode getRawDetectedCode()
     {
-        return mDetectedCode;
+        return mLastRawCode;
     }
 }

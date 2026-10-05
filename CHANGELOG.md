@@ -5,6 +5,95 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.13] - 2026-10-05
+
+CTCSS confirmation becomes a sliding window instead of a consecutive run. The holdover deadline is still
+measurement-only and still closes nothing.
+
+### Why the deadline is not being enabled
+
+ap-15.9.11's measurement ran on Summit and returned **nine false positives to one true positive**, and the
+single true positive passed **1 ms** of unconfirmed audio before the gate shut anyway. Closing at 600 ms
+would have suppressed one millisecond of interference at the cost of clipping nine legitimate calls. The
+deadlines the false positives asked for — 700, 703, 749, 850, 901, 1100, 1298, 1601, 1950 ms — overlap the
+true positive completely, so no threshold separates the two populations. The deadline is the wrong
+instrument and stays disarmed.
+
+That measurement run is why nothing was shipped blind, and it is also what pointed at the real defect.
+
+### Fixed
+- **CTCSS confirmation no longer requires three strictly consecutive blocks.** Any different code reset
+  the counter to 1 and replaced the tracked code:
+
+  ```java
+  else
+  {
+      // Different tone — restart confirmation.
+      mDetectedCode = code;
+      mConfirmationCounter = 1;
+  }
+  ```
+
+  An adjacent transmitter putting energy into the channel lights up random CTCSS bins between genuine
+  detections of the real tone, so the sequence becomes 74.4, 151.4, 74.4, 82.5, 74.4 … and the counter
+  never reaches three. Summit's log shows the mechanism in the act, episodes reading
+  `107.2(0) 74.4*(1)` over and over, with consecutive-target runs of 26 at length one against 16 reaching
+  three. Every legitimate Bolton Fire call rode on holdover from start to finish — which is exactly why
+  the deadline measured nine false positives.
+
+  Confirmation is now **three of the last five blocks**, held as a bitmask whose population count is the
+  confirmation counter. A spurious block between genuine detections is a miss in the window rather than a
+  reset.
+
+  Simulated against the observed sequences before shipping:
+
+  | sequence | old | new |
+  |---|---|---|
+  | alternating spurious/target (the field case) | never confirms | confirms at block 5 |
+  | clean target | block 2 | block 2 — no added latency |
+  | target 1 block in 3 (interference only) | never | **never** |
+  | target 2 blocks in 3 | block 3 | block 3 |
+  | pure interference, target absent | never | **never** |
+  | confirmed, then silence | loses it | loses it |
+
+  The third and fifth rows are the ones that matter: **this does not relax the ap-15.8 property.** That
+  change made the loss counter reset only on a *confirmed* detection, so interference that merely lights
+  the target bin now and then still cannot hold the gate open — it has to actually produce the target
+  three times in five blocks, which needs better than one block in two.
+
+  Because the count is a population over a window rather than a run length it can fall as well as rise, so
+  a confirmed tone that stops being detected loses confirmation with no separate decay path. A silent
+  block now also counts as a miss, so loss behaves the same whether the tone is displaced by interference
+  or simply absent.
+
+- **Rejection tracking moved to its own state.** Counting repeats of a wrong tone shared `mDetectedCode`
+  and `mConfirmationCounter` with the confirmation path, which is what made a spurious tone destroy
+  confirmation progress. It now uses `mRejectCode` / `mRejectCounter` and cannot disturb a confirmation
+  in flight.
+
+- **`getRawDetectedCode()` keeps meaning what it says.** `mDetectedCode` is now the code being confirmed
+  rather than whatever the last block saw, so diagnostics read a new `mLastRawCode`. The `raw=` field in
+  the holdover log — the field that diagnosed all of this — still reports what the last block actually
+  detected.
+
+### Corrected
+- An earlier note in this work described the raw detections as **DCS** codes and suggested removing DCS
+  from the channel. They are not DCS. `WA`, `4A`, `5Z` are `CTCSSCode` tags — `74.4 Hz (WA)` is the target
+  itself. There is no DCS involved and nothing to remove.
+
+### Still not addressed
+- The RF half is unchanged and not fixable here: Trinity's signal spans roughly 453.607 to 453.618 with
+  skirts past 453.605, so real energy lands inside Bolton Fire's passband at the narrowest FM bandwidth
+  SDRTrunk offers.
+- CTCSS still cannot distinguish 74.4 from 77.0 — 12 Hz bins, 2.6 Hz apart, about 0.7 dB. Unchanged, and
+  not what this release is about.
+
+### What to watch
+`CTCSS holdover WOULD CLOSE` is a WARN and therefore an unbiased count, unlike the DEBUG detection stream
+which drops to TRACE once a tone is stable. If windowed confirmation works, that count should collapse
+toward zero because gates will be standing on real confirmations rather than on holdover. The deadline
+still closes nothing, so a wrong guess costs another day and no audio.
+
 ## [0.6.2-ap-15.9.12] - 2026-10-05
 
 ### Reverted
