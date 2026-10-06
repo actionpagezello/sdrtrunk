@@ -3,7 +3,64 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.9.15 (2026-10-05)
+## Current Release: ap-15.9.16 (2026-10-06)
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.16\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.16.zip`
+- Built 2026-10-06, JDK 25 Bellsoft / Gradle 9.2
+- Tree `99010c848b4dca71cade899b8b6824bb5d233702`
+- **Deployed to Summit VHF/UHF only.** Measurement release — changes no behaviour.
+
+**Logs the TDMA detector's per-window score, winning rate and harmonic ratios.** Like ap-15.9.11 this
+deliberately fixes nothing. `DETECTION_THRESHOLD` stays 20.0, `CONFIRMATION_WINDOWS` stays 1,
+`RELEASE_WINDOWS` stays 3, and the veto keeps closing gates exactly as before — Bolton included.
+
+Bolton Fire 453.600 is analog NBFM whose only neighbour, PrideStar/Trinity 453.6125, is also analog. There
+is no digital signal near it. `TdmaInterferenceDetector` latched **1,072 times** on it on 2026-10-05 and cut
+one transmission into five files — the recordings hold 11.7 s of audio across a 14.9 s span, so roughly
+3 seconds was discarded.
+
+Two fixes were proposed and both fail against the log:
+
+| proposal | why it fails |
+|---|---|
+| raise `DETECTION_THRESHOLD` | Bolton's analog comb scores reach **127.3**, p90 40.9. The class note claims real DMR peaks at 64+. No threshold separates them. |
+| raise `CONFIRMATION_WINDOWS` | No latch on any channel holds under 300 ms. Bolton's minimum is 350 ms, median 450 ms. All 955 of its latches would satisfy a 3-window rule and still cut the call. |
+
+A per-channel opt-out would work but is a standing maintenance burden with two silent failure modes, and was
+arrived at by declaring the problem unsolvable after testing two knobs.
+
+Reimplementing the algorithm in Python against the six Bolton recordings gave a maximum score of **11.1**,
+and 1.1–4.7 on the five that were cut. That settles nothing: the detector taps at `NBFMDecoder:646`, ahead of
+the gate at 653, so the recordings hold only audio that *passed* while the windows scoring 24–127 are in the
+gaps the veto cut and were never written to disk. The per-window numbers cannot be recovered from the
+recordings, hence the survey.
+
+What the exercise did establish: clean analog Bolton voice reaches 11.1 against a threshold of 20, where the
+calibration note puts synthetic "speech-like AM" at 13 — far thinner margin on real audio than claimed, and
+the note admits its negatives were synthetic. And the winning candidate rate wanders (32.5, 33.33, 34.0,
+35.0) with lopsided harmonic ratios, one window scoring H1=0.3 H2=7.2 H3=6.1. The note says requiring three
+harmonics separates a real cadence from "broad modulation that merely happens to have energy near 33 Hz";
+because the score is their geometric mean, one strong harmonic carries a window where the fundamental is
+absent. It averages the missing harmonic away instead of rejecting it.
+
+New log line, gated on `SURVEY_FLOOR = 5.0` or the detector already being latched:
+
+```
+TDMA survey: score=27.4 rate=33.33 H1=41.2 H2=18.9 H3=12.6 noiseFloor=3.21e-07 latched=false
+```
+
+### Open after ap-15.9.16
+- **The survey decides the next move.** High-scoring windows holding `rate=33.33` with all three harmonics
+  strong together means real digital energy and an RF problem. A wandering rate with one harmonic carrying
+  the score means the harmonic test must require each harmonic individually instead of multiplying them.
+- **Bolton is still losing audio** until that is resolved — this release changes nothing about the veto.
+- **ap-15.9.15's holdover veto is inert.** All 962 holdover opens after it went in logged `targetWon=true`
+  and it never closed anything. The latch reset sits in the squelch-open full-reset branch, which needs
+  `elapsed >= TONE_HOLDOVER_MS` since the last confirmation; Bolton's `holdoverAge` never exceeds 2,300 ms,
+  so once set the flag never clears. This is the same structural trap that made the ap-15.9.11 deadline dead
+  code — state anchored to a branch that does not run during continuous interference. Fixing it properly
+  needs one instrumentation line logging actual squelch transitions, which the logs barely contain.
+
+## Superseded: ap-15.9.15 (2026-10-05)
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.15\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.15.zip`
 - Built 2026-10-05, JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean build -x test` then `.\gradlew runtimeZipWindows`
 - Tree `949657b53f2cf326ac2e0a7950fec4f773a4cef8`
@@ -49,7 +106,7 @@ are left open.
 ## Fleet versions as reported
 | Machine | Version | Reported |
 |---|---|---|
-| Summit VHF/UHF | ap-15.9.15 | 2026-10-05 |
+| Summit VHF/UHF | ap-15.9.16 | 2026-10-06 |
 | Stoneham | ap-15.9.9 | 2026-10-03 |
 | Somerville | ap-15.9.8 | 2026-09-30 |
 | Daly | ap-15.9.8 | 2026-09-30 |
@@ -274,7 +331,7 @@ Both fail silently, so they are code-reading findings with no log evidence eithe
 - Repo path: C:\Users\Admin\projects\sdrtrunk-ap
 - Build command: `.\gradlew clean runtimeZipWindows` (archiveVersion finalizer copies the zip to
   `sdrtrunk-ap-versions\v<version>\` automatically)
-- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9.15`
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9.16`
 - Patch workflow: work is delivered as `git format-patch` and applied on Windows with
   `git am --keep-cr --3way ap-<version>.patch`, then the tree hash is checked against the one recorded for
   that release. Git is never run against this repo through the device bridge — CRLF causes mass false-positive
@@ -366,6 +423,14 @@ Genuinely outstanding:
 - **Zello needs a correction** — the ghost figure reported to them was inflated; most of the silent-start
   count was an artefact of our own 15 ms measurement.
 - **Missing stop acks concentrate on specific channels**, worst on Massport (consumer network). Not chased.
+- **`tools/fleetcheck.py` parses none of the log lines added since ap-15.9.7** and its CTCSS section
+  measures the wrong thing. Every analysis this week was hand-rolled Python against raw logs; that script
+  should be doing it. Fix or remove.
+- **`TdmaInterferenceDetector`'s calibration is not trustworthy as written.** The class note's negatives
+  were synthetic — "speech-like AM peak 13" — and real analog voice measures 11.1 on a clean clip while
+  Bolton's channel reaches 127.3. Any future change here should be set from measured per-window scores
+  (the ap-15.9.16 survey), not from that note's figures. The three-harmonic requirement does not do what
+  the note claims, because the score is a geometric mean.
 
 ## HydraSDR RF One
 Supported in the fork already, pulled from upstream: `source/tuner/hydrasdr/`, VID `38af` PID `0001`,
