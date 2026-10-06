@@ -5,6 +5,70 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.16] - 2026-10-06
+
+One change, and like ap-15.9.11 it deliberately fixes nothing: it logs what the TDMA detector actually
+measures per window, because that number cannot be recovered any other way and three different fixes have
+now been proposed for it without anyone having seen it.
+
+### What went wrong
+
+Bolton Fire 453.600 is analog NBFM with an analog neighbour (PrideStar/Trinity 453.6125). It has no digital
+signal anywhere near it. Yet `TdmaInterferenceDetector` latched 1,072 times on it on 2026-10-05 and cut one
+transmission into five files, losing roughly 3 seconds out of 15 — confirmed against the recordings, which
+hold 11.7 s of audio across a 14.9 s span.
+
+Two proposed fixes were measured against the log and both failed:
+
+| proposal | why it fails |
+|---|---|
+| raise `DETECTION_THRESHOLD` | Bolton's analog comb scores reach **127.3**, p90 40.9 across 1,072 latches. The class note claims real DMR peaks at 64+. No threshold separates them. |
+| raise `CONFIRMATION_WINDOWS` | Not one latch on any channel holds under 300 ms. Bolton's minimum is 350 ms, median 450 ms. Every one of its 955 latches would satisfy a 3-window requirement and still cut the call. |
+
+A third proposal — making the veto per-channel opt-out — would have worked but is a standing maintenance
+burden with two silent failure modes, and was reached by declaring the problem unsolvable after testing
+exactly two knobs. That is not a diagnosis.
+
+### What the recordings could and could not show
+
+Reimplementing this exact algorithm in Python against the six Bolton recordings produced a maximum score of
+**11.1** across all of them, and 1.1–4.7 on the five that were cut. Nothing reached 20.
+
+That does not exonerate the detector. It taps at `NBFMDecoder:646`, ahead of the gate decisions at 653, so
+it sees the whole demodulated stream while the recordings hold only what passed the gate. The windows that
+scored 24–127 are in the gaps the veto cut and were never written to disk.
+
+Two things the exercise did establish. Clean analog Bolton voice reaches 11.1 against a threshold of 20,
+where the calibration note puts synthetic "speech-like AM" at 13 — the margin on real audio is far thinner
+than the note implies, and the note itself admits its negatives were synthetic. And the winning candidate
+rate wanders (32.5, 33.33, 34.0, 35.0) with lopsided harmonic ratios — one window scored with H1=0.3,
+H2=7.2, H3=6.1. The note says requiring three harmonics separates a real cadence from "broad modulation that
+merely happens to have energy near 33 Hz"; because the score is their geometric mean, one strong harmonic
+carries a window where the fundamental is absent. It averages the missing harmonic away instead of
+rejecting it.
+
+### The change
+
+`evaluate()` now retains which candidate rate won and the three harmonic ratios behind it, and logs them
+per window at DEBUG:
+
+```
+TDMA survey: score=27.4 rate=33.33 H1=41.2 H2=18.9 H3=12.6 noiseFloor=3.21e-07 latched=false
+```
+
+Gated on `SURVEY_FLOOR = 5.0` or the detector already being latched, so the quiet majority costs nothing;
+measured median on clean Bolton voice is 1.2–1.7. Windows evaluate roughly every 150 ms per channel.
+
+Nothing else changes. `DETECTION_THRESHOLD` stays 20.0, `CONFIRMATION_WINDOWS` stays 1, `RELEASE_WINDOWS`
+stays 3, and the veto keeps closing gates exactly as before — including on Bolton. One evening of this says
+whether the high scores come from a true comb at 33.33 with all three harmonics strong, which would mean
+real digital energy and an RF problem, or from a lopsided off-rate artifact, which would mean the harmonic
+test needs to require each harmonic individually rather than their product.
+
+### Files
+
+- `TdmaInterferenceDetector.java` — added `SURVEY_FLOOR`, winner tracking in `evaluate()`, the survey line
+
 ## [0.6.2-ap-15.9.15] - 2026-10-05
 
 The holdover path no longer passes audio on a gate that has no evidence behind it. 15.9.14 fixed the tone

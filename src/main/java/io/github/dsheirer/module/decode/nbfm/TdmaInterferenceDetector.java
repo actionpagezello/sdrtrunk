@@ -91,6 +91,15 @@ public class TdmaInterferenceDetector
     /** Consecutive windows below threshold required to clear it. */
     private static final int RELEASE_WINDOWS = 3;
 
+    /**
+     * AP-fork: comb score at or above which a window is written to the survey log. Measurement only;
+     * this gates logging and nothing else. Clean Bolton Fire voice measured a median of 1.2-1.7 and a
+     * peak of 11.1, so 5.0 keeps every window that is anywhere near DETECTION_THRESHOLD while skipping
+     * the quiet majority. Windows latched by the detector are logged regardless of score, so the full
+     * shape of an episode is captured rather than only its loud part.
+     */
+    private static final float SURVEY_FLOOR = 5.0f;
+
     /** High-pass corner (Hz) applied to the envelope to remove syllabic speech modulation. */
     private static final float ENVELOPE_HIGHPASS_HZ = 15.0f;
 
@@ -298,10 +307,20 @@ public class TdmaInterferenceDetector
 
         float best = 0.0f;
 
+        //AP-fork: retain which candidate rate won and the three harmonic ratios behind it. See the
+        //SURVEY block below for why.
+        float bestRate = 0.0f;
+        float bestH1 = 0.0f;
+        float bestH2 = 0.0f;
+        float bestH3 = 0.0f;
+
         for(float f0 : CANDIDATE_RATES)
         {
             float product = 1.0f;
             boolean usable = true;
+            float h1 = 0.0f;
+            float h2 = 0.0f;
+            float h3 = 0.0f;
 
             for(int harmonic = 1; harmonic <= 3; harmonic++)
             {
@@ -314,7 +333,21 @@ public class TdmaInterferenceDetector
                     break;
                 }
 
-                product *= (goertzelPower(target, mean) / noiseFloor);
+                float ratio = goertzelPower(target, mean) / noiseFloor;
+                product *= ratio;
+
+                if(harmonic == 1)
+                {
+                    h1 = ratio;
+                }
+                else if(harmonic == 2)
+                {
+                    h2 = ratio;
+                }
+                else
+                {
+                    h3 = ratio;
+                }
             }
 
             if(usable)
@@ -325,8 +358,41 @@ public class TdmaInterferenceDetector
                 if(score > best)
                 {
                     best = score;
+                    bestRate = f0;
+                    bestH1 = h1;
+                    bestH2 = h2;
+                    bestH3 = h3;
                 }
             }
+        }
+
+        //AP-fork: SURVEY. Measurement only - nothing below changes a decision.
+        //
+        //The class note says requiring three harmonics "is what separates a genuine TDMA cadence from
+        //broad modulation that merely happens to have energy near 33 Hz". It does not. The score is the
+        //geometric mean of the three ratios, so one strong harmonic carries a window in which the
+        //fundamental is absent: cbrt(0.3 * 7.2 * 6.1) still clears a window where there is no energy at
+        //the slot rate at all. Reimplementing this exact algorithm against six Bolton Fire recordings on
+        //2026-10-05 produced winning rates wandering across 32.5, 33.33, 34.0 and 35.0 with lopsided
+        //ratios - H1=0.3, H2=7.2, H3=6.1 in one window. A real 2-slot cadence should win at 33.33
+        //consistently with all three harmonics strong together.
+        //
+        //That analysis could not be conclusive, because this detector taps BEFORE the gate
+        //(NBFMDecoder:646, ahead of the gate decisions at 653) while the recordings hold only audio that
+        //passed. The windows that scored 24-127 on Bolton that evening are in the gaps the veto cut, and
+        //were never written to disk. Hence this survey: the per-window numbers cannot be recovered from
+        //the recordings and have to be logged where they are computed.
+        //
+        //Logged only at or above SURVEY_FLOOR, or while latched, so the quiet majority costs nothing -
+        //measured median score on clean Bolton voice is 1.2-1.7, and clean voice peaked at 11.1 against
+        //a DETECTION_THRESHOLD of 20.0. Windows evaluate about every 150 ms per channel.
+        if(LOGGER.isDebugEnabled() && (best >= SURVEY_FLOOR || mInterferenceDetected))
+        {
+            LOGGER.debug("[{}] TDMA survey: score={} rate={} H1={} H2={} H3={} noiseFloor={} latched={}",
+                    mChannelLabel, String.format("%.1f", best), String.format("%.2f", bestRate),
+                    String.format("%.1f", bestH1), String.format("%.1f", bestH2),
+                    String.format("%.1f", bestH3), String.format("%.3g", noiseFloor),
+                    mInterferenceDetected);
         }
 
         updateState(best);
