@@ -5,6 +5,78 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.17] - 2026-10-06
+
+The TDMA veto now requires the slot-rate fundamental. Decided by the ap-15.9.16 survey on Summit VHF/UHF
+(13:36-21:33, 7.9 h).
+
+### What the survey showed
+
+The question was whether Bolton Fire's high-scoring windows are a true 33.33 Hz comb with all three harmonics
+strong (real digital energy, an RF problem) or an off-rate artifact carried by some harmonics (a detector
+defect). It is the second, for every window that cut a call.
+
+| | Bolton Fire 453.600 | Littleton Fire 460.2625 |
+|---|---|---|
+| latches | 147 | 205 |
+| latches that closed an open gate (cut a call) | 31 | 69 |
+| H1 of the cutting windows, median / p90 / max | 3.8 / 9.0 / 16.2 | 1.5 / 3.6 / 11.6 |
+| winning rate 33.33 among cutting windows | 2 of 31 | 4 of 69 |
+
+Across all 147 Bolton latches the winning rate wandered 32.0-35.0 (34.00 in 62, 33.00 in 34, 33.33 in 25) and
+H1 was the weakest harmonic in 111. A typical cut, 20:30:46.848: score 23.4 at 33.33 from H1=2.4 H2=208.5
+H3=26.1. During Bolton audio the envelope carries a steady component near 66 Hz (H2 30-80, H1 about 1.5)
+that keeps the score at 5-13 and occasionally pushes it over 20. Its source is not measured.
+
+Bolton also has 34 latches with H1 >= 20, 23 of them at 33.33 with all three harmonics strong (15:21:33,
+H1=78.3 H2=252.1 H3=71.9). Every one fell while the gate was closed and cut nothing. They are the only windows
+that look like a real cadence, and they still latch after this change.
+
+### The change
+
+A window over `DETECTION_THRESHOLD` latches only if the winning candidate's H1 is at least
+`FUNDAMENTAL_FLOOR = 20.0` and neither H2 nor H3 exceeds `HARMONIC_EXCESS = 10` times H1. Otherwise it
+counts as below threshold and logs at DEBUG:
+
+```
+TDMA veto refused: comb score=23.4 rate=33.33 has no fundamental - H1=2.4 H2=208.5 H3=26.1 (needs H1 >= 20.0 and H2,H3 <= 10x H1)
+```
+
+Why the fundamental rather than each harmonic individually: in a rectangular pulse train harmonic n has
+amplitude |sin(n pi d)|/n, which never exceeds the fundamental at any duty cycle. A real cadence cannot lack
+H1, but it can lack H2 (zero at 50% duty), so requiring every harmonic would reject real cadences.
+
+Simulated against the same log, deciding on the same winner the survey logs:
+
+| channel | latches now | latches after | cuts now | cuts after |
+|---|---|---|---|---|
+| Bolton Fire | 147 | 34 | 31 | 0 |
+| Littleton Fire | 205 | 21 | 69 | 0 |
+| Acton Police | 27 | 18 | 7 | 2 |
+| Maynard Fire | 36 | 19 | 0 | 0 |
+| Ayer Fire | 28 | 12 | 0 | 0 |
+| Acton Fire | 20 | 9 | 0 | 0 |
+| Maynard Police | 16 | 8 | 0 | 0 |
+
+Two guards because each alone has thin margin on the real cuts: H1 max 16.2 against a floor of 20, and
+max(H2,H3)/H1 min 11.3 against an allowance of 10. A synthetic envelope modulated at 66.7 Hz only reached
+H1=23.5 with H2=2204 in one window and latched on the floor alone; the excess guard refuses it. Synthetic
+30 ms pulse trains at 20% and 50% duty still latch.
+
+### Not verified
+
+No real DMR burst was in the measuring log, so this has not been checked against a true positive. The
+calibration bursts in the class note were scored without per-harmonic ratios. The `TDMA veto refused` line
+is there so the next log shows anything this lets through.
+
+`DETECTION_THRESHOLD` (20.0), `CONFIRMATION_WINDOWS` (1), `RELEASE_WINDOWS` (3) and the survey line are
+unchanged.
+
+### Files
+
+- `TdmaInterferenceDetector.java` - `FUNDAMENTAL_FLOOR`, `HARMONIC_EXCESS`, the fundamental gate in
+  `evaluate()`, `updateState()` takes the gate result; class note and survey comment corrected
+
 ## [0.6.2-ap-15.9.16] - 2026-10-06
 
 One change, and like ap-15.9.11 it deliberately fixes nothing: it logs what the TDMA detector actually

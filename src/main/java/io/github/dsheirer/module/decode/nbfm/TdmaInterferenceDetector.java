@@ -42,8 +42,10 @@ import org.slf4j.LoggerFactory;
  *   3. Runs Goertzel at a candidate slot rate f0 and its 2nd and 3rd harmonics, and scores the
  *      geometric mean of the three relative to an off-comb noise reference.
  *
- * Requiring all three harmonics is what separates a genuine TDMA cadence from broad modulation
- * that merely happens to have energy near 33 Hz.
+ * AP-fork: the geometric mean does NOT require all three harmonics - one or two strong ones carry a
+ * window whose fundamental is absent. Since ap-15.9.17 the fundamental must also clear
+ * FUNDAMENTAL_FLOOR on its own and must not be outweighed by H2 or H3 by more than HARMONIC_EXCESS
+ * before a window can latch. See those constants for the measurement.
  *
  * Calibration (2026-08) was done against four DMR bursts captured off Somerville Fire 483.3875,
  * measured with this exact implementation:
@@ -99,6 +101,45 @@ public class TdmaInterferenceDetector
      * shape of an episode is captured rather than only its loud part.
      */
     private static final float SURVEY_FLOOR = 5.0f;
+
+    /**
+     * AP-fork: ratio to the noise floor that the winning candidate's FUNDAMENTAL (H1) must reach on its own
+     * before a window over DETECTION_THRESHOLD may latch the detector. Paired with HARMONIC_EXCESS below.
+     *
+     * The comb score is the geometric mean of H1, H2 and H3, so strong 2nd/3rd harmonics carry a window with
+     * no energy at the slot rate at all. Measured on Summit 2026-10-06 (ap-15.9.16 survey, 13:36-21:33):
+     *
+     *   Bolton Fire 453.600     31 windows latched while the gate was open and cut a call.
+     *                           H1 of those windows: median 3.8, p90 9.0, max 16.2. H1 was the weakest
+     *                           harmonic in 111 of all 147 latches. Winning rate wandered 32.0-35.0,
+     *                           33.33 in 25 of 147.
+     *   Littleton Fire 460.2625 69 call-cutting windows. H1 median 1.5, p90 3.6, max 11.6.
+     *
+     * A floor of 20 removes all 100 of those cuts. Bolton's 34 latches with H1 >= 20 (23 of them at 33.33)
+     * all fell while its gate was closed, cut nothing, and still latch under this rule.
+     *
+     * Why the fundamental and not every harmonic individually: in any rectangular pulse train harmonic n has
+     * amplitude |sin(n*pi*d)|/n, which never exceeds the fundamental's |sin(pi*d)| at any duty cycle d. A real
+     * slot cadence therefore cannot lack its fundamental, but it can lack H2 (it vanishes at d = 0.5), so
+     * requiring H2 individually would reject cadences this detector exists to catch.
+     *
+     * Not yet verified against a real DMR burst - none was in the measuring log. Windows refused by this rule
+     * are logged at DEBUG ("TDMA veto refused") so the next log shows what it let through.
+     */
+    private static final float FUNDAMENTAL_FLOOR = 20.0f;
+
+    /**
+     * AP-fork: largest factor by which H2 or H3 may exceed H1 (power ratios) in a window that latches. Same
+     * pulse-train bound as above - no harmonic of a real cadence exceeds its fundamental - with a 10x allowance
+     * for noise and non-rectangular slot edges.
+     *
+     * It exists because the floor alone has thin margin: the worst real cut had H1=16.2 against a floor of 20,
+     * and a noise-floor dip inflates all three ratios together. A synthetic envelope modulated at 66.7 Hz only
+     * (no slot-rate energy) reached H1=23.5 with H2=2204 in one window and latched on the floor alone; this
+     * refuses it (94x). On the real 2026-10-06 cuts, max(H2,H3)/H1 was min 11.3, median 1489, and on every
+     * channel it removes at most one latch beyond what the floor already removes.
+     */
+    private static final float HARMONIC_EXCESS = 10.0f;
 
     /** High-pass corner (Hz) applied to the envelope to remove syllabic speech modulation. */
     private static final float ENVELOPE_HIGHPASS_HZ = 15.0f;
@@ -292,7 +333,7 @@ public class TdmaInterferenceDetector
 
         if(variance <= 1e-12f)
         {
-            updateState(0.0f);
+            updateState(0.0f, false);
             return;
         }
 
@@ -366,13 +407,14 @@ public class TdmaInterferenceDetector
             }
         }
 
-        //AP-fork: SURVEY. Measurement only - nothing below changes a decision.
+        //AP-fork: SURVEY. Measurement only - the survey line itself changes no decision. The fundamental gate
+        //that follows it does; see FUNDAMENTAL_FLOOR.
         //
         //The class note says requiring three harmonics "is what separates a genuine TDMA cadence from
         //broad modulation that merely happens to have energy near 33 Hz". It does not. The score is the
         //geometric mean of the three ratios, so one strong harmonic carries a window in which the
-        //fundamental is absent: cbrt(0.3 * 7.2 * 6.1) still clears a window where there is no energy at
-        //the slot rate at all. Reimplementing this exact algorithm against six Bolton Fire recordings on
+        //fundamental is absent: on Summit 2026-10-06 a Bolton window scored 23.4 at rate 33.33 from
+        //H1=2.4 H2=208.5 H3=26.1 and cut a call. Reimplementing this exact algorithm against six Bolton Fire recordings on
         //2026-10-05 produced winning rates wandering across 32.5, 33.33, 34.0 and 35.0 with lopsided
         //ratios - H1=0.3, H2=7.2, H3=6.1 in one window. A real 2-slot cadence should win at 33.33
         //consistently with all three harmonics strong together.
@@ -395,7 +437,24 @@ public class TdmaInterferenceDetector
                     mInterferenceDetected);
         }
 
-        updateState(best);
+        //AP-fork: FUNDAMENTAL GATE (ap-15.9.17). A window over DETECTION_THRESHOLD may only latch if the winning
+        //candidate's fundamental clears FUNDAMENTAL_FLOOR on its own and neither H2 nor H3 outweighs it by more
+        //than HARMONIC_EXCESS. Decided on the same winner the survey logs, which is exactly what the 2026-10-06
+        //measurement simulated. A refused window counts as below threshold, so it also releases a latch like
+        //any other quiet window.
+        boolean fundamentalPresent = bestH1 >= FUNDAMENTAL_FLOOR &&
+                Math.max(bestH2, bestH3) <= bestH1 * HARMONIC_EXCESS;
+
+        if(best >= DETECTION_THRESHOLD && !fundamentalPresent && !mInterferenceDetected && LOGGER.isDebugEnabled())
+        {
+            LOGGER.debug("[{}] TDMA veto refused: comb score={} rate={} has no fundamental - H1={} H2={} H3={} " +
+                    "(needs H1 >= {} and H2,H3 <= {}x H1)", mChannelLabel, String.format("%.1f", best),
+                    String.format("%.2f", bestRate), String.format("%.1f", bestH1), String.format("%.1f", bestH2),
+                    String.format("%.1f", bestH3), String.format("%.1f", FUNDAMENTAL_FLOOR),
+                    String.format("%.0f", HARMONIC_EXCESS));
+        }
+
+        updateState(best, fundamentalPresent);
     }
 
     /**
@@ -423,12 +482,17 @@ public class TdmaInterferenceDetector
 
     /**
      * Applies hysteresis to the raw score and logs state transitions.
+     *
+     * @param score comb score of the window
+     * @param fundamentalPresent AP-fork: true when the winning candidate's H1 cleared FUNDAMENTAL_FLOOR and was not
+     * outweighed by more than HARMONIC_EXCESS. A window without it is treated as below threshold however high its
+     * score.
      */
-    private void updateState(float score)
+    private void updateState(float score, boolean fundamentalPresent)
     {
         mLastScore = score;
 
-        if(score >= DETECTION_THRESHOLD)
+        if(score >= DETECTION_THRESHOLD && fundamentalPresent)
         {
             mAboveCount++;
             mBelowCount = 0;
