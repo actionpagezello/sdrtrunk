@@ -69,10 +69,42 @@ public class AudioStreamingManager implements Listener<AudioSegment>
     private int mNextRecordingNumber = 1;
     private BroadcastModel mBroadcastModel;
 
-    // Real-time streaming state: maps audio segment to its active real-time broadcasters
-    private java.util.Map<AudioSegment, List<IRealTimeAudioBroadcaster>> mRealTimeStreams =
+    // Real-time streaming state: maps audio segment to the real-time broadcasters (Zello) streaming it
+    //AP-fork: per-broadcaster state instead of one shared buffer index. See forwardRealTimeAudio().
+    private java.util.Map<AudioSegment, List<RealTimeStream>> mRealTimeStreams =
             new java.util.concurrent.ConcurrentHashMap<>();
-    private java.util.Map<AudioSegment, Integer> mLastBufferIndex = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * AP-fork: when each segment was first seen by forwardRealTimeAudio(), so a stream that starts on a later pass can
+     * report how late it started.
+     */
+    private java.util.Map<AudioSegment, Long> mFirstForwardTime = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * AP-fork: most audio a stream that starts late is given from before its start, in milliseconds.  The Zello
+     * broadcaster holds at most 30 frames (~1.8 s) until the server assigns the stream id and evicts older ones, then
+     * sends them as an 8-frame burst plus a paced drain.  Capping the backlog below that keeps a late start on the same
+     * path a normal call start already uses for its CTCSS-confirmation flush (up to ~0.5 s), rather than leaning on the
+     * eviction or on how quickly the stream id arrives.
+     */
+    private static final long MAX_LATE_START_BACKLOG_MS = 1500;
+
+    /**
+     * AP-fork: one real-time broadcaster streaming one segment, and the next audio buffer of that segment it has yet to
+     * receive.  Each broadcaster keeps its own position because they no longer necessarily start on the same pass.
+     */
+    private static class RealTimeStream
+    {
+        private final IRealTimeAudioBroadcaster mBroadcaster;
+        private final long mLateMs;
+        private int mNextBuffer = 0;
+
+        RealTimeStream(IRealTimeAudioBroadcaster broadcaster, long lateMs)
+        {
+            mBroadcaster = broadcaster;
+            mLateMs = lateMs;
+        }
+    }
 
     /**
      * Constructs an instance
@@ -150,7 +182,7 @@ public class AudioStreamingManager implements Listener<AudioSegment>
 
         mAudioSegments.clear();
         mRealTimeStreams.clear();
-        mLastBufferIndex.clear();
+        mFirstForwardTime.clear();
     }
 
     /**
@@ -254,6 +286,19 @@ public class AudioStreamingManager implements Listener<AudioSegment>
      * Starts or continues real-time audio forwarding for an audio segment.
      * Finds real-time broadcasters (like Zello) that match the segment's broadcast channels
      * and forwards new audio buffers to them incrementally.
+     *
+     * AP-fork: every pass offers the segment to each of its real-time broadcasters that is not yet streaming it, not
+     * only on the first pass that found one ready.  A broadcaster that becomes ready later starts then and receives the
+     * segment from its first buffer, or the last MAX_LATE_START_BACKLOG_MS of it if it is later than that; the Zello
+     * broadcaster paces a backlog out (pending frames, 8-frame burst, 55 ms drain), the same path the CTCSS-confirmation
+     * flush has always used at call start.
+     *
+     * Previously the broadcaster list was built once, on the first pass where ANY of them was ready, and never
+     * revisited - so a broadcaster still waiting on the server's stop acknowledgement for the previous call missed the
+     * whole of the next one.  Somerville 2026-10-12 18:38:19: a 40 s Brookline Fire call went to its Work stream but
+     * not its F&F stream, whose acknowledgement arrived 108 ms after the call was routed.  Across 19.7 h of the
+     * ap-15.9.18 call line, 33 calls of 2 s or more (275 s of audio) were lost this way, every one of them on a
+     * segment where another stream of the same call did go live.
      */
     private void forwardRealTimeAudio(AudioSegment audioSegment)
     {
@@ -262,52 +307,122 @@ public class AudioStreamingManager implements Listener<AudioSegment>
             return;
         }
 
-        // Start real-time streams for newly arrived segments
-        if(!mRealTimeStreams.containsKey(audioSegment))
+        long now = System.currentTimeMillis();
+        long firstSeen = mFirstForwardTime.computeIfAbsent(audioSegment, segment -> now);
+        List<RealTimeStream> streams = mRealTimeStreams.computeIfAbsent(audioSegment,
+                segment -> new java.util.concurrent.CopyOnWriteArrayList<>());
+
+        // Start real-time streams on any broadcaster of this segment that is ready and not already streaming it
+        for(BroadcastChannel broadcastChannel : audioSegment.getBroadcastChannels())
         {
-            List<IRealTimeAudioBroadcaster> rtBroadcasters = new ArrayList<>();
+            AbstractAudioBroadcaster<?> broadcaster = mBroadcastModel.getBroadcaster(broadcastChannel.getChannelName());
 
-            for(BroadcastChannel broadcastChannel : audioSegment.getBroadcastChannels())
+            if(broadcaster instanceof IRealTimeAudioBroadcaster rtb && !isStreaming(streams, rtb) && rtb.isRealTimeReady())
             {
-                AbstractAudioBroadcaster<?> broadcaster = mBroadcastModel.getBroadcaster(broadcastChannel.getChannelName());
-                if(broadcaster instanceof IRealTimeAudioBroadcaster rtb && rtb.isRealTimeReady())
+                IdentifierCollection identifiers = audioSegment.getIdentifierCollection() != null
+                        ? new IdentifierCollection(audioSegment.getIdentifierCollection().getIdentifiers())
+                        : null;
+                rtb.startRealTimeStream(identifiers);
+                long lateMs = now - firstSeen;
+                RealTimeStream stream = new RealTimeStream(rtb, lateMs);
+
+                if(lateMs > 0)
                 {
-                    IdentifierCollection identifiers = audioSegment.getIdentifierCollection() != null
-                            ? new IdentifierCollection(audioSegment.getIdentifierCollection().getIdentifiers())
-                            : null;
-                    rtb.startRealTimeStream(identifiers);
-                    rtBroadcasters.add(rtb);
+                    stream.mNextBuffer = getLateStartIndex(audioSegment);
+                    mLog.debug("Real-time stream [{}] started {}ms after the call reached it - it was not ready " +
+                            "earlier - sending the call from buffer {} of {}", broadcastChannel.getChannelName(), lateMs,
+                            stream.mNextBuffer, audioSegment.getAudioBuffers().size());
                 }
-            }
 
-            if(!rtBroadcasters.isEmpty())
-            {
-                mRealTimeStreams.put(audioSegment, rtBroadcasters);
-                mLastBufferIndex.put(audioSegment, 0);
+                streams.add(stream);
             }
         }
 
-        // Forward any new audio buffers
-        List<IRealTimeAudioBroadcaster> rtBroadcasters = mRealTimeStreams.get(audioSegment);
-        if(rtBroadcasters != null && !rtBroadcasters.isEmpty())
+        // Forward any new audio buffers, each broadcaster from its own position
+        if(!streams.isEmpty())
         {
-            int lastIndex = mLastBufferIndex.getOrDefault(audioSegment, 0);
-            List<float[]> buffers = audioSegment.getAudioBuffers();
-            int currentSize = buffers.size();
+            int currentSize = audioSegment.getAudioBuffers().size();
 
-            for(int i = lastIndex; i < currentSize; i++)
+            for(RealTimeStream stream : streams)
             {
-                float[] buffer = audioSegment.getAudioBuffer(i);
-                if(buffer != null)
+                for(int i = stream.mNextBuffer; i < currentSize; i++)
                 {
-                    for(IRealTimeAudioBroadcaster rtb : rtBroadcasters)
+                    float[] buffer = audioSegment.getAudioBuffer(i);
+
+                    if(buffer != null)
                     {
-                        rtb.receiveRealTimeAudio(buffer);
+                        stream.mBroadcaster.receiveRealTimeAudio(buffer);
                     }
                 }
+
+                stream.mNextBuffer = currentSize;
+            }
+        }
+    }
+
+    /**
+     * AP-fork: index of the first audio buffer to send a stream that starts late - the start of the call, or the
+     * buffer that leaves no more than MAX_LATE_START_BACKLOG_MS of audio behind it.  8 kHz audio, 8 samples per ms.
+     */
+    private static int getLateStartIndex(AudioSegment audioSegment)
+    {
+        long budget = MAX_LATE_START_BACKLOG_MS * 8;
+        int index = audioSegment.getAudioBuffers().size();
+
+        while(index > 0)
+        {
+            float[] buffer = audioSegment.getAudioBuffer(index - 1);
+            int length = buffer != null ? buffer.length : 0;
+
+            if(length > budget)
+            {
+                break;
             }
 
-            mLastBufferIndex.put(audioSegment, currentSize);
+            budget -= length;
+            index--;
+        }
+
+        return index;
+    }
+
+    /**
+     * AP-fork: true when the broadcaster is already streaming this segment.
+     */
+    private static boolean isStreaming(List<RealTimeStream> streams, IRealTimeAudioBroadcaster broadcaster)
+    {
+        for(RealTimeStream stream : streams)
+        {
+            if(stream.mBroadcaster == broadcaster)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Stops any active real-time streams for the given audio segment.
+     */
+    private void stopRealTimeStreams(AudioSegment audioSegment)
+    {
+        List<RealTimeStream> streams = mRealTimeStreams.remove(audioSegment);
+        mFirstForwardTime.remove(audioSegment);
+
+        if(streams != null)
+        {
+            for(RealTimeStream stream : streams)
+            {
+                try
+                {
+                    stream.mBroadcaster.stopRealTimeStream();
+                }
+                catch(Exception e)
+                {
+                    mLog.error("Error stopping real-time stream", e);
+                }
+            }
         }
     }
 
@@ -321,9 +436,11 @@ public class AudioStreamingManager implements Listener<AudioSegment>
      * channel from one still receiving whose audio reached no stream - the Daly RSP1B dropout of 2026-10-10 was found
      * only through the tuner warning, not through anything the calls themselves logged.
      *
-     * Per stream: LIVE = a real-time stream (Zello) was started for this call; FILE = handed to a recording based
-     * broadcaster (ThinLine and similar) at completion; NOT READY = a real-time broadcaster that was not ready when
-     * the call arrived, so it was not streamed live; MISSING = no broadcaster with that name exists.
+     * Per stream: LIVE = a real-time stream (Zello) was started for this call, LIVE (late Nms) = started N ms after the
+     * call reached it because it was not ready sooner, sent from the start of the call (or its last 1.5 s); FILE = handed
+     * to a recording based broadcaster (ThinLine and similar) at completion; NOT READY = a real-time broadcaster that
+     * was not ready at any point while the call lasted, so it was not streamed; MISSING = no broadcaster with that name
+     * exists.
      *
      * Must be called before stopRealTimeStreams(), which discards the record of which streams were live.
      *
@@ -338,7 +455,7 @@ public class AudioStreamingManager implements Listener<AudioSegment>
             Identifier channel = ids != null ? ids.getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL, Role.ANY) : null;
             Identifier to = ids != null ? ids.getToIdentifier() : null;
 
-            List<IRealTimeAudioBroadcaster> live = mRealTimeStreams.get(audioSegment);
+            List<RealTimeStream> live = mRealTimeStreams.get(audioSegment);
             StringBuilder streams = new StringBuilder();
 
             for(BroadcastChannel broadcastChannel : audioSegment.getBroadcastChannels())
@@ -351,9 +468,23 @@ public class AudioStreamingManager implements Listener<AudioSegment>
                 {
                     state = "MISSING";
                 }
-                else if(broadcaster instanceof IRealTimeAudioBroadcaster)
+                else if(broadcaster instanceof IRealTimeAudioBroadcaster rtb)
                 {
-                    state = live != null && live.contains(broadcaster) ? "LIVE" : "NOT READY";
+                    RealTimeStream stream = null;
+
+                    if(live != null)
+                    {
+                        for(RealTimeStream candidate : live)
+                        {
+                            if(candidate.mBroadcaster == rtb)
+                            {
+                                stream = candidate;
+                            }
+                        }
+                    }
+
+                    state = stream == null ? "NOT READY" :
+                            (stream.mLateMs > 0 ? "LIVE (late " + stream.mLateMs + "ms)" : "LIVE");
                 }
                 else
                 {
@@ -379,30 +510,6 @@ public class AudioStreamingManager implements Listener<AudioSegment>
         {
             //Measurement only - never let it disturb streaming
             mLog.debug("Unable to log call segment", e);
-        }
-    }
-
-    /**
-     * Stops any active real-time streams for the given audio segment.
-     */
-    private void stopRealTimeStreams(AudioSegment audioSegment)
-    {
-        List<IRealTimeAudioBroadcaster> rtBroadcasters = mRealTimeStreams.remove(audioSegment);
-        mLastBufferIndex.remove(audioSegment);
-
-        if(rtBroadcasters != null)
-        {
-            for(IRealTimeAudioBroadcaster rtb : rtBroadcasters)
-            {
-                try
-                {
-                    rtb.stopRealTimeStream();
-                }
-                catch(Exception e)
-                {
-                    mLog.error("Error stopping real-time stream", e);
-                }
-            }
         }
     }
 

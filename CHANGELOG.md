@@ -5,6 +5,76 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.19] - 2026-10-12
+
+Four changes, none touching tone squelch, the TDMA detector or the squelch logging: a Zello routing fix, stream
+deletion that cleans up its aliases, and two P25 decoding fixes from upstream. Decided by the ap-15.9.18 logs from
+Summit and Somerville (2026-10-11 23:13 to 2026-10-12 18:58).
+
+### Fixed - a Zello stream that was not ready when a call began missed the whole call
+
+`AudioStreamingManager.forwardRealTimeAudio()` built a call's list of real-time (Zello) streams once, on the first
+250 ms pass where any of them was ready, and never looked at the others again. A stream still waiting for the
+server to acknowledge the previous call's stop was skipped for the entire next call.
+
+Somerville 2026-10-12 18:38:19: a 40 s Brookline Fire call arrived while the previous call was still streaming on
+both its Zello streams (Brookline Fire - Work and Brookline Fire - F&F). Both stopped at 18:38:19.605; Work's stop
+was acknowledged at .649 and the next pass started the call on it at .869; F&F's acknowledgement arrived at .977,
+108 ms later, and F&F never carried the call.
+
+Measured from the ap-15.9.18 call line over 19.7 h (Summit and Somerville, 15,600 live stream-calls, 22.4 h of audio):
+
+| | stream-calls | audio |
+|---|---|---|
+| not streamed, another stream of the same call went live, 2 s or longer | 33 | 275 s |
+| not streamed, another stream of the same call went live, under 2 s | 18 | 24 s |
+| not streamed, no stream of the call went live, 2 s or longer | 10 | 44 s |
+| not streamed, no stream of the call went live, under 2 s | 275 | 77 s |
+
+Every pass now offers the call to each of its Zello streams that is not yet carrying it. A stream that becomes ready
+later starts then and is sent the call from its first buffer - or its last 1.5 s if it is later than that
+(`MAX_LATE_START_BACKLOG_MS`), which keeps the backlog inside the 30-frame pending buffer and the paced burst/drain the
+CTCSS-confirmation flush already uses at every call start. Each stream keeps its own buffer position.
+
+The call line now reports `LIVE (late Nms)` for a stream that started late, and `NOT READY` means the stream was not
+ready at any point while the call lasted. The sub-second fragments arriving within ~0.3 s of the previous call on the
+same stream mostly finish before the stream is free and will still show as `NOT READY`.
+
+### Changed - deleting a stream removes it from its aliases
+
+Renaming a stream has always updated the aliases (`AliasModel.updateBroadcastChannel()`); deleting one did not, and
+every alias kept the dead name. On Somerville the ap-15.9.18 call line shows 33,018 stream references to names that
+no longer exist (Middlesex County, Suffolk County and Norfolk County with their APM variants; MetroFire - Thin, Red,
+White and Central).
+
+The Streaming editor's Delete now removes the stream from every alias, then deletes it, so one playlist save captures
+both. The confirmation says how many aliases will be updated, and each deletion logs
+`Stream [name] deleted - removed from [n] alias(es)`. `BroadcastModel.removeBroadcastConfiguration()` is deliberately
+untouched: `BroadcastModel.clear()` uses it when a playlist is cleared or reloaded, and cleaning aliases there would
+strip every stream from every alias. Names left by earlier deletions are not removed automatically.
+
+### Upstream fixes (DSheirer/sdrtrunk master, merged 2026-09-26, not yet in a tagged release)
+
+- **`9305abc7` P25 Phase 2** (Steve Pinkham) - `SuperFrameFragment.getTimeslotOffset()` tested I-ISCH 1 twice, so
+  I-ISCH 2 was never consulted and a fragment whose first I-ISCH failed was descrambled at timeslot offset 0.
+- **`7ee3c5d2` P25 Phase 1** (Denny Sheirer, #2473) - bad frequency band messages no longer contaminate the map used
+  to calculate traffic channel frequencies.
+
+Both applied cleanly and are kept as their own commits with their original authors.
+
+### Not verified
+
+The routing change cannot be run here (`AudioSegment` depends on JavaFX); the build is its first compile and the
+next Somerville log its test - expect `LIVE (late` entries on Brookline Fire, Massport and Everett, and far fewer
+`NOT READY` calls of 2 s or more. The Delete change is UI code and was compiled here without JavaFX.
+
+### Files
+
+- `AudioStreamingManager.java` - per-stream `RealTimeStream` state, retry each pass, `getLateStartIndex()`
+- `AliasModel.java`, `StreamingEditor.java` - stream deletion
+- P25: `SuperFrameFragment.java`, `P25P1MessageProcessor.java`, `IFrequencyBand.java`, `P25FrequencyBand.java`,
+  `FrequencyBandUpdate*.java`
+
 ## [0.6.2-ap-15.9.18] - 2026-10-11
 
 One behaviour change - the TDMA detector removes DC from the audio before squaring it - plus two logging additions
