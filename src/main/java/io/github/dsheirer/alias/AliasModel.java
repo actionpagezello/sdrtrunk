@@ -380,6 +380,68 @@ public class AliasModel
     }
 
     /**
+     * AP-fork: number of aliases configured to stream to the named stream.
+     *
+     * @param streamName to count
+     * @return number of aliases that carry a broadcast channel with that name
+     */
+    public int getBroadcastChannelAliasCount(String streamName)
+    {
+        int count = 0;
+
+        if(streamName != null && !streamName.isEmpty())
+        {
+            for(Alias alias: new ArrayList<>(mAliases))
+            {
+                if(alias.hasBroadcastChannel(streamName))
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * AP-fork: removes the named stream from every alias configured to stream to it.  The deletion counterpart of
+     * updateBroadcastChannel(), which already keeps aliases in step when a stream is renamed.
+     *
+     * Upstream deleted the stream configuration and left its name on every alias that pointed at it.  The dead name
+     * streamed nowhere, and any stream later created with the same name would silently pick those aliases up again.
+     * Somerville 2026-10-11: Everett Police was still routed to a deleted "Middlesex County" stream, which the
+     * ap-15.9.18 call line reports as MISSING.
+     *
+     * Call ONLY for a deletion the user asked for.  Never from BroadcastModel.removeBroadcastConfiguration(): that is
+     * also how BroadcastModel.clear() empties the model when a playlist is cleared or reloaded, and stripping the
+     * aliases there would remove every stream from every alias.
+     *
+     * @param streamName of the deleted stream
+     * @return number of aliases it was removed from
+     */
+    public int removeBroadcastChannelFromAllAliases(String streamName)
+    {
+        int count = 0;
+
+        if(streamName == null || streamName.isEmpty())
+        {
+            return count;
+        }
+
+        for(Alias alias: new ArrayList<>(mAliases))
+        {
+            if(alias.hasBroadcastChannel(streamName))
+            {
+                alias.removeBroadcastChannel(streamName);
+                count++;
+            }
+        }
+
+        mLog.info("Stream [" + streamName + "] deleted - removed from [" + count + "] alias(es)");
+        return count;
+    }
+
+    /**
      * Updates all aliases configured to stream to the previousStreamName with the updatedStreamName
      * @param previousStreamName to be removed
      * @param updatedStreamName to be added

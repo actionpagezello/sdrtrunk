@@ -379,16 +379,30 @@ public class StreamingEditor extends SplitPane
 
                 if(config != null)
                 {
-                    Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
-                        "Do you want to delete the selected stream?", ButtonType.NO, ButtonType.YES);
+                    //AP-fork: deleting a stream also removes it from the aliases that stream to it, as renaming already
+                    //updates them. Say so before the user confirms. See AliasModel.removeBroadcastChannelFromAllAliases().
+                    String streamName = config.getName();
+                    int aliasCount = mPlaylistManager.getAliasModel().getBroadcastChannelAliasCount(streamName);
+                    String message = "Do you want to delete the selected stream?";
+
+                    if(aliasCount > 0)
+                    {
+                        message += "\n\nIt is assigned to " + aliasCount + (aliasCount == 1 ? " alias" : " aliases") +
+                            ". It will also be removed from " + (aliasCount == 1 ? "that alias." : "those aliases.");
+                    }
+
+                    Alert alert = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.NO, ButtonType.YES);
                     alert.setTitle("Delete Stream Configuration");
                     alert.setHeaderText("Are you sure?");
                     alert.initOwner(((Node)getDeleteButton()).getScene().getWindow());
 
                     Optional<ButtonType> result = alert.showAndWait();
 
-                    if(result.get() == ButtonType.YES)
+                    if(result.isPresent() && result.get() == ButtonType.YES)
                     {
+                        //AP-fork: aliases first, so the playlist save scheduled by the stream deletion below captures
+                        //both changes together.
+                        mPlaylistManager.getAliasModel().removeBroadcastChannelFromAllAliases(streamName);
                         mPlaylistManager.getBroadcastModel().removeBroadcastConfiguration(config);
                     }
                 }
