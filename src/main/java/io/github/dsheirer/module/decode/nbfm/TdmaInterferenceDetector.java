@@ -47,6 +47,8 @@ import org.slf4j.LoggerFactory;
  * FUNDAMENTAL_FLOOR on its own and must not be outweighed by H2 or H3 by more than HARMONIC_EXCESS
  * before a window can latch. See those constants for the measurement.
  *
+ * AP-fork: since ap-15.9.18 the audio has its DC removed before step 1. See DC_BLOCK_HZ.
+ *
  * Calibration (2026-08) was done against four DMR bursts captured off Somerville Fire 483.3875,
  * measured with this exact implementation:
  *
@@ -141,6 +143,27 @@ public class TdmaInterferenceDetector
      */
     private static final float HARMONIC_EXCESS = 10.0f;
 
+    /**
+     * AP-fork: corner (Hz) of the one-pole DC blocker applied to the AUDIO before it is squared into the envelope.
+     *
+     * Squaring audio that carries a DC offset plus a steady tone produces a component at the tone's own frequency:
+     * (dc + a*sin(wt))^2 contains 2*dc*a*sin(wt). FM demodulation turns any carrier frequency error into exactly such
+     * an offset, and every tone-filtered channel carries a steady CTCSS tone - so the envelope inherits the channel's
+     * own tone. Three CTCSS tones land on or near the comb: 100.0 Hz is 3 x 33.33, 67.0 Hz is 2 x 33.5, and 74.4 Hz
+     * leaks into the 2nd harmonic of the 34.0-35.0 candidates.
+     *
+     * Measured (ap-15.9.17 survey): Lawrence Fire and Littleton Fire are the only channels in the Daly and Summit
+     * logs on 100.0 Hz, and the only ones where H3 dominates - on Lawrence, H3 was the strongest harmonic in all
+     * 3,493 windows scoring 20 or more. Bolton Fire (74.4 Hz) carries a steady H2 of 30-80 at rates 33.0-35.0 with H1
+     * near 1.5. Reproduced against this class: a 100 Hz tone plus a DC offset of 0.2 scored H3=1811, H1=0.5; the same
+     * tone with no offset scored nothing. The field offset itself has not been measured.
+     *
+     * Removing DC removes the cross term at its source. A steady tone alone squares to twice its frequency (200,
+     * 134 and 149 Hz for those three), all off the comb. 5 Hz passes 67 Hz at 0.997 and settles in about 30 ms. The
+     * TDMA cadence the detector looks for is a modulation of the noise POWER, which DC removal does not touch.
+     */
+    private static final float DC_BLOCK_HZ = 5.0f;
+
     /** High-pass corner (Hz) applied to the envelope to remove syllabic speech modulation. */
     private static final float ENVELOPE_HIGHPASS_HZ = 15.0f;
 
@@ -152,6 +175,11 @@ public class TdmaInterferenceDetector
     private final float[] mEnvelope;
     private int mEnvelopeIndex = 0;
     private boolean mEnvelopeFilled = false;
+
+    //AP-fork: one-pole DC blocker state for the audio. See DC_BLOCK_HZ.
+    private final float mDcBlockR;
+    private float mDcPrevInput = 0.0f;
+    private float mDcPrevOutput = 0.0f;
 
     // Sub-block RMS accumulation
     private float mSumSquares = 0.0f;
@@ -193,6 +221,9 @@ public class TdmaInterferenceDetector
         float rc = 1.0f / (2.0f * (float)Math.PI * ENVELOPE_HIGHPASS_HZ);
         float dt = 1.0f / mEnvelopeRate;
         mHighPassAlpha = rc / (rc + dt);
+
+        //AP-fork: y[n] = x[n] - x[n-1] + R*y[n-1]
+        mDcBlockR = 1.0f - (float)(2.0 * Math.PI * DC_BLOCK_HZ / sampleRate);
     }
 
     /**
@@ -252,6 +283,8 @@ public class TdmaInterferenceDetector
         mSubBlockCount = 0;
         mHpPrevInput = 0.0f;
         mHpPrevOutput = 0.0f;
+        mDcPrevInput = 0.0f;
+        mDcPrevOutput = 0.0f;
         mAboveCount = 0;
         mBelowCount = 0;
         mInterferenceDetected = false;
@@ -270,8 +303,13 @@ public class TdmaInterferenceDetector
             return;
         }
 
-        for(float sample : audio)
+        for(float input : audio)
         {
+            //AP-fork: remove DC before squaring. See DC_BLOCK_HZ.
+            float sample = input - mDcPrevInput + mDcBlockR * mDcPrevOutput;
+            mDcPrevInput = input;
+            mDcPrevOutput = sample;
+
             mSumSquares += sample * sample;
             mSubBlockCount++;
 

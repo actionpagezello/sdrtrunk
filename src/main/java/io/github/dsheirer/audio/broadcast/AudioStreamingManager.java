@@ -23,8 +23,10 @@ import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
 import io.github.dsheirer.audio.AudioSegment;
+import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.identifier.Role;
@@ -37,8 +39,10 @@ import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.util.ThreadPool;
 import io.github.dsheirer.util.TimeStamp;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -165,6 +169,7 @@ public class AudioStreamingManager implements Listener<AudioSegment>
             if(audioSegment.isDuplicate() && mUserPreferences.getCallManagementPreference().isDuplicateStreamingSuppressionEnabled())
             {
                 it.remove();
+                logCallSegment(audioSegment, "DUPLICATE - suppressed, not streamed");
                 stopRealTimeStreams(audioSegment);
                 audioSegment.decrementConsumerCount();
             }
@@ -176,6 +181,8 @@ public class AudioStreamingManager implements Listener<AudioSegment>
                 if(audioSegment.completeProperty().get())
                 {
                     it.remove();
+                    logCallSegment(audioSegment, audioSegment.hasBroadcastChannels() ? "complete" :
+                            "complete - no stream configured for this call");
 
                 if(mAudioRecordingListener != null && audioSegment.hasBroadcastChannels())
                 {
@@ -301,6 +308,77 @@ public class AudioStreamingManager implements Listener<AudioSegment>
             }
 
             mLastBufferIndex.put(audioSegment, currentSize);
+        }
+    }
+
+    /**
+     * AP-fork: one line per call as it leaves the streaming manager - which channel it came from, when it started (the
+     * same start time ThinLine files the call under), how long it ran, and what happened to it on each stream it was
+     * routed to.  Measurement only.
+     *
+     * Two problems had no answer in the logs.  A log time could not be matched to a ThinLine recording, so a window the
+     * TDMA detector refused could not be checked by ear.  And when a feed went quiet nothing distinguished a silent
+     * channel from one still receiving whose audio reached no stream - the Daly RSP1B dropout of 2026-10-10 was found
+     * only through the tuner warning, not through anything the calls themselves logged.
+     *
+     * Per stream: LIVE = a real-time stream (Zello) was started for this call; FILE = handed to a recording based
+     * broadcaster (ThinLine and similar) at completion; NOT READY = a real-time broadcaster that was not ready when
+     * the call arrived, so it was not streamed live; MISSING = no broadcaster with that name exists.
+     *
+     * Must be called before stopRealTimeStreams(), which discards the record of which streams were live.
+     *
+     * @param audioSegment the call
+     * @param outcome what happened to it here
+     */
+    private void logCallSegment(AudioSegment audioSegment, String outcome)
+    {
+        try
+        {
+            IdentifierCollection ids = audioSegment.getIdentifierCollection();
+            Identifier channel = ids != null ? ids.getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL, Role.ANY) : null;
+            Identifier to = ids != null ? ids.getToIdentifier() : null;
+
+            List<IRealTimeAudioBroadcaster> live = mRealTimeStreams.get(audioSegment);
+            StringBuilder streams = new StringBuilder();
+
+            for(BroadcastChannel broadcastChannel : audioSegment.getBroadcastChannels())
+            {
+                String name = broadcastChannel.getChannelName();
+                AbstractAudioBroadcaster<?> broadcaster = mBroadcastModel != null ? mBroadcastModel.getBroadcaster(name) : null;
+                String state;
+
+                if(broadcaster == null)
+                {
+                    state = "MISSING";
+                }
+                else if(broadcaster instanceof IRealTimeAudioBroadcaster)
+                {
+                    state = live != null && live.contains(broadcaster) ? "LIVE" : "NOT READY";
+                }
+                else
+                {
+                    state = "FILE";
+                }
+
+                if(streams.length() > 0)
+                {
+                    streams.append(", ");
+                }
+
+                streams.append(name).append("=").append(state);
+            }
+
+            long start = audioSegment.getStartTimestamp();
+
+            mLog.info("Call [{}] to [{}] started {} ran {}ms - {} - streams [{}]",
+                    channel != null ? channel : "unknown channel", to != null ? to : "none",
+                    start > 0 ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date(start)) : "unknown",
+                    audioSegment.getDuration(), outcome, streams);
+        }
+        catch(Exception e)
+        {
+            //Measurement only - never let it disturb streaming
+            mLog.debug("Unable to log call segment", e);
         }
     }
 

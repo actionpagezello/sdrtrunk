@@ -5,6 +5,93 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.18] - 2026-10-11
+
+One behaviour change - the TDMA detector removes DC from the audio before squaring it - plus two logging additions
+and a corrected warning. The 15.9.17 limits (`FUNDAMENTAL_FLOOR` 20, `HARMONIC_EXCESS` 10) are unchanged.
+
+### The cause behind the TDMA false hits: the channel's own CTCSS tone
+
+15.9.17 screened the false hits out; this removes what was producing them. The detector builds its envelope by
+squaring the audio, and audio with a DC offset plus a steady tone squares to a component at the tone's own
+frequency: `(dc + a*sin(wt))^2` contains `2*dc*a*sin(wt)`. FM demodulation turns any carrier frequency error into
+exactly such an offset, and every tone-filtered channel carries a steady CTCSS tone.
+
+Three CTCSS tones land on or near the comb: 100.0 Hz is 3 x 33.33, 67.0 Hz is 2 x 33.5, and 74.4 Hz leaks into the
+2nd harmonic of the 34.0-35.0 candidates.
+
+Measured on the ap-15.9.17 survey:
+
+- **Lawrence Fire 154.445 (Daly) and Littleton Fire 460.2625 (Summit)** are the only channels in either log on
+  100.0 Hz, and the only ones where H3 dominates. On Lawrence, H3 was the strongest harmonic in all 3,493 windows
+  scoring 20 or more, and all 18 of its remaining cuts had H3 above H1 (median 3.4x). Real digital on Somerville
+  has H3/H1 at a median of 0.2-1.1 per channel.
+- **Bolton Fire 453.600 (74.4 Hz)** carries a steady H2 of 30-80 at rates 33.0-35.0 with H1 near 1.5 - the "steady
+  66 Hz component" left unexplained in 15.9.17.
+
+Reproduced against this class with synthetic audio (15.9.17 vs 15.9.18):
+
+| case | 15.9.17 | 15.9.18 |
+|---|---|---|
+| 100 Hz tone + DC 0.2 | H3 = 6,164 | H3 = 11.5, no latch |
+| 67 Hz tone + DC 0.2 | H2 = 7,916 | H2 = 10.8 |
+| 74.4 Hz tone + DC 0.2 | H2 = 317 | H2 = 30 |
+| 30 ms cadence, 50% duty | latches, score 381 | latches, score 324 |
+| 30 ms cadence, 20% duty + DC 0.3 | latches, score 147 | latches, score 747 |
+| 30 ms cadence + 100 Hz tone + DC 0.3 | **does not latch** | latches, score 188 |
+
+The last row is a second defect the offset was causing: on a channel with a carrier offset, 15.9.17 could miss real
+digital as well. The field offset itself has not been measured; the correlation and the reproduction are the
+evidence.
+
+### Changed
+
+- **`TdmaInterferenceDetector`** - a one-pole DC blocker (`DC_BLOCK_HZ = 5`) on the audio ahead of the envelope.
+  Gain 0.991 at 33 Hz and 0.999 at 67 Hz, so no CTCSS tone or slot harmonic is touched; settles in about 30 ms
+  after a reset. A steady tone alone squares to twice its frequency (200, 134, 149 Hz for those three), all off the
+  comb. The TDMA cadence is a modulation of the noise power, which DC removal does not touch.
+
+### Added (logging only)
+
+- **One line per call** from `AudioStreamingManager` as the call leaves it (INFO; stream names and the `to` value
+  below are illustrative - the real ones depend on the playlist):
+
+  ```
+  Call [Bolton Fire] to [none] started 2026-10-12 14:03:07.512 ran 8450ms - complete - streams [Bolton FD Zello=LIVE, Summit ThinLine=FILE]
+  ```
+
+  The start time is the one ThinLine files the call under, so any log event can be matched to a recording: a
+  refused or vetoed window at time T on channel C belongs to the call on C that spans T. Per stream: `LIVE` = a
+  Zello stream was started; `FILE` = handed to ThinLine and similar at completion; `NOT READY` = a real-time
+  broadcaster that was not ready, so not streamed live; `MISSING` = no broadcaster by that name. Calls with no stream
+  configured, and duplicates suppressed, are logged as such. This is what tells a silent channel from one still
+  receiving whose audio reaches no stream.
+- **Noise squelch transitions on tone-filtered channels** (DEBUG): `Squelch OPEN` with the branch taken (holdover
+  or full reset), how long ago the tone was last confirmed, and the target-won latch; `Squelch CLOSE` with how long
+  it was open and how long the gate had been unconfirmed. This is the instrumentation the end-of-call pause and the
+  inert 15.9.15 holdover veto have both been waiting for.
+
+### Fixed
+
+- **`TUNER REMOVED FROM SYSTEM` said the channels would restart "when the device returns".** They do not: RSP tuners
+  are discovered once at startup (`TunerManager.discoverSdrPlayTuners()`) and USB hotplug is not supported on
+  Windows, so a returning device is never re-attached. The warning now says to restart SDRTrunk, and that the
+  removal is reported by the driver/API rather than necessarily being a physical disconnect. Daly 2026-10-10: RSP1B
+  SER 24050F5260 dropped at 15:57 carrying 16 channels, which stayed down 29 hours until a restart, and Windows
+  logged no USB, PnP or power event at either of its two drops.
+
+### Not verified
+
+No real DMR burst has been checked against the DC blocker; Somerville is where to confirm real digital still
+latches. The 15.9.17 limits stay until a log shows whether they are still needed.
+
+### Files
+
+- `TdmaInterferenceDetector.java` - `DC_BLOCK_HZ`, DC blocker in `process()`, state reset in `reset()`
+- `NBFMDecoder.java` - `logSquelchOpen()`, `logSquelchClose()`, `mSquelchOpenTimeMs`
+- `AudioStreamingManager.java` - `logCallSegment()`
+- `DiscoveredTunerModel.java` - corrected removal warning
+
 ## [0.6.2-ap-15.9.17] - 2026-10-06
 
 The TDMA veto now requires the slot-rate fundamental. Decided by the ap-15.9.16 survey on Summit VHF/UHF

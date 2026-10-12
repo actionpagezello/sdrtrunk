@@ -401,14 +401,22 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
 
             if(removedChannelCount > 0)
             {
+                //AP-fork: the previous text said the channels would restart "when the device returns". They do not:
+                //RSP tuners are discovered once, at startup (TunerManager.discoverSdrPlayTuners()), and nothing looks
+                //for them again, so a returning RSP is never re-attached. Daly 2026-10-10: the RSP1B dropped at 15:57
+                //carrying 16 channels and they stayed down 29 hours, until SDRTrunk was restarted. Windows logged no
+                //USB or PnP event at all - the removal was reported by the SDRplay API, not by the operating system.
                 mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] while carrying [" + removedChannelCount +
-                    "] channel(s) - those channels have stopped and will not restart until the device returns. This is " +
-                    "a device or USB level disconnect, not a channel or decoder fault.");
+                    "] channel(s) - those channels have STOPPED and will not restart on their own, even if the device comes " +
+                    "back: restart SDRTrunk to recover them (RSP tuners are only discovered at startup, and USB hotplug " +
+                    "is not supported on Windows). Reported by the device driver/API - not necessarily a physical " +
+                    "disconnect.");
             }
             else
             {
                 mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] - it was carrying no channels at the " +
-                    "time. This is a device or USB level disconnect, not a channel or decoder fault.");
+                    "time. It will not be re-attached on its own, even if the device comes back - restart SDRTrunk to use it " +
+                    "again. Reported by the device driver/API - not necessarily a physical disconnect.");
             }
 
             //Note: RSPduo only gets device removal indication if the device is streaming.  There may be situation where

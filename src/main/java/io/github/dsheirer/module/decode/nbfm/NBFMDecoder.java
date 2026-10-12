@@ -217,6 +217,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private volatile long mLastResampledAudioTimeMs = 0;
 
     /**
+     * AP-fork: wall time the noise squelch last opened, or 0 while closed.  Measurement only - see logSquelchOpen() and
+     * logSquelchClose().  Two open questions both turn on what the squelch actually does, and the logs have never said:
+     * the 1.4-2.5 s pause at the end of Bolton calls, and the ap-15.9.15 holdover veto, whose latch is only cleared in
+     * the full-reset branch at squelch-open and has never been seen to clear.  Whether the squelch closes at all during
+     * those episodes, and which open branch it takes when it reopens, is the missing evidence.
+     */
+    private volatile long mSquelchOpenTimeMs = 0;
+
+    /**
      * Constructs an instance
      *
      * @param config to setup the NBFM decoder and noise squelch control.
@@ -302,6 +311,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mNoiseSquelch.setSquelchStateListener(squelchState -> {
             if(squelchState == SquelchState.SQUELCH)
             {
+                logSquelchClose();
+
                 // Reset stuck timer watchdog — carrier dropped, allow fresh calls
                 mWatchdogTripped = false;
                 mCallStartTimeMs = 0;
@@ -373,6 +384,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // audio immediately without waiting for re-detection.
                     long elapsed = System.currentTimeMillis() - mLastToneMatchTime;
 
+                    logSquelchOpen(elapsed);
+
                     if(mToneMatch && elapsed < TONE_HOLDOVER_MS)
                     {
                         // Holdover active — continue as if tone is still confirmed.
@@ -415,6 +428,47 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 }
             }
         });
+    }
+
+    /**
+     * AP-fork: logs a noise squelch opening on a tone-filtered channel, with the branch the gate is about to take.
+     * Measurement only.  Called before the branch runs, so mToneMatch is the value the branch will test.
+     *
+     * @param sinceLastToneMatchMs elapsed time since the target tone was last confirmed.
+     */
+    private void logSquelchOpen(long sinceLastToneMatchMs)
+    {
+        mSquelchOpenTimeMs = System.currentTimeMillis();
+
+        if(mLog.isDebugEnabled())
+        {
+            boolean holdover = mToneMatch && sinceLastToneMatchMs < TONE_HOLDOVER_MS;
+            mLog.debug("[{}] Squelch OPEN - {} (toneMatch={}, last tone confirmation {}, holdover window {}ms, " +
+                            "targetWon latch={})",
+                    mChannelLabel, holdover ? "HOLDOVER branch, gate opens on trust" :
+                            "FULL RESET branch, gate waits for confirmation", mToneMatch,
+                    mLastToneMatchTime > 0 ? sinceLastToneMatchMs + "ms ago" : "never", TONE_HOLDOVER_MS,
+                    mRawTargetWonThisEpisode);
+        }
+    }
+
+    /**
+     * AP-fork: logs a noise squelch closing on a tone-filtered channel - how long it was open and what state the tone
+     * gate was in.  Measurement only.  Called before any state is changed.
+     */
+    private void logSquelchClose()
+    {
+        long now = System.currentTimeMillis();
+        long openedAt = mSquelchOpenTimeMs;
+        mSquelchOpenTimeMs = 0;
+
+        if(mToneFilterEnabled && mLog.isDebugEnabled())
+        {
+            mLog.debug("[{}] Squelch CLOSE after {} (toneMatch={}, last tone confirmation {}, gate unconfirmed for {})",
+                    mChannelLabel, openedAt > 0 ? (now - openedAt) + "ms open" : "unknown time open", mToneMatch,
+                    mLastToneMatchTime > 0 ? (now - mLastToneMatchTime) + "ms ago" : "never",
+                    mHoldoverOpenTime > 0 ? (now - mHoldoverOpenTime) + "ms" : "0ms");
+        }
     }
 
     /**
