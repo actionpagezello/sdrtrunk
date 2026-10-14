@@ -205,6 +205,31 @@ public class TdmaInterferenceDetector
     private String mChannelLabel = "";
 
     /**
+     * AP-fork (ap-15.9.20): lowest and highest winning rate, in Hz, that counts as the TDMA slot cadence for
+     * SUSPECT_FUNDAMENTAL. Covers 32.5, 33.0, 33.33 and 34.0 - the candidates real DMR has won in the surveys.
+     */
+    private static final float SUSPECT_RATE_MIN = 32.5f;
+    private static final float SUSPECT_RATE_MAX = 34.0f;
+
+    /**
+     * AP-fork (ap-15.9.20): fundamental (H1) at the slot cadence that marks a window as suspected TDMA even though
+     * its comb score is below DETECTION_THRESHOLD. NBFMDecoder uses this only to decide whether to release audio
+     * that a WEAK tone confirmation has buffered - it never cuts a call that is already flowing.
+     *
+     * Somerville 2026-10-14 07:49:30, Somerville Fire Ch 2: a DMR burst confirmed 131.8 at 12.6 dB and went to
+     * Zello. The detector never latched - scores 5.9, 11.5, 8.2 - because the burst carried almost all of its
+     * energy in the fundamental (H1 21.4, 58.7, 38.6) and next to none in H2, which the geometric-mean score
+     * punishes. Across 2026-10-13/14, matched against 1,179 recordings, requiring H1 >= 20 at these rates (in a
+     * window that reached SURVEY_FLOOR) alongside a weak confirmation stops 226 of 315 bursts and 9 of 864
+     * voice calls.
+     */
+    private static final float SUSPECT_FUNDAMENTAL = 20.0f;
+
+    /** AP-fork (ap-15.9.20): strongest slot-cadence fundamental since reset() or clearSuspicion(), and its rate. */
+    private volatile float mSuspectFundamental = 0.0f;
+    private volatile float mSuspectRate = 0.0f;
+
+    /**
      * Constructs a detector for the given audio sample rate (typically 8 kHz post-resampler).
      *
      * @param sampleRate of the audio being fed to {@link #process(float[])}
@@ -289,6 +314,39 @@ public class TdmaInterferenceDetector
         mBelowCount = 0;
         mInterferenceDetected = false;
         mLastScore = 0.0f;
+        clearSuspicion();
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): true when any window since reset() or clearSuspicion() showed a strong fundamental at the
+     * TDMA slot cadence, whether or not it latched. See SUSPECT_FUNDAMENTAL.
+     */
+    public boolean isSlotCadenceSuspected()
+    {
+        return mSuspectFundamental >= SUSPECT_FUNDAMENTAL;
+    }
+
+    /** AP-fork (ap-15.9.20): strongest slot-cadence fundamental behind isSlotCadenceSuspected(), for logging. */
+    public float getSuspectFundamental()
+    {
+        return mSuspectFundamental;
+    }
+
+    /** AP-fork (ap-15.9.20): winning rate of that window, for logging. */
+    public float getSuspectRate()
+    {
+        return mSuspectRate;
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): forgets slot-cadence suspicion without touching the envelope or the latch. Called after
+     * held audio has been discarded, so a real call that keeps transmitting is judged on what follows rather than on
+     * the burst that was thrown away.
+     */
+    public void clearSuspicion()
+    {
+        mSuspectFundamental = 0.0f;
+        mSuspectRate = 0.0f;
     }
 
     /**
@@ -480,6 +538,15 @@ public class TdmaInterferenceDetector
         //than HARMONIC_EXCESS. Decided on the same winner the survey logs, which is exactly what the 2026-10-06
         //measurement simulated. A refused window counts as below threshold, so it also releases a latch like
         //any other quiet window.
+        //AP-fork (ap-15.9.20): remember the strongest slot-cadence fundamental, using the same windows the survey
+        //logs (score at or above SURVEY_FLOOR), which is what the 2026-10-13/14 measurement was taken from.
+        if(best >= SURVEY_FLOOR && bestRate >= SUSPECT_RATE_MIN && bestRate <= SUSPECT_RATE_MAX &&
+                bestH1 > mSuspectFundamental)
+        {
+            mSuspectFundamental = bestH1;
+            mSuspectRate = bestRate;
+        }
+
         boolean fundamentalPresent = bestH1 >= FUNDAMENTAL_FLOOR &&
                 Math.max(bestH2, bestH3) <= bestH1 * HARMONIC_EXCESS;
 

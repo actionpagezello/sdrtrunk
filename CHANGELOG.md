@@ -5,6 +5,46 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.20] - 2026-10-14
+
+One change: a weak CTCSS confirmation is held for one TDMA window before its audio is released. Decided by the
+Somerville ap-15.9.19 logs of 2026-10-13 and 2026-10-14 (00:00-08:01) and 2,583 recordings from Somerville Fire,
+Somerville Fire Ch 2 and the MetroFire channels.
+
+### Fixed - the opening of a DMR burst leaked through the tone gate
+
+DMR bleed sprays chance hits across every CTCSS bin. Now and then three land on the target and confirm it, the gate
+releases its buffered audio (192-448 ms) and the call starts; the TDMA detector latches on its next window and cuts
+it. On 2026-10-13, 418 releases were cut this way within 1 s - 221 on MetroFire Red, 113 on Brookline Fire. Some
+bursts never latch at all: Somerville Fire Ch 2 07:49:30 on 2026-10-14 confirmed 131.8 at 12.6 dB and went LIVE to
+Zello with comb scores of 5.9-11.5, because the burst's energy sat in the fundamental (H1 21-59) and the score is a
+geometric mean of H1-H3.
+
+Those confirmations are weak. Matched against recordings, bursts confirmed 131.8 at a median 13.1 dB on MetroFire
+Red, 12.9 dB on MetroFire White and 12.6 dB on Somerville Fire Ch 2; real calls at 16.4, 21.4 and 16.0 dB.
+
+When the target's strongest block is below 16 dB (`WEAK_CONFIRM_SNR_DB`), `NBFMDecoder` now holds the buffered audio
+for 300 ms more (`CONFIRM_HOLD_SAMPLES`) and discards it if the TDMA detector latches, or if any window since squelch
+opened reached the survey floor with a fundamental of 20 or more at 32.5-34.0 Hz
+(`TdmaInterferenceDetector.isSlotCadenceSuspected()`). Otherwise the call starts and everything held is released.
+A strong confirmation is released at once, as before. DCS channels are unchanged.
+
+| rule, 2026-10-13/14, 1,179 releases matched to recordings | bursts stopped | voice discarded |
+|---|---|---|
+| hold until TDMA latches only | 86 of 315 | 1 of 864 |
+| hold, latch or slot-cadence fundamental (this release) | 226 of 315 | 9 of 864 |
+
+Most of the 9 "voice" discards are MetroFire Red calls the TDMA detector cut seconds later anyway. 1,064 of the
+21,854 releases on 2026-10-13 confirmed weakly and would start up to 300 ms later. A discard drops only the held
+opening: the CTCSS detector and the suspicion are re-armed, so a real call that keeps transmitting confirms again.
+If the carrier drops during the hold the audio is released unless the TDMA detector has already seen the cadence.
+
+Not fixed: 45 bursts on MetroFire Red confirmed 131.8 at 16 dB or more - DMR riding on real Red traffic - and are
+left to the TDMA veto.
+
+New DEBUG lines: `Holding confirmed audio for a TDMA check`, `Released held audio after TDMA check`,
+`Discarded Nms of held audio` (with the latch score or the H1 and rate that decided it) and `Abandoned held audio`.
+
 ## [0.6.2-ap-15.9.19] - 2026-10-12
 
 Four changes, none touching tone squelch, the TDMA detector or the squelch logging: a Zello routing fix, stream

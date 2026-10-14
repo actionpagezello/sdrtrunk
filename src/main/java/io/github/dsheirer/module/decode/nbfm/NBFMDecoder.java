@@ -201,7 +201,34 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     // rather than being discarded and clipping the start of every call.
     private final List<float[]> mPendingToneAudio = new ArrayList<>();
     private int mPendingToneSampleCount = 0;
+
+    // AP-fork (ap-15.9.20): a weak CTCSS confirmation is being held for one TDMA window. See WEAK_CONFIRM_SNR_DB.
+    // While true, mToneMatch is true but no call has been started and the pending buffer is still accumulating.
+    private boolean mConfirmHoldActive = false;
+    private int mConfirmHoldSamples = 0;
     private static final int MAX_PENDING_TONE_SAMPLES = 4000; // 500ms at 8kHz
+
+    /**
+     * AP-fork (ap-15.9.20): a CTCSS confirmation whose strongest target block is below this SNR is treated as
+     * possibly assembled by DMR noise, and its buffered audio is held for CONFIRM_HOLD_SAMPLES before release.
+     *
+     * Broadband TDMA bleed sprays chance hits across every CTCSS bin, and now and then three of them land on the
+     * target. Those confirmations are weak. Somerville 2026-10-13/14, matched against 1,179 recordings: bursts that
+     * confirmed 131.8 did so at a median 13.1 dB on MetroFire Red, 12.9 dB on MetroFire White and 12.6 dB on
+     * Somerville Fire Ch 2; real calls at 16.4, 21.4 and 16.0 dB. Brookline Fire leaks confirmed at 9.3 dB against
+     * 23.2 dB for its clean releases. A strong confirmation is released at once, exactly as before.
+     */
+    private static final float WEAK_CONFIRM_SNR_DB = 16.0f;
+
+    /**
+     * AP-fork (ap-15.9.20): how long a weak confirmation's audio is held for the TDMA detector to look at it - one
+     * 300 ms window, about two evaluations at the detector's 150 ms hop. Measured on the same data, a 300 ms hold
+     * stops 226 of 315 bursts (latch, or a slot-cadence fundamental - see
+     * TdmaInterferenceDetector.isSlotCadenceSuspected()) and discards 9 of 864 voice calls; 1,064 of 21,854 call
+     * starts on 2026-10-13 confirmed weakly and start up to 300 ms later. A discard drops only the held opening:
+     * the detectors are re-armed, so a real call that keeps transmitting confirms again and goes through.
+     */
+    private static final int CONFIRM_HOLD_SAMPLES = 2400; // 300ms at 8kHz
 
     // Stuck timer watchdog — force-ends calls that exceed max duration (stuck carrier protection)
     private final boolean mMaxCallDurationEnabled;
@@ -312,6 +339,21 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             if(squelchState == SquelchState.SQUELCH)
             {
                 logSquelchClose();
+
+                //AP-fork (ap-15.9.20): the carrier dropped while a weak confirmation was on hold. Decide now on
+                //what the TDMA detector has seen so far, so a short real call is not lost to the hold.
+                if(mConfirmHoldActive)
+                {
+                    if(mTdmaDetector != null && (mTdmaDetector.isInterferenceDetected() ||
+                            mTdmaDetector.isSlotCadenceSuspected()))
+                    {
+                        discardConfirmHold(describeTdmaEvidence() + ", carrier dropped");
+                    }
+                    else
+                    {
+                        releaseConfirmHold("carrier dropped");
+                    }
+                }
 
                 // Reset stuck timer watchdog — carrier dropped, allow fresh calls
                 mWatchdogTripped = false;
@@ -706,6 +748,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         // unambiguous and speech never produces it, so it overrides any tone match.
         if(mToneFilterEnabled && mTdmaDetector != null && mTdmaDetector.isInterferenceDetected())
         {
+            //AP-fork (ap-15.9.20): the latch came while a weak confirmation was on hold - exactly the burst the
+            //hold exists for. Nothing was started, so discard quietly rather than ending a call.
+            if(mConfirmHoldActive)
+            {
+                discardConfirmHold(describeTdmaEvidence());
+                return;
+            }
+
             if(mToneMatch)
             {
                 //AP-fork: report the score that LATCHED the detector, plus the current one, and say the threshold.
@@ -730,6 +780,26 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             }
 
             clearPendingToneAudio();
+            return;
+        }
+
+        // Step 1c (AP-fork, ap-15.9.20): a weak CTCSS confirmation is on hold. Keep buffering until the TDMA
+        // detector has had CONFIRM_HOLD_SAMPLES of audio to look at, then release - unless it latched (Step 1b) or
+        // saw the slot cadence's fundamental, in which case the held audio is a burst and is discarded.
+        if(mConfirmHoldActive)
+        {
+            bufferPendingToneAudio(resampledAudio, MAX_PENDING_TONE_SAMPLES + CONFIRM_HOLD_SAMPLES);
+            mConfirmHoldSamples += resampledAudio.length;
+
+            if(mTdmaDetector != null && mTdmaDetector.isSlotCadenceSuspected())
+            {
+                discardConfirmHold(describeTdmaEvidence());
+            }
+            else if(mConfirmHoldSamples >= CONFIRM_HOLD_SAMPLES)
+            {
+                releaseConfirmHold("no slot cadence");
+            }
+
             return;
         }
 
@@ -921,11 +991,22 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private void bufferPendingToneAudio(float[] audio)
     {
+        bufferPendingToneAudio(audio, MAX_PENDING_TONE_SAMPLES);
+    }
+
+    /**
+     * Buffers audio as above, evicting the oldest chunks beyond the given cap.
+     *
+     * @param audio to buffer
+     * @param maxSamples cap; a confirmation hold raises it so the hold does not evict the call's opening
+     */
+    private void bufferPendingToneAudio(float[] audio, int maxSamples)
+    {
         mPendingToneAudio.add(audio);
         mPendingToneSampleCount += audio.length;
 
         // Cap buffer to prevent unbounded growth — evict oldest chunks
-        while(mPendingToneSampleCount > MAX_PENDING_TONE_SAMPLES && !mPendingToneAudio.isEmpty())
+        while(mPendingToneSampleCount > maxSamples && !mPendingToneAudio.isEmpty())
         {
             float[] removed = mPendingToneAudio.remove(0);
             mPendingToneSampleCount -= removed.length;
@@ -969,6 +1050,120 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         mLog.debug("[{}] Flushed {} buffered audio chunks ({}ms) after tone confirmation",
             mChannelLabel, chunks, samples * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE);
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): true when the CTCSS target just confirmed weakly enough to be held for a TDMA check.
+     * CTCSS only - a DCS confirmation has no SNR to judge, and the measurement covered CTCSS channels alone.
+     */
+    private boolean isWeakConfirmation()
+    {
+        return mTdmaDetector != null && mCTCSSDetector != null &&
+                mCTCSSDetector.getMaxTargetSnrDb() < WEAK_CONFIRM_SNR_DB;
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): begins holding a weak confirmation. If the TDMA detector already suspects the slot cadence
+     * from the audio buffered before confirmation, the audio is discarded at once.
+     */
+    private void startConfirmHold()
+    {
+        mConfirmHoldActive = true;
+        mConfirmHoldSamples = 0;
+
+        if(mTdmaDetector.isInterferenceDetected() || mTdmaDetector.isSlotCadenceSuspected())
+        {
+            discardConfirmHold(describeTdmaEvidence() + ", before confirmation");
+            return;
+        }
+
+        mLog.debug("[{}] Holding confirmed audio for a TDMA check - target confirmed weakly (max target SNR={} dB, " +
+                        "below {} dB), {}ms buffered", mChannelLabel,
+                String.format("%.1f", mCTCSSDetector.getMaxTargetSnrDb()), String.format("%.1f", WEAK_CONFIRM_SNR_DB),
+                mPendingToneSampleCount * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE);
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): ends a hold by starting the call and releasing everything buffered.
+     *
+     * @param reason for the log line
+     */
+    private void releaseConfirmHold(String reason)
+    {
+        mConfirmHoldActive = false;
+        mLog.debug("[{}] Released held audio after TDMA check - {} (max target SNR={} dB, held {}ms)",
+                mChannelLabel, reason, String.format("%.1f", mCTCSSDetector.getMaxTargetSnrDb()),
+                mConfirmHoldSamples * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE);
+        mConfirmHoldSamples = 0;
+        notifyCallStart();
+        flushPendingToneAudio();
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): ends a hold by throwing the buffered audio away. No call was started, so none is ended.
+     * The CTCSS detector and the TDMA suspicion are re-armed so that a real call which keeps transmitting is judged
+     * afresh on the audio that follows and can still confirm - losing its opening, not the call.
+     *
+     * @param reason for the log line
+     */
+    private void discardConfirmHold(String reason)
+    {
+        mLog.debug("[{}] Discarded {}ms of held audio - {} (max target SNR={} dB)", mChannelLabel,
+                mPendingToneSampleCount * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE, reason,
+                String.format("%.1f", mCTCSSDetector != null ? mCTCSSDetector.getMaxTargetSnrDb() : 0.0f));
+
+        mConfirmHoldActive = false;
+        mConfirmHoldSamples = 0;
+        mToneMatch = false;
+        clearPendingToneAudio();
+
+        if(mCTCSSDetector != null)
+        {
+            mCTCSSDetector.reset();
+        }
+
+        if(mTdmaDetector != null)
+        {
+            mTdmaDetector.clearSuspicion();
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): cancels a hold because the tone detector itself withdrew the confirmation.
+     *
+     * @param reason for the log line
+     * @return true if a hold was active, i.e. no call was started that would need ending
+     */
+    private boolean abandonConfirmHold(String reason)
+    {
+        if(!mConfirmHoldActive)
+        {
+            return false;
+        }
+
+        mLog.debug("[{}] Abandoned held audio - {}", mChannelLabel, reason);
+        mConfirmHoldActive = false;
+        mConfirmHoldSamples = 0;
+        return true;
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): what the TDMA detector saw, for the hold log lines.
+     */
+    private String describeTdmaEvidence()
+    {
+        if(mTdmaDetector == null)
+        {
+            return "no TDMA detector";
+        }
+
+        if(mTdmaDetector.isInterferenceDetected())
+        {
+            return "TDMA latched (comb score=" + String.format("%.1f", mTdmaDetector.getTriggerScore()) + ")";
+        }
+
+        return "slot cadence suspected (H1=" + String.format("%.1f", mTdmaDetector.getSuspectFundamental()) +
+                " at " + String.format("%.2f", mTdmaDetector.getSuspectRate()) + " Hz)";
     }
 
     /**
@@ -1237,8 +1432,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // the audio that was buffered during tone confirmation
                     if(wasBlocked)
                     {
-                        notifyCallStart();
-                        flushPendingToneAudio();
+                        //AP-fork (ap-15.9.20): a weak confirmation waits one TDMA window first.
+                        if(isWeakConfirmation())
+                        {
+                            startConfirmHold();
+                        }
+                        else
+                        {
+                            notifyCallStart();
+                            flushPendingToneAudio();
+                        }
                     }
 
                     if(mDecoderState != null)
@@ -1251,7 +1454,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 public void ctcssRejected(CTCSSCode code)
                 {
                     // Wrong tone confirmed — fully squelch the channel like a real radio
-                    boolean wasActive = mToneMatch;
+                    //AP-fork (ap-15.9.20): a held confirmation never started a call, so there is none to end.
+                    boolean wasActive = mToneMatch && !abandonConfirmHold("wrong tone confirmed");
                     mToneMatch = false;
                     clearPendingToneAudio();
 
@@ -1272,7 +1476,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 public void ctcssLost()
                 {
                     // Tone lost — squelch the channel until tone re-confirmed
-                    boolean wasActive = mToneMatch;
+                    //AP-fork (ap-15.9.20): a held confirmation never started a call, so there is none to end.
+                    boolean wasActive = mToneMatch && !abandonConfirmHold("tone lost");
                     mToneMatch = false;
                     clearPendingToneAudio();
 

@@ -178,6 +178,13 @@ public class CTCSSDetector
     /** AP-fork: last code whose preference override was suppressed, so the log reports transitions only. */
     private CTCSSCode mLastSuppressedCode = null;
 
+    /**
+     * AP-fork (ap-15.9.20): strongest SNR, in dB, at which a block detected one of the target codes since the last
+     * reset(). NBFMDecoder reads it when the target confirms, to tell a tone that is really on the air from one that
+     * broadband digital noise assembled out of chance hits in the target bin. See NBFMDecoder.WEAK_CONFIRM_SNR_DB.
+     */
+    private float mMaxTargetSnrDb = 0.0f;
+
     // Tone survey: log top tones periodically regardless of threshold
     private static final int SURVEY_INTERVAL_BLOCKS = 40; // ~every 3 seconds at 75ms/block
     private int mSurveyBlockCounter = 0;
@@ -547,6 +554,13 @@ public class CTCSSDetector
                         mTargetCodes.contains(detected) ? "YES" : "NO");
             }
 
+            //AP-fork (ap-15.9.20): record the target's strength after the preference above has settled which code
+            //this block counts as, so the figure matches the "target=YES" detection lines in the log.
+            if(mTargetCodes.contains(detected))
+            {
+                mMaxTargetSnrDb = Math.max(mMaxTargetSnrDb, snrDB);
+            }
+
             handleDetection(detected);
         }
         else
@@ -785,6 +799,17 @@ public class CTCSSDetector
         mLastRawCode = null;
         mTargetWinScore.clear();
         mLastSuppressedCode = null;
+        mMaxTargetSnrDb = 0.0f;
+    }
+
+    /**
+     * AP-fork (ap-15.9.20): strongest SNR at which a block detected a target code since the last reset().
+     *
+     * @return SNR in dB, or 0 when no block has detected a target code
+     */
+    public float getMaxTargetSnrDb()
+    {
+        return mMaxTargetSnrDb;
     }
 
     /**
