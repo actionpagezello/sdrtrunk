@@ -5,6 +5,30 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.21] - 2026-10-15
+
+Logging only - no change to what is released, held or discarded. Measured on Somerville with ap-15.9.20 from
+2026-10-14 14:15 to 2026-10-15 18:19 (28.1 h).
+
+### Changed - a tone confirmation during a TDMA latch is no longer logged as a discard
+
+When 131.8 confirmed in the middle of a burst the TDMA veto was already throwing away, the weak-confirmation hold
+discarded an empty buffer and logged `Discarded 0ms of held audio`. 872 of the 1,549 discard lines in those 28 h were
+this case, so the count read as far more bursts stopped than there were. It is now logged at TRACE as `Ignored a tone
+confirmation with nothing buffered`, and `Discarded Nms of held audio` counts only audio actually thrown away.
+
+### ap-15.9.20 results (Somerville, 28.1 h)
+
+- Bursts that leaked and were then cut by the TDMA veto: 3.9 an hour, against 97 an hour on ap-15.9.19 the same
+  morning (08:02-14:15) and 17 an hour across 2026-10-13.
+- Recorded bursts: MetroFire Red 13 of 35 calls (210 of 254 in the 6.2 h before), Somerville Fire Ch 2 15 of 60
+  (147 of 217), Somerville Fire 11 of 753 (122 of 500), MetroFire White 5 of 41 (56 of 133).
+- 936 of 28,170 call starts (3.3%) were held up to 300 ms and released.
+- At most 7 real calls lost a held opening of 256-512 ms (4 Everett Police, 2 Somerville Fire, 1 Brookline Police).
+- 57 bursts were released after the hold, 15 on Brookline Fire and 14 on MBTA Transit Police 2. Lowering
+  `SUSPECT_FUNDAMENTAL` to 15 would stop 8 more and discard 21 real calls, so it stays at 20.
+- Malden Fire still leaks about one burst an hour; they confirm 131.8 at around 24 dB, so no hold applies.
+
 ## [0.6.2-ap-15.9.20] - 2026-10-14
 
 One change: a weak CTCSS confirmation is held for one TDMA window before its audio is released. Decided by the

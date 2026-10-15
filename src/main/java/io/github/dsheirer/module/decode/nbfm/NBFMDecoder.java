@@ -1108,9 +1108,20 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private void discardConfirmHold(String reason)
     {
-        mLog.debug("[{}] Discarded {}ms of held audio - {} (max target SNR={} dB)", mChannelLabel,
-                mPendingToneSampleCount * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE, reason,
-                String.format("%.1f", mCTCSSDetector != null ? mCTCSSDetector.getMaxTargetSnrDb() : 0.0f));
+        //AP-fork (ap-15.9.21): nothing buffered means the tone confirmed in the middle of a burst the TDMA veto was
+        //already discarding chunk by chunk - 15.9.19 started and ended an empty call here. Somerville 2026-10-14/15:
+        //872 of 1,549 "Discarded" lines were this case, every one 0 ms, which made the discard count read as five
+        //times the bursts actually stopped. Logged at TRACE so the DEBUG line counts only audio really thrown away.
+        if(mPendingToneSampleCount == 0)
+        {
+            mLog.trace("[{}] Ignored a tone confirmation with nothing buffered - {}", mChannelLabel, reason);
+        }
+        else
+        {
+            mLog.debug("[{}] Discarded {}ms of held audio - {} (max target SNR={} dB)", mChannelLabel,
+                    mPendingToneSampleCount * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE, reason,
+                    String.format("%.1f", mCTCSSDetector != null ? mCTCSSDetector.getMaxTargetSnrDb() : 0.0f));
+        }
 
         mConfirmHoldActive = false;
         mConfirmHoldSamples = 0;
