@@ -185,6 +185,32 @@ public class CTCSSDetector
      */
     private float mMaxTargetSnrDb = 0.0f;
 
+    /**
+     * AP-fork (ap-15.9.22): MEASUREMENT ONLY - nothing below changes a decision.
+     *
+     * Upstream's channel CTCSS (DSheirer/sdrtrunk #2425) accepts a block's strongest bin only when it stands
+     * STANDOUT_SIGMA standard deviations above the mean of all the bins, and opens only after STANDOUT_RUN
+     * consecutive such blocks on a target code. This detector instead judges the strongest bin against the block's
+     * total energy and confirms on CONFIRMATION_COUNT target hits that need not be consecutive. Broadband DMR noise
+     * raises every bin together, so the standout test may reject the chance target hits that confirm 131.8 inside a
+     * burst. These counters let one day of logs show what upstream's rule would have decided on the same blocks.
+     *
+     * "Since reset" counters cover the current confirmation attempt (reset() runs at squelch open and after a
+     * discarded hold). "Carrier" counters cover the whole carrier and are cleared only by clearCarrierStandout().
+     */
+    private static final float STANDOUT_SIGMA = 3.0f;
+    private static final int STANDOUT_RUN = 3;
+    private int mStandoutRun = 0;
+    private int mMaxStandoutRun = 0;
+    private int mStandoutBlocks = 0;
+    private int mTargetMaxBlocks = 0;
+    private float mMaxTargetSigma = 0.0f;
+    private int mCarrierStandoutRun = 0;
+    private int mCarrierMaxStandoutRun = 0;
+    private int mCarrierStandoutBlocks = 0;
+    private int mCarrierTargetMaxBlocks = 0;
+    private int mCarrierBlocks = 0;
+
     // Tone survey: log top tones periodically regardless of threshold
     private static final int SURVEY_INTERVAL_BLOCKS = 40; // ~every 3 seconds at 75ms/block
     private int mSurveyBlockCounter = 0;
@@ -377,6 +403,9 @@ public class CTCSSDetector
                 maxIndex = i;
             }
         }
+
+        //AP-fork (ap-15.9.22): measurement only - see STANDOUT_SIGMA.
+        measureStandout(powers, maxIndex);
 
         // Normalize power relative to total energy
         float normalizedPower = maxPower / (totalEnergy * mBlockSize);
@@ -800,6 +829,100 @@ public class CTCSSDetector
         mTargetWinScore.clear();
         mLastSuppressedCode = null;
         mMaxTargetSnrDb = 0.0f;
+        mStandoutRun = 0;
+        mMaxStandoutRun = 0;
+        mStandoutBlocks = 0;
+        mTargetMaxBlocks = 0;
+        mMaxTargetSigma = 0.0f;
+    }
+
+    /**
+     * AP-fork (ap-15.9.22): applies upstream's standout test to this block and updates the counters. A block counts
+     * only when its strongest bin is a target code (not a guard) and stands STANDOUT_SIGMA above the mean of all bins;
+     * any other block breaks the consecutive run, as it does upstream.
+     *
+     * @param powers Goertzel power of every scanned bin
+     * @param maxIndex index of the strongest bin, or -1
+     */
+    private void measureStandout(float[] powers, int maxIndex)
+    {
+        mCarrierBlocks++;
+        boolean standout = false;
+
+        if(maxIndex >= 0 && !isGuardIndex(maxIndex) && mTargetCodes.contains(mScanCodeArray[maxIndex]))
+        {
+            double sum = 0.0;
+            for(float p : powers)
+            {
+                sum += p;
+            }
+            double mean = sum / powers.length;
+            double var = 0.0;
+            for(float p : powers)
+            {
+                var += (p - mean) * (p - mean);
+            }
+            double sigma = Math.sqrt(var / (powers.length - 1));
+            float margin = sigma > 0 ? (float)((powers[maxIndex] - mean) / sigma) : 0.0f;
+
+            mTargetMaxBlocks++;
+            mCarrierTargetMaxBlocks++;
+            mMaxTargetSigma = Math.max(mMaxTargetSigma, margin);
+            standout = margin > STANDOUT_SIGMA;
+        }
+
+        if(standout)
+        {
+            mStandoutBlocks++;
+            mCarrierStandoutBlocks++;
+            mStandoutRun++;
+            mCarrierStandoutRun++;
+            mMaxStandoutRun = Math.max(mMaxStandoutRun, mStandoutRun);
+            mCarrierMaxStandoutRun = Math.max(mCarrierMaxStandoutRun, mCarrierStandoutRun);
+        }
+        else
+        {
+            mStandoutRun = 0;
+            mCarrierStandoutRun = 0;
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.9.22): standout measurement since reset(), for the confirmation log line.
+     *
+     * @return description of the counters
+     */
+    public String describeStandout()
+    {
+        return String.format("target max in %d blocks, %d of them %.0f sigma above the mean (best %.1f sigma), " +
+                        "longest run %d - upstream's %d-in-a-row rule would %s", mTargetMaxBlocks, mStandoutBlocks,
+                STANDOUT_SIGMA, mMaxTargetSigma, mMaxStandoutRun, STANDOUT_RUN,
+                mMaxStandoutRun >= STANDOUT_RUN ? "have opened" : "NOT have opened yet");
+    }
+
+    /**
+     * AP-fork (ap-15.9.22): standout measurement over the whole carrier, for the squelch-close log line.
+     *
+     * @return description of the counters
+     */
+    public String describeCarrierStandout()
+    {
+        return String.format("%d blocks, target max in %d, %d of them %.0f sigma above the mean, longest run %d - " +
+                        "upstream's rule would %s", mCarrierBlocks, mCarrierTargetMaxBlocks, mCarrierStandoutBlocks,
+                STANDOUT_SIGMA, mCarrierMaxStandoutRun,
+                mCarrierMaxStandoutRun >= STANDOUT_RUN ? "have opened" : "NOT have opened");
+    }
+
+    /**
+     * AP-fork (ap-15.9.22): clears the whole-carrier standout counters. Called at every squelch open.
+     */
+    public void clearCarrierStandout()
+    {
+        mCarrierStandoutRun = 0;
+        mCarrierMaxStandoutRun = 0;
+        mCarrierStandoutBlocks = 0;
+        mCarrierTargetMaxBlocks = 0;
+        mCarrierBlocks = 0;
     }
 
     /**

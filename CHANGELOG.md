@@ -5,6 +5,41 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.22] - 2026-10-16
+
+Measurement only - no change to what is released, held or discarded. Two candidate rules for the DMR bursts that
+still reach Audubon's police channels on ap-15.9.21, logged side by side with today's decisions so a day of logs and
+recordings can decide between them.
+
+Audubon 2026-10-16 00:00-06:46 on ap-15.9.21: the hold discarded about 1,100 burst openings on Wakefield, Danvers,
+Swampscott, Middleton and Saugus Police, but 290 releases were still cut by the TDMA veto within 1 s, and 141 of the
+239 Swampscott Police calls released after the hold were bursts (median 1.4 s, 33.33 Hz throughout). Those bursts
+produce a steady run of TDMA windows at 33.33 Hz scoring 6-19 - never the single window of 20 the veto latches on,
+and rarely an H1 of 20 inside the 300 ms hold.
+
+### Added - upstream's CTCSS standout test, measured on our blocks
+
+Upstream's channel CTCSS (DSheirer/sdrtrunk #2425) accepts a block only when its strongest bin is 3 standard
+deviations above the mean of all bins, and opens after 3 such target blocks in a row. Ours judges the strongest bin
+against total energy and confirms on 3 target hits that need not be consecutive. `CTCSSDetector` now applies the
+upstream test to every block. Swampscott: requiring 3 consecutive target hits alone would have stopped 36 of 112
+bursts and 8 of 56 real calls; the standout test itself cannot be measured from recordings (the tone is notched out)
+or from older logs.
+
+### Added - slot-cadence persistence count
+
+`TdmaInterferenceDetector` counts windows since squelch open whose winner sits at 32.5-34.0 Hz with a comb score of
+6 or more. On Swampscott, two such windows within 300 ms of a weak confirmation marked 56 of 108 bursts and none of
+22 real calls, but also 16 of 59 unverified calls on other Audubon channels.
+
+### New DEBUG lines
+
+- `Confirmation survey: max target SNR=... ; CTCSS target max in N blocks, K of them 3 sigma above the mean ...,
+  longest run R - upstream's 3-in-a-row rule would (NOT) have opened (yet); TDMA W of N windows at the slot cadence
+  with score >= 6 (strongest H1 ...)` - once per confirmation that opens the gate, before the hold decision.
+- `Carrier CTCSS survey: ...` - once per carrier at squelch close on CTCSS channels, including carriers that never
+  confirmed.
+
 ## [0.6.2-ap-15.9.21] - 2026-10-15
 
 Logging only - no change to what is released, held or discarded. Measured on Somerville with ap-15.9.20 from

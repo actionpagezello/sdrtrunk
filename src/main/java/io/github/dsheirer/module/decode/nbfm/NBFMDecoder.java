@@ -340,6 +340,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             {
                 logSquelchClose();
 
+                //AP-fork (ap-15.9.22): measurement only - what upstream's standout rule saw over the whole carrier,
+                //including carriers this detector never confirmed. Tone-filtered CTCSS channels only.
+                if(mCTCSSDetector != null)
+                {
+                    mLog.debug("[{}] Carrier CTCSS survey: {}", mChannelLabel, mCTCSSDetector.describeCarrierStandout());
+                }
+
                 //AP-fork (ap-15.9.20): the carrier dropped while a weak confirmation was on hold. Decide now on
                 //what the TDMA detector has seen so far, so a short real call is not lost to the hold.
                 if(mConfirmHoldActive)
@@ -407,6 +414,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 if(mSquelchTailRemover != null)
                 {
                     mSquelchTailRemover.squelchOpen();
+                }
+
+                //AP-fork (ap-15.9.22): measurement only - whole-carrier standout counters start afresh.
+                if(mCTCSSDetector != null)
+                {
+                    mCTCSSDetector.clearCarrierStandout();
                 }
 
                 if(!mToneFilterEnabled)
@@ -1443,6 +1456,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // the audio that was buffered during tone confirmation
                     if(wasBlocked)
                     {
+                        //AP-fork (ap-15.9.22): measurement only. What upstream's standout rule and the slot-cadence
+                        //persistence count saw up to this confirmation. One line per confirmation that opens a gate.
+                        mLog.debug("[{}] Confirmation survey: max target SNR={} dB; CTCSS {}; TDMA {}", mChannelLabel,
+                                String.format("%.1f", mCTCSSDetector.getMaxTargetSnrDb()),
+                                mCTCSSDetector.describeStandout(),
+                                mTdmaDetector != null ? mTdmaDetector.describePersistence() : "not running");
+
                         //AP-fork (ap-15.9.20): a weak confirmation waits one TDMA window first.
                         if(isWeakConfirmation())
                         {

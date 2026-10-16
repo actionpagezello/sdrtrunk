@@ -230,6 +230,16 @@ public class TdmaInterferenceDetector
     private volatile float mSuspectRate = 0.0f;
 
     /**
+     * AP-fork (ap-15.9.22): MEASUREMENT ONLY. Windows since reset() whose winner sits at the slot cadence
+     * (SUSPECT_RATE_MIN-MAX) with a comb score of at least PERSIST_SCORE, latched or not. Audubon 2026-10-16: Swampscott
+     * Police bursts produce a steady run of such windows at scores 6-19 that never reach DETECTION_THRESHOLD, while
+     * its voice rarely does - a candidate rule that needs a day of logs and recordings to validate.
+     */
+    private static final float PERSIST_SCORE = 6.0f;
+    private int mPersistWindows = 0;
+    private int mWindows = 0;
+
+    /**
      * Constructs a detector for the given audio sample rate (typically 8 kHz post-resampler).
      *
      * @param sampleRate of the audio being fed to {@link #process(float[])}
@@ -315,6 +325,19 @@ public class TdmaInterferenceDetector
         mInterferenceDetected = false;
         mLastScore = 0.0f;
         clearSuspicion();
+        mPersistWindows = 0;
+        mWindows = 0;
+    }
+
+    /**
+     * AP-fork (ap-15.9.22): measurement only - see PERSIST_SCORE.
+     *
+     * @return description of the windows evaluated since reset()
+     */
+    public String describePersistence()
+    {
+        return mPersistWindows + " of " + mWindows + " windows at the slot cadence with score >= " +
+                String.format("%.0f", PERSIST_SCORE) + " (strongest H1 " + String.format("%.1f", mSuspectFundamental) + ")";
     }
 
     /**
@@ -538,6 +561,13 @@ public class TdmaInterferenceDetector
         //than HARMONIC_EXCESS. Decided on the same winner the survey logs, which is exactly what the 2026-10-06
         //measurement simulated. A refused window counts as below threshold, so it also releases a latch like
         //any other quiet window.
+        //AP-fork (ap-15.9.22): measurement only - see PERSIST_SCORE.
+        mWindows++;
+        if(best >= PERSIST_SCORE && bestRate >= SUSPECT_RATE_MIN && bestRate <= SUSPECT_RATE_MAX)
+        {
+            mPersistWindows++;
+        }
+
         //AP-fork (ap-15.9.20): remember the strongest slot-cadence fundamental, using the same windows the survey
         //logs (score at or above SURVEY_FLOOR), which is what the 2026-10-13/14 measurement was taken from.
         if(best >= SURVEY_FLOOR && bestRate >= SUSPECT_RATE_MIN && bestRate <= SUSPECT_RATE_MAX &&
