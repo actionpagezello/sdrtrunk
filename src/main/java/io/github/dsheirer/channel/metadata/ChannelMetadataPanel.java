@@ -62,6 +62,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.miginfocom.swing.MigLayout;
@@ -79,6 +80,7 @@ import javax.swing.SortOrder;
 import javax.swing.SwingConstants;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
+import javax.swing.event.TableModelEvent;
 import javax.swing.table.DefaultTableCellRenderer;
 
 public class ChannelMetadataPanel extends JPanel implements ListSelectionListener
@@ -101,6 +103,13 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private Broadcaster<ProcessingChain> mSelectedProcessingChainBroadcaster = new Broadcaster<>();
     private Map<State,Color> mBackgroundColors = new EnumMap<>(State.class);
     private Map<State,Color> mForegroundColors = new EnumMap<>(State.class);
+
+    /**
+     * AP-fork (ap-15.9.23): the alias each channel's most recent call was addressed to, keyed by getChannelMuteKey().
+     * Fallback for resolveChannelAlias() between calls - see the note there. Kept in memory only: after a restart a
+     * channel needs one call before its mute can find the alias again.
+     */
+    private final Map<String,Alias> mLastCallAlias = new HashMap<>();
     private JTableColumnWidthMonitor mTableColumnMonitor;
     private Channel mUserSelectedChannel;
     private TunerManager mTunerManager;
@@ -130,6 +139,9 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
         mTable = new JTable(mChannelProcessingManager.getChannelMetadataModel());
         mChannelProcessingManager.getChannelMetadataModel().setChannelAddListener(new ChannelAddListener());
+
+        //AP-fork (ap-15.9.23): watch the TO alias column so each channel remembers the alias its calls go to.
+        mChannelProcessingManager.getChannelMetadataModel().addTableModelListener(this::rememberCallAliases);
 
         DefaultTableCellRenderer renderer = (DefaultTableCellRenderer)mTable.getDefaultRenderer(String.class);
         renderer.setHorizontalAlignment(SwingConstants.CENTER);
@@ -499,6 +511,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
         if(toAliases != null && toAliases.size() == 1)
         {
+            mLastCallAlias.put(getChannelMuteKey(channel), toAliases.get(0));
             return toAliases.get(0);
         }
 
@@ -524,6 +537,20 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         if(configuredAlias != null)
         {
             return configuredAlias;
+        }
+
+        //AP-fork (ap-15.9.23): the alias this channel's last call actually went to. A digital conventional channel has
+        //no configured talkgroup for the rule above - its talkgroup arrives in the call - and its live TO identifier
+        //is cleared when the call ends, so between calls nothing above resolved and the mute fell to the per-channel
+        //store, which does not gate audio whose segment carries an alias. Audubon 2026-10-17, Woburn Police (P25,
+        //talkgroup 17250, alias Woburn Police): every right-click logged "(no alias)" and the audio stayed as it was
+        //in both directions; only the alias editor's Listen toggle worked. The tooltip names the alias that will be
+        //toggled, so on a trunked system - where the last call may have been any talkgroup - the choice is visible.
+        Alias lastCallAlias = mLastCallAlias.get(getChannelMuteKey(channel));
+
+        if(lastCallAlias != null && mPlaylistManager.getAliasModel().getAliases().contains(lastCallAlias))
+        {
+            return lastCallAlias;
         }
 
         List<Alias> fromAliases = metadata.getFromIdentifierAliases();
@@ -557,6 +584,47 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         }
 
         return null;
+    }
+
+    /**
+     * AP-fork (ap-15.9.23): records the TO alias of every channel row whose TO identifier changed, so that
+     * resolveChannelAlias() can still find it after the call ends.
+     *
+     * @param event from the channel metadata table model
+     */
+    private void rememberCallAliases(TableModelEvent event)
+    {
+        if(event.getType() != TableModelEvent.UPDATE || event.getFirstRow() < 0)
+        {
+            return;
+        }
+
+        int column = event.getColumn();
+
+        if(column != TableModelEvent.ALL_COLUMNS && column != ChannelMetadataModel.COLUMN_USER_TO &&
+                column != ChannelMetadataModel.COLUMN_USER_TO_ALIAS)
+        {
+            return;
+        }
+
+        ChannelMetadataModel model = mChannelProcessingManager.getChannelMetadataModel();
+        int last = Math.min(event.getLastRow(), model.getRowCount() - 1);
+
+        for(int row = event.getFirstRow(); row <= last; row++)
+        {
+            ChannelMetadata metadata = model.getChannelMetadata(row);
+            Channel channel = metadata != null ? model.getChannelFromMetadata(metadata) : null;
+
+            if(channel != null)
+            {
+                List<Alias> toAliases = metadata.getToIdentifierAliases();
+
+                if(toAliases != null && toAliases.size() == 1)
+                {
+                    mLastCallAlias.put(getChannelMuteKey(channel), toAliases.get(0));
+                }
+            }
+        }
     }
 
     /**

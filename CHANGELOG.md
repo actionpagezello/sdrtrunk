@@ -5,6 +5,36 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.23] - 2026-10-18
+
+Two fixes from Audubon, 2026-10-17/18. No change to tone squelch, the TDMA detector or the confirmation hold; the
+ap-15.9.22 survey lines stay in.
+
+### Fixed - right-click mute did nothing on digital conventional channels between calls
+
+The Now Playing mute is a shortcut to the governing alias's Listen toggle. It found that alias from the live TO
+identifier, the configured talkgroup of an analog channel, or an alias list holding exactly one alias. A P25 or DMR
+conventional channel has no configured talkgroup and its TO identifier clears when a call ends, so between calls none
+of those matched and the mute went to the per-channel store, which does not gate audio whose segment carries an
+alias. Audubon 2026-10-17, Woburn Police (P25, talkgroup 17250): every right-click logged `(no alias)` and the audio
+stayed muted or unmuted regardless; only the alias editor worked.
+
+`ChannelMetadataPanel` now remembers the alias each channel's most recent call was addressed to and uses it when no
+call is in progress. The menu tooltip names the alias that will be toggled. The memory is not saved: after a restart a
+channel needs one call before its mute can find the alias.
+
+### Fixed - an RSP whose SDRplay service stopped answering left its channels silently dead
+
+When `initStream` failed with `Service Not Responding`, `ControlRsp` logged one ERROR line and carried on: the tuner
+stayed in the tuner list as healthy and its channels stayed "running" with no samples. Audubon: the SDRplay API
+service stopped answering at the 2026-10-17 20:43 restart (and crashed with 0xc0000005 at 2026-10-18 19:16), and
+Wenham Police, Stoneham Fire, North Reading Fire, Marblehead Police, Lexington Fire - Ch 2, Bedford Fire and Newton
+Police were silent for 23.5 hours, until a reboot.
+
+`Service Not Responding` is now handled like `Fail`: the tuner is removed, its channels stop, and
+`TUNER REMOVED FROM SYSTEM` is logged with the number of channels affected, preceded by an ERROR saying to restart the
+SDRplay API Service (or reboot) and then SDRTrunk. Same change in `ControlRspDuo`.
+
 ## [0.6.2-ap-15.9.22] - 2026-10-16
 
 Measurement only - no change to what is released, held or discarded. Two candidate rules for the DMR bursts that

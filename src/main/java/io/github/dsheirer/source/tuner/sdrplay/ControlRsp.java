@@ -123,7 +123,19 @@ public abstract class ControlRsp<T extends Device> implements IControlRsp
         }
         catch(SDRPlayException se)
         {
-            if(se.getStatus() == Status.FAIL)
+            //AP-fork (ap-15.9.23): SERVICE_NOT_RESPONDING is handled as a removal too. It used to be logged once at
+            //ERROR and nothing else: the tuner stayed listed as healthy and every channel on it stayed 'running' with
+            //no samples. Audubon 2026-10-17 20:45 to 2026-10-18 20:23: the SDRplay API service stopped answering,
+            //the RSP1B never streamed, and seven channels were silent for 23.5 hours with nothing on screen. As a
+            //removal the tuner leaves the tuner list and its channels stop, and DiscoveredTunerModel logs TUNER
+            //REMOVED FROM SYSTEM with the number of channels affected.
+            if(se.getStatus() == Status.SERVICE_NOT_RESPONDING)
+            {
+                mLog.error("SDRplay API service is not responding - RSP cannot stream and its channels are being " +
+                        "stopped. Restart the 'SDRplay API Service' (or reboot), then restart SDRTrunk.");
+            }
+
+            if(se.getStatus() == Status.FAIL || se.getStatus() == Status.SERVICE_NOT_RESPONDING)
             {
                 mLog.error("Unable to start RSP streaming - device may have been unplugged - removing.");
                 if(mDeviceEventListener != null)
