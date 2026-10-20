@@ -5,6 +5,41 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.24] - 2026-10-19
+
+JMBE audio library 2.0 support. No change to tone squelch, the TDMA detector, the confirmation hold or mute.
+
+### Fixed - P25 Phase 1 and NXDN audio loud and clipped with JMBE 2.x
+
+JMBE 2.0 rewrote the IMBE/AMBE synthesizers and added automatic gain control, on by default. The fork still applied
+its fixed 5x gain (with a 0.95 limiter) to P25 Phase 1 and NXDN audio after decoding, so the AGC output was driven
+into the limiter. Upstream removed the same stage in #2489. Audubon 2026-10-19, same channels (Lexington, Burlington
+and Woburn Police, P25 Phase 1) and same build, only the library changed:
+
+| Library | Calls | Median active level | Calls with >1% of samples above 0.89 FS |
+|---|---|---|---|
+| JMBE 2.0.2 (17:17-17:58) | 74 | -8.3 dBFS | 85% |
+| JMBE 1.0.9 (after 17:58) | 147 | -16.0 dBFS | 6% |
+| Somerville, JMBE 1.0.9 (Arlington, Medford, Malden, Chelsea) | 536 | -16.3 dBFS | 2% |
+
+The 5x stage is now skipped when the loaded library is version 2 or later and kept for 1.x, so machines still on
+JMBE 1.0.9 sound the same as before.
+
+### Changed - JMBE library loading
+
+- Builds against `jmbe:api:v2.0.0` (was `jmbe-api:1.0.0`). The 1.x interfaces are unchanged, so a JMBE 1.0.9 jar
+  still loads.
+- Loads `jmbe.JMBEAudioLibraryV2` when the jar has it, falling back to `jmbe.JMBEAudioLibrary`. Upstream loads only
+  the 1.x class, so its codecs never expose the 2.x feature controls and its per-channel JMBE settings have no effect.
+- Fleet-wide 2.x settings: AGC on, tone gain 1.0, noise gain 1.0 (the library defaults, applied explicitly). No
+  per-channel editor yet.
+- Logs once per codec, e.g. `JMBE IMBE codec: AGC=on, tone gain=n/a, noise gain=1.0 - legacy 5x gain (P25 Phase 1,
+  NXDN) bypassed`.
+- Changing the JMBE library path in User Preferences now reloads the library without a restart. Previously the first
+  loaded jar stayed in use until restart.
+- Library loading is serialized, which also removes the duplicate `JMBE audio conversion library loaded` lines when
+  several channels start together.
+
 ## [0.6.2-ap-15.9.23] - 2026-10-18
 
 Two fixes from Audubon, 2026-10-17/18. No change to tone squelch, the TDMA detector or the confirmation hold; the

@@ -211,7 +211,12 @@ public class P25P1AudioModule extends ImbeAudioModule
             for(byte[] frame : ldu.getIMBEFrames())
             {
                 float[] audio = getAudioCodec().getAudio(frame);
-                audio = mGain.apply(audio);
+
+                //JMBE 2.x applies its own AGC - the legacy 5x gain on top of it clips (upstream #2489)
+                if(!hasLibraryGainControl())
+                {
+                    audio = mGain.apply(audio);
+                }
 
                 GraphicEqualizer eq = mGraphicEQ;
                 if(eq != null && eq.isEnabled())

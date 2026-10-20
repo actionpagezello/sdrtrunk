@@ -143,7 +143,12 @@ public class NXDNAudioModule extends AmbeAudioModule
             for(byte[] frame : audio.getAudioFrames())
             {
                 float[] generatedAudio = getAudioCodec().getAudio(frame);
-                generatedAudio = mGain.apply(generatedAudio);
+
+                //JMBE 2.x applies its own AGC - skip the legacy 5x gain so the audio doesn't clip
+                if(!hasLibraryGainControl())
+                {
+                    generatedAudio = mGain.apply(generatedAudio);
+                }
                 addAudio(generatedAudio);
             }
         }
