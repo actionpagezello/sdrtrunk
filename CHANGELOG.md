@@ -39,6 +39,20 @@ channel state did not end. A transmission that drops out for more than 2 s mid-c
 After an idle close the encryption state and LDU cache are reset on the next message, since the call-end that
 normally resets them did not arrive.
 
+### Fixed - the NBFM stuck-call watchdog discarded real calls on a carrier that stays up
+
+The 180 s stuck-call timer started at a call start but was cleared only when the carrier dropped, not when the tone
+gate ended the call. On a channel whose carrier stays up between tone-gated transmissions it kept counting from the
+last call start, tripped with no call in progress, and a tripped watchdog suppresses every call start until the carrier
+drops - so each transmission the gate released afterwards was thrown away.
+
+Audubon 2026-10-20, Lynnfield Police (471.0875, 131.8): carriers of 4 to 36 minutes carrying other energy between
+transmissions. 14 trips, each 180 s after the previous gated call began (15:48:42 -> 15:51:42). 22 transmissions
+released by the gate after a trip produced no call, recording or upload; the 9 between 15:55:39 and 15:59:00 are all in
+the Lynnfield MA Police Zello vault, which is fed by another machine. `notifyCallEnd()` now clears the timer and the
+tripped flag, so the watchdog times a call rather than a carrier and still ends a single gated call that runs past
+180 s.
+
 ### Added - one INFO line per idle close
 
 `P25 Phase 1 call on [channel] to [talkgroup] closed after N ms without audio - <state> - open N ms with N ms of

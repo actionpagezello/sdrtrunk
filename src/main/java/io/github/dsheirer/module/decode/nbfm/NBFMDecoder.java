@@ -1323,6 +1323,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private void notifyCallEnd()
     {
+        //AP-fork (ap-15.9.25): the call is over, so stop timing it.  The stuck-call timer was only cleared when the
+        //carrier dropped, so on a channel whose carrier stays up between tone-gated transmissions it kept running
+        //from the last call start, tripped 180 s later with no call in progress, and - because a tripped watchdog
+        //suppresses notifyCallStart() until the carrier drops - discarded every later transmission on that carrier.
+        //Audubon 2026-10-20, Lynnfield Police: 14 trips, each exactly 180 s after the previous gated call began
+        //(15:48:42 -> 15:51:42); 22 transmissions the tone gate released afterwards became no call, recording or
+        //upload (15:55:39-15:59:00 alone: 9, all present in the Zello vault from another machine).
+        mCallStartTimeMs = 0;
+        mWatchdogTripped = false;
         broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.END, State.CALL, 0));
     }
 
