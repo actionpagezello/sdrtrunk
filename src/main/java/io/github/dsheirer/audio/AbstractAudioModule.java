@@ -56,6 +56,17 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     private volatile ScheduledFuture<?> mPendingClose;
 
     /**
+     * AP-fork: idle close.  When greater than zero, a segment that receives no audio for this long (plus any audio
+     * hangtime) is closed here, without waiting for the decoder's call-end.  Off by default; a subclass opts in with
+     * setIdleCloseMs().  See P25P1AudioModule for why it exists.
+     */
+    private static final long IDLE_CHECK_INTERVAL_MS = 250;
+    private long mIdleCloseMs = 0;
+    private volatile long mLastAudioTime;
+    private volatile long mSegmentStartTime;
+    private volatile ScheduledFuture<?> mIdleCheck;
+
+    /**
      * Constructs an abstract audio module
      *
      * @param aliasList for aliasing identifiers
@@ -133,6 +144,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         synchronized(this)
         {
             cancelPendingClose();
+            cancelIdleCheck();
 
             if(mAudioSegment != null)
             {
@@ -153,6 +165,82 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         {
             mPendingClose.cancel(false);
             mPendingClose = null;
+        }
+    }
+
+    /**
+     * AP-fork: enables the idle close.  A segment that receives no audio for idleCloseMs plus the audio hangtime is
+     * closed by this module even though the decoder never signalled the end of the call.
+     *
+     * @param idleCloseMs milliseconds without audio before the segment is closed, 0 to disable
+     */
+    protected void setIdleCloseMs(long idleCloseMs)
+    {
+        mIdleCloseMs = Math.max(0, idleCloseMs);
+    }
+
+    /**
+     * AP-fork: called after the idle close has closed a segment.  Runs on a scheduler thread with this module's lock
+     * held, so an override must not touch state owned by the message-processing thread directly.
+     *
+     * @param segment that was closed
+     * @param openMs how long the segment had been open
+     * @param idleMs how long it had gone without audio
+     * @param audioMs how much audio it held
+     */
+    protected void onIdleClose(AudioSegment segment, long openMs, long idleMs, long audioMs)
+    {
+    }
+
+    private void startIdleCheck(AudioSegment segment)
+    {
+        if(mIdleCloseMs <= 0)
+        {
+            return;
+        }
+
+        cancelIdleCheck();
+        mIdleCheck = ThreadPool.SCHEDULED.scheduleAtFixedRate(() -> checkIdle(segment), IDLE_CHECK_INTERVAL_MS,
+                IDLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void cancelIdleCheck()
+    {
+        ScheduledFuture<?> idleCheck = mIdleCheck;
+
+        if(idleCheck != null)
+        {
+            idleCheck.cancel(false);
+            mIdleCheck = null;
+        }
+    }
+
+    private void checkIdle(AudioSegment segment)
+    {
+        try
+        {
+            synchronized(this)
+            {
+                if(mAudioSegment != segment)
+                {
+                    return;
+                }
+
+                long now = System.currentTimeMillis();
+                long idleMs = now - mLastAudioTime;
+
+                if(idleMs >= mIdleCloseMs + mAudioHangtimeMs)
+                {
+                    long openMs = now - mSegmentStartTime;
+                    long audioMs = mAudioSampleCount / 8;
+                    closeAudioSegmentNow();
+                    onIdleClose(segment, openMs, idleMs, audioMs);
+                }
+            }
+        }
+        catch(Throwable t)
+        {
+            mLog.error("Error checking audio segment for inactivity", t);
         }
     }
 
@@ -214,6 +302,9 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 }
 
                 mAudioSampleCount = 0;
+                mSegmentStartTime = System.currentTimeMillis();
+                mLastAudioTime = mSegmentStartTime;
+                startIdleCheck(mAudioSegment);
             }
 
             return mAudioSegment;
@@ -222,6 +313,9 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
 
     public void addAudio(float[] audioBuffer)
     {
+        //AP-fork: stamp before taking the segment, so the idle close cannot retire it between the two
+        mLastAudioTime = System.currentTimeMillis();
+
         // Cancel any pending hangtime close — new audio means the call continues
         synchronized(this)
         {

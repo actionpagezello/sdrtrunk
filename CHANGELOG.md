@@ -5,6 +5,46 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.25] - unreleased
+
+### Fixed - a P25 Phase 1 call stayed open for minutes or hours after its audio ended
+
+A P25 Phase 1 call ends when the channel state leaves CALL. The state only enters CALL on a decoded HDU, LDU1 link
+control or LDU2 encryption sync, but the audio module decodes voice from every LDU. A weak transmission whose voice
+survives and whose signalling does not therefore opened a segment that nothing closed until a later call on the
+channel ended - and every transmission in between was added to it.
+
+Measured (calls that completed more than 20 s after their audio ended):
+
+| Machine | Period | Calls | Longest |
+|---|---|---|---|
+| Somerville | 10-19 (15.9.21-15.9.23) | 20 | 68 min (Malden Police) |
+| Somerville | 10-20 07:37 - 10-21 15:07 (15.9.24) | 38 | 9.4 h (Chelsea Police - Sec) |
+| Audubon | 10-20 | 14 | 8.5 h (Winchester Police) |
+
+All P25 Phase 1 conventional channels; no NBFM channel is affected. Effects:
+
+- Zello: the stream opened for the call sat silent until the stale-stream watchdog stopped it (25-32 s). Medford
+  10-20 11:32:45: a 0.5 s fragment opened the stream; the first second of the next transmission (~11:36:00) went
+  into the same segment after the watchdog had stopped it, and is absent from the Zello vault.
+- Recordings and ThinLine: a call is handed over when it completes, so these arrived minutes to hours late.
+- Merged calls: Woburn Police (Audubon) was open from 10-19 22:34 to 10-20 06:51; the night's transmissions are one
+  321.6 s recording filed under 22:34 and the first talker.
+
+`AbstractAudioModule` gains an opt-in idle close: a segment that receives no audio for a set time plus any audio
+hangtime is closed without waiting for the call-end. `P25P1AudioModule` enables it at 2000 ms. Voice arrives every
+180 ms while a radio is keyed and a normal call is closed by the 1.2 s channel fade, so it fires only on calls the
+channel state did not end. A transmission that drops out for more than 2 s mid-call becomes two recordings.
+
+After an idle close the encryption state and LDU cache are reset on the next message, since the call-end that
+normally resets them did not arrive.
+
+### Added - one INFO line per idle close
+
+`P25 Phase 1 call on [channel] to [talkgroup] closed after N ms without audio - <state> - open N ms with N ms of
+audio`, where `<state>` says whether the channel state had registered the call at all. Its count is the rate of the
+defect; the state shows which signalling is failing.
+
 ## [0.6.2-ap-15.9.24] - 2026-10-19
 
 JMBE audio library 2.0 support. No change to tone squelch, the TDMA detector, the confirmation hold or mute.

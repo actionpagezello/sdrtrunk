@@ -19,11 +19,16 @@
 package io.github.dsheirer.module.decode.p25.audio;
 
 import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.audio.AudioSegment;
 import io.github.dsheirer.audio.codec.mbe.ImbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
+import io.github.dsheirer.identifier.Form;
+import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.identifier.IdentifierClass;
+import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
@@ -56,9 +61,67 @@ public class P25P1AudioModule extends ImbeAudioModule
      */
     private final Set<Integer> mReportedUnknownAlgorithms = new HashSet<>();
 
+    /**
+     * AP-fork: milliseconds without IMBE audio after which a call is closed here rather than waiting for the channel
+     * state to end it.  A P25 Phase 1 call ends when the channel state leaves CALL, which needs a decoded HDU, LDU1
+     * link control or LDU2 encryption sync to have put it there.  This module decodes voice from LDUs regardless, so
+     * a weak transmission whose voice survives but whose signalling does not opens a segment that nothing closes
+     * until a later call on the channel ends - and that later call's audio goes into it.
+     *
+     * Somerville 2026-10-19..21: 58 calls closed 20 s to 9.4 h after their audio ended (Medford, Watertown, Chelsea,
+     * Winthrop, Revere, Arlington, Malden Police - all P25 Phase 1 conventional).  Audubon 2026-10-20: 14, including
+     * Woburn Police open from 22:34 to 06:51 with every transmission of the night merged into one 321 s recording.
+     * Medford 10-20 11:32:45: a 0.5 s fragment held its Zello stream open until the watchdog stopped it, then took the
+     * first second of the next transmission, which the Zello vault does not have.
+     *
+     * Voice arrives every 180 ms while a radio is keyed, and a normal call is closed by the 1.2 s channel fade, so
+     * 2 s without audio (plus any configured audio hangtime) only fires on calls the channel state did not end.
+     */
+    private static final long IDLE_CLOSE_MS = 2000;
+
+    /**
+     * AP-fork: true while the channel state has this call open (UNSQUELCH seen, SQUELCH not yet), for the idle-close
+     * log line.  Written by the squelch listener, read by the idle close.
+     */
+    private volatile boolean mCallStateOpen = false;
+
+    /**
+     * AP-fork: set by the idle close, consumed on the message-processing thread.  The call-end that normally resets
+     * the encryption state and the LDU cache never came, so the next transmission must establish its own.
+     */
+    private volatile boolean mResetCallStatePending = false;
+
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
         super(userPreferences, aliasList);
+        setIdleCloseMs(IDLE_CLOSE_MS);
+    }
+
+    /**
+     * AP-fork: logs a call closed for lack of audio and asks the message thread to reset the per-call state.
+     */
+    @Override
+    protected void onIdleClose(AudioSegment segment, long openMs, long idleMs, long audioMs)
+    {
+        mResetCallStatePending = true;
+
+        Identifier channel = null;
+        Identifier to = null;
+
+        try
+        {
+            channel = getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL, Role.ANY);
+            to = segment.getIdentifierCollection() != null ? segment.getIdentifierCollection().getToIdentifier() : null;
+        }
+        catch(Exception e)
+        {
+            //Identifiers are for the log line only
+        }
+
+        mLog.info("P25 Phase 1 call on [{}] to [{}] closed after {} ms without audio - {} - open {} ms with {} ms of " +
+                "audio", channel, to, idleMs, mCallStateOpen ? "the channel had the call open but had not ended it" :
+                "the channel never registered the call (no decoded header, link control or encryption sync)",
+                openMs, audioMs);
     }
 
     /**
@@ -114,6 +177,14 @@ public class P25P1AudioModule extends ImbeAudioModule
      */
     public void receive(IMessage message)
     {
+        if(mResetCallStatePending)
+        {
+            mResetCallStatePending = false;
+            mEncryptedCallStateEstablished = false;
+            mEncryptedCall = false;
+            mCachedLDUMessages.clear();
+        }
+
         if(hasAudioCodec())
         {
             if(mEncryptedCallStateEstablished)
@@ -243,8 +314,13 @@ public class P25P1AudioModule extends ImbeAudioModule
         @Override
         public void receive(SquelchStateEvent event)
         {
-            if(event.getSquelchState() == SquelchState.SQUELCH)
+            if(event.getSquelchState() == SquelchState.UNSQUELCH)
             {
+                mCallStateOpen = true;
+            }
+            else if(event.getSquelchState() == SquelchState.SQUELCH)
+            {
+                mCallStateOpen = false;
                 closeAudioSegment();
                 mEncryptedCallStateEstablished = false;
                 mEncryptedCall = false;
