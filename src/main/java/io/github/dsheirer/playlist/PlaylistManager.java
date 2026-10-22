@@ -48,6 +48,11 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
@@ -79,6 +84,19 @@ public class PlaylistManager implements Listener<ChannelEvent>
     private AtomicBoolean mPlaylistSavePending = new AtomicBoolean();
     private ScheduledFuture<?> mPlaylistSaveFuture;
     private boolean mPlaylistLoading = false;
+
+    /**
+     * AP-fork: playlist protection.  When the playlist on disk could not be read, saving is blocked for the rest of
+     * the session so the empty in-memory playlist can never be written over it.  Upstream (and this fork until
+     * ap-15.9.25) replaced an unreadable playlist with an empty one and saved it: Somerville 2026-10-22, the upstream
+     * release and nightly each wiped the fork playlist that way (Zello/ThinLine stream types it does not know).
+     */
+    private volatile boolean mSaveBlocked = false;
+    private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final String HISTORY_FOLDER = "history";
+    private static final int HISTORY_KEEP = 20;
+    private static final long HISTORY_INTERVAL_MS = 60 * 60 * 1000;
+    private long mLastHistoryCopyMs = 0;
     private List<IAliasListRefreshListener> mAliasListRefreshListeners = new ArrayList<>();
 
     /**
@@ -442,6 +460,15 @@ public class PlaylistManager implements Listener<ChannelEvent>
     {
         PlaylistPreference playlistPreference = mUserPreferences.getPlaylistPreference();
 
+        if(mSaveBlocked)
+        {
+            mLog.warn("Playlist NOT saved - the playlist file [" + playlistPreference.getPlaylist() + "] could not be " +
+                "read at startup, so saving is blocked to protect it.  Fix or restore the file, then restart.");
+            return;
+        }
+
+        copyToHistory(playlistPreference.getPlaylist(), false);
+
         PlaylistV2 playlist = new PlaylistV2();
 
         playlist.setAliases(new ArrayList(mAliasModel.getAliases()));
@@ -479,14 +506,30 @@ public class PlaylistManager implements Listener<ChannelEvent>
             }
         }
 
-        try(OutputStream out = Files.newOutputStream(playlistPreference.getPlaylist()))
+        //AP-fork: write to a temporary file and move it into place, so the playlist is never left half-written
+        Path temporary = Path.of(playlistPreference.getPlaylist().toAbsolutePath() + ".tmp");
+
+        try
         {
-            JacksonXmlModule xmlModule = new JacksonXmlModule();
-            xmlModule.setDefaultUseWrapper(false);
-            ObjectMapper objectMapper = new XmlMapper(xmlModule);
-            objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
-            objectMapper.writeValue(out, playlist);
-            out.flush();
+            try(OutputStream out = Files.newOutputStream(temporary))
+            {
+                JacksonXmlModule xmlModule = new JacksonXmlModule();
+                xmlModule.setDefaultUseWrapper(false);
+                ObjectMapper objectMapper = new XmlMapper(xmlModule);
+                objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+                objectMapper.writeValue(out, playlist);
+                out.flush();
+            }
+
+            try
+            {
+                Files.move(temporary, playlistPreference.getPlaylist(), StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+            }
+            catch(IOException atomicNotSupported)
+            {
+                Files.move(temporary, playlistPreference.getPlaylist(), StandardCopyOption.REPLACE_EXISTING);
+            }
 
             //Remove the playlist lock file to indicate that we successfully saved the file
             if(Files.exists(playlistPreference.getPlaylistLock()))
@@ -512,6 +555,8 @@ public class PlaylistManager implements Listener<ChannelEvent>
         PlaylistPreference files = mUserPreferences.getPlaylistPreference();
 
         PlaylistV2 playlist = null;
+        boolean readFailed = false;
+        mSaveBlocked = false;
 
         //Check for a lock file that indicates the previous save attempt was incomplete or had an error
         if(Files.exists(files.getPlaylistLock()))
@@ -520,13 +565,24 @@ public class PlaylistManager implements Listener<ChannelEvent>
 
             try
             {
-                //Remove the previous playlist
-                Files.delete(files.getPlaylist());
-
-                //Copy the backup file to restore the previous playlist
-                if(Files.exists(files.getPlaylistBackup()))
+                //AP-fork: the backup replaces the playlist only when the playlist itself cannot be read, and the file it
+                //replaces is kept as a dated copy.  Previously the playlist was deleted and replaced with whatever the
+                //backup held, even when the playlist was intact - and after another program's failed load the backup
+                //can be an empty playlist.  This fork writes the playlist atomically, so a readable playlist with a
+                //lock file means the last save completed.
+                if(Files.exists(files.getPlaylist()) && isPlaylist(files.getPlaylist()))
                 {
-                    Files.copy(files.getPlaylistBackup(), files.getPlaylist());
+                    mLog.info("Playlist is readable - keeping it rather than restoring the backup");
+                }
+                else if(Files.exists(files.getPlaylistBackup()) && isPlaylist(files.getPlaylistBackup()))
+                {
+                    copyToHistory(files.getPlaylist(), true);
+                    Files.copy(files.getPlaylistBackup(), files.getPlaylist(), StandardCopyOption.REPLACE_EXISTING);
+                    mLog.info("Playlist was unreadable - restored from the backup");
+                }
+                else
+                {
+                    mLog.warn("Neither the playlist nor its backup is readable - leaving both untouched");
                 }
 
                 //Remove the lock file
@@ -559,7 +615,8 @@ public class PlaylistManager implements Listener<ChannelEvent>
             }
             catch(IOException ioe)
             {
-                mLog.error("IO error while reading playlist file", ioe);
+                readFailed = true;
+                blockSaving(files.getPlaylist(), ioe);
             }
         }
         else if(Files.exists(files.getLegacyPlaylist()))
@@ -584,7 +641,8 @@ public class PlaylistManager implements Listener<ChannelEvent>
             }
             catch(IOException ioe)
             {
-                mLog.error("IO error while reading playlist file", ioe);
+                readFailed = true;
+                blockSaving(files.getLegacyPlaylist(), ioe);
             }
         }
         else
@@ -595,10 +653,86 @@ public class PlaylistManager implements Listener<ChannelEvent>
         if(playlist == null)
         {
             playlist = new PlaylistV2();
-            schedulePlaylistSave();
+
+            //AP-fork: only a missing playlist is replaced with a new empty one on disk - never an unreadable one
+            if(!readFailed)
+            {
+                schedulePlaylistSave();
+            }
         }
 
         return playlist;
+    }
+
+    /**
+     * AP-fork: a playlist file exists but could not be read.  Keeps a dated copy of it, logs why, and blocks saving
+     * for this session so the empty playlist the application falls back to is never written over it.
+     */
+    private void blockSaving(Path playlist, Exception cause)
+    {
+        mSaveBlocked = true;
+        Path copy = Path.of(playlist.toAbsolutePath() + ".unreadable-" + LocalDateTime.now().format(STAMP));
+
+        try
+        {
+            Files.copy(playlist, copy, StandardCopyOption.REPLACE_EXISTING);
+        }
+        catch(Exception e)
+        {
+            copy = null;
+        }
+
+        mLog.error("PLAYLIST COULD NOT BE READ [" + playlist + "] - starting with an empty playlist IN MEMORY ONLY.  " +
+            "The file is left untouched and saving is blocked until restart" +
+            (copy != null ? "; a copy was kept as [" + copy + "]" : "") + ".  Cause: " + cause.getMessage(), cause);
+    }
+
+    /**
+     * AP-fork: keeps dated copies of the playlist in a history folder beside it, at most one an hour (or whenever
+     * forced) and the newest HISTORY_KEEP, so a playlist damaged by any program - this one, upstream, or a manual
+     * edit - can be recovered.
+     *
+     * @param playlist file to copy
+     * @param force true to copy regardless of when the last copy was taken
+     */
+    private void copyToHistory(Path playlist, boolean force)
+    {
+        long now = System.currentTimeMillis();
+
+        if(playlist == null || !Files.exists(playlist) || (!force && now - mLastHistoryCopyMs < HISTORY_INTERVAL_MS))
+        {
+            return;
+        }
+
+        try
+        {
+            Path folder = playlist.toAbsolutePath().getParent().resolve(HISTORY_FOLDER);
+            Files.createDirectories(folder);
+            String name = playlist.getFileName().toString();
+            String base = name.endsWith(".xml") ? name.substring(0, name.length() - 4) : name;
+            Files.copy(playlist, folder.resolve(base + "-" + LocalDateTime.now().format(STAMP) + ".xml"),
+                StandardCopyOption.REPLACE_EXISTING);
+            mLastHistoryCopyMs = now;
+
+            List<Path> copies;
+
+            try(Stream<Path> files = Files.list(folder))
+            {
+                copies = files.filter(p -> p.getFileName().toString().startsWith(base + "-") &&
+                        p.getFileName().toString().endsWith(".xml"))
+                    .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
+                    .collect(Collectors.toList());
+            }
+
+            for(int x = HISTORY_KEEP; x < copies.size(); x++)
+            {
+                Files.deleteIfExists(copies.get(x));
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.error("Unable to keep a history copy of the playlist [" + playlist + "]", e);
+        }
     }
 
     /**

@@ -39,6 +39,23 @@ channel state did not end. A transmission that drops out for more than 2 s mid-c
 After an idle close the encryption state and LDU cache are reset on the next message, since the call-end that
 normally resets them did not arrive.
 
+### Fixed - an unreadable playlist was replaced with an empty one
+
+When the playlist failed to load, the application started an empty playlist and saved it over the file. The fork
+inherited this from upstream. Somerville 2026-10-22: the upstream release and nightly each wiped the fork playlist this
+way, because they do not know the Zello and ThinLine stream types; it was recovered from a manual backup. Upstream
+cannot be changed from here, but the fork no longer does it:
+
+- A playlist that exists but cannot be read is left untouched. The fork starts with an empty playlist in memory only,
+  blocks saving for the session, keeps a copy as `default.xml.unreadable-<date-time>`, and logs an ERROR starting
+  `PLAYLIST COULD NOT BE READ`. Only a missing playlist is created new.
+- A leftover lock file (`default.xml.lck`) no longer replaces a readable playlist with the backup. The backup is used
+  only when the playlist itself is unreadable and the backup is readable, and the file it replaces is kept. After
+  another program's failed load the backup can be an empty playlist.
+- The playlist is written to `default.xml.tmp` and moved into place, so it is never left half-written.
+- Dated copies are kept in `playlist\history\` (`default-<date-time>.xml`): one at the first save of a session and then
+  at most one an hour, newest 20 kept.
+
 ### Fixed - the NBFM stuck-call watchdog discarded real calls on a carrier that stays up
 
 The 180 s stuck-call timer started at a call start but was cleared only when the carrier dropped, not when the tone
