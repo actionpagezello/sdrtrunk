@@ -73,6 +73,14 @@ public class PlaylistCompatibility
     public static final Set<String> FORK_ONLY_ALIAS_ID_TYPES = Set.of("ctcss", "nac");
 
     /** Root attributes written by the fork on save and removed again before the playlist is read */
+    /**
+     * Settings both programs know that are left out of the file when not in use, so they may appear nowhere in a
+     * playlist the other program saved.  Missing means the user turned them off there; they are never refilled.
+     */
+    private static final Set<String> OPTIONAL_SHARED_SETTINGS = Set.of("event_log_configuration[].logger",
+        "record_configuration[].recorder", "source_configuration[sourceConfigTuner].preferred_tuner",
+        "source_configuration[sourceConfigTunerMultipleFrequency].preferred_tuner");
+
     public static final String ATTRIBUTE_FORMAT = "apFormat";
     public static final String ATTRIBUTE_SAVE_ID = "apSaveId";
     public static final String FORMAT_VERSION = "1";
@@ -156,6 +164,8 @@ public class PlaylistCompatibility
         Document playlist = parse(playlistXml);
         Element root = playlist.getDocumentElement();
         boolean foreignWriter = !root.hasAttribute(ATTRIBUTE_SAVE_ID);
+        Set<String> known = new java.util.HashSet<>(OPTIONAL_SHARED_SETTINGS);
+        collectKnownSettings(root, known);
         int streams = 0;
         int aliasIds = 0;
         int settings = 0;
@@ -183,12 +193,45 @@ public class PlaylistCompatibility
             }
 
             //Aliases: fork-only identifiers always, dropped settings when another program saved last
+            Map<Element,Element> aliasPairs = new HashMap<>();
             Map<String,Element> companionAliases = index(children(companion, "alias"), "list", "name");
+            Map<String,Element> companionAliasesById = uniqueIndex(children(companion, "alias"),
+                PlaylistCompatibility::aliasIdentity);
+            Set<Element> usedAliases = new java.util.HashSet<>();
             Map<String,Integer> seen = new HashMap<>();
+            List<Element> unmatchedAliases = new ArrayList<>();
 
             for(Element alias : children(root, "alias"))
             {
                 Element source = companionAliases.get(occurrenceKey(alias, seen, "list", "name"));
+
+                if(source == null)
+                {
+                    unmatchedAliases.add(alias);
+                    continue;
+                }
+
+                usedAliases.add(source);
+            }
+
+            //Renamed (or moved) in the other program: match on alias list and talkgroup/radio identifiers instead
+            for(Element alias : unmatchedAliases)
+            {
+                Element source = companionAliasesById.get(aliasIdentity(alias));
+
+                if(source != null && !usedAliases.contains(source))
+                {
+                    usedAliases.add(source);
+                    aliasPairs.put(alias, source);
+                }
+            }
+
+            seen.clear();
+
+            for(Element alias : children(root, "alias"))
+            {
+                Element source = aliasPairs.containsKey(alias) ? aliasPairs.get(alias) :
+                    companionAliases.get(occurrenceKey(alias, seen, "list", "name"));
 
                 if(source == null)
                 {
@@ -204,7 +247,7 @@ public class PlaylistCompatibility
                     }
                 }
 
-                if(foreignWriter && fillMissing(alias, source, Set.of("id")))
+                if(foreignWriter && fillMissing(alias, source, Set.of("id"), known))
                 {
                     settings++;
                 }
@@ -214,13 +257,41 @@ public class PlaylistCompatibility
             if(foreignWriter)
             {
                 Map<String,Element> companionChannels = index(children(companion, "channel"), "system", "site", "name");
+                Map<String,Element> companionChannelsByTuning = uniqueIndex(children(companion, "channel"),
+                    PlaylistCompatibility::channelIdentity);
+                Set<Element> usedChannels = new java.util.HashSet<>();
+                Map<Element,Element> pairs = new java.util.LinkedHashMap<>();
                 seen.clear();
 
                 for(Element channel : children(root, "channel"))
                 {
                     Element source = companionChannels.get(occurrenceKey(channel, seen, "system", "site", "name"));
+                    pairs.put(channel, source);
 
-                    if(source != null && fillMissing(channel, source, Set.of()))
+                    if(source != null)
+                    {
+                        usedChannels.add(source);
+                    }
+                }
+
+                //Renamed in the other program: match on decoder type and frequency(ies) instead, when that is unique
+                for(Map.Entry<Element,Element> pair : pairs.entrySet())
+                {
+                    if(pair.getValue() == null)
+                    {
+                        Element source = companionChannelsByTuning.get(channelIdentity(pair.getKey()));
+
+                        if(source != null && !usedChannels.contains(source))
+                        {
+                            usedChannels.add(source);
+                            pair.setValue(source);
+                        }
+                    }
+                }
+
+                for(Map.Entry<Element,Element> pair : pairs.entrySet())
+                {
+                    if(pair.getValue() != null && fillMissing(pair.getKey(), pair.getValue(), Set.of(), known))
                     {
                         settings++;
                     }
@@ -234,8 +305,8 @@ public class PlaylistCompatibility
     }
 
     /**
-     * Copies into target what it lacks from source: attributes it does not have, and child elements whose name it has
-     * no element of at all.  A child element present once in both is merged the same way, if both are the same type.
+     * Copies into target what it lacks from source and the other program does not know (it wrote that setting nowhere
+     * in the playlist): attributes it does not have, and child elements whose name it has no element of at all.  A child element present once in both is merged the same way, if both are the same type.
      *
      * The NBFM tone filter has an upstream equivalent, so it is not refilled when the other program wrote one (its
      * squelchDecoders are the newer edit); when the companion had an enabled tone filter but the playlist now has no
@@ -243,7 +314,7 @@ public class PlaylistCompatibility
      *
      * @return true if anything was copied
      */
-    private static boolean fillMissing(Element target, Element source, Set<String> excludedChildren)
+    private static boolean fillMissing(Element target, Element source, Set<String> excludedChildren, Set<String> known)
     {
         if(!target.getAttribute("type").equals(source.getAttribute("type")))
         {
@@ -280,7 +351,8 @@ public class PlaylistCompatibility
             Attr attribute = (Attr)attributes.item(x);
             String name = attribute.getName();
 
-            if(!has(target, name) && !skip.contains("@" + name) && !name.startsWith("xmlns"))
+            if(!has(target, name) && !skip.contains("@" + name) && !name.startsWith("xmlns") &&
+                !known.contains(settingKey(source, name)))
             {
                 target.setAttributeNS(attribute.getNamespaceURI(), name, attribute.getValue());
                 changed = true;
@@ -314,6 +386,12 @@ public class PlaylistCompatibility
                 continue;
             }
 
+            //The other program writes this setting elsewhere, so it knows it: missing here means the user removed it
+            if(!target.hasAttribute(name) && children(target, name).isEmpty() && known.contains(settingKey(source, name)))
+            {
+                continue;
+            }
+
             List<Element> sourceChildren = children(source, name);
             List<Element> targetChildren = children(target, name);
 
@@ -328,7 +406,7 @@ public class PlaylistCompatibility
             }
             else if(targetChildren.size() == 1 && sourceChildren.size() == 1)
             {
-                changed |= fillMissing(targetChildren.get(0), sourceChildren.get(0), Set.of());
+                changed |= fillMissing(targetChildren.get(0), sourceChildren.get(0), Set.of(), known);
             }
         }
 
@@ -439,6 +517,132 @@ public class PlaylistCompatibility
         }
 
         return false;
+    }
+
+    /**
+     * Records every setting the other program wrote anywhere in the playlist, keyed by the owning element and type.  A
+     * setting it wrote somewhere is one it knows, so where it is missing the user removed it and it is not refilled; a
+     * setting it wrote nowhere is one it does not know, and only those are refilled from the companion.
+     */
+    private static void collectKnownSettings(Element element, Set<String> known)
+    {
+        NamedNodeMap attributes = element.getAttributes();
+
+        for(int x = 0; x < attributes.getLength(); x++)
+        {
+            known.add(settingKey(element, ((Attr)attributes.item(x)).getName()));
+        }
+
+        for(Element child : children(element, null))
+        {
+            known.add(settingKey(element, child.getTagName()));
+            collectKnownSettings(child, known);
+        }
+    }
+
+    /**
+     * Key for a setting: owning element name and type, then the setting's name (attribute and element alike).
+     */
+    private static String settingKey(Element owner, String name)
+    {
+        return owner.getTagName() + "[" + owner.getAttribute("type") + "]." + name;
+    }
+
+    /**
+     * A channel's tuning: decoder type and source frequency(ies).  Used to pair a channel renamed in the other program.
+     */
+    private static String channelIdentity(Element channel)
+    {
+        StringBuilder sb = new StringBuilder();
+
+        for(Element decode : children(channel, "decode_configuration"))
+        {
+            sb.append(decode.getAttribute("type"));
+        }
+
+        List<String> frequencies = new ArrayList<>();
+
+        for(Element source : children(channel, "source_configuration"))
+        {
+            if(source.hasAttribute("frequency"))
+            {
+                frequencies.add(source.getAttribute("frequency").trim());
+            }
+            else
+            {
+                //Single frequency written as an element, or a multi-frequency source's frequency list
+                for(Element element : toList(source.getElementsByTagName("frequency")))
+                {
+                    frequencies.add(element.hasAttribute("value") ? element.getAttribute("value").trim() :
+                        element.getTextContent().trim());
+                }
+            }
+        }
+
+        java.util.Collections.sort(frequencies);
+        return frequencies.isEmpty() ? null : sb + "|" + frequencies;
+    }
+
+    /**
+     * An alias's identity apart from its name: alias list plus its talkgroup and radio identifiers.  Used to pair an
+     * alias renamed in the other program.
+     */
+    private static String aliasIdentity(Element alias)
+    {
+        List<String> ids = new ArrayList<>();
+
+        for(Element id : children(alias, "id"))
+        {
+            String type = id.getAttribute("type");
+
+            if(type.startsWith("talkgroup") || type.startsWith("radio"))
+            {
+                ids.add(type + "=" + id.getAttribute("value") + id.getAttribute("min") + "-" + id.getAttribute("max") +
+                    "/" + id.getAttribute("protocol"));
+            }
+        }
+
+        java.util.Collections.sort(ids);
+        return ids.isEmpty() ? null : value(alias, "list") + "|" + ids;
+    }
+
+    private static List<Element> toList(org.w3c.dom.NodeList list)
+    {
+        List<Element> elements = new ArrayList<>();
+
+        for(int x = 0; x < list.getLength(); x++)
+        {
+            if(list.item(x) instanceof Element element)
+            {
+                elements.add(element);
+            }
+        }
+
+        return elements;
+    }
+
+    /**
+     * Index of elements by a computed key, leaving out any key that more than one element shares, so a fallback match
+     * is never ambiguous.
+     */
+    private static Map<String,Element> uniqueIndex(List<Element> elements,
+                                                   java.util.function.Function<Element,String> keyFunction)
+    {
+        Map<String,Element> index = new HashMap<>();
+        Set<String> duplicated = new java.util.HashSet<>();
+
+        for(Element element : elements)
+        {
+            String key = keyFunction.apply(element);
+
+            if(key != null && index.put(key, element) != null)
+            {
+                duplicated.add(key);
+            }
+        }
+
+        duplicated.forEach(index::remove);
+        return index;
     }
 
     /**

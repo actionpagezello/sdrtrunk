@@ -5,6 +5,31 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.27] - 2026-10-22
+
+### Fixed - playlist edits made in either program are kept, including renames and things turned off
+
+Tested further after 15.9.26 with edits made on both sides over several rounds (fork -> upstream -> fork -> upstream ->
+fork, Somerville playlist). 15.9.26 lost three kinds of edit; 15.9.27 keeps them:
+
+- A channel renamed in upstream lost its fork-only settings (AGC, hiss reduction, noise gate and the like), and an alias
+  renamed there lost its NAC/CTCSS identifiers - both were matched by name only. Now a channel with no name match is
+  paired by decoder type and frequency, and an alias by alias list and talkgroup/radio identifiers, when exactly one
+  companion entry matches.
+- A setting both programs know, turned off in upstream (event logging, recording, preferred tuner), came back on in the
+  fork, because upstream leaves it out of the file and the fork refilled it from the companion. The fork now refills only
+  settings the other program wrote nowhere in the playlist - settings it does not know - and never those four.
+
+Two-sided multi-round test (both programs' save/load code compiled together, upstream master b0428a1d): 19 of 19 checks
+pass - renamed channel/alias keep fork-only settings, NAC and tone labels; channels and aliases deleted or added in
+upstream stay deleted/added; Zello streams added or deleted in the fork stay so; a fork edit (AGC, NAC 611 -> 612, alias
+assigned to a new stream) survives an upstream save; an upstream edit (bandwidth, logging/recording/preferred tuner off)
+survives the return to the fork; a further no-edit cycle in either direction changes nothing. 15.9.26 fails 5 of them.
+The 15.9.26 round-trip scenarios A-E are unchanged (0 differences).
+
+Still not carried: a channel renamed in upstream *and* retuned or with a duplicate frequency (it is new to the fork, its
+fork-only settings return to default).
+
 ## [0.6.2-ap-15.9.26] - 2026-10-22
 
 ### Changed - one playlist for both this fork and upstream SDRTrunk, in either direction
