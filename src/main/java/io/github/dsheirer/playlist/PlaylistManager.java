@@ -35,6 +35,7 @@ import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.playlist.IAliasListRefreshListener;
 import io.github.dsheirer.icon.IconModel;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.log.EventLogManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.playlist.PlaylistPreference;
@@ -467,7 +468,11 @@ public class PlaylistManager implements Listener<ChannelEvent>
             return;
         }
 
-        copyToHistory(playlistPreference.getPlaylist(), false);
+        if(System.currentTimeMillis() - mLastHistoryCopyMs >= HISTORY_INTERVAL_MS)
+        {
+            copyToHistory(playlistPreference.getPlaylist(), true);
+            copyToHistory(PlaylistCompatibility.getCompanion(playlistPreference.getPlaylist()), true);
+        }
 
         PlaylistV2 playlist = new PlaylistV2();
 
@@ -506,30 +511,22 @@ public class PlaylistManager implements Listener<ChannelEvent>
             }
         }
 
-        //AP-fork: write to a temporary file and move it into place, so the playlist is never left half-written
-        Path temporary = Path.of(playlistPreference.getPlaylist().toAbsolutePath() + ".tmp");
-
+        //AP-fork: write to a temporary file and move it into place, so the playlist is never left half-written.
+        //AP-fork (ap-15.9.26): two files - the complete playlist goes to the companion, and the playlist file gets
+        //everything except the element types upstream SDRTrunk cannot read.  See PlaylistCompatibility.
         try
         {
-            try(OutputStream out = Files.newOutputStream(temporary))
-            {
-                JacksonXmlModule xmlModule = new JacksonXmlModule();
-                xmlModule.setDefaultUseWrapper(false);
-                ObjectMapper objectMapper = new XmlMapper(xmlModule);
-                objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
-                objectMapper.writeValue(out, playlist);
-                out.flush();
-            }
+            JacksonXmlModule xmlModule = new JacksonXmlModule();
+            xmlModule.setDefaultUseWrapper(false);
+            ObjectMapper objectMapper = new XmlMapper(xmlModule);
+            objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+            String complete = objectMapper.writeValueAsString(playlist);
+            PlaylistCompatibility.SaveFiles files = PlaylistCompatibility.prepareSave(complete,
+                LocalDateTime.now().format(STAMP) + "-" + System.nanoTime());
 
-            try
-            {
-                Files.move(temporary, playlistPreference.getPlaylist(), StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
-            }
-            catch(IOException atomicNotSupported)
-            {
-                Files.move(temporary, playlistPreference.getPlaylist(), StandardCopyOption.REPLACE_EXISTING);
-            }
+            Path companion = PlaylistCompatibility.getCompanion(playlistPreference.getPlaylist());
+            writeAtomically(companion, files.companion());
+            writeAtomically(playlistPreference.getPlaylist(), files.playlist());
 
             //Remove the playlist lock file to indicate that we successfully saved the file
             if(Files.exists(playlistPreference.getPlaylistLock()))
@@ -604,16 +601,17 @@ public class PlaylistManager implements Listener<ChannelEvent>
             ObjectMapper objectMapper = new XmlMapper(xmlModule)
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-            try(InputStream in = Files.newInputStream(files.getPlaylist()))
+            //AP-fork (ap-15.9.26): the playlist is merged with its companion (see PlaylistCompatibility) before it is read
+            try
             {
-                playlist = objectMapper.readValue(in, PlaylistV2.class);
+                playlist = readPlaylist(files.getPlaylist(), objectMapper);
 
                 if(PlaylistUpdater.update(playlist))
                 {
                     schedulePlaylistSave();
                 }
             }
-            catch(IOException ioe)
+            catch(Exception ioe)
             {
                 readFailed = true;
                 blockSaving(files.getPlaylist(), ioe);
@@ -662,6 +660,67 @@ public class PlaylistManager implements Listener<ChannelEvent>
         }
 
         return playlist;
+    }
+
+    /**
+     * AP-fork (ap-15.9.26): reads the playlist merged with its companion.  If the companion exists but cannot be used,
+     * the playlist is read on its own and saving is blocked, so the companion - which may hold the only copy of the
+     * Zello and ThinLine streams - is never overwritten by a playlist that lacks them.
+     */
+    private PlaylistV2 readPlaylist(Path path, ObjectMapper objectMapper) throws Exception
+    {
+        String playlistXml = Files.readString(path);
+        Path companionPath = PlaylistCompatibility.getCompanion(path);
+        PlaylistCompatibility.LoadResult result;
+
+        try
+        {
+            String companionXml = Files.exists(companionPath) ? Files.readString(companionPath) : null;
+            result = PlaylistCompatibility.prepareLoad(playlistXml, companionXml);
+        }
+        catch(Exception companionError)
+        {
+            result = PlaylistCompatibility.prepareLoad(playlistXml, null);
+            mSaveBlocked = true;
+            mLog.error("PLAYLIST COMPANION COULD NOT BE READ [" + companionPath + "] - loaded the playlist without its " +
+                "Zello/ThinLine streams and fork-only settings, and blocked saving so the companion is not " +
+                "overwritten.  Fix or restore it (playlist\\history holds dated copies), then restart.  Cause: " +
+                companionError.getMessage());
+        }
+
+        PlaylistV2 playlist = objectMapper.readValue(result.xml(), PlaylistV2.class);
+
+        int adopted = 0;
+
+        for(io.github.dsheirer.controller.channel.Channel channel : playlist.getChannels())
+        {
+            if(channel.getDecodeConfiguration() instanceof DecodeConfigNBFM nbfm && nbfm.adoptUpstreamSquelchDecoders())
+            {
+                adopted++;
+            }
+        }
+
+        mLog.info("Playlist read - last saved by " + (result.foreignWriter() ? "ANOTHER PROGRAM (or an older version)" :
+            "this fork") + "; from the companion: " + result.restoredStreams() + " stream(s), " +
+            result.restoredAliasIds() + " alias identifier(s), fork settings for " + result.restoredSettings() +
+            " channel(s)/alias(es); CTCSS/DCS taken from upstream squelch settings on " + adopted + " channel(s)");
+
+        return playlist;
+    }
+
+    private static void writeAtomically(Path path, String content) throws IOException
+    {
+        Path temporary = Path.of(path.toAbsolutePath() + ".tmp");
+        Files.writeString(temporary, content);
+
+        try
+        {
+            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        }
+        catch(IOException atomicNotSupported)
+        {
+            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /**

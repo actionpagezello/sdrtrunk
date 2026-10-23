@@ -5,7 +5,53 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
-## [0.6.2-ap-15.9.25] - unreleased
+## [0.6.2-ap-15.9.26] - 2026-10-22
+
+### Changed - one playlist for both this fork and upstream SDRTrunk, in either direction
+
+Upstream rejects a whole playlist that contains an element type it does not know and then saves an empty one over it
+(Somerville 2026-10-22: the release and the nightly both wiped the fork playlist on its Zello streams). And this fork
+dropped the settings it did not know when it saved an upstream playlist - upstream's CTCSS/DCS squelch, per-channel JMBE
+settings, audio ALC and de-emphasis.
+
+The fork now saves two files:
+
+- `default.xml` - the playlist, minus the element types only this fork has: Zello, Zello Consumer and ThinLine streams,
+  and CTCSS and NAC alias identifiers. Upstream can open it. Fork-only settings stay in it as extra attributes, which
+  upstream ignores. The NBFM tone filter is also written in upstream's form (`squelchDecoders`, upstream's code names),
+  so upstream applies the same tone squelch.
+- `default.ap.xml` - the companion: the complete playlist as the fork holds it. Upstream never reads it.
+
+On load the fork takes from the companion only what the playlist lacks - the fork-only streams (by name) and alias
+identifiers (by alias list and name) always, and, when another program saved the playlist last, the fork-only settings
+it dropped, matched by channel system/site/name and alias list/name. Whatever the other program wrote is kept, including
+edits made there: a CTCSS/DCS tone changed in upstream is adopted; a tone removed there leaves the fork filter disabled.
+Channels and aliases are never added or removed from the companion. One INFO line per load says who saved last and what
+was restored.
+
+A playlist made by upstream loads with its CTCSS/DCS squelch converted into the fork's tone filter (enabled), and every
+setting the fork does not recognise is kept and written back: channels, decode/source/record/event-log configurations,
+aliases and streams carry them through. Upstream's per-channel JMBE settings (`jmbeAGC`, `jmbeToneGain`,
+`jmbeNoiseGain`, upstream #2482/#2484) are read and written - `DecodeConfigJMBE` is taken from upstream - but not yet
+applied: the fork still runs every DMR/NXDN/P25 channel with AGC on, the level measured in ap-15.9.24.
+
+Verified with the save/load code of both programs compiled together (fork 15.9.26 and upstream master b0428a1d), on
+Somerville's playlist (60 channels, 53 aliases, 30 Zello Work and 2 Zello Consumer streams, 36 tone squelches) and an
+upstream playlist with CTCSS and DCS:
+
+| Round trip | Result |
+|---|---|
+| fork 15.9.24 playlist -> 15.9.26 -> upstream opens and saves -> fork | identical; upstream sees all 36 tone squelches |
+| fork -> fork, twice | identical |
+| upstream playlist -> fork -> upstream | identical, including its squelch and JMBE settings |
+| ... upstream saves again -> fork -> upstream | identical |
+| edits in upstream (tone changed, tone removed, bandwidth) -> fork | each kept; fork-only settings and alias ids restored |
+
+Limits: a channel renamed in upstream does not get its fork-only settings back. Upstream never streams to Zello or
+ThinLine; the streams return when the fork next loads. A fork version older than this one reads only `default.xml`, so
+it runs without the Zello/ThinLine streams; the companion is untouched and 15.9.26 restores them.
+
+## [0.6.2-ap-15.9.25] - 2026-10-22 (built only as part of 15.9.26)
 
 ### Fixed - a P25 Phase 1 call stayed open for minutes or hours after its audio ended
 

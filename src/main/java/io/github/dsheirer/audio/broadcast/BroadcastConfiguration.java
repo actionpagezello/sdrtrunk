@@ -63,6 +63,24 @@ import java.net.SocketAddress;
 @JacksonXmlRootElement(localName = "stream")
 public abstract class BroadcastConfiguration
 {
+    /**
+     * AP-fork (ap-15.9.26): playlist settings this version does not recognise - written by upstream SDRTrunk or a newer
+     * fork - kept as read and written back on save, so opening another program's playlist here never drops them.
+     */
+    private final java.util.Map<String,Object> mUnrecognisedSettings = new java.util.LinkedHashMap<>();
+
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    public void setUnrecognisedSetting(String name, Object value)
+    {
+        mUnrecognisedSettings.put(name, value);
+    }
+
+    @com.fasterxml.jackson.annotation.JsonAnyGetter
+    public java.util.Map<String,Object> getUnrecognisedSettings()
+    {
+        return mUnrecognisedSettings;
+    }
+
     private final static Logger mLog = LoggerFactory.getLogger(BroadcastConfiguration.class);
     // Static unique channel identifier tracking
     private static int UNIQUE_ID = 0;

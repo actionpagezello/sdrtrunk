@@ -26,10 +26,14 @@ import io.github.dsheirer.dsp.squelch.SquelchTailRemover;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
+import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
+import io.github.dsheirer.module.decode.dcs.DCSCode;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Decoder configuration for an NBFM channel
@@ -45,6 +49,13 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     // === NEW: Channel-level tone filtering ===
     private List<ChannelToneFilter> mToneFilters = new ArrayList<>();
     private boolean mToneFilterEnabled = false;
+
+    /**
+     * AP-fork (ap-15.9.26): upstream's squelch decoders as read from a playlist, until adoptUpstreamSquelchDecoders()
+     * converts them.  See getSquelchDecoders().
+     */
+    private List<SquelchDecoderEntry> mUpstreamSquelchDecoders = new ArrayList<>();
+    private static final Pattern UPSTREAM_CTCSS_NAME = Pattern.compile("TONE_(\\d{3,4})");
 
     // === NEW: Squelch tail/head removal ===
     private int mSquelchTailRemovalMs = SquelchTailRemover.DEFAULT_TAIL_REMOVAL_MS;
@@ -274,6 +285,140 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     /**
      * Indicates if tone filtering is enabled for this channel
      */
+    /**
+     * AP-fork (ap-15.9.26): the tone filter in upstream SDRTrunk's form - &lt;squelchDecoders&gt; - written alongside
+     * &lt;toneFilters&gt;, so upstream applies the same CTCSS/DCS squelch when it opens this playlist.  Written only while
+     * the filter is enabled, since upstream has no separate on/off switch.  CTCSS codes are written under upstream's code
+     * names (131.8 Hz is "TONE_1318" there, "TONE_3B" here - all 42 of the fork's tones exist upstream); DCS code names
+     * are the same in both.
+     */
+    @JacksonXmlElementWrapper(localName = "squelchDecoders")
+    @JacksonXmlProperty(localName = "squelchDecoder")
+    public List<SquelchDecoderEntry> getSquelchDecoders()
+    {
+        List<SquelchDecoderEntry> entries = new ArrayList<>();
+
+        if(mToneFilterEnabled)
+        {
+            for(ChannelToneFilter filter : mToneFilters)
+            {
+                if(filter.getToneType() == ChannelToneFilter.ToneType.CTCSS)
+                {
+                    CTCSSCode code = filter.getCTCSSCode();
+
+                    if(code != null && code != CTCSSCode.UNKNOWN)
+                    {
+                        entries.add(new SquelchDecoderEntry("CTCSS",
+                            "TONE_" + Math.round(code.getFrequency() * 10)));
+                    }
+                }
+                else if(filter.getToneType() == ChannelToneFilter.ToneType.DCS)
+                {
+                    DCSCode code = filter.getDCSCode();
+
+                    if(code != null)
+                    {
+                        entries.add(new SquelchDecoderEntry("DCS", code.name()));
+                    }
+                }
+            }
+        }
+
+        return entries;
+    }
+
+    /**
+     * AP-fork (ap-15.9.26): receives upstream's squelch decoders from a playlist.  Applied by
+     * adoptUpstreamSquelchDecoders() once the whole configuration has been read.
+     */
+    public void setSquelchDecoders(List<SquelchDecoderEntry> entries)
+    {
+        mUpstreamSquelchDecoders = entries != null ? entries : new ArrayList<>();
+    }
+
+    /**
+     * AP-fork (ap-15.9.26): when the playlist carries upstream's squelch decoders but no fork tone filters - a playlist
+     * made by upstream SDRTrunk, or a fork playlist that upstream has since saved - converts them into tone filters and
+     * enables the filter.  A configuration that already has tone filters keeps them.
+     *
+     * @return true if tone filters were created
+     */
+    public boolean adoptUpstreamSquelchDecoders()
+    {
+        List<SquelchDecoderEntry> entries = mUpstreamSquelchDecoders;
+        mUpstreamSquelchDecoders = new ArrayList<>();
+
+        if(!mToneFilters.isEmpty() || entries.isEmpty())
+        {
+            return false;
+        }
+
+        for(SquelchDecoderEntry entry : entries)
+        {
+            String value = entry.getValue().trim();
+
+            if("CTCSS".equalsIgnoreCase(entry.getSquelchType()))
+            {
+                CTCSSCode code = parseCTCSS(value);
+
+                if(code != null && code != CTCSSCode.UNKNOWN)
+                {
+                    mToneFilters.add(new ChannelToneFilter(ChannelToneFilter.ToneType.CTCSS, code.name(), ""));
+                }
+            }
+            else if("DCS".equalsIgnoreCase(entry.getSquelchType()))
+            {
+                try
+                {
+                    mToneFilters.add(new ChannelToneFilter(ChannelToneFilter.ToneType.DCS,
+                        DCSCode.valueOf(value).name(), ""));
+                }
+                catch(IllegalArgumentException e)
+                {
+                    //Unrecognised DCS code - skipped
+                }
+            }
+        }
+
+        if(!mToneFilters.isEmpty())
+        {
+            mToneFilterEnabled = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Parses a CTCSS code written by either program: upstream's code name ("TONE_1318", the frequency in tenths), this
+     * fork's code name ("TONE_3B"), or a frequency ("131.8").
+     */
+    private static CTCSSCode parseCTCSS(String value)
+    {
+        Matcher m = UPSTREAM_CTCSS_NAME.matcher(value);
+
+        if(m.matches())
+        {
+            return CTCSSCode.fromFrequency(Integer.parseInt(m.group(1)) / 10.0f);
+        }
+
+        try
+        {
+            return CTCSSCode.valueOf(value);
+        }
+        catch(IllegalArgumentException notForkName)
+        {
+            try
+            {
+                return CTCSSCode.fromFrequency(Float.parseFloat(value));
+            }
+            catch(NumberFormatException notFrequency)
+            {
+                return null;
+            }
+        }
+    }
+
     @JacksonXmlProperty(isAttribute = true, localName = "toneFilterEnabled")
     public boolean isToneFilterEnabled()
     {
