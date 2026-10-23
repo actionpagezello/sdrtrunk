@@ -5,6 +5,23 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.28] - 2026-10-23
+
+### Fixed - the 0.6.1 final release no longer switches off the fork's NBFM tone filters
+
+15.9.26/27 were tested against upstream master (nightly). Tested now against the 0.6.1 release too. 0.6.1 has no
+CTCSS/DCS squelch, so it drops it on save; the fork read that as "tone removed by the user" and restored every NBFM tone
+filter disabled. A tone removed in the other program is now only assumed when that program writes squelch decoders
+(the nightly writes them on every NBFM channel; 0.6.1 never does).
+
+Results with 0.6.1 as the other program: the two-sided multi-round test passes 19 of 19 (before: 18); a fork playlist
+through 0.6.1 and back keeps every channel, alias, stream and setting - the only additions are 0.6.1's own NBFM
+`squelch` and `autoTrack` values, carried along for it; a 0.6.1 user's own playlist through fork -> 0.6.1 -> fork ->
+0.6.1 is unchanged. The nightly results are unchanged (19 of 19, scenarios A-D 0 differences).
+
+In 0.6.1 itself, NBFM channels run without tone squelch and on 0.6.1's own squelch level - it has neither the tone
+squelch nor the fork's squelch thresholds. The fork's values are kept and return when the fork runs again.
+
 ## [0.6.2-ap-15.9.27] - 2026-10-22
 
 ### Fixed - playlist edits made in either program are kept, including renames and things turned off

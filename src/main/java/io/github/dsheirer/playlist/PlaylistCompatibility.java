@@ -338,8 +338,11 @@ public class PlaylistCompatibility
                     skip.add("@toneFilterEnabled");
                 }
             }
-            else if("true".equals(value(source, "toneFilterEnabled")) && hasEntries(source, "squelchDecoders"))
+            else if("true".equals(value(source, "toneFilterEnabled")) && hasEntries(source, "squelchDecoders") &&
+                known.contains(settingKey(source, "squelchDecoders")))
             {
+                //Only a program that has squelch decoders (it writes them on every NBFM channel) can have removed one;
+                //releases before them (0.6.1) drop the tone squelch unknowingly, so the fork's filter is restored
                 disableToneFilter = true;
             }
         }
