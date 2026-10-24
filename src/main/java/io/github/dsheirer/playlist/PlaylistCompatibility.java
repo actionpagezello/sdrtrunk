@@ -301,6 +301,7 @@ public class PlaylistCompatibility
 
         root.removeAttribute(ATTRIBUTE_FORMAT);
         root.removeAttribute(ATTRIBUTE_SAVE_ID);
+        groupSiblings(root);
         return new LoadResult(write(playlist), foreignWriter, streams, aliasIds, settings);
     }
 
@@ -520,6 +521,62 @@ public class PlaylistCompatibility
         }
 
         return false;
+    }
+
+    /**
+     * Makes elements of the same name adjacent, throughout the document, keeping their order.  Lists are read
+     * unwrapped: when elements of one name are split into two runs, Jackson keeps only the LAST run and silently
+     * drops the rest.  Elements restored from the companion are appended, so without this a playlist whose streams
+     * were written before its channels (Jackson's property order varies between runs) loses every stream that was in
+     * the playlist file - Roger Baker 2026-10-23 lost its two Rdio Scanner ingest streams this way.
+     */
+    private static void groupSiblings(Element parent)
+    {
+        Map<String,List<Element>> groups = new java.util.LinkedHashMap<>();
+
+        for(Element child : children(parent, null))
+        {
+            groups.computeIfAbsent(child.getTagName(), k -> new ArrayList<>()).add(child);
+        }
+
+        boolean split = false;
+        String previous = null;
+        Set<String> finished = new java.util.HashSet<>();
+
+        for(Element child : children(parent, null))
+        {
+            if(!child.getTagName().equals(previous))
+            {
+                if(finished.contains(child.getTagName()))
+                {
+                    split = true;
+                }
+
+                if(previous != null)
+                {
+                    finished.add(previous);
+                }
+
+                previous = child.getTagName();
+            }
+        }
+
+        if(split)
+        {
+            for(List<Element> group : groups.values())
+            {
+                for(Element child : group)
+                {
+                    parent.removeChild(child);
+                    parent.appendChild(child);
+                }
+            }
+        }
+
+        for(Element child : children(parent, null))
+        {
+            groupSiblings(child);
+        }
     }
 
     /**

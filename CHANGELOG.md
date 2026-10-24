@@ -5,6 +5,24 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.29] - 2026-10-23
+
+### Fixed - streams of upstream types (Rdio Scanner, Broadcastify, Icecast, OpenMHz...) lost on the second start
+
+Roger Baker 2026-10-23 (15.9.7 -> 15.9.28): its two Rdio Scanner ingest streams ("Essex County - Live/Test") vanished
+on the second start; the seven Zello streams stayed and the aliases still named the lost streams. The first save was
+correct (Rdio streams in `default.xml`, all nine in the companion). On load the Zello streams from the companion were
+appended at the end of the playlist, but that save had written its streams before its channels (Jackson's property
+order varies between runs), so the streams were split into two runs - and Jackson keeps only the last run of an
+unwrapped list, silently dropping the Rdio streams. The next save then wrote them out of both files.
+
+Elements of the same name are now made adjacent before the merged playlist is read. Reproduced with the Somerville
+playlist plus two Rdio streams written before the channels: 15.9.28 loads 32 of 34 streams, 15.9.29 all 34 on three
+consecutive starts. Two-sided multi-round tests 19 of 19 (nightly and 0.6.1); scenarios A-D 0 differences.
+
+Machines whose playlist has only Zello/ThinLine streams (Somerville) were not affected. Baker's streams are in
+`playlist\history\default-20261023-155543.xml` and are restored by putting that file back (see release notes).
+
 ## [0.6.2-ap-15.9.28] - 2026-10-23
 
 ### Fixed - the 0.6.1 final release no longer switches off the fork's NBFM tone filters
