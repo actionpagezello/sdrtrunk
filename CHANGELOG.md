@@ -5,6 +5,26 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.30] - 2026-10-25
+
+### Fixed - playlists with a multi-frequency tuner source (trunked systems with several control channels) unreadable
+
+Metro-25 2026-10-25 (15.9.17 -> 15.9.29): "PLAYLIST COULD NOT BE READ ... Cannot deserialize value of type
+ArrayList<Long> from String ... SourceConfigTunerMultipleFrequency["frequency"]". 15.9.26-15.9.29 pass the playlist
+through an XML document before reading it, and that writes attributes in alphabetical order, so `type` was no longer
+first. Jackson then buffers the element to find its type, and in that mode cannot read an unwrapped list - the
+multi-frequency source's `<frequency>` list. The file itself was fine (the nightly read it); saving was blocked, so
+nothing was overwritten.
+
+- The type attribute is written first again, on load and in both saved files. Reproduced with a three-frequency P25
+  source: 15.9.29 fails, 15.9.30 reads it and keeps all three frequencies through fork -> nightly -> fork; 0.6.1 reads
+  the fork's file too.
+- Safety net: if the merged playlist ever cannot be read but the file itself can, the fork now runs on the file as it
+  is (without the companion's streams and fork-only settings), blocks saving and logs "PLAYLIST MERGE FAILED", instead
+  of starting empty.
+
+All compatibility tests unchanged (19/19 against nightly and 0.6.1; scenarios A-D 0 differences; Baker case 34/34).
+
 ## [0.6.2-ap-15.9.29] - 2026-10-23
 
 ### Fixed - streams of upstream types (Rdio Scanner, Broadcastify, Icecast, OpenMHz...) lost on the second start

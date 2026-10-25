@@ -688,7 +688,25 @@ public class PlaylistManager implements Listener<ChannelEvent>
                 companionError.getMessage());
         }
 
-        PlaylistV2 playlist = objectMapper.readValue(result.xml(), PlaylistV2.class);
+        PlaylistV2 playlist;
+
+        try
+        {
+            playlist = objectMapper.readValue(result.xml(), PlaylistV2.class);
+        }
+        catch(Exception mergeError)
+        {
+            //AP-fork (ap-15.9.30): safety net - if the merged playlist cannot be read but the file itself can, run on
+            //the file as it is (without the companion's Zello/ThinLine streams and fork-only settings) rather than
+            //on an empty playlist, and block saving so neither file is changed.  The original error is rethrown
+            //when the file itself is unreadable too.
+            playlist = objectMapper.readValue(playlistXml, PlaylistV2.class);
+            mSaveBlocked = true;
+            mLog.error("PLAYLIST MERGE FAILED - loaded [" + path + "] WITHOUT its companion (no Zello/ThinLine " +
+                "streams or fork-only settings) and blocked saving so neither file is changed.  Please report this " +
+                "with the log.  Cause: " + mergeError.getMessage(), mergeError);
+            return playlist;
+        }
 
         int adopted = 0;
 

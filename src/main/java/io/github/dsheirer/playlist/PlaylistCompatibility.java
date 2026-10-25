@@ -805,8 +805,19 @@ public class PlaylistCompatibility
         transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
         StringWriter writer = new StringWriter();
         transformer.transform(new DOMSource(document), new StreamResult(writer));
-        return writer.toString();
+        return TYPE_NOT_FIRST.matcher(writer.toString()).replaceAll("<$1 type=\"$3\"$2");
     }
+
+    /**
+     * An element start tag whose type attribute is not its first attribute.  The DOM writes attributes in
+     * alphabetical order, but Jackson must see the type id first: when it does not, it buffers the element and then
+     * cannot read an unwrapped list inside it - a multi-frequency tuner source's frequency list fails with "Cannot
+     * deserialize value of type ArrayList<Long> from String" and the whole playlist is unreadable (Metro-25
+     * 2026-10-25, every trunked system with more than one control channel).  Attribute values never contain a quote
+     * (the writer escapes it), so the attribute list can be matched safely.
+     */
+    private static final java.util.regex.Pattern TYPE_NOT_FIRST = java.util.regex.Pattern.compile(
+        "<([A-Za-z_][\\w:.-]*)((?:\\s+[\\w:.-]+=\"[^\"]*\")+?)\\s+type=\"([^\"]*)\"");
 
     private static void removeWhitespace(Node node)
     {
