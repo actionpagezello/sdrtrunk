@@ -3,7 +3,111 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.9.16 (2026-10-06)
+## Current Release: ap-15.9.31 (2026-10-25) — state as of 2026-10-26
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.31\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.31.zip`
+- Tree `f2fd30d33454b3d832f196ebb98b280b49aee4e0` (guard on the tree hash; commit hashes differ between machines)
+- **Never deploy 15.9.28** (loses upstream-type streams such as Rdio Scanner on the 2nd start) **or 15.9.29**
+  (cannot read a playlist with a multi-frequency source). Use 15.9.31.
+
+### Fleet versions (last known)
+| Machine | Version | Notes |
+|---|---|---|
+| Salisbury (SDR-9) | 15.9.31 | from ap-15.7 on 2026-10-25 22:45 |
+| Daly (DESKTOP) | 15.9.31 | "Methuen TEST" channel on 482.4625 running alongside Methuen Police |
+| Beauport (SDR-13) | 15.9.31 | |
+| Baker | 15.9.29 | ingest streams restored from history 2026-10-23; move to 15.9.31 |
+| Somerville | 15.9.28 | move to 15.9.31 |
+| Audubon | 15.9.24 | |
+| Bailey VHF (SDR-3) | ap-15.5 | RTL/Nooelec only |
+| Bailey UHF (SDR-4) | ap-15.7 | RTL/Nooelec only |
+| Metro-25 (friend's PC, Windows user "User") | 15.9.30 installed; recommended to run the 0.6.1 final | see Metro-25 below |
+
+Deploy recipe: back up the playlist folder first
+(`$p="$env:USERPROFILE\SDRTrunk\playlist"; Copy-Item $p "$p-backup-$(Get-Date -Format yyyyMMdd-HHmm)" -Recurse`),
+install, start, close, start again; log must say `Playlist read - last saved by this fork`.
+
+### Releases this cycle (all patches delivered as `ap-<ver>.patch`, applied with `git am --keep-cr --3way`)
+| Version | Tree | What |
+|---|---|---|
+| 15.9.24 | `ab88399b` | JMBE 2.x: skip the legacy 5x P25P1/NXDN gain under library AGC (Audubon −16.8 dBFS, 0% clipped) |
+| 15.9.25 | (built inside 15.9.26) | P25P1 idle close after 2 s without audio; NBFM stuck-call watchdog timed per call; playlist never saved over an unreadable file, atomic save, `playlist\history` (hourly, newest 20) |
+| 15.9.26 | `02539dd2` | One playlist for fork and upstream: `default.xml` upstream-readable, `default.ap.xml` companion with fork-only streams/alias ids/settings, merged on load |
+| 15.9.27 | `99bfc0c4` | Renamed channels (decoder+frequency) and aliases (list+ids) keep fork settings; settings turned off upstream stay off |
+| 15.9.28 | `f964996a` | 0.6.1 release no longer disables NBFM tone filters (tested against 0.6.1 as well as master) |
+| 15.9.29 | `85e6708d` | Same-named elements made contiguous before reading (Baker lost its Rdio ingest streams on 15.9.28) |
+| 15.9.30 | `d503ddbc` | `type` attribute written first again (Metro-25 multi-frequency source unreadable on 15.9.29); fall back to the file and block saving if the merge cannot be read |
+| 15.9.31 | `f2fd30d3` | Measurement only: every 10 min each P25 Phase 1 channel logs `P25 Phase 1 health on [channel] ...` |
+
+Compatibility test harness (sandbox, recreate if needed): fork and upstream save/load code compiled together;
+`multiround.py` two-sided 5-round edit test (19/19 against upstream master b0428a1d and 0.6.1); `run.sh`
+scenarios A–E. Baseband replay harness `RP`/`RPC` (LSM/C4FM) feeds a 50 kHz I/Q wav through the fork and the
+0.6.1 decoders.
+
+### OPEN — conventional P25 channels silent for hours/days (top priority)
+Armen confirmed the agencies are heard elsewhere and **nothing changed in how they transmit, frequencies or
+sites — do not raise that again.** NH State Police Troop A is C4FM (151.400, four transmitter sites, WPBC524);
+switching to LSM will not help.
+
+| Machine | Channel | Since |
+|---|---|---|
+| Salisbury | NH State Police – Troop A (151.400) | 2026-10-23 |
+| Salisbury | Seabrook Police (154.7925) | 2026-10-19 (zero every day since) |
+| Salisbury | Hampton NH Police (155.025) | 2026-10-24 |
+| Bailey VHF | NH State Police – Troop B | 2026-10-19 (zero every day since) |
+| Daly | Methuen Police (482.4625, C4FM) | gaps of 2.6–10 h on many days; 0 calls on 10-21 |
+| Beauport | Gloucester MA Police; Rockport MA Fire | 2026-10-22/23 |
+
+Measured so far:
+- Onset dates match across machines running 15.5, 15.7 and 15.9.17, RTL and RSP1B alike; Salisbury ran ap-15.7
+  without a restart through its onset. Not a single fork version and not one tuner type.
+- 15.9.31 health lines on Salisbury: the silent channels report `messages=600 (... other 600)` per 10 min =
+  one P25 sync-loss per second, i.e. samples flow and the decoder runs but never finds sync; no call held
+  open, nothing dropped as encrypted. Other P25 channels on the same RSP1B (24050C7060, centre 154.725, error
+  within ±270 Hz) decode normally.
+- Daly 2026-10-25 13:37 tuner recording: Methuen 51 dB above noise, decoded completely by the fork's C4FM
+  decoder; channel-only restarts revived NH State Police (Salisbury) and Methuen (Daly) at least once.
+- Tuner (wideband) recordings of 10–15 s did not catch a failing transmission.
+
+Next step: **channel-level `Baseband I/Q` recordings for 30–60 min** on Salisbury NH State Police Troop A and
+Seabrook Police and Bailey VHF NH State Police Troop B while others hear traffic, plus that machine's log;
+replay every transmission through the fork and 0.6.1 decoders and compare with what the channel logged.
+Per-day stream counts: the PowerShell `Zello stream started` per-stream/per-day script (flags DROPPED/SILENT;
+the current-day column is partial).
+
+### OPEN — other items
+- **Metro-25 (P25 Phase 2, LSM, Zone 3, control 769.90625):** replaying the same recordings, the 0.6.1 LSM
+  decoder decodes 10–25x more messages than the fork/nightly LSM decoder (CPU ~3.5% vs ~1.2% of a core), and
+  the 0.6.1 recording path gave ~6x cleaner baseband for unknown reasons (same RTL, 2.4 MSPS, polyphase). Hold
+  the decoder port until a single wideband recording is replayed through both versions. Keep "max traffic
+  channels" at 10: 0.6.1 refused every grant 10:14–10:27 (channels not returned), not a capacity limit. Two
+  SDRTrunk instances were seen running at once on that PC.
+- **Whole calls muted on a mis-decoded encryption ID** (Salisbury Rockingham Sheriff East/West: scattered IDs
+  0x76, 0xB8, 0x3F, 0x0E, 0xED ...). Candidate: mute only when the same unknown ID repeats or the HDU agrees.
+  Measure on a recording first.
+- **Stream delete matches by name+type** (`BroadcastModel.getConfiguredBroadcast` via `equals`), not by the
+  selected row; Armen saw a deleted Rockingham stream reappear. Fix: delete by identity, log stream add/edit/
+  delete. (Salisbury's disk was full at the time — see below — so retest first.)
+- **Salisbury disk filled 2026-10-26 02:07** by a tuner recording left running (RSP1B 10 MSPS ≈ 140 GB/h).
+  Tuner recordings: 10–15 s only. Files deleted.
+- **ingest.actionpagemedia.com** call-upload connection tests failing from Salisbury from 06:53 on 2026-10-26.
+- **Baker Action Ambulance (461.200, 107.2):** TDMA veto cut speech on ap-15.9.x < 15.9.17 (100 Hz hum = H3);
+  confirm with a 15.9.29+ log that `TDMA veto refused ... no fundamental` replaces `Closing tone gate`.
+- **Beauport Rockport Fire:** no call 45 h on 10-23/24; check channel running/tuner at startup.
+- JMBE 2.x per-channel settings (AGC/tone/noise gain) are preserved but not applied; UI not ported — deferred
+  until a channel needs it.
+
+### Working rules (from Armen)
+- Git runs on the Windows machine only, never through the device bridge (CRLF). Deliver `git format-patch`;
+  Armen applies with `git am --keep-cr --3way ap-<ver>.patch` and checks the tree hash. Stage explicit files,
+  never `git add -A`. Armen's build is the official compile; Armen pushes.
+- Measure before diagnosing; no fix built on an unchecked assumption. Auto-PPM is unreliable — don't propose it.
+- Mute affects local speakers only. Paxton is not Armen's machine: read-only commands there.
+- Don't propose PRs to DSheirer/sdrtrunk; pulling from upstream is fine.
+- Playlists contain Zello credentials: read structure only, never print credential attributes.
+
+
+## Earlier release: ap-15.9.16 (2026-10-06)
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.16\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.16.zip`
 - Built 2026-10-06, JDK 25 Bellsoft / Gradle 9.2
 - Tree `99010c848b4dca71cade899b8b6824bb5d233702`
