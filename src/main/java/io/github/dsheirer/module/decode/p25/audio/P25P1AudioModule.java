@@ -41,6 +41,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -90,6 +93,32 @@ public class P25P1AudioModule extends ImbeAudioModule
      * the encryption state and the LDU cache never came, so the next transmission must establish its own.
      */
     private volatile boolean mResetCallStatePending = false;
+
+    /**
+     * AP-fork (ap-15.9.31): measurement only.  Conventional P25 channels have gone silent for hours while the
+     * signal was strong and decodable (Daly Methuen Police, Salisbury NH State Police, 2026-10-25) and nothing was
+     * logged.  Every HEALTH_INTERVAL_MINUTES each P25 Phase 1 audio module logs what reached it and what it did
+     * with it, so a silent stretch shows whether messages stopped arriving, voice frames arrived but were dropped
+     * (encrypted / never established), or the channel held a call open.
+     */
+    private static final long HEALTH_INTERVAL_MINUTES = 10;
+    private final AtomicLong mHealthMessages = new AtomicLong();
+    private final AtomicLong mHealthHdu = new AtomicLong();
+    private final AtomicLong mHealthLdu1 = new AtomicLong();
+    private final AtomicLong mHealthLdu2 = new AtomicLong();
+    private final AtomicLong mHealthOther = new AtomicLong();
+    private final AtomicLong mHealthLduPlayed = new AtomicLong();
+    private final AtomicLong mHealthLduEncrypted = new AtomicLong();
+    private final AtomicLong mHealthLduCached = new AtomicLong();
+    private final AtomicLong mHealthCallsEncrypted = new AtomicLong();
+    private final AtomicLong mHealthUnsquelch = new AtomicLong();
+    private final AtomicLong mHealthSquelch = new AtomicLong();
+    private volatile long mHealthLastMessageMs;
+    private volatile long mHealthLastLduMs;
+    private volatile long mHealthLastSquelchEventMs;
+    private volatile int mHealthLastAlgorithm = -1;
+    private volatile ScheduledFuture<?> mHealthLog;
+    private volatile String mHealthChannel;
 
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
@@ -166,6 +195,72 @@ public class P25P1AudioModule extends ImbeAudioModule
     @Override
     public void start()
     {
+        if(mHealthLog == null)
+        {
+            mHealthLog = io.github.dsheirer.util.ThreadPool.SCHEDULED.scheduleAtFixedRate(this::logHealth,
+                HEALTH_INTERVAL_MINUTES, HEALTH_INTERVAL_MINUTES, TimeUnit.MINUTES);
+        }
+    }
+
+    @Override
+    public void stop()
+    {
+        ScheduledFuture<?> healthLog = mHealthLog;
+
+        if(healthLog != null)
+        {
+            healthLog.cancel(false);
+            mHealthLog = null;
+        }
+
+        super.stop();
+    }
+
+    /**
+     * AP-fork (ap-15.9.31): one line per interval describing what this channel received and did.  Measurement only.
+     */
+    private void logHealth()
+    {
+        try
+        {
+            long now = System.currentTimeMillis();
+            Identifier channel = getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL,
+                Role.ANY);
+            Identifier frequency = getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION,
+                Form.CHANNEL_FREQUENCY, Role.ANY);
+
+            //The identifier collection is cleared on reset - keep the last name seen so every line is attributable
+            if(channel != null)
+            {
+                mHealthChannel = channel + (frequency != null ? " " + frequency : "");
+            }
+
+            Object label = mHealthChannel != null ? mHealthChannel : "channel " + System.identityHashCode(this);
+
+            mLog.info("P25 Phase 1 health on [{}] last {} min: messages={} (HDU {}, LDU1 {}, LDU2 {}, other {}); " +
+                    "voice LDUs played={} dropped-encrypted={} held-awaiting-encryption-state={}; calls marked " +
+                    "encrypted={}{}; call starts={} ends={}; now: call open={}, encryption state {}{}, {} LDUs held; " +
+                    "last message {}, last LDU {}, last call start/end {}",
+                label, HEALTH_INTERVAL_MINUTES, mHealthMessages.getAndSet(0), mHealthHdu.getAndSet(0),
+                mHealthLdu1.getAndSet(0), mHealthLdu2.getAndSet(0), mHealthOther.getAndSet(0),
+                mHealthLduPlayed.getAndSet(0), mHealthLduEncrypted.getAndSet(0), mHealthLduCached.getAndSet(0),
+                mHealthCallsEncrypted.getAndSet(0),
+                mHealthLastAlgorithm >= 0 ? " (last algorithm 0x" + String.format("%02X", mHealthLastAlgorithm) + ")" : "",
+                mHealthUnsquelch.getAndSet(0), mHealthSquelch.getAndSet(0), mCallStateOpen,
+                mEncryptedCallStateEstablished ? "ESTABLISHED" : "not established",
+                mEncryptedCallStateEstablished ? (mEncryptedCall ? " as ENCRYPTED" : " as clear") : "",
+                mCachedLDUMessages.size(), ago(now, mHealthLastMessageMs), ago(now, mHealthLastLduMs),
+                ago(now, mHealthLastSquelchEventMs));
+        }
+        catch(Exception e)
+        {
+            mLog.debug("P25 health log failed", e);
+        }
+    }
+
+    private static String ago(long now, long then)
+    {
+        return then <= 0 ? "never" : ((now - then) / 1000) + " s ago";
     }
 
     /**
@@ -177,6 +272,29 @@ public class P25P1AudioModule extends ImbeAudioModule
      */
     public void receive(IMessage message)
     {
+        //AP-fork (ap-15.9.31): health counters - measurement only
+        mHealthMessages.incrementAndGet();
+        mHealthLastMessageMs = System.currentTimeMillis();
+
+        if(message instanceof HDUMessage)
+        {
+            mHealthHdu.incrementAndGet();
+        }
+        else if(message instanceof LDU1Message)
+        {
+            mHealthLdu1.incrementAndGet();
+            mHealthLastLduMs = mHealthLastMessageMs;
+        }
+        else if(message instanceof LDU2Message)
+        {
+            mHealthLdu2.incrementAndGet();
+            mHealthLastLduMs = mHealthLastMessageMs;
+        }
+        else
+        {
+            mHealthOther.incrementAndGet();
+        }
+
         if(mResetCallStatePending)
         {
             mResetCallStatePending = false;
@@ -200,6 +318,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                 {
                     mEncryptedCallStateEstablished = true;
                     mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
+                    countEncryption(hdu.getHeaderData().getAlgorithmId());
                     warnIfUnknownAlgorithm(hdu.getHeaderData().getEncryption(),
                         hdu.getHeaderData().getAlgorithmId(), "HDU");
                 }
@@ -208,6 +327,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                     //When we receive an LDU1 message without first receiving the HDU message, cache the LDU1 Message
                     //until we can determine the encrypted call state from the next LDU2 message
                     mCachedLDUMessages.add(ldu1);
+                    mHealthLduCached.incrementAndGet();
                 }
                 else if(message instanceof LDU2Message ldu2)
                 {
@@ -215,6 +335,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                     {
                         mEncryptedCallStateEstablished = true;
                         mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
+                        countEncryption(ldu2.getEncryptionSyncParameters().getAlgorithmId());
                         warnIfUnknownAlgorithm(
                             Encryption.fromValue(ldu2.getEncryptionSyncParameters().getAlgorithmId()),
                             ldu2.getEncryptionSyncParameters().getAlgorithmId(), "LDU2");
@@ -233,6 +354,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                     else
                     {
                         mCachedLDUMessages.add(ldu2);
+                        mHealthLduCached.incrementAndGet();
                     }
                 }
             }
@@ -275,8 +397,26 @@ public class P25P1AudioModule extends ImbeAudioModule
     /**
      * Processes an audio packet by decoding the IMBE audio frames and rebroadcasting them as PCM audio packets.
      */
+    private void countEncryption(int algorithmId)
+    {
+        if(mEncryptedCall)
+        {
+            mHealthCallsEncrypted.incrementAndGet();
+            mHealthLastAlgorithm = algorithmId & 0xFF;
+        }
+    }
+
     private void processAudio(LDUMessage ldu)
     {
+        if(mEncryptedCall)
+        {
+            mHealthLduEncrypted.incrementAndGet();
+        }
+        else
+        {
+            mHealthLduPlayed.incrementAndGet();
+        }
+
         if(!mEncryptedCall)
         {
             for(byte[] frame : ldu.getIMBEFrames())
@@ -314,12 +454,16 @@ public class P25P1AudioModule extends ImbeAudioModule
         @Override
         public void receive(SquelchStateEvent event)
         {
+            mHealthLastSquelchEventMs = System.currentTimeMillis();
+
             if(event.getSquelchState() == SquelchState.UNSQUELCH)
             {
+                mHealthUnsquelch.incrementAndGet();
                 mCallStateOpen = true;
             }
             else if(event.getSquelchState() == SquelchState.SQUELCH)
             {
+                mHealthSquelch.incrementAndGet();
                 mCallStateOpen = false;
                 closeAudioSegment();
                 mEncryptedCallStateEstablished = false;

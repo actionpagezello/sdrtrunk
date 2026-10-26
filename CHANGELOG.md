@@ -5,6 +5,23 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.31] - 2026-10-25
+
+### Added - P25 Phase 1 channel health line (measurement only, no behaviour change)
+
+Conventional P25 channels have gone silent for hours while the rest of the machine kept working: Daly Methuen
+Police 482.4625 (2026-10-25 10:29-13:07 and 14:20-21:32, the second ending without a restart) and Salisbury NH State
+Police (no call since 06:30). A tuner recording during a working period showed Methuen's signal 51 dB above the
+noise and decoded completely by the fork's C4FM decoder, so the signal and decoder are not the problem - but the
+log showed nothing at all for the channel during the silences.
+
+Every 10 minutes each P25 Phase 1 audio module now logs one INFO line, "P25 Phase 1 health on [channel] ...":
+messages received (HDU / LDU1 / LDU2 / other), voice frames played, dropped as encrypted, and held while the
+encryption state is unknown; calls marked encrypted and the last algorithm ID; call starts and ends from the channel
+state; and the state right now (call open, encryption state, frames held) with how long ago the last message, voice
+frame and call start/end were. A silent stretch then shows whether messages stopped arriving, voice arrived but was
+dropped, or the channel held a call open.
+
 ## [0.6.2-ap-15.9.30] - 2026-10-25
 
 ### Fixed - playlists with a multi-frequency tuner source (trunked systems with several control channels) unreadable
