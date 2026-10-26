@@ -5,6 +5,22 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.4] - 2026-10-29
+
+### Changed - DMR decoder rework, upstream PR #2517 (merged upstream as f2c98cdb, Denny Sheirer)
+
+- DMR now uses the shared C4FM demodulator/framer framework that P25 Phase 1 and NXDN already use
+  (`DMRSymbolProcessor` replaces `DMRSoftSymbolProcessor`), with soft-decision decoding for BPTC(196,96),
+  BPTC(128,77) embedded signalling, CACH and short link control, and corrected error detection (a hard-decision
+  decode that miscorrects is retried soft). New `SoftBlockCode` / `SoftProductCodeDecoder` in `edac.soft`.
+- Fork changes kept: the C4FM processor health counters and the two sync-buffer bounds guards from 15.10.1,
+  and the fork's DMR OTA channel-frequency announcement handling in `DMRMessageProcessor`.
+- Not included: upstream PR #2511 (JMBE legacy tone levels). It depends on upstream's per-channel JMBE 2 settings
+  UI, which this fork doesn't have, and stock JMBE ignores it.
+- Tests: upstream's 18 DMR unit tests pass. Replays are unchanged from 15.10.3: twelve P25 C4FM recordings and four
+  Lowell Police LSM offsets decode byte-for-byte the same, and 23 Georgetown NXDN recordings produce identical
+  message output.
+
 ## [0.6.2-ap-15.10.3] - 2026-10-29
 
 ### Changed - P25 Phase 1 LSM (simulcast) false-lock recovery, upstream PR #2478 (unmerged), adapted
