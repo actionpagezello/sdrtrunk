@@ -93,6 +93,9 @@ public class PlaylistManager implements Listener<ChannelEvent>
      * release and nightly each wiped the fork playlist that way (Zello/ThinLine stream types it does not know).
      */
     private volatile boolean mSaveBlocked = false;
+
+    //AP-fork (ap-15.9.33): when the pending playlist save was requested, for the save log line
+    private volatile long mSaveRequestedMs = 0;
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final String HISTORY_FOLDER = "history";
     private static final int HISTORY_KEEP = 20;
@@ -460,6 +463,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
     private void save()
     {
         PlaylistPreference playlistPreference = mUserPreferences.getPlaylistPreference();
+        long saveStartMs = System.currentTimeMillis();
 
         if(mSaveBlocked)
         {
@@ -533,6 +537,14 @@ public class PlaylistManager implements Listener<ChannelEvent>
             {
                 Files.delete(playlistPreference.getPlaylistLock());
             }
+
+            //AP-fork (ap-15.9.33): one line per save, so an edit that seems not to stick can be checked against it
+            long now = System.currentTimeMillis();
+            long requestedMs = mSaveRequestedMs;
+            mLog.info("Playlist saved - {} channel(s), {} alias(es), {} stream(s) - written in {} ms, {} ms after the " +
+                    "change that requested it", playlist.getChannels().size(), playlist.getAliases().size(),
+                playlist.getBroadcastConfigurations().size(), now - saveStartMs,
+                requestedMs > 0 ? now - requestedMs : -1);
         }
         catch(IOException ioe)
         {
@@ -822,6 +834,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
         {
             if(mPlaylistSavePending.compareAndSet(false, true))
             {
+                mSaveRequestedMs = System.currentTimeMillis();
                 mPlaylistSaveFuture = ThreadPool.SCHEDULED.schedule(new PlaylistSaveTask(), 2, TimeUnit.SECONDS);
             }
         }

@@ -404,6 +404,34 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
         mChannelFilteredList.setPredicate(mChannelListFilter);
     }
 
+    /**
+     * AP-fork (ap-15.9.33): keeps the edited channel selected after a save.  The save clears and restores the filter
+     * and briefly renames the channel to force a table refresh; with the table sorted, the row that was selected can
+     * then hold a different channel.  Selection is checked now and again once JavaFX has processed the table update.
+     */
+    @Override
+    public void reselect(Channel channel)
+    {
+        if(channel == null)
+        {
+            return;
+        }
+
+        reselectNow(channel);
+        Platform.runLater(() -> reselectNow(channel));
+    }
+
+    private void reselectNow(Channel channel)
+    {
+        TableView<Channel> table = getChannelTableView();
+
+        if(table.getSelectionModel().getSelectedItem() != channel && table.getItems().contains(channel))
+        {
+            table.getSelectionModel().select(channel);
+            table.scrollTo(channel);
+        }
+    }
+
     private TableView<Channel> getChannelTableView()
     {
         if(mChannelTableView == null)

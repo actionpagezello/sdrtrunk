@@ -701,18 +701,24 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
             mSaveButton.setMaxWidth(Double.MAX_VALUE);
             mSaveButton.disableProperty().bind(modifiedProperty().not());
             mSaveButton.setOnAction(event -> {
+                //AP-fork (ap-15.9.33): hold the channel being saved.  The table can move its selection to a
+                //neighbouring channel while the save rebuilds it, which replaces getItem() - and the restart prompt
+                //below then asked about, and restarted, that neighbouring channel instead of the one saved.
+                Channel saved = getItem();
+
                 if(mFilterProcessor != null)
                 {
                     mFilterProcessor.clearFilter();
                     save();
                     mFilterProcessor.restoreFilter();
+                    mFilterProcessor.reselect(saved);
                 }
                 else
                 {
                     save();
                 }
 
-                if(getItem().isProcessing())
+                if(saved != null && saved.isProcessing())
                 {
                     Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "Would you like to restart the channel?", ButtonType.YES, ButtonType.NO);
                     alert.setTitle("Restart Channel?");
@@ -724,12 +730,17 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
                     {
                         try
                         {
-                            mPlaylistManager.getChannelProcessingManager().stop(getItem());
-                            mPlaylistManager.getChannelProcessingManager().start(getItem());
+                            mPlaylistManager.getChannelProcessingManager().stop(saved);
+                            mPlaylistManager.getChannelProcessingManager().start(saved);
                         }
                         catch(ChannelException se)
                         {
                             mLog.error("Error restarting channel", se);
+                        }
+
+                        if(mFilterProcessor != null)
+                        {
+                            mFilterProcessor.reselect(saved);
                         }
                     }
                 }

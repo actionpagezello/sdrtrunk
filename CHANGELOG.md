@@ -5,6 +5,24 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.33] - 2026-10-27
+
+### Fixed - the channel table selection moved to another channel after Save
+
+Saving a channel clears and restores the table filter and briefly renames the channel to force the table to refresh
+(upstream behaviour). The table keeps its selection by row, not by channel, and since ap-14.6 the table's sort is
+remembered, so after a save the selected row often held the neighbouring channel and the editor loaded that one.
+The editor now remembers the channel it saved and selects it again after the save and after an accepted restart.
+
+The restart prompt after Save also read the channel from the editor after the save, so when the selection had moved
+it asked about - and on Yes restarted - the neighbouring channel. It now uses the channel that was saved.
+
+### Added - a log line for every playlist save
+
+"Playlist saved - N channel(s), N alias(es), N stream(s) - written in N ms, N ms after the change that requested
+it". Saving wrote nothing to the log before, so an edit that did not seem to stick (Beauport alias, 2026-10-27)
+could not be checked.
+
 ## [0.6.2-ap-15.9.32] - 2026-10-26
 
 ### Fixed - conventional P25 channels going silent for hours or days until the channel is restarted
