@@ -5,6 +5,32 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10] - 2026-10-27
+
+### Changed - P25 Phase 1 C4FM and NXDN decoders replaced by upstream's October 2026 rework, with two unmerged fixes
+
+- Upstream #2494 / PR #2514 (5635341d, 2026-10-25): P25 Phase 1 C4FM moves to the C4FM symbol processor and
+  equalizer built for NXDN - Gardner timing tracking, decision-directed balance tracking between syncs, a multi-tap
+  symbol equalizer, a band-limiting receive filter in place of the RRC, soft error correction, and tuner PPM reports
+  only after two consecutive syncs with a CRC-valid message. Sync validity no longer depends on the NID or NAC; the
+  first two syncs after a sync loss must also match the reference sync waveform. When unsynchronized, a sync applies
+  its full correction, so a channel cannot stay parked the way 15.9.31 and earlier did. NXDN filters change too.
+- Upstream PR #2519 (unmerged): re-score a lagging sync detection at its own offset. Without it the rework never
+  acquires some transmissions at all.
+- Upstream PR #2520 (unmerged): C4FM baseband filter passband 5,200 -> 3,600 Hz, replacing what #2461 did for the
+  old RRC filter.
+
+Kept from the fork: the NID buffer bounds check in the message framer; the 8-slot least-seen NAC tracker from
+15.9.32 (the message framer still uses it); the 10-minute "P25 Phase 1 sync health" line, now reporting syncs
+applied, rejected by the sync waveform check, sync losses, equalizer recalibrations, balance (Hz), gain and the
+channel mixer correction. The 15.9.32 trusted-sync logic lived in P25P1DemodulatorC4FM, which C4FM no longer uses.
+
+Replay, same samples (messages / voice frames): Troop B 09:37 2,758/296 (15.9.32) -> 2,795/296; Troop B 11:01
+1,359/150 -> 1,432/165; Methuen Police - Test 1,419/367 -> 1,454/367; Methuen Police +585 Hz 1,414/367 ->
+1,454/367; Troop A 2026-10-26 night 932/104 -> 943/104; Troop B night 804/70 -> 846/72; Methuen Police night
+1,018/217 -> 1,030/216. The rework without #2519/#2520 lost whole transmissions (Troop A night 533/34).
+NXDN compiled but not yet replayed. DMR is unchanged (upstream's DMR rework, #2517, is not included).
+
 ## [0.6.2-ap-15.9.33] - 2026-10-27
 
 ### Fixed - the channel table selection moved to another channel after Save
