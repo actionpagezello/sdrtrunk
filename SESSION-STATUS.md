@@ -7,6 +7,7 @@
 
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.31\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.31.zip`
 - Tree `f2fd30d33454b3d832f196ebb98b280b49aee4e0` (guard on the tree hash; commit hashes differ between machines)
+- **ap-15.9.32 delivered 2026-10-26 as `ap-15.9.32.patch` (tree `3bbe70d6`): fixes the silent P25 channels - see below. Not yet built.**
 - **Never deploy 15.9.28** (loses upstream-type streams such as Rdio Scanner on the 2nd start) **or 15.9.29**
   (cannot read a playlist with a multi-frequency source). Use 15.9.31.
 
@@ -44,36 +45,56 @@ Compatibility test harness (sandbox, recreate if needed): fork and upstream save
 scenarios A–E. Baseband replay harness `RP`/`RPC` (LSM/C4FM) feeds a 50 kHz I/Q wav through the fork and the
 0.6.1 decoders.
 
-### OPEN — conventional P25 channels silent for hours/days (top priority)
+### FIX DELIVERED — conventional P25 channels silent for hours/days: ap-15.9.32 (patch `ap-15.9.32.patch`, tree `3bbe70d69e78e23132cc7a1880211feba0f98d68`, not yet built or deployed)
 Armen confirmed the agencies are heard elsewhere and **nothing changed in how they transmit, frequencies or
-sites — do not raise that again.** NH State Police Troop A is C4FM (151.400, four transmitter sites, WPBC524);
-switching to LSM will not help.
+sites — do not raise that again.** Affected: Salisbury Troop A / Seabrook / Hampton, Bailey VHF Troop B, Daly
+Methuen Police, Beauport Gloucester Police / Rockport Fire.
 
-| Machine | Channel | Since |
-|---|---|---|
-| Salisbury | NH State Police – Troop A (151.400) | 2026-10-23 |
-| Salisbury | Seabrook Police (154.7925) | 2026-10-19 (zero every day since) |
-| Salisbury | Hampton NH Police (155.025) | 2026-10-24 |
-| Bailey VHF | NH State Police – Troop B | 2026-10-19 (zero every day since) |
-| Daly | Methuen Police (482.4625, C4FM) | gaps of 2.6–10 h on many days; 0 calls on 10-21 |
-| Beauport | Gloucester MA Police; Rockport MA Fire | 2026-10-22/23 |
+Root cause, measured 2026-10-26 by replaying channel `Baseband I/Q` recordings through the 15.9.31 C4FM decoder
+with its state logged (Salisbury Troop A, Bailey VHF Troop B x2, Daly Methuen Police and Methuen Police - Test):
+1. Noise produces sync patterns whose NIDs BCH-decode. Their random NACs entered `NACTracker` (3 slots, oldest
+   evicted), which within minutes of silence held three count-1 random NACs and had evicted the channel's NAC ->
+   `getTrackedNAC()` = 0 -> the NAC check in `validateNID` was off.
+2. A noise sync with a random NAC was then accepted; its PLL correction > PI/8 re-initialized the equalizer and was
+   applied in full -> PLL at/near the +/-PI/3 (800 Hz) clamp (Troop B 09:54:00 and 11:14:15, Methuen Test 09:02:22,
+   all at the noise floor).
+3. The equalizer only moves on a valid sync; parked there, no real transmission validates -> dead until restart.
+   The same syncs fed `processPLLError` -> `ChannelFrequencyErrorManager` (10 Hz / 500 ms, no limit): Methuen
+   Police's recording sat 510 Hz further off (+585 Hz) than Methuen Police - Test's (+75 Hz), same tuner and signal.
+- Evidence that it is decoder state, not RF: Troop A 08:54-11:13 live 0 messages, replay 5,154; same channel after
+  the 14:06 restart live 4,607 / replay 4,605. Resetting only the equalizer at 10 min revived the Methuen Test
+  replay (0 -> 1,283 messages in 20 min); resetting only the NAC tracker did nothing. Right-click mute is unrelated
+  (audio modules only; the lockout reproduces in the replay tool, which has no audio modules).
 
-Measured so far:
-- Onset dates match across machines running 15.5, 15.7 and 15.9.17, RTL and RSP1B alike; Salisbury ran ap-15.7
-  without a restart through its onset. Not a single fork version and not one tuner type.
-- 15.9.31 health lines on Salisbury: the silent channels report `messages=600 (... other 600)` per 10 min =
-  one P25 sync-loss per second, i.e. samples flow and the decoder runs but never finds sync; no call held
-  open, nothing dropped as encrypted. Other P25 channels on the same RSP1B (24050C7060, centre 154.725, error
-  within ±270 Hz) decode normally.
-- Daly 2026-10-25 13:37 tuner recording: Methuen 51 dB above noise, decoded completely by the fork's C4FM
-  decoder; channel-only restarts revived NH State Police (Salisbury) and Methuen (Daly) at least once.
-- Tuner (wideband) recordings of 10–15 s did not catch a failing transmission.
+15.9.32 changes: `NACTracker` 8 slots, evicts least-seen then oldest, `isEstablished()`; `validateNID` accepts any
+established NAC (seen 3x) and rejects others, rejects undefined DUIDs, unrolls the NAC-assist retry to flag it;
+only a **trusted** NID (no NAC assist, <= 15 bit errors over sync+NID) trains the NAC tracker, moves the equalizer
+or steers the mixer (threshold: 5,775 syncs in carrier needed <= 13, 99% none; 6 in noise needed 19-26). New INFO
+lines: `P25 Phase 1 sync health on [channel] ...` every 10 min (trusted / withheld / rejected NAC / rejected DUID /
+recalibrations, equalizer signal offset and gain, established NACs, channel mixer correction) and
+`P25 Phase 1 equalizer on [channel] recalibrated by a trusted sync ...`. No recovery timer and no mixer cap, on
+purpose: with noise unable to move either, the logs will show whether anything else still parks a channel.
 
-Next step: **channel-level `Baseband I/Q` recordings for 30–60 min** on Salisbury NH State Police Troop A and
-Seabrook Police and Bailey VHF NH State Police Troop B while others hear traffic, plus that machine's log;
-replay every transmission through the fork and 0.6.1 decoders and compare with what the channel logged.
-Per-day stream counts: the PowerShell `Zello stream started` per-stream/per-day script (flags DROPPED/SILENT;
-the current-day column is partial).
+Replay, 15.9.31 -> 15.9.32 (four 30-min REPRO files in `C:\Users\Admin\projects\logs`): Troop B 09:37 1,233 ->
+2,758 messages; Troop B 11:01 809 -> 1,359; Methuen Test 135 -> 1,419; Methuen Police (+585 Hz) 135 -> 1,414.
+Per-window counts match the live channels while they worked (Troop B 10:00 326/326, 11:10 891/891; Methuen Test
+09:10 985/987). Voice-frame counts identical before each original stall; messages in noise 9 -> 3.
+
+Next:
+- Build 15.9.32 (tree above), deploy first to Salisbury, Daly, Bailey VHF (needs 15.5 -> 15.9.32) and Beauport.
+- Success = the affected channels keep decoding past a day; sync health lines show `withheld`/`rejected` counts in
+  quiet periods and `equalizer recalibrations` near 0; Methuen Police's `channel mixer correction` stays small.
+- Not yet tested: a channel that runs well off-centre (Lowell Police at -748 Hz: a fresh 15.9.31 decoder never
+  acquired it, the live channel did) and weak signals near the 15-bit-error threshold. Armen to record 30 min of
+  Lowell Police channel Baseband I/Q while it decodes normally.
+- Seabrook, Hampton, Gloucester, Rockport were not recorded; same mechanism expected, unverified.
+
+Replay toolkit (device VM, recreate if needed): `pip install jdk4py==25.0.2.1` (Java 25 runtime); javac from
+`build\jdks\...\jdk-25.0.1-full\jmods\jdk.compiler.jmod` + `jdk.internal.opt.jmod` extracted to a directory,
+`module-info.class` removed, run from the classpath; `jdk.incubator.vector` classes from its jmod on the classpath
+with `--add-exports java.base/jdk.internal.vm.vector=ALL-UNNAMED` (and misc/annotation/util); compile changed
+classes into an overlay directory ahead of `build\install\sdr-trunk\lib\*`; a reflection harness feeds a 50 kHz
+wav through `ComplexWaveSource` -> `P25P1DecoderC4FM`. Baseband WAVs cap at 4 GiB (5.97 h at 50 kHz).
 
 ### OPEN — other items
 - **Metro-25 (P25 Phase 2, LSM, Zone 3, control 769.90625):** replaying the same recordings, the 0.6.1 LSM
