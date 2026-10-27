@@ -23,9 +23,11 @@ Cause, measured by replaying the channel recordings through the C4FM decoder wit
   PI/8, so it was applied in full instead of through the loop gain, and the equalizer landed at or near its +/-800 Hz
   limit (Troop B 09:54:00 and 11:14:15, Methuen Police - Test 09:02:22, all in pure noise).
 - The equalizer only moves on a valid sync, and with it parked there no real transmission could produce one, so the
-  channel stayed dead until restarted. The same false syncs fed the channel mixer correction, which steps 10 Hz every
-  500 ms with no limit: Methuen Police's recording sits 510 Hz further off than Methuen Police - Test's, although
-  both channels take the same signal from the same tuner.
+  channel stayed dead until restarted. A locked-out channel also stops feeding its channel mixer correction: Methuen
+  Police's recording sat 510 Hz further off than Methuen Police - Test's on the same tuner. Under 15.9.32 both
+  channels' mixers settled at -611 Hz (the RSP1B's own error at 482 MHz) with both recordings at +130 Hz, so the
+  difference was a mixer that never finished converging, not one that false syncs walked away. Keeping false syncs
+  out of the mixer is a precaution, not a measured cause.
 
 Changes:
 
@@ -45,7 +47,7 @@ Changes:
 
 Replay results (same samples, before -> after): Troop B 09:37 2,758 messages instead of 1,233 (decoding no longer
 stops at 09:54); Troop B 11:01 1,359 instead of 809; Methuen Police - Test 1,419 instead of 135; Methuen Police,
-with its 510 Hz extra offset, 1,414 instead of 135. Per 10-minute window the fixed replay matches what the live
+from its recording 510 Hz off-centre, 1,414 instead of 135. Per 10-minute window the fixed replay matches what the live
 channels logged while they were working (Troop B 09:50 1,599 vs 1,646, 10:00 326 vs 326, 11:10 891 vs 891; Methuen
 Police - Test 09:10 985 vs 987). Before each original stall point the voice frame counts are identical.
 

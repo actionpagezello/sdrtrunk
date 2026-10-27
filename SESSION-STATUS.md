@@ -59,8 +59,10 @@ with its state logged (Salisbury Troop A, Bailey VHF Troop B x2, Daly Methuen Po
    applied in full -> PLL at/near the +/-PI/3 (800 Hz) clamp (Troop B 09:54:00 and 11:14:15, Methuen Test 09:02:22,
    all at the noise floor).
 3. The equalizer only moves on a valid sync; parked there, no real transmission validates -> dead until restart.
-   The same syncs fed `processPLLError` -> `ChannelFrequencyErrorManager` (10 Hz / 500 ms, no limit): Methuen
-   Police's recording sat 510 Hz further off (+585 Hz) than Methuen Police - Test's (+75 Hz), same tuner and signal.
+   Methuen Police's recording sat 510 Hz further off (+585 Hz) than Methuen Police - Test's (+75 Hz), same tuner.
+   CORRECTED 2026-10-26 after the first 15.9.32 run: both mixers then settled at -611 Hz (the RSP1B's own error) and
+   both recordings sat at +130 Hz, so Police's mixer had never finished converging because the channel was locked
+   out; false syncs walking it away was not measured. Gating the mixer to trusted syncs stays as a precaution.
 - Evidence that it is decoder state, not RF: Troop A 08:54-11:13 live 0 messages, replay 5,154; same channel after
   the 14:06 restart live 4,607 / replay 4,605. Resetting only the equalizer at 10 min revived the Methuen Test
   replay (0 -> 1,283 messages in 20 min); resetting only the NAC tracker did nothing. Right-click mute is unrelated
@@ -83,7 +85,15 @@ Per-window counts match the live channels while they worked (Troop B 10:00 326/3
 Next:
 - Build 15.9.32 (tree above), deploy first to Salisbury, Daly, Bailey VHF (needs 15.5 -> 15.9.32) and Beauport.
 - Success = the affected channels keep decoding past a day; sync health lines show `withheld`/`rejected` counts in
-  quiet periods and `equalizer recalibrations` near 0; Methuen Police's `channel mixer correction` stays small.
+  quiet periods and `equalizer recalibrations` near 0; Methuen Police and Test show the same `channel mixer
+  correction` (about -611 Hz on Daly's RSP1B).
+- Daly, first 31 min on 15.9.32 (22:43-23:14 2026-10-26): Methuen Police and Methuen Police - Test decoded the
+  same messages minute by minute; every carrier second in both channel recordings (63-64 s) had a decode within 1 s;
+  both mixers -611 Hz, equalizer within 6 Hz; 0 recalibrations. A day-long run is still the real test.
+- New observation, Daly Derry Police (busy, marginal): 46-58 recalibrations per 10 min, in pairs - a trusted TDU
+  with 10-15 bit errors throws the equalizer 300-460 Hz, the next sync (0-15 errors) brings it back within a
+  second. Not a lockout, and probably not new (15.9.31 did not log it). Candidate: apply a correction above PI/8
+  only when the next trusted sync confirms it. Measure on a Derry Police channel recording first.
 - Not yet tested: a channel that runs well off-centre (Lowell Police at -748 Hz: a fresh 15.9.31 decoder never
   acquired it, the live channel did) and weak signals near the 15-bit-error threshold. Armen to record 30 min of
   Lowell Police channel Baseband I/Q while it decodes normally.
