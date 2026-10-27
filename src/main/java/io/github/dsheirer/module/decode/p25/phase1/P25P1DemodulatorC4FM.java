@@ -25,6 +25,7 @@ import io.github.dsheirer.dsp.filter.interpolator.LinearInterpolator;
 import io.github.dsheirer.dsp.symbol.Dibit;
 import io.github.dsheirer.dsp.symbol.DibitDelayLine;
 import io.github.dsheirer.dsp.symbol.DibitToByteBufferAssembler;
+import io.github.dsheirer.edac.bch.BCH;
 import io.github.dsheirer.edac.bch.BCH_63_16_23_P25;
 import io.github.dsheirer.gui.viewer.sync.SyncResultsViewer;
 import io.github.dsheirer.module.decode.FeedbackDecoder;
@@ -35,7 +36,10 @@ import io.github.dsheirer.sample.Listener;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.math3.stat.descriptive.moment.StandardDeviation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * P25 Phase 1 decoder for C4FM/4FSK signals.  Processes PI/4 differential QPSK demodulated samples with soft sync
@@ -49,6 +53,7 @@ import org.apache.commons.math3.stat.descriptive.moment.StandardDeviation;
  */
 public class P25P1DemodulatorC4FM
 {
+    private static final Logger LOGGER = LoggerFactory.getLogger(P25P1DemodulatorC4FM.class);
     private static final float EQUALIZER_LOOP_GAIN = 0.15f;
     private static final float EQUALIZER_MAXIMUM_PLL = (float)(Math.PI / 3.0); //+/- 800 Hz
     private static final float EQUALIZER_MAXIMUM_GAIN = 1.25f;
@@ -57,6 +62,8 @@ public class P25P1DemodulatorC4FM
     private static final float SYNC_THRESHOLD_DETECTION = 80;
     private static final float SYNC_THRESHOLD_OPTIMIZED = 80;
     private static final float SYNC_THRESHOLD_EQUALIZED = 110;
+    //AP-fork (ap-15.9.32): see validateNID()
+    private static final int MAXIMUM_TRUSTED_NID_BIT_ERRORS = 15;
     private static final float TWO_PI = (float)(Math.PI * 2.0);
     private static final float[] SYNC_PATTERN_SYMBOLS = P25P1SyncDetector.syncPatternToSymbols();
     private static final int BUFFER_WORKSPACE_LENGTH = 1024;
@@ -92,6 +99,14 @@ public class P25P1DemodulatorC4FM
     private int mBufferReloadThreshold;
     private int mSymbolsSinceLastSync = 0;
 
+    //AP-fork (ap-15.9.32): sync health counters, reported and cleared by getSyncHealth()
+    private String mLogLabel = "P25 Phase 1 channel";
+    private final AtomicInteger mHealthTrusted = new AtomicInteger();
+    private final AtomicInteger mHealthWithheld = new AtomicInteger();
+    private final AtomicInteger mHealthRejectedNAC = new AtomicInteger();
+    private final AtomicInteger mHealthUnknownDUID = new AtomicInteger();
+    private final AtomicInteger mHealthRecalibrated = new AtomicInteger();
+
     /**
      * Constructs an instance
      * @param messageFramer to receive symbol decisions (dibits) and sync notifications.
@@ -108,6 +123,39 @@ public class P25P1DemodulatorC4FM
     public void resetPLL()
     {
         mEqualizer.reset();
+    }
+
+    /**
+     * AP-fork (ap-15.9.32): label used to attribute log lines to a channel.
+     */
+    public void setLogLabel(String label)
+    {
+        if(label != null && !label.isBlank())
+        {
+            mLogLabel = label;
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.9.32): describes the sync and equalizer activity since the previous call and clears the counters.
+     */
+    public String getSyncHealth()
+    {
+        return "syncs trusted=" + mHealthTrusted.getAndSet(0) + " withheld (untrusted NID)=" +
+            mHealthWithheld.getAndSet(0) + " rejected (NAC not established)=" + mHealthRejectedNAC.getAndSet(0) +
+            " rejected (undefined DUID)=" + mHealthUnknownDUID.getAndSet(0) + " equalizer recalibrations=" +
+            mHealthRecalibrated.getAndSet(0) + "; now: equalizer signal offset " + Math.round(toHertz(mEqualizer.mPll)) +
+            " Hz gain " + mEqualizer.mGain + ", established NACs " + mNACTracker.getEstablishedNACs();
+    }
+
+    /**
+     * Converts an equalizer PLL value to the signal offset it corrects, in Hertz.  The demodulated samples are phase
+     * differences across one symbol period, so a signal offset of f Hertz shifts them by 2 * PI * f / 4800 radians and
+     * the equalizer cancels that with a PLL value of the opposite sign (PI / 3 is the 800 Hz limit).
+     */
+    private static double toHertz(float pll)
+    {
+        return -pll * 4800.0 / TWO_PI;
     }
 
     /**
@@ -258,10 +306,37 @@ public class P25P1DemodulatorC4FM
                             //Reset the sample point intra-sync adjustment value.
                             mSamplePointAdjustment = 0;
 
-                            mEqualizer.apply(correctionCandidate);
+                            //AP-fork (ap-15.9.32): only a trusted NID moves the equalizer or steers the channel mixer.  A
+                            //sync accepted in noise used to apply its correction in full (any correction above PI/8
+                            //re-initializes the equalizer) and park the equalizer where no real transmission could
+                            //sync again, and its PLL value then walked the channel mixer away from the signal.
+                            if(correctionCandidate.isTrusted())
+                            {
+                                mHealthTrusted.incrementAndGet();
 
-                            //broadcast equalizer balance as the current frequency offset
-                            mFeedbackDecoder.processPLLError(mEqualizer.mPll);
+                                if(mEqualizer.isInitialized() &&
+                                    Math.abs(correctionCandidate.getPllAdjustment()) > EQUALIZER_RECALIBRATE_THRESHOLD)
+                                {
+                                    mHealthRecalibrated.incrementAndGet();
+                                    float before = mEqualizer.mPll;
+                                    mEqualizer.apply(correctionCandidate);
+                                    LOGGER.info("P25 Phase 1 equalizer on [{}] recalibrated by a trusted sync: signal offset {} -> " +
+                                        "{} Hz, gain {}, NAC {}, {}, {} bit errors", mLogLabel, Math.round(toHertz(before)),
+                                        Math.round(toHertz(mEqualizer.mPll)), mEqualizer.mGain, correctionCandidate.getNAC(),
+                                        correctionCandidate.getDataUnitID(), correctionCandidate.getCorrectedBitCount());
+                                }
+                                else
+                                {
+                                    mEqualizer.apply(correctionCandidate);
+                                }
+
+                                //broadcast equalizer balance as the current frequency offset
+                                mFeedbackDecoder.processPLLError(mEqualizer.mPll);
+                            }
+                            else
+                            {
+                                mHealthWithheld.incrementAndGet();
+                            }
                         }
 
                         if(correctionCandidate.isValid() || correctionCandidate.hasHighQualityDetectionScore() ||
@@ -380,7 +455,20 @@ public class P25P1DemodulatorC4FM
         }
 
         int trackedNAC = mNACTracker.getTrackedNAC();
-        mBCHDecoder.decode(candidateNID, trackedNAC);
+
+        //AP-fork (ap-15.9.32): this is BCH_63_16_23_P25.decode(message, observedNAC) unrolled so that we know whether
+        //the NID only decoded after its NAC field was overwritten with the tracked NAC.  An NID that needed that help
+        //had 12 of its 16 data bits supplied by us rather than by the signal.
+        mBCHDecoder.decode(candidateNID);
+        boolean nacAssisted = false;
+
+        if(candidateNID.getCorrectedBitCount() == BCH.MESSAGE_NOT_CORRECTED && trackedNAC > 0 &&
+            candidateNID.getInt(NAC_FIELD) != trackedNAC)
+        {
+            candidateNID.setInt(trackedNAC, NAC_FIELD);
+            mBCHDecoder.decode(candidateNID);
+            nacAssisted = true;
+        }
 
         //If error correction fails, return the original correction candidate
         if(candidateNID.getCorrectedBitCount() < 0)
@@ -392,18 +480,43 @@ public class P25P1DemodulatorC4FM
         int nac = candidateNID.getInt(NAC_FIELD);
         P25P1DataUnitID duid = P25P1DataUnitID.fromValue(candidateNID.getInt(DUID_FIELD));
 
+        //AP-fork (ap-15.9.32): a DUID value that P25 Phase 1 does not define cannot come from a real transmission.
+        if(duid == P25P1DataUnitID.UNKNOWN)
+        {
+            mHealthUnknownDUID.incrementAndGet();
+            return;
+        }
+
+        //AP-fork (ap-15.9.32): an NID is trusted when it decoded on its own and the sync pattern plus the NID together
+        //needed no more than MAXIMUM_TRUSTED_NID_BIT_ERRORS corrections.  Measured on 5,775 accepted syncs across four
+        //recordings (Troop B x2, Methuen Police, Methuen Police - Test): the 5,769 made during a carrier needed at most
+        //13 (99% needed none) and none needed the NAC assist; the 6 made in noise needed 19 to 26, and 4 of them the
+        //NAC assist.  Only trusted NIDs may train the NAC tracker, move the equalizer or steer the channel mixer.
+        boolean trusted = !nacAssisted &&
+            (correction.getCorrectedBitCount() + candidateNID.getCorrectedBitCount()) <= MAXIMUM_TRUSTED_NID_BIT_ERRORS;
+
         //The BCH decoder can over-correct the NID and produce an invalid NAC.  Compare it against the tracked NID to
         //flag it as invalid NID when this happens.  The NAC tracker will give us a value of 0 until it has enough
         //observations of a valid NID value.
-        mNACTracker.track(nac);
-
-        if(trackedNAC > 0 && trackedNAC != nac)
+        if(trusted)
         {
+            mNACTracker.track(nac);
+        }
+
+        //AP-fork (ap-15.9.32): accept any NAC the channel has established, and reject the rest once one is
+        //established.  The previous check compared against the single dominant NAC, which (a) rejected a channel's
+        //second legitimate NAC and (b) did nothing at all once noise had evicted the channel's NAC from the tracker -
+        //see NACTracker.  With the check off, a noise NID carrying a random NAC was accepted as a valid sync and its
+        //equalizer correction applied in full.
+        if(mNACTracker.hasEstablishedNAC() && !mNACTracker.isEstablished(nac))
+        {
+            mHealthRejectedNAC.incrementAndGet();
             return;
         }
 
         correction.setNID(nac, duid);
         correction.addCorrectedBitCount(candidateNID.getCorrectedBitCount());
+        correction.setTrusted(trusted);
     }
 
     /**
@@ -581,6 +694,7 @@ public class P25P1DemodulatorC4FM
         private int mNAC;
         private P25P1DataUnitID mDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
         private int mCorrectedBitCount = 0;
+        private boolean mTrusted = false;
 
         /**
          * Constructs an instance
@@ -715,6 +829,23 @@ public class P25P1DemodulatorC4FM
         public int getCorrectedBitCount()
         {
             return mCorrectedBitCount;
+        }
+
+        /**
+         * AP-fork (ap-15.9.32): sets whether the NID decoded without the NAC assist and with few enough bit errors to
+         * be allowed to adjust the equalizer and the channel mixer.
+         */
+        public void setTrusted(boolean trusted)
+        {
+            mTrusted = trusted;
+        }
+
+        /**
+         * AP-fork (ap-15.9.32): indicates if this correction may adjust the equalizer and the channel mixer.
+         */
+        public boolean isTrusted()
+        {
+            return isValid() && mTrusted;
         }
 
         /**

@@ -33,8 +33,14 @@ public class NACTracker
 {
     private static final Comparator<Tracker> COUNT_DESCENDING_COMPARATOR = new CountDescendingSorter();
     private static final Comparator<Tracker> TIME_ASCENDING_COMPARATOR = new TimeAscendingSorter();
+    private static final Comparator<Tracker> COUNT_ASCENDING_THEN_TIME_ASCENDING_COMPARATOR =
+        Comparator.comparingInt(Tracker::count).thenComparing(TIME_ASCENDING_COMPARATOR);
     private final Map<Integer, Tracker> mTrackerMap = new HashMap<>();
-    private static final int MAX_TRACKER_COUNT = 3;
+    //AP-fork (ap-15.9.32): was 3.  Noise produces BCH-decodable NIDs with random NAC values; with only three slots and
+    //oldest-first eviction, a few minutes of silence filled the slots with count-1 random NACs and evicted the
+    //channel's own NAC, which turned the NAC check off entirely.  More slots plus lowest-count eviction (below) keeps
+    //every NAC the channel actually uses while still leaving room for the random ones to churn.
+    private static final int MAX_TRACKER_COUNT = 8;
     private static final int MIN_OBSERVATION_THRESHOLD = 3;
 
     /**
@@ -49,7 +55,12 @@ public class NACTracker
      * Tracks the NAC value.  Each time the NAC value is observed, the observation count is incremented so that the
      * dominant NAC value will have the highest observation count.  Additionally, the last updated timestamp for the
      * tracker is updated to now.  When the tracker count exceeds the max tracker threshold, the tracker with the
-     * oldest updated timestamp is thrown out.
+     * lowest observation count is thrown out, and of those with equal counts, the one with the oldest updated
+     * timestamp.
+     *
+     * AP-fork (ap-15.9.32): eviction was oldest-first regardless of count, so a NAC observed thousands of times was
+     * thrown out by three single random NACs decoded from noise.  Measured on Troop B and Methuen recordings: at
+     * every false sync that knocked the equalizer to its limit, the tracker held only three count-1 random NACs.
      * @param nac to track
      */
     public void track(int nac)
@@ -63,15 +74,60 @@ public class NACTracker
             if(mTrackerMap.size() > MAX_TRACKER_COUNT)
             {
                 List<Tracker> trackerList = new ArrayList<>(mTrackerMap.values());
-                trackerList.sort(TIME_ASCENDING_COMPARATOR);
-                Tracker oldest = trackerList.getFirst();
-                mTrackerMap.remove(oldest.nac());
+                trackerList.sort(COUNT_ASCENDING_THEN_TIME_ASCENDING_COMPARATOR);
+                Tracker weakest = trackerList.getFirst();
+                mTrackerMap.remove(weakest.nac());
             }
         }
         else
         {
             tracker.increment();
         }
+    }
+
+    /**
+     * AP-fork (ap-15.9.32): indicates if the NAC value has been observed often enough to be one the channel uses.
+     * @param nac to check
+     * @return true if the NAC has at least the minimum number of observations
+     */
+    public boolean isEstablished(int nac)
+    {
+        Tracker tracker = mTrackerMap.get(nac);
+        return tracker != null && tracker.count() >= MIN_OBSERVATION_THRESHOLD;
+    }
+
+    /**
+     * AP-fork (ap-15.9.32): indicates if any NAC value has been observed often enough to be one the channel uses.
+     */
+    public boolean hasEstablishedNAC()
+    {
+        for(Tracker tracker: mTrackerMap.values())
+        {
+            if(tracker.count() >= MIN_OBSERVATION_THRESHOLD)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * AP-fork (ap-15.9.32): lists the established NAC values in hex, for logging.
+     */
+    public String getEstablishedNACs()
+    {
+        List<String> nacs = new ArrayList<>();
+
+        for(Tracker tracker: mTrackerMap.values())
+        {
+            if(tracker.count() >= MIN_OBSERVATION_THRESHOLD)
+            {
+                nacs.add(String.format("0x%03X", tracker.nac()));
+            }
+        }
+
+        return nacs.isEmpty() ? "none" : String.join(",", nacs);
     }
 
     /**

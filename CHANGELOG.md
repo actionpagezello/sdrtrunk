@@ -5,6 +5,54 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.9.32] - 2026-10-26
+
+### Fixed - conventional P25 channels going silent for hours or days until the channel is restarted
+
+Salisbury NH State Police Troop A and Seabrook Police, Bailey VHF NH State Police Troop B, Daly Methuen Police and
+Beauport Gloucester Police / Rockport Fire stopped decoding for hours or days while the signal kept arriving: on
+2026-10-26 Salisbury Troop A logged nothing from 08:54 to 11:13, yet its own Baseband I/Q recording held 257 s of
+carrier 25 dB above the noise, and a fresh decoder decoded 5,154 messages from those samples.
+
+Cause, measured by replaying the channel recordings through the C4FM decoder with its state logged:
+
+- Noise regularly produces a sync pattern whose NID decodes. Each such NID's random NAC entered the NAC tracker,
+  which kept only three NAC values and threw out the oldest. A few minutes of silence filled it with three random,
+  once-seen NACs and threw out the channel's own NAC, which switched the NAC check off.
+- With the check off, a noise sync carrying a random NAC was accepted as valid. Its equalizer correction exceeded
+  PI/8, so it was applied in full instead of through the loop gain, and the equalizer landed at or near its +/-800 Hz
+  limit (Troop B 09:54:00 and 11:14:15, Methuen Police - Test 09:02:22, all in pure noise).
+- The equalizer only moves on a valid sync, and with it parked there no real transmission could produce one, so the
+  channel stayed dead until restarted. The same false syncs fed the channel mixer correction, which steps 10 Hz every
+  500 ms with no limit: Methuen Police's recording sits 510 Hz further off than Methuen Police - Test's, although
+  both channels take the same signal from the same tuner.
+
+Changes:
+
+- `NACTracker`: holds 8 NAC values and, when full, throws out the one seen least often (then the oldest), so a NAC
+  the channel uses is never displaced by random ones.
+- `P25P1DemodulatorC4FM`: an NID whose DUID P25 does not define is rejected; once the channel has an established NAC
+  (seen 3 times), any established NAC is accepted and others rejected (previously only the single most frequent one
+  was accepted, and nothing was rejected once it had been evicted).
+- `P25P1DemodulatorC4FM`: only a trusted NID - decoded without the NAC-assist retry, with at most 15 bit errors
+  across sync and NID - may train the NAC tracker, move the equalizer, or steer the channel mixer. Other valid syncs
+  still frame messages as before. Threshold from 5,775 accepted syncs in four recordings: the 5,769 made during a
+  carrier needed at most 13 corrections (99% none) and never the NAC assist; the 6 made in noise needed 19-26.
+- Logging: every 10 minutes each C4FM channel logs "P25 Phase 1 sync health on [channel] ...": syncs trusted,
+  withheld, rejected for NAC and for DUID, equalizer recalibrations, the equalizer's current signal offset and gain,
+  the established NACs, and the channel mixer correction. A recalibration by a trusted sync (a correction above
+  PI/8) logs its own INFO line with the offset before and after.
+
+Replay results (same samples, before -> after): Troop B 09:37 2,758 messages instead of 1,233 (decoding no longer
+stops at 09:54); Troop B 11:01 1,359 instead of 809; Methuen Police - Test 1,419 instead of 135; Methuen Police,
+with its 510 Hz extra offset, 1,414 instead of 135. Per 10-minute window the fixed replay matches what the live
+channels logged while they were working (Troop B 09:50 1,599 vs 1,646, 10:00 326 vs 326, 11:10 891 vs 891; Methuen
+Police - Test 09:10 985 vs 987). Before each original stall point the voice frame counts are identical.
+
+Not changed: no playlist or settings change, nothing upstream cannot read. The equalizer has no separate recovery
+timer: with noise unable to move it, none of the recordings needs one, and the sync health line will show it if a
+channel still ends up parked.
+
 ## [0.6.2-ap-15.9.31] - 2026-10-25
 
 ### Added - P25 Phase 1 channel health line (measurement only, no behaviour change)

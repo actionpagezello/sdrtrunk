@@ -45,9 +45,11 @@ import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.buffer.IByteBufferProvider;
 import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.sample.complex.IComplexSamplesListener;
+import io.github.dsheirer.source.ChannelFrequencyCorrectionStatusNotification;
 import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
 import io.github.dsheirer.source.wave.ComplexWaveSource;
+import io.github.dsheirer.util.ThreadPool;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -55,6 +57,8 @@ import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,6 +90,13 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private IRealFilter mBasebandFilterQ;
     private IRealFilter mPulseShapingFilterI;
     private IRealFilter mPulseShapingFilterQ;
+
+    //AP-fork (ap-15.9.32): 10-minute sync health line per channel
+    private static final long SYNC_HEALTH_INTERVAL_MINUTES = 10;
+    private ScheduledFuture<?> mSyncHealthLog;
+    private String mLogLabel = "P25 Phase 1 channel";
+    private volatile long mChannelMixerCorrection;
+    private volatile boolean mChannelMixerCorrectionReported;
 
     @Override
     public DecoderType getDecoderType()
@@ -264,18 +275,63 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         return this::process;
     }
 
+    /**
+     * AP-fork (ap-15.9.32): label used to attribute this decoder's log lines to its channel.
+     */
+    public void setLogLabel(String label)
+    {
+        if(label != null && !label.isBlank())
+        {
+            mLogLabel = label;
+            mSymbolProcessor.setLogLabel(label);
+        }
+    }
+
     @Override
     public void start()
     {
         super.start();
         mMessageFramer.start();
+
+        if(mSyncHealthLog == null)
+        {
+            mSyncHealthLog = ThreadPool.SCHEDULED.scheduleAtFixedRate(this::logSyncHealth,
+                SYNC_HEALTH_INTERVAL_MINUTES, SYNC_HEALTH_INTERVAL_MINUTES, TimeUnit.MINUTES);
+        }
     }
 
     @Override
     public void stop()
     {
+        ScheduledFuture<?> syncHealthLog = mSyncHealthLog;
+
+        if(syncHealthLog != null)
+        {
+            syncHealthLog.cancel(false);
+            mSyncHealthLog = null;
+        }
+
         super.stop();
         mMessageFramer.stop();
+    }
+
+    /**
+     * AP-fork (ap-15.9.32): one line per interval describing the syncs this channel accepted and withheld, where the
+     * equalizer sits and how far the channel mixer has been moved.  The P25 Phase 1 audio module logs its own health
+     * line for the same channel.
+     */
+    private void logSyncHealth()
+    {
+        try
+        {
+            LOGGER.info("P25 Phase 1 sync health on [{}] last {} min: {}, channel mixer correction {}", mLogLabel,
+                SYNC_HEALTH_INTERVAL_MINUTES, mSymbolProcessor.getSyncHealth(),
+                mChannelMixerCorrectionReported ? mChannelMixerCorrection + " Hz" : "not reported");
+        }
+        catch(Exception e)
+        {
+            LOGGER.debug("P25 sync health log failed", e);
+        }
     }
 
     /**
@@ -291,6 +347,14 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
                 break;
             case NOTIFICATION_SAMPLE_RATE_CHANGE:
                 setSampleRate(sourceEvent.getValue().doubleValue());
+                break;
+            case NOTIFICATION_CHANNEL_FREQUENCY_CORRECTION_STATUS:
+                //AP-fork (ap-15.9.32): remembered for the sync health line
+                if(sourceEvent instanceof ChannelFrequencyCorrectionStatusNotification status)
+                {
+                    mChannelMixerCorrection = status.getChannelCorrection();
+                    mChannelMixerCorrectionReported = true;
+                }
                 break;
         }
     }

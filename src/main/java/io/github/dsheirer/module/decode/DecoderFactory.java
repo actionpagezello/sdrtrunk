@@ -299,6 +299,7 @@ public class DecoderFactory
                 case C4FM:
                 {
                     P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+                    decoder.setLogLabel(channel.getName()); //AP-fork (ap-15.9.32): attributes its log lines
                     modules.add(decoder);
                     break;
                 }
