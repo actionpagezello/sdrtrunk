@@ -33,6 +33,6 @@ public class ReedSolomon_44_16_29_P25 extends ReedSolomon_63_P25
     public ReedSolomon_44_16_29_P25()
     {
         //The RS(44,16,29) is shortened from RS(63,35,29)
-        super(63,35);
+        super(63,35,44);
     }
 }

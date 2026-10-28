@@ -22,6 +22,25 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
   both ends. Upstream master (f2c98cdb) has the same code.
 - Replay: the eight Troop A, Troop B and Methuen recordings decode byte-for-byte the same as 15.10.
 
+### Fixed - corrupted P25 Phase 1 headers accepted as error-corrected, muting clear calls
+
+- Salisbury, first night on 15.10: eight "unknown encryption algorithm" warnings on Rockingham Sheriff East and
+  West (IDs 0x3B, 0x6A, 0xE4, 0x9A, 0x46, 0x90, 0x72, 0xBF), each on a different talkgroup, with up to 44 voice
+  frames of a clear call dropped as encrypted in one 10 minutes. Bailey VHF on 15.9.32 logged the same on Troop B
+  and Boxborough Police, and Daly on 15.10 on North Andover Police and Derry Fire. Scattered one-off IDs are
+  mis-decoded encryption sync words, not encrypted traffic. The audio module sets a call's encryption state from
+  the first valid header, so one bad LDU2 can mute the rest of the call.
+- Cause: the P25 Reed-Solomon codes are shortened (RS(24,16,9) for the LDU2 encryption sync, RS(24,12,13) for link
+  control, RS(36,20,17) for the HDU, RS(44,16,29) for the Phase 2 ESS), but they are decoded as the full RS(63,k)
+  code with the unused symbols set to zero. The decoder never checked whether a correction landed in those zero
+  symbols. When it does, the received word was beyond the code's correction capability and the decoder found a
+  different codeword. Measured on 200,000 random RS(24,16,9) words: 3.34% were reported correctable, 3.28% of
+  them through corrections in the padding.
+- Fix: `ReedSolomon_63_P25` takes the shortened length and reports a correction in the padding as irrecoverable.
+  Random RS(24,16,9) words reported correctable: 3.34% -> 0.056%; RS(24,12,13): 0.086% -> 0. Codewords with up
+  to 4 (RS(24,16,9)) or 6 (RS(24,12,13)) symbol errors still correct in every trial.
+- Replay: the eight Troop A, Troop B and Methuen recordings decode byte-for-byte the same as 15.10.
+
 ## [0.6.2-ap-15.10] - 2026-10-27
 
 ### Changed - P25 Phase 1 C4FM and NXDN decoders replaced by upstream's October 2026 rework, with two unmerged fixes

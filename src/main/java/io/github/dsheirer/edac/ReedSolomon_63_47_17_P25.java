@@ -29,4 +29,13 @@ public class ReedSolomon_63_47_17_P25 extends ReedSolomon_63_P25
     {
         super(63,47);
     }
+
+    /**
+     * AP-fork (ap-15.10.1): constructs an instance for this code shortened to the specified number of symbols,
+     * for example RS(36,20,17) in the P25 Phase 1 header data unit.
+     */
+    public ReedSolomon_63_47_17_P25(int shortenedLength)
+    {
+        super(63,47,shortenedLength);
+    }
 }

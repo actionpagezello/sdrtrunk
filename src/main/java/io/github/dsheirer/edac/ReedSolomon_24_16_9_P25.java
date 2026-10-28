@@ -32,6 +32,6 @@ public class ReedSolomon_24_16_9_P25 extends ReedSolomon_63_P25
      */
     public ReedSolomon_24_16_9_P25()
     {
-        super(63,55);
+        super(63,55,24);
     }
 }
