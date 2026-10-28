@@ -5,6 +5,23 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.1] - 2026-10-28
+
+### Fixed - P25 Phase 1 decoder exception on a sync detection just after a buffer reload
+
+- Daly, first night on 15.10: `ArrayIndexOutOfBoundsException: Index -1 out of bounds for length 1155` in
+  `C4FMSymbolProcessor.score()` on Windham Fire (03:44) and Windham Police (05:47), both while the channel was
+  idle. The exception drops the rest of that sample buffer for the channel; it does not stop the decoder.
+- Cause: the decoder keeps 25 symbols of history (131 samples at 25 kHz) at the start of its sample buffer. A
+  lagging-detector sync detection on the first symbol after a reload starts its 24-symbol window about 3.6 samples
+  into the buffer, and the timing optimizer probes up to 3/4 of a symbol (3.9 samples) further left, reaching index
+  -1. `score()` checked only the upper end of the buffer. Reproduced directly: the 15.10 `score()` throws exactly
+  this exception at that offset with the live buffer length of 1155.
+- Fix: `score()` treats samples before the start of the buffer as zero, as it already did past the end and as
+  `getCorrection()` and `getEqualizedSymbol()` already do. `validateSyncWaveform()` gets the same bounds check at
+  both ends. Upstream master (f2c98cdb) has the same code.
+- Replay: the eight Troop A, Troop B and Methuen recordings decode byte-for-byte the same as 15.10.
+
 ## [0.6.2-ap-15.10] - 2026-10-27
 
 ### Changed - P25 Phase 1 C4FM and NXDN decoders replaced by upstream's October 2026 rework, with two unmerged fixes

@@ -506,6 +506,15 @@ public abstract class C4FMSymbolProcessor
         for(int x = mReferenceSyncWaveform.samples().length - 1; x >= 0; x--)
         {
             index = integral + x;
+
+            //AP-fork (ap-15.10.1): a lagging detection just after a buffer reload, or a large positive timing correction
+            //near the end of the buffer, can place part of the reference waveform outside the buffer.  Those samples
+            //contribute nothing to the correlation.
+            if(index < 0 || index + 1 >= mBuffer.length)
+            {
+                continue;
+            }
+
             float sample = LinearInterpolator.calculate(mBuffer[index], mBuffer[index + 1], mu);
             sample *= gain;
             sample += balance;
@@ -1175,7 +1184,10 @@ public abstract class C4FMSymbolProcessor
 
         for(int x = 0; x < mSyncDetector.getDibitLength(); x++)
         {
-            if(bufferPointer < maxPointer)
+            //AP-fork (ap-15.10.1): the optimizer probes up to 3/4 of a symbol before a lagging detection, which can
+            //reach before the start of the buffer when the detection falls just after a buffer reload.  Score those
+            //samples as zero, the same as samples past the end of the buffer.
+            if(bufferPointer >= 0 && bufferPointer < maxPointer)
             {
                 sample1 = mBuffer[bufferPointer] * gain + balance;
                 sample2 = mBuffer[bufferPointer + 1] * gain + balance;
