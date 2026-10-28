@@ -29,7 +29,12 @@ Replay, same samples (messages / voice frames): Troop B 09:37 2,758/296 (15.9.32
 1,359/150 -> 1,432/165; Methuen Police - Test 1,419/367 -> 1,454/367; Methuen Police +585 Hz 1,414/367 ->
 1,454/367; Troop A 2026-10-26 night 932/104 -> 943/104; Troop B night 804/70 -> 846/72; Methuen Police night
 1,018/217 -> 1,030/216. The rework without #2519/#2520 lost whole transmissions (Troop A night 533/34).
-NXDN compiled but not yet replayed. DMR is unchanged (upstream's DMR rework, #2517, is not included).
+NXDN (Audubon, County Communications Georgetown, NXDN 9600, 2026-10-27): 22 traffic-channel recordings
+replayed through 15.9.33 and 15.10 - valid messages 9,600 -> 13,171, voice frames 1,532 -> 2,126, CRC-failed
+2,393 -> 38; the 15.9.33 replay matched what the live channels logged (for example 1,949 vs 1,938 valid). The
+weakest traffic frequencies gained most (463.875 MHz: 82 -> 378 valid, 5 -> 55 voice). Georgetown control
+channel, 3.7 min: 5,308 -> 5,485 valid, CRC-failed 191 -> 4. DMR is unchanged (upstream's DMR rework, #2517, is not
+included).
 
 ## [0.6.2-ap-15.9.33] - 2026-10-27
 
