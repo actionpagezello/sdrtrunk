@@ -3,7 +3,139 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.9.31 (2026-10-25) — state as of 2026-10-26
+## Current Release: ap-15.10.1 (2026-10-28) — state as of 2026-10-28 09:00
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.10.1\sdr-trunk-windows-x86_64-v0.6.2-ap-15.10.1.zip`
+- Tree `49b04794e0308e26c47ee8d895e41d47411df4bf`, pushed 2026-10-28 as `d6c0617a` (guard on the tree hash;
+  commit hashes differ between machines)
+- **The silent conventional P25 channels are fixed** (15.9.32, then the upstream rework in 15.10). Confirmed on
+  five machines 2026-10-27/28 — see "Fleet results" below.
+- **Never deploy 15.9.28 or 15.9.29** (playlist bugs, see the release table). 15.9.31 and older still have the
+  P25 lockout.
+- Next: roll 15.10.1 out to every machine; after a day, check the app logs for no `ArrayIndexOutOfBounds` and far
+  fewer `unknown encryption algorithm` warnings on clear channels.
+
+### Fleet versions (last known, 2026-10-28)
+| Machine | Version | Notes |
+|---|---|---|
+| Salisbury (SDR-9) | 15.10 (00:25 10-28) | was 15.9.31 until 10-28 — 10-27 is the clean "before" day |
+| Daly (DESKTOP) | 15.10 (00:31 10-28) | Methuen Police - Test stopped 00:32 10-28; turn back on for the side-by-side |
+| Beauport (SDR-13) | 15.10 (00:35 10-28) | |
+| Audubon | 15.10 (00:39 10-28) | NXDN (Georgetown) + DMR (OneVoice Haverhill/Boston, Salem State) |
+| Bailey VHF (SDR-3) | 15.10 (00:29 10-28) | |
+| Bailey UHF, Baker, Somerville | 15.9.32 | |
+| Metro-25 (friend's PC, Windows user "User") | 15.9.30 installed; recommended to run the 0.6.1 final | no access at present |
+| Summit 800 | — | not streaming at present |
+
+Deploy recipe: back up the playlist folder first
+(`$p="$env:USERPROFILE\SDRTrunk\playlist"; Copy-Item $p "$p-backup-$(Get-Date -Format yyyyMMdd-HHmm)" -Recurse`),
+install, start, close, start again; log must say `Playlist read - last saved by this fork`.
+
+### Releases 2026-10-26 to 10-28 (patches `ap-<ver>.patch`, applied with `git am --keep-cr --3way`)
+| Version | Tree | What |
+|---|---|---|
+| 15.9.32 | `3bbe70d6` | Stop noise from parking the P25 Phase 1 C4FM equalizer: NAC tracker 8 slots, least-seen evicted; only trusted NIDs train it or move the equalizer/mixer; 10-min `P25 Phase 1 sync health` line |
+| 15.9.33 | `c613775b` | Channel editor keeps the saved channel selected (restart prompt no longer restarts the neighbouring channel); `Playlist saved - ... written in N ms, M ms after the change` log line. Never built on its own — folded into 15.10 |
+| 15.10 | `d3d8da10` | Upstream #2494/#2514 (5635341d) P25 Phase 1 C4FM + NXDN rework, plus #2519 (re-score a lagging sync at its own offset) and #2520 (3600 Hz passband); sync health line rewritten for the new processor. DMR unchanged (#2517 not included) |
+| 15.10.1 | `49b04794` | (1) `C4FMSymbolProcessor.score()`/`validateSyncWaveform()` bounds-checked: a lagging sync just after a buffer reload read index -1 (Daly, Windham Fire/Police). (2) Shortened P25 Reed-Solomon codes reject corrections in the zero padding: corrupted LDU2 encryption sync words were passing as corrected and muting clear calls |
+
+The 15.9.24-15.9.31 releases are listed in the previous state section below.
+
+### How the lockout was found and fixed (detail of the 15.9.32 diagnosis is in the previous state section)
+- Root cause in the old `P25P1DemodulatorC4FM` (upstream 0d886c27, Nov 2025, in the fork since v0.6.2-ap in
+  March 2026; 0.6.1 does not have it): noise NIDs with random NACs evicted the channel's NAC from a 3-slot
+  tracker, the NAC check switched off, a noise sync was accepted and its >PI/8 correction applied in full, parking
+  the equalizer near the +/-PI/3 (800 Hz) clamp where no real sync validates.
+- 15.10 replaces that decoder with upstream's `P25P1SymbolProcessorC4FM`/`C4FMSymbolProcessor`: sync validity no
+  longer uses the NID/NAC (reference sync waveform check on the first two syncs after a loss), and a full
+  correction is applied only while unsynchronized, so a channel recovers by itself.
+- Replay, messages/voice frames (15.9.31 -> 15.9.32 -> 15.10): Troop B 09:37 1,233/130 -> 2,758/296 -> 2,795/296;
+  Troop B 11:01 809/93 -> 1,359/150 -> 1,432/165; Methuen Test 135/0 -> 1,419/367 -> 1,454/367; Methuen Police
+  +585 Hz 135/0 -> 1,414/367 -> 1,454/367; nights unchanged or slightly up. Upstream rework without #2519/#2520
+  lost whole transmissions (Troop A night 533/34 vs 943/104).
+- NXDN (Audubon Georgetown, 22 traffic recordings, 15.9.33 -> 15.10): valid 9,600 -> 13,171, voice 1,532 ->
+  2,126, CRC-failed 2,393 -> 38.
+- 15.10.1 changes nothing measurable on the replays (all eight byte-for-byte identical to 15.10).
+
+### Fleet results
+15.9.32, 2026-10-27 (full day):
+- Beauport ~18 h, Daly 00:00-21:58, Bailey VHF 00:06-22:40: no lockout on any P25 channel; Troop B decoded every
+  hour with traffic, 0 recalibrations, mixer ~-12 Hz, only NAC 0x826.
+- Salisbury was still on **15.9.31** that day and shows the bug: Troop A last decoded 16:10:45, nothing until
+  19:22 shutdown; Seabrook Police no voice all day; Hampton Police none after 08:00; foreign-NAC noise frames in
+  Troop A's decoded log 09:32-13:40.
+- Daly Derry Police: 150-430 recalibrations/h and four extra "established" NACs one to three bits from 0x827 —
+  Armen: Derry is far away, likely signal. Still 150-415 recalibrations/h on 15.10.
+
+15.10, night of 2026-10-27/28 into the morning:
+- Salisbury: Seabrook Police, Hampton Police and Troop A all decoded through the night (Hampton calls every
+  hour, Seabrook 38 calls 06:00); 0 waveform rejects; recalibrations only on Portsmouth Police (<= 9/h).
+- Daly: no lockouts; two `ArrayIndexOutOfBoundsException: Index -1 out of bounds for length 1155` (Windham Fire
+  03:44, Windham Police 05:47) -> fixed in 15.10.1. Methuen Police mixer converged 0 -> -590 Hz by 08:18 (moves
+  only with traffic).
+- Bailey VHF: Troop B 0 recalibrations, balance +/-1 Hz; DES (0x81) calls muted correctly; two calls tagged
+  Motorola Padstone (0x05) at 01:40/01:50 — almost certainly corrupted headers (15.10.1 fix 2).
+- Audubon: NXDN Georgetown control 96-3,720 group calls/h, traffic followed; DMR OneVoice quiet overnight, busy
+  from 06:00 (83 grants with `allocated=false` — traffic-channel limit, not decoding).
+- Beauport: Gloucester Police/Rockport Police/Manchester BTS normal; Gloucester Fire no syncs 00:35-07:58, then
+  calls at 07:58 and 08:26 — quiet night, not a fault. Playlist saves 40-298 ms.
+
+### 15.10.1 detail
+1. Buffer bounds: `C4FMSymbolProcessor` keeps 25 symbols of history (131 samples at 25 kHz; buffer 1155 =
+   131 + 1024). A lagging-detector detection on the first symbol after a reload starts its window ~3.6 samples
+   in, and the optimizer probes 3/4 symbol (3.9 samples) further left -> index -1. Reproduced directly with the
+   live buffer length. Fix matches the existing `getCorrection()`/`getEqualizedSymbol()` guards. Upstream master
+   (f2c98cdb) has the same code.
+2. Reed-Solomon padding: RS(24,16,9) LDU2 ESS, RS(24,12,13) link control, RS(36,20,17) HDU and RS(44,16,29)
+   Phase 2 ESS are decoded as full RS(63,k) with zero padding; corrections in the padding were reported as
+   success. 200,000 random RS(24,16,9) words: 3.34% "correctable" (3.28% via the padding) -> 0.056%;
+   RS(24,12,13) 0.086% -> 0. All codewords with <= 4 / <= 6 symbol errors still correct. Field signature: scattered
+   one-off `unknown encryption algorithm` IDs on clear channels (Rockingham Sheriff East/West on Salisbury, Troop
+   B and Boxborough on Bailey VHF, North Andover Police and Derry Fire on Daly); the audio module takes the call's
+   encryption state from the first valid header, so one bad LDU2 muted the rest of a clear call.
+
+### OPEN
+- Roll 15.10.1 out fleet-wide; confirm the two fixes in a day of logs.
+- **Rowley Police (Beauport)** never decodes (15.9.31, 15.9.32, 15.10 — a few syncs/h, no voice); Armen checking
+  its configuration.
+- **Derry Police (Daly)**: 150-430 equalizer recalibrations/h on 15.9.32 and 15.10 — weak distant signal; decodes.
+- **Baseband recorder stops at 4 GiB** ("Unable to create a unique file name for recording - exceeded 20
+  versioning attempts", ~6 h at 50 kHz) — upstream bug, fix later.
+- **Alias save delay on Beauport**: not reproduced; the 15.9.33 `Playlist saved` line (in 15.10) will show it if
+  it recurs — note the time.
+- **MASCO 464.600 (Audubon)** barely decodes; Georgetown duplicate control channel appears resolved (`Control_51`).
+- **Methuen Police - Test** stopped on Daly 10-28 00:32.
+- **Upstream PRs after 15.10**: #2478 (LSM false lock, needs a Metro-25 recording); #2460/#2459/#2486 Metro-25
+  Phase 2; wait on DMR #2517; measure CPU before #2403 HydraSDR JNI; #2477 after checking Rockingham logs; #2511
+  with the JMBE 2 release; #2428 channelizer before the Denmark machine. Skip #2501, #2500.
+- **Lowell Police / Derry Police 30-min channel recordings** still wanted for off-centre and weak-signal testing.
+- **Ingest outage 2026-10-27 from 11:40**: Cloudflare 502 then 1033/530 on ingest.actionpagemedia.com and
+  ingest.actionpagezello.com (server side); Zello WebSocket failures on Bailey VHF 11:00-12:59 the same day.
+- **Stream delete matches by name+type** (`BroadcastModel.getConfiguredBroadcast`), not by row — retest.
+- **Baker Action Ambulance** TDMA veto check; **Beauport Rockport Fire** is a slow channel (Armen).
+- Stay on JDK 25 / Gradle 9.2 (JDK 27 is non-LTS, support ends March 2027).
+
+Replay toolkit (cloud container scratchpad, recreate if needed — never on the device VM): `pip install
+jdk4py==25.0.2.1` (Java 25 runtime); javac from the `jdk.compiler` + `jdk.internal.opt` jmods with
+`module-info.class` removed, run from the classpath; `jdk.incubator.vector` and JavaFX classes extracted from their
+jmods; changed classes compiled into an overlay directory ahead of `build\install\sdr-trunk\lib\*`; reflection
+harnesses `RP` (P25 C4FM) and `RPN` (NXDN) feed a 50 kHz wav through `ComplexWaveSource`. Whole-tree compile needs
+`--add-exports java.base/jdk.internal.vm.vector=ALL-UNNAMED`. Baseband WAVs cap at 4 GiB (5.97 h at 50 kHz);
+`Cut-Baseband.ps1` cuts a 30-min slice from a WAV that is still being written.
+
+### Working rules (from Armen)
+- Git runs on the Windows machine only, never through the device bridge (CRLF). Deliver `git format-patch`;
+  Armen applies with `git am --keep-cr --3way ap-<ver>.patch` and checks the tree hash. Stage explicit files,
+  never `git add -A`. Armen's build is the official compile; Armen pushes.
+- The device VM is for another project and never for SDRTrunk work: stage files into the cloud container instead.
+- Measure before diagnosing; no fix built on an unchecked assumption. Auto-PPM is unreliable — don't propose it.
+- Mute affects local speakers only. Paxton is not Armen's machine: read-only commands there.
+- Don't propose PRs to DSheirer/sdrtrunk; pulling from upstream is fine.
+- Playlists contain Zello credentials: read structure only, never print credential attributes.
+- Nothing changed in how the agencies transmit (frequencies, sites, modulation) — don't raise it again.
+
+
+## Previous state (2026-10-26): ap-15.9.31 release and the 15.9.32 diagnosis
 
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.31\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.31.zip`
 - Tree `f2fd30d33454b3d832f196ebb98b280b49aee4e0` (guard on the tree hash; commit hashes differ between machines)
@@ -113,7 +245,7 @@ wav through `ComplexWaveSource` -> `P25P1DecoderC4FM`. Baseband WAVs cap at 4 Gi
   the decoder port until a single wideband recording is replayed through both versions. Keep "max traffic
   channels" at 10: 0.6.1 refused every grant 10:14–10:27 (channels not returned), not a capacity limit. Two
   SDRTrunk instances were seen running at once on that PC.
-- **Whole calls muted on a mis-decoded encryption ID** (Salisbury Rockingham Sheriff East/West: scattered IDs
+- **(FIXED in 15.10.1 - Reed-Solomon padding)** **Whole calls muted on a mis-decoded encryption ID** (Salisbury Rockingham Sheriff East/West: scattered IDs
   0x76, 0xB8, 0x3F, 0x0E, 0xED ...). Candidate: mute only when the same unknown ID repeats or the HDU agrees.
   Measure on a recording first.
 - **Stream delete matches by name+type** (`BroadcastModel.getConfiguredBroadcast` via `equals`), not by the
@@ -127,16 +259,6 @@ wav through `ComplexWaveSource` -> `P25P1DecoderC4FM`. Baseband WAVs cap at 4 Gi
 - **Beauport Rockport Fire:** no call 45 h on 10-23/24; check channel running/tuner at startup.
 - JMBE 2.x per-channel settings (AGC/tone/noise gain) are preserved but not applied; UI not ported — deferred
   until a channel needs it.
-
-### Working rules (from Armen)
-- Git runs on the Windows machine only, never through the device bridge (CRLF). Deliver `git format-patch`;
-  Armen applies with `git am --keep-cr --3way ap-<ver>.patch` and checks the tree hash. Stage explicit files,
-  never `git add -A`. Armen's build is the official compile; Armen pushes.
-- Measure before diagnosing; no fix built on an unchecked assumption. Auto-PPM is unreliable — don't propose it.
-- Mute affects local speakers only. Paxton is not Armen's machine: read-only commands there.
-- Don't propose PRs to DSheirer/sdrtrunk; pulling from upstream is fine.
-- Playlists contain Zello credentials: read structure only, never print credential attributes.
-
 
 ## Earlier release: ap-15.9.16 (2026-10-06)
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.16\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.16.zip`
