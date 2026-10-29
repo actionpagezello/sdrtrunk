@@ -5,6 +5,36 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.2] - 2026-10-29
+
+### Fixed - baseband I/Q recordings stopped at 4 GiB
+
+- Every machine: `IOException ... Unable to create a unique file name for recording - exceeded 20 versioning attempts`
+  about 6 hours into each 50 kHz channel baseband recording (4 GiB, the WAV size limit), after which the recorder
+  stopped. `WaveWriter` rolls over to `<name>_2`, `_3`, ... at the size limit, but both its rollover and its
+  duplicate-name versioning only renamed files ending in `.tmp` (call audio is written as `.tmp` then renamed).
+  Baseband recordings are written straight to `.wav`, so every new name equalled the old one.
+- Fix: the series number and the version are inserted before the file's own extension, whatever it is. Call audio
+  `.tmp` names are unchanged (`X.tmp`, `X_2.tmp`, `X_3.tmp`); a name collision now gives `X_3.tmp` rather than
+  `X_2_3.tmp`. Tested with a 100,000-byte limit: 15.10.1 throws exactly the field exception at the first rollover;
+  15.10.2 writes `rec.wav`, `rec_2.wav`, `rec_3.wav`, `rec_4.wav`, each with a valid RIFF header and every byte kept.
+
+### Fixed - NBFM audio dropped at squelch open when the opening burst is large
+
+- Bailey UHF, MA Fire District 6 - Admin (483.6375), 8 times on 10-28/29: `BufferOverflowException` in
+  `RealResampler$BufferManager.load`. The squelch hands the resampler the buffered audio for the start of a
+  transmission in one block; a block longer than the resampler's 4,192-sample input buffer was rejected whole, so
+  the start of that transmission was lost. The resampler now loads its input in pieces that fit. Tested: a
+  10,000-sample burst between smaller blocks throws on 15.10.1 and resamples fully on 15.10.2 (15,000 samples at
+  25 kHz -> 5,120 at 8 kHz, ten 512-sample blocks).
+
+### Added - DMR diagnostics logging switch
+
+- Preferences > Diagnostics gets a "DMR decoder" checkbox (`io.github.dsheirer.module.decode.dmr`), off by default.
+  The file log accepts DEBUG from every logger that no checkbox controls, so DMR's `processChannelGrant` line, logged
+  on every grant update, was 84% of Audubon's log (27,892 lines between midnight and 13:49 on 10-29). With the box
+  off it is no longer written; turn it on to trace a DMR issue.
+
 ## [0.6.2-ap-15.10.1] - 2026-10-28
 
 ### Fixed - P25 Phase 1 decoder exception on a sync detection just after a buffer reload

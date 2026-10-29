@@ -49,7 +49,7 @@ public class WaveWriter implements AutoCloseable
 
     public static final String DATA_CHUNK_ID = "data";
 
-    private static final Pattern FILENAME_PATTERN = Pattern.compile("(.*_)(\\d+)(\\.tmp)");
+    private static final Pattern FILENAME_PATTERN = Pattern.compile("(.*_)(\\d+)(\\.[^.\\\\/]+)$");
     public static final long MAX_WAVE_SIZE = 2l * (long)Integer.MAX_VALUE;
 
     private AudioFormat mAudioFormat;
@@ -112,11 +112,15 @@ public class WaveWriter implements AutoCloseable
      */
     private void open() throws IOException
     {
+        //AP-fork (ap-15.10.2): insert the version before the file's own extension.  This used to replace ".tmp" only,
+        //so a recording written directly to *.wav (baseband I/Q) kept the same name on every attempt and the recorder
+        //stopped with the exception below at its first 4 GiB rollover.
+        Path requested = mFile;
         int version = 2;
 
         while(Files.exists(mFile) && version < 20)
         {
-            mFile = Paths.get(mFile.toFile().getAbsolutePath().replace(".tmp", "_" + version + ".tmp"));
+            mFile = withSuffix(requested, "_" + version);
             version++;
         }
 
@@ -403,28 +407,33 @@ public class WaveWriter implements AutoCloseable
      */
     private void updateFileName()
     {
-        String filename = mFile.toString();
-
+        //AP-fork (ap-15.10.2): number the series before the file's own extension (*.tmp call audio, *.wav baseband).
         if(mFileRolloverCounter == 2)
         {
-            filename = filename.replace(".tmp", "_2.tmp");
+            mFile = withSuffix(mFile, "_2");
         }
         else
         {
-            Matcher m = FILENAME_PATTERN.matcher(filename);
+            Matcher m = FILENAME_PATTERN.matcher(mFile.toString());
 
             if(m.find())
             {
-                StringBuilder sb = new StringBuilder();
-                sb.append(m.group(1));
-                sb.append(mFileRolloverCounter);
-                sb.append(m.group(3));
-
-                filename = sb.toString();
+                mFile = Paths.get(m.group(1) + mFileRolloverCounter + m.group(3));
             }
         }
+    }
 
-        mFile = Paths.get(filename);
+    /**
+     * AP-fork (ap-15.10.2): inserts the suffix before the file name's extension, or appends it when there is none.
+     * Example: recording.wav + "_2" = recording_2.wav, recording.tmp + "_2" = recording_2.tmp.
+     */
+    static Path withSuffix(Path file, String suffix)
+    {
+        String name = file.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        String renamed = dot > 0 ? name.substring(0, dot) + suffix + name.substring(dot) : name + suffix;
+        Path parent = file.getParent();
+        return parent != null ? parent.resolve(renamed) : Paths.get(renamed);
     }
 
     /**

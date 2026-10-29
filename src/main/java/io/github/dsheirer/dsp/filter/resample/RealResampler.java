@@ -104,8 +104,26 @@ public class RealResampler
      */
     public void resample(float[] samples, boolean lastBatch)
     {
-        mBufferManager.load(samples);
-        mResampler.process(mResampleFactor, mBufferManager, lastBatch);
+        //AP-fork (ap-15.10.2): load the input in pieces that fit the input buffer.  A squelch-open burst can be longer
+        //than the buffer (4,192 samples for NBFM), and FloatBuffer.put() then threw BufferOverflowException and the
+        //whole burst - the start of the transmission - was dropped.
+        int offset = 0;
+
+        do
+        {
+            int length = Math.min(samples.length - offset, mBufferManager.getInputBufferSpace());
+            mBufferManager.load(samples, offset, length);
+            offset += length;
+
+            mResampler.process(mResampleFactor, mBufferManager, lastBatch && offset >= samples.length);
+
+            //The resampler drains the input buffer on each pass; if it could not, stop rather than loop forever.
+            if(offset < samples.length && mBufferManager.getInputBufferSpace() == 0)
+            {
+                break;
+            }
+        }
+        while(offset < samples.length);
 
         if(lastBatch)
         {
@@ -159,6 +177,22 @@ public class RealResampler
         public void load(float[] samples)
         {
             mInputBuffer.put(samples);
+        }
+
+        /**
+         * AP-fork (ap-15.10.2): queues part of the samples array for resampling.
+         */
+        public void load(float[] samples, int offset, int length)
+        {
+            mInputBuffer.put(samples, offset, length);
+        }
+
+        /**
+         * AP-fork (ap-15.10.2): number of samples the input buffer can still accept.
+         */
+        public int getInputBufferSpace()
+        {
+            return mInputBuffer.remaining();
         }
 
         @Override
