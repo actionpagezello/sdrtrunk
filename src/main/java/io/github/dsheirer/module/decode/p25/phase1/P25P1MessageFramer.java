@@ -76,6 +76,7 @@ public class P25P1MessageFramer extends C4FMMessageFramer
     private boolean mSyncDetected = false;
     //Indicates the NID under capture follows a sync detected while a message was still assembling
     private boolean mPreemptiveNIDCheck = false;
+    private float mSoftSyncScore = 0;
 
     private Listener<IMessage> mMessageListener;
     private boolean mMessageAssemblyRequired = false;
@@ -119,13 +120,23 @@ public class P25P1MessageFramer extends C4FMMessageFramer
     public boolean processWithSoftSyncDetect(float softSymbol, Dibit symbol)
     {
         boolean validNIDDetected = process(symbol, softSymbol);
+        mSoftSyncScore = mSoftSyncDetector.process(softSymbol);
 
-        if(mSoftSyncDetector.process(softSymbol) > SYNC_DETECTION_THRESHOLD)
+        if(mSoftSyncScore > SYNC_DETECTION_THRESHOLD)
         {
             syncDetected();
         }
 
         return validNIDDetected;
+    }
+
+    /**
+     * Sync pattern correlation score calculated for the most recent soft symbol processed via
+     * processWithSoftSyncDetect().  Allows the demodulator to compare against phase-rotated sync pattern scores.
+     */
+    public float getSoftSyncScore()
+    {
+        return mSoftSyncScore;
     }
 
     /**
@@ -917,6 +928,13 @@ public class P25P1MessageFramer extends C4FMMessageFramer
         //flag it as invalid NID when this happens.  The NAC tracker will give us a value of 0 until it has enough
         //observations of a valid NID value.
         mNACTracker.track(nac);
+
+        //Upstream PR #2478: reject an over-corrected NID whose NAC is not the tracked NAC.  The NAC tracker reports 0
+        //until it has enough observations of a valid NID value.
+        if(trackedNAC > 0 && trackedNAC != nac)
+        {
+            return false;
+        }
 
         //NAC filtering: reject frames with non-matching NAC
         if(mAllowedNACs != null && !mAllowedNACs.isEmpty() && !mAllowedNACs.contains(nac))

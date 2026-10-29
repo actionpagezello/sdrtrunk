@@ -5,6 +5,26 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.3] - 2026-10-29
+
+### Changed - P25 Phase 1 LSM (simulcast) false-lock recovery, upstream PR #2478 (unmerged), adapted
+
+- `P25P1DemodulatorLSM`: the decision-directed PLL can only resolve the carrier offset modulo 90 degrees and was
+  clamped to +/-800 Hz, so past ~600-700 Hz it settled on a false lock 90 degrees away and stopped decoding (and
+  reported the offset to auto-PPM with the wrong sign). Adds +/-90 and 180 degree rotated sync detectors that correct
+  the PLL only when no valid NID has been seen for 1 s and two rotated detections agree, widens the PLL range to
+  +/-2000 Hz, resets a PLL pinned at the clamp, and leaks the PLL toward the last valid estimate while not decoding
+  (faster traffic-channel key-up). Applies to every channel set to LSM: conventional, and Phase 1 control and traffic
+  channels on trunked simulcast systems. Phase 2 TDMA is not affected.
+- `P25P1MessageFramer`: rejects an over-corrected NID whose NAC is not the channel's tracked NAC (upstream's rule).
+  A second NAC seen on a channel is usually another system on the same frequency (Manchester BTS Police uses only
+  0x526; 0x625 was also established on it under 15.9.32). A channel that really uses several NACs can list them in
+  the P25 Phase 1 channel editor's Allowed NACs.
+- Replay, Lowell Police (LSM, Bailey UHF, 10 min, 2026-10-28), voice frames (clean) 15.10.2 -> 15.10.3: as recorded
+  (-754 Hz) 1,654 (1,625) -> 1,922 (1,908); shifted to 0 Hz 671 (644) -> 2,027 (2,006); +246 Hz 660 (620) -> 2,029
+  (2,003); -1,754 Hz 605 (576) -> 1,902 (1,871). Twelve C4FM recordings (Troop A, Troop B, Methuen, Tewksbury,
+  Burlington on Bailey UHF and Audubon) decode byte-for-byte the same as 15.10.2.
+
 ## [0.6.2-ap-15.10.2] - 2026-10-29
 
 ### Fixed - baseband I/Q recordings stopped at 4 GiB
