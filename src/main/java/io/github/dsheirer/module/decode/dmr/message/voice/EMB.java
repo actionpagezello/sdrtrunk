@@ -56,7 +56,7 @@ public class EMB
     private static final int[] COLOR_CODE = new int[]{0, 1, 2, 3};
     private static final int ENCRYPTION_PI = 4;
     private static final int[] LINK_CONTROL_START_STOP = new int[]{5, 6};
-    //Maximum bit errors between the hard decision and the soft decision (maximum likelihood) word for validity.
+    //Maximum bit errors between the hard decision and the corrected word for validity when soft bits are provided.
     private static final int SOFT_DECISION_MAX_BIT_ERRORS = 2;
 
     private CorrectedBinaryMessage mMessage;
@@ -94,19 +94,51 @@ public class EMB
     }
 
     /**
-     * Maximum likelihood soft decision decoding against all valid words.  Selects the valid word with the lowest sum
-     * of soft bit magnitudes for the bit positions where the valid word differs from the hard decision.
+     * Soft decision assisted decoding.  Selects the valid word(s) closest to the hard decision (minimum Hamming
+     * distance) and uses the soft bits only to choose between equally close words: the one with the lowest sum of soft
+     * bit magnitudes for the bit positions where it differs from the hard decision.  Corrects up to 3 bit errors.  The
+     * word is valid with 1 corrected bit error, or with 2 when the maximum likelihood word is the same word.
+     *
+     * The soft bits never override a closer hard decision match.  Some transmitters (ie Salem State Police) send EMB
+     * words that are always 2 bits from a valid word, and an unrestricted maximum likelihood choice picked a word
+     * 4 bits away (with a different LCSS) for about a third of the voice E frames, which broke the full link control
+     * reassembly and lost the talker IDs and talker aliases.  A cost ratio limit can't separate those from genuine
+     * low confidence errors (0.66 - 0.89 versus 0.4 - 0.67), and a wrong word can also set the encryption (PI) flag.
+     *
      * @param softBits for the 16 transmitted bits.
      */
     private void decodeSoft(float[] softBits)
     {
         int word = getMessage().getInt(WORD);
+
+        if(WORD_SET.contains(word))
+        {
+            mValid = true;
+            return;
+        }
+
+        int minimumDistance = Integer.MAX_VALUE;
+
+        for(int validWord: VALID_WORDS)
+        {
+            minimumDistance = Math.min(minimumDistance, Integer.bitCount(word ^ validWord));
+        }
+
+        if(minimumDistance > 3)
+        {
+            mValid = false;
+            return;
+        }
+
         int best = word;
         float bestMetric = Float.MAX_VALUE;
+        int maximumLikelihood = word;
+        float maximumLikelihoodMetric = Float.MAX_VALUE;
 
         for(int validWord: VALID_WORDS)
         {
             int difference = word ^ validWord;
+            int distance = Integer.bitCount(difference);
             float metric = 0.0f;
 
             while(difference != 0)
@@ -117,22 +149,26 @@ public class EMB
                 difference &= difference - 1;
             }
 
-            if(metric < bestMetric)
+            if(metric < maximumLikelihoodMetric)
+            {
+                maximumLikelihoodMetric = metric;
+                maximumLikelihood = validWord;
+            }
+
+            if(distance == minimumDistance && metric < bestMetric)
             {
                 bestMetric = metric;
                 best = validWord;
             }
         }
 
-        int bitErrors = Integer.bitCount(word ^ best);
+        getMessage().setInt(best, WORD);
+        getMessage().setCorrectedBitCount(minimumDistance);
 
-        if(bitErrors > 0)
-        {
-            getMessage().setInt(best, WORD);
-            getMessage().setCorrectedBitCount(bitErrors);
-        }
-
-        mValid = bitErrors <= SOFT_DECISION_MAX_BIT_ERRORS;
+        //Valid with 1 corrected bit error, or 2 when the maximum likelihood word agrees.  A word with 4+ bit errors can
+        //be within 2 bits of another valid word, and the valid flag gates the encryption (PI) flag that mutes audio.
+        mValid = minimumDistance <= 1 ||
+                (minimumDistance <= SOFT_DECISION_MAX_BIT_ERRORS && best == maximumLikelihood);
     }
 
     /**

@@ -49,6 +49,7 @@ import io.github.dsheirer.module.decode.dmr.message.data.mbc.MBCAssembler;
 import io.github.dsheirer.module.decode.dmr.message.data.mbc.MBCContinuationBlock;
 import io.github.dsheirer.module.decode.dmr.message.data.packet.PacketSequenceAssembler;
 import io.github.dsheirer.module.decode.dmr.message.data.terminator.Terminator;
+import io.github.dsheirer.module.decode.dmr.message.voice.VoiceAMessage;
 import io.github.dsheirer.module.decode.dmr.message.voice.VoiceEMBMessage;
 import io.github.dsheirer.module.decode.dmr.message.voice.VoiceMessage;
 import io.github.dsheirer.module.decode.dmr.message.voice.VoiceSuperFrameProcessor;
@@ -112,10 +113,68 @@ public class DMRMessageProcessor implements Listener<IMessage>
     }
 
     /**
+     * Holds a voice frame A (the first burst of a voice super frame) per timeslot until the next burst on that timeslot
+     * confirms it with a voice frame B.  Voice frame A is the only voice burst with a sync pattern and it carries no
+     * error detection, so a false sync detection in noise produces a voice frame A that is otherwise indistinguishable
+     * from a real one.  Each one started a call with no radio ID (about 2 per minute on Salem State Police, Audubon).
+     * A voice frame A that isn't followed by a voice frame B on the same timeslot is discarded.  Indexed by timeslot:
+     * 0 (not yet known), 1 and 2.
+     */
+    private final VoiceAMessage[] mPendingVoiceA = new VoiceAMessage[3];
+
+    /**
      * Primary message processing
      */
     @Override
     public void receive(IMessage message)
+    {
+        if(message == null)
+        {
+            return;
+        }
+
+        if(message instanceof SyncLossMessage)
+        {
+            mPendingVoiceA[0] = null;
+            mPendingVoiceA[1] = null;
+            mPendingVoiceA[2] = null;
+        }
+        else if(message instanceof DMRBurst burst && burst.getTimeslot() >= 0 && burst.getTimeslot() <= 2)
+        {
+            int index = burst.getTimeslot();
+            VoiceAMessage pending = mPendingVoiceA[index];
+            mPendingVoiceA[index] = null;
+
+            //A voice frame A with an unknown timeslot (0) is confirmed by the next burst on either timeslot, since that
+            //burst's CACH may establish the timeslot.
+            VoiceAMessage pendingUnknown = null;
+
+            if(index != 0)
+            {
+                pendingUnknown = mPendingVoiceA[0];
+                mPendingVoiceA[0] = null;
+            }
+
+            if(message instanceof VoiceEMBMessage)
+            {
+                process(pendingUnknown);
+                process(pending);
+            }
+
+            if(message instanceof VoiceAMessage voiceA)
+            {
+                mPendingVoiceA[index] = voiceA;
+                return;
+            }
+        }
+
+        process(message);
+    }
+
+    /**
+     * Processes the message
+     */
+    private void process(IMessage message)
     {
         if(message == null)
         {

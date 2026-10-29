@@ -5,6 +5,27 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.5] - 2026-10-29
+
+### Fixed - DMR regressions from the 15.10.4 decoder rework (found on Salem State Police, Audubon)
+
+- Talker IDs and talker aliases lost on some calls. Salem State Police sends voice EMB words that are always 2 bits
+  from a valid word. The new soft decision EMB decoder chose a word 4 bits away (different link control start/stop)
+  for about a third of the voice E frames, so those embedded link control messages were never reassembled. `EMB` now
+  takes the closest valid word and uses the soft bits only to choose between equally close words, and marks the word
+  valid with 1 corrected bit, or 2 when the soft decision agrees (the valid flag gates the encryption flag).
+- Phantom calls with no radio ID, about 2 per minute on Salem State Police (about 1.5 s each in the call events).
+  Upstream lowered the DMR sync thresholds, and a false sync in noise produced a lone voice frame A, which has no
+  error detection. `DMRMessageProcessor` now holds each voice frame A until the next burst on that timeslot is a
+  voice frame B, and discards it otherwise.
+- Upstream test `BPTC_128_77SoftTest.testEMBSoftDecode`: 4-bit EMB errors are no longer expected to be corrected
+  (only marked invalid).
+- Replays, Salem State Police: 17 min before the upgrade (strong, with group calls) - 15.10.3: 25 radio ID link
+  control messages, 6 talker aliases, 39 voice super frames; 15.10.4: 18, 0, and 38 lone voice A frames;
+  15.10.5: 25, 6, 39, no lone frames. 12 min after the upgrade (weaker, short mobile/direct bursts) - complete voice
+  super frames 15.10.3: 12, 15.10.5: 41, with no lone voice A frames (15.10.4: 32). OneVoice Haverhill and Boston
+  control channels decode the same as 15.10.4. DMR unit tests: 18 pass.
+
 ## [0.6.2-ap-15.10.4] - 2026-10-29
 
 ### Changed - DMR decoder rework, upstream PR #2517 (merged upstream as f2c98cdb, Denny Sheirer)
