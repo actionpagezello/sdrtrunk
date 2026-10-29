@@ -3,7 +3,7 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.10.1 (2026-10-28) — state as of 2026-10-28 09:00
+## Current Release: ap-15.10.1 (2026-10-28) — state as of 2026-10-29 14:00
 
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.10.1\sdr-trunk-windows-x86_64-v0.6.2-ap-15.10.1.zip`
 - Tree `49b04794e0308e26c47ee8d895e41d47411df4bf`, pushed 2026-10-28 as `d6c0617a` (guard on the tree hash;
@@ -12,18 +12,23 @@
   five machines 2026-10-27/28 — see "Fleet results" below.
 - **Never deploy 15.9.28 or 15.9.29** (playlist bugs, see the release table). 15.9.31 and older still have the
   P25 lockout.
-- Next: roll 15.10.1 out to every machine; after a day, check the app logs for no `ArrayIndexOutOfBounds` and far
-  fewer `unknown encryption algorithm` warnings on clear channels.
+- **15.10.1 confirmed 2026-10-29** (00:00-10:00 logs, five machines): no `ArrayIndexOutOfBounds` in the C4FM
+  processor (Daly had 2 the night before on 15.10), no `unknown encryption algorithm` on Salisbury (8 the night
+  before), no lockouts. Next: 15.10.1 on Baker and Somerville; confirm `legacy 5x gain ... bypassed` (JMBE 2) on
+  every machine.
+- **Keep auto-PPM off on every tuner** — it ran away on Bailey UHF overnight 10-28/29 (see below). Armen: it has
+  always been an issue; leave the code alone for now.
 
-### Fleet versions (last known, 2026-10-28)
+### Fleet versions (last known, 2026-10-29)
 | Machine | Version | Notes |
 |---|---|---|
-| Salisbury (SDR-9) | 15.10 (00:25 10-28) | was 15.9.31 until 10-28 — 10-27 is the clean "before" day |
-| Daly (DESKTOP) | 15.10 (00:31 10-28) | Methuen Police - Test stopped 00:32 10-28; turn back on for the side-by-side |
-| Beauport (SDR-13) | 15.10 (00:35 10-28) | |
-| Audubon | 15.10 (00:39 10-28) | NXDN (Georgetown) + DMR (OneVoice Haverhill/Boston, Salem State) |
-| Bailey VHF (SDR-3) | 15.10 (00:29 10-28) | |
-| Bailey UHF, Baker, Somerville | 15.9.32 | |
+| Salisbury (SDR-9) | 15.10.1 | was 15.9.31 until 10-28 — 10-27 is the clean "before" day |
+| Daly (DESKTOP) | 15.10.1 | Methuen Police - Test stopped 00:32 10-28; turn back on for the side-by-side |
+| Beauport (SDR-13) | 15.10.1 | "Essex County - Live/Test" streams MISSING on calls — being reworked by Armen, ignore |
+| Audubon | 15.10.1 | NXDN (Georgetown) + DMR (OneVoice Haverhill/Boston, Salem State); Burlington Police moving here |
+| Bailey VHF (SDR-3) | 15.10.1 | |
+| Bailey UHF (SDR-4) | 15.10.1 (13:53 10-28, from **15.7**) | JMBE 2.0.2 since 15:42 10-28; auto-PPM disabled 10-29 |
+| Baker, Somerville | 15.9.32 | move to 15.10.1 |
 | Metro-25 (friend's PC, Windows user "User") | 15.9.30 installed; recommended to run the 0.6.1 final | no access at present |
 | Summit 800 | — | not streaming at present |
 
@@ -94,16 +99,59 @@ The 15.9.24-15.9.31 releases are listed in the previous state section below.
    B and Boxborough on Bailey VHF, North Andover Police and Derry Fire on Daly); the audio module takes the call's
    encryption state from the first valid header, so one bad LDU2 muted the rest of a clear call.
 
+### Bailey UHF and audio findings, 2026-10-28/29
+- **JMBE 1.x clips P25 audio.** Bailey UHF ran `jmbe-1.0.9.jar`: `legacy 5x gain (P25 Phase 1, NXDN) in use`, a fixed
+  5x gain hard-clipped at 0.95 (31,128) — Tewksbury Fire unit 5012 had 1.9% of samples on the ceiling. After switching
+  to `jmbe-2.0.2.jar` (`legacy 5x gain ... bypassed`, AGC on): <= 0.06% at the ceiling. Every machine must be on JMBE 2.
+- **Tewksbury Fire/Police hum and robotic audio come from the dispatch console audio** (Fire console ID 16777211,
+  Police ID 7), not the decoder. Console and units arrive at Bailey at the same strength (59 transmissions: median 50.9
+  vs 49.9 dB; everything goes through the same tower — Armen). Console voice frames decode ~99% clean, but its
+  between-word gaps carry 87-97% of their energy below 300 Hz, 45-67% exactly on 60/120/180 Hz (units 3-17%):
+  mains hum on the console line, which the IMBE encoder turns buzzy. Fix is at Tewksbury's console. Console
+  transmissions end with 3-5 constant `AAAA...` IMBE fill frames; JMBE 2 renders them as near silence (harmless).
+- **Auto-PPM runaway** on tuner RTL-2832/R820T 93125430 (483.45 MHz, Tewksbury): auto-PPM stepped ~+1.24 PPM every
+  ~10 min and each step increased the measured error (00:03 0.42 PPM / 53 Hz -> 06:02 38.8 / 1,492 Hz -> 08:20 56.0
+  / 2,058 Hz; Armen found it at -76). Tewksbury Police silent from ~03:00 until it was set back to 0. Only Bailey UHF
+  had auto-PPM enabled. Armen: long-standing issue, leave it disabled, no guard for now.
+- **#2520 (3,600 Hz baseband passband) evaluated and kept.** 51 min of real Tewksbury Fire: a 4,400/5,200 Hz passband
+  cut damaged console frames 105 -> 44/32, almost all from one weak fade at 15:32:42. Burlington Police on Bailey UHF
+  (weakest channel there, ~14 dB above noise): wider is worse (frames with a Golay word at its 3-error limit: 3,600 Hz
+  214, 4,400 Hz 211, 5,200 Hz 259). Strong channels identical at every width. 4,400 Hz designs at 24-48 kHz; 5,200 Hz
+  is borderline at 24-27 kHz.
+- **15.10 weak-signal voice errors (open, low priority).** Burlington on Bailey UHF, frame-by-frame vs 15.9.32: 162
+  frames good on 15.9.32 and bad on 15.10.1, 48 the other way; 15.10.1 also recovers 135 frames 15.9.32 misses.
+  Edge-of-correction frames 84 (15.9.32) vs 214 (15.10.1). Not the cause (each tested on Burlington): baseband
+  passband, the C4FM symbol equalizer (off, or no decision-directed updates), Gardner timing tracking, the per-sync
+  timing correction, 15.9.32's RRC. Next candidate: sample-equalizer gain/balance tracking (several Bailey UHF
+  channels keep gain exactly 5.2083 all session). On Audubon's Burlington signal (~18 dB, 2026-10-29) 15.10.1 decodes
+  2,475 frames 100% clean vs 15.9.32 2,398 / 99.8% — the gap only shows at the edge of reception.
+- **NBFM resampler overflow**: `BufferOverflowException` in `RealResampler$BufferManager.load` (4,192-float input
+  buffer) at squelch open on MA Fire District 6 - Admin (483.6375), 4x on 10-29; the open burst is dropped. Fix: feed
+  the resampler in chunks. Low priority — Armen will relocate that channel.
+- **DMR**: one `ArrayIndexOutOfBoundsException: Index 144` in `DMRMessageFramer.receive` (OneVoice, Audubon, 00:41
+  10-29) and 7 Dispatcher queue-overflow warnings on Salem State DMR. Upstream code; #2517 replaces the framer.
+- Tewksbury Police recording 15:31-15:42 10-28 was wall-to-wall wideband noise (~40 dB above the normal floor) —
+  consistent with the auto-PPM drift. Lowell Police is LSM (simulcast): 97% clean with the LSM decoder.
+- `Cut-Baseband.ps1` lives in `C:\Users\Admin\projects\logs` and a spare copy in the repo folder (untracked); the
+  staging limit is 400 MB per file, so cut 20-30 min slices.
+
 ### OPEN
-- Roll 15.10.1 out fleet-wide; confirm the two fixes in a day of logs.
+- 15.10.1 on Baker and Somerville; JMBE 2 on every machine.
+- Next code item (Claude's pick): the baseband recorder stops at 4 GiB; then #2478 (LSM false lock) tested first on
+  the Lowell Police LSM recording; NBFM resampler overflow; DMR #2517 when DMR use grows.
+- 15.10 weak-signal voice errors (see above) — low priority.
+- Burlington Police moving to Audubon; District 6 Admin on hold (weak, to be relocated).
 - **Rowley Police (Beauport)** never decodes (15.9.31, 15.9.32, 15.10 — a few syncs/h, no voice); Armen checking
   its configuration.
-- **Derry Police (Daly)**: 150-430 equalizer recalibrations/h on 15.9.32 and 15.10 — weak distant signal; decodes.
+- **Derry Police (Daly)**: 150-430 equalizer recalibrations/h on 15.9.32, 15.10 and 15.10.1 — weak distant signal;
+  decodes. Westford Police (Bailey UHF) 686 and Portsmouth Police (Salisbury) 133 recalibrations on 10-29, both decoding.
 - **Baseband recorder stops at 4 GiB** ("Unable to create a unique file name for recording - exceeded 20
   versioning attempts", ~6 h at 50 kHz) — upstream bug, fix later.
-- **Alias save delay on Beauport**: not reproduced; the 15.9.33 `Playlist saved` line (in 15.10) will show it if
-  it recurs — note the time.
+- **Alias save delay on Beauport**: not reproduced; Beauport saves take 40-298 ms, ~2 s after the change. The
+  `Playlist saved` line will show it if it recurs — note the time.
 - **MASCO 464.600 (Audubon)** barely decodes; Georgetown duplicate control channel appears resolved (`Control_51`).
+- **Bailey UHF**: "Middlesex County" / "Middlesex County - APM" streams were MISSING on every call 10-28 (gone on
+  10-29); Belmont Police, Boxborough Fire, Maynard Fire, Ayer Fire (470-471 MHz) have no tuner.
 - **Methuen Police - Test** stopped on Daly 10-28 00:32.
 - **Upstream PRs after 15.10**: #2478 (LSM false lock, needs a Metro-25 recording); #2460/#2459/#2486 Metro-25
   Phase 2; wait on DMR #2517; measure CPU before #2403 HydraSDR JNI; #2477 after checking Rockingham logs; #2511
