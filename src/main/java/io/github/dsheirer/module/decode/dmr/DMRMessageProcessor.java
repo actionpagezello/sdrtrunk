@@ -29,6 +29,7 @@ import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
 import io.github.dsheirer.module.decode.dmr.identifier.DMRTalkgroup;
 import io.github.dsheirer.module.decode.dmr.message.CACH;
 import io.github.dsheirer.module.decode.dmr.message.DMRBurst;
+import io.github.dsheirer.module.decode.dmr.message.data.DataMessage;
 import io.github.dsheirer.module.decode.dmr.message.data.DataMessageWithLinkControl;
 import io.github.dsheirer.module.decode.dmr.message.data.IDLEMessage;
 import io.github.dsheirer.module.decode.dmr.message.data.block.DataBlock;
@@ -112,6 +113,76 @@ public class DMRMessageProcessor implements Listener<IMessage>
         return mCrcMaskManager.isIgnoreCRCChecksums() || message.isValid();
     }
 
+    //Color code filter: once 3 consecutive valid data bursts carry the same color code, valid data bursts with a
+    //different color code are discarded until 5 consecutive valid data bursts establish a new one.  A repeater uses
+    //one color code for both timeslots, and bursts framed from noise often have no timeslot yet (0), so the color code
+    //is tracked per channel.
+    private static final int COLOR_CODE_ESTABLISH_COUNT = 3;
+    private static final int COLOR_CODE_CHANGE_COUNT = 5;
+    private boolean mColorCodeFilterEnabled = false;
+    private int mEstablishedColorCode = -1;
+    private int mCandidateColorCode = -1;
+    private int mCandidateColorCodeCount = 0;
+
+    /**
+     * Enables the color code filter for conventional and control channels.  The new DMR decoder (upstream #2517) uses
+     * lower sync thresholds, so it frames more bursts from noise and about 1 per minute of those passes its CRC by
+     * chance (Salem State Police, Audubon: 18 - 23 versus 0 - 3 with 15.10.3 in 12 - 19 minute replays).  Each carries
+     * a random color code and produced garbage SMS and data packets, a false emergency group call and false channel
+     * grants.  Not used on traffic channels, which follow calls across frequencies.
+     * @param enabled true to filter
+     */
+    public void setColorCodeFilterEnabled(boolean enabled)
+    {
+        mColorCodeFilterEnabled = enabled;
+    }
+
+    /**
+     * Applies the color code filter to valid data bursts.
+     * @param message to check
+     * @return true if the message should be discarded
+     */
+    private boolean isColorCodeMismatch(IMessage message)
+    {
+        if(!mColorCodeFilterEnabled || mCrcMaskManager.isIgnoreCRCChecksums() ||
+           !(message instanceof DataMessage dataMessage) || !dataMessage.isValid() ||
+           !dataMessage.getSlotType().isValid())
+        {
+            return false;
+        }
+
+        int colorCode = dataMessage.getSlotType().getColorCode();
+
+        if(colorCode == mEstablishedColorCode)
+        {
+            mCandidateColorCode = -1;
+            mCandidateColorCodeCount = 0;
+            return false;
+        }
+
+        if(colorCode == mCandidateColorCode)
+        {
+            mCandidateColorCodeCount++;
+        }
+        else
+        {
+            mCandidateColorCode = colorCode;
+            mCandidateColorCodeCount = 1;
+        }
+
+        int required = mEstablishedColorCode < 0 ? COLOR_CODE_ESTABLISH_COUNT : COLOR_CODE_CHANGE_COUNT;
+
+        if(mCandidateColorCodeCount >= required)
+        {
+            mEstablishedColorCode = colorCode;
+            mCandidateColorCode = -1;
+            mCandidateColorCodeCount = 0;
+            return false;
+        }
+
+        return mEstablishedColorCode >= 0;
+    }
+
     /**
      * Holds a voice frame A (the first burst of a voice super frame) per timeslot until the next burst on that timeslot
      * confirms it with a voice frame B.  Voice frame A is the only voice burst with a sync pattern and it carries no
@@ -129,6 +200,11 @@ public class DMRMessageProcessor implements Listener<IMessage>
     public void receive(IMessage message)
     {
         if(message == null)
+        {
+            return;
+        }
+
+        if(isColorCodeMismatch(message))
         {
             return;
         }

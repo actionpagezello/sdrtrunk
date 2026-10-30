@@ -22,37 +22,30 @@ package io.github.dsheirer.dsp.filter.equalizer;
 import io.github.dsheirer.dsp.filter.IIRBiQuadraticFilter;
 
 /**
- * 10-band graphic equalizer using cascaded IIR biquad peak filters.
+ * 10-band graphic equalizer using cascaded IIR biquad peak filters, for decoded voice audio at 8 kHz.
  *
- * Default center frequencies are logarithmically spaced from 70 Hz to 3.2 kHz,
- * optimized for voice audio at 8 kHz sample rate (~0.6 octave spacing):
- *   Band  1:   70 Hz  - Sub-bass / rumble
- *   Band  2:  110 Hz  - Bass
- *   Band  3:  165 Hz  - Upper bass
- *   Band  4:  250 Hz  - Low-mid / body
- *   Band  5:  380 Hz  - Mid-low
- *   Band  6:  585 Hz  - Mid / warmth
- *   Band  7:  900 Hz  - Mid / intelligibility
- *   Band  8: 1370 Hz  - Upper-mid / presence
- *   Band  9: 2100 Hz  - High-mid / clarity
- *   Band 10: 3200 Hz  - High / sibilance (near Nyquist at 8 kHz)
+ * Center frequencies are spaced about 0.47 octave apart from 200 Hz to 3.5 kHz (ap-15.10.6, previously 70 Hz to
+ * 3.2 kHz with ~0.6 octave spacing):
+ *   200, 280, 390, 550, 770, 1100, 1500, 2100, 2900 and 3500 Hz
  *
  * Each band has an adjustable gain from -12 dB to +12 dB.
- * Q (bandwidth) is fixed at 2.0 (~0.7 octave per band).
+ * Q (bandwidth) is fixed at 3.0, the usual value for this band spacing (previously 2.0).  With Q 2.0, neighboring
+ * bands overlap enough that, for example, +5 to +7 dB on the 390 Hz - 3.5 kHz bands added up to +11.2 dB at 1.5 kHz;
+ * with Q 3.0 the same settings peak at +9.2 dB.
  */
 public class GraphicEqualizer
 {
     public static final int BAND_COUNT = 10;
-    public static final double DEFAULT_Q = 2.0;
+    public static final double DEFAULT_Q = 3.0;
     public static final double MIN_GAIN_DB = -12.0;
     public static final double MAX_GAIN_DB = 12.0;
 
     public static final double[] DEFAULT_CENTER_FREQUENCIES = {
-        70.0, 110.0, 165.0, 250.0, 380.0, 585.0, 900.0, 1370.0, 2100.0, 3200.0
+        200.0, 280.0, 390.0, 550.0, 770.0, 1100.0, 1500.0, 2100.0, 2900.0, 3500.0
     };
     public static final String[] BAND_LABELS = {
-        "70 Hz", "110 Hz", "165 Hz", "250 Hz", "380 Hz",
-        "585 Hz", "900 Hz", "1.4 kHz", "2.1 kHz", "3.2 kHz"
+        "200 Hz", "280 Hz", "390 Hz", "550 Hz", "770 Hz",
+        "1.1 kHz", "1.5 kHz", "2.1 kHz", "2.9 kHz", "3.5 kHz"
     };
 
     private final IIRBiQuadraticFilter[] mBands;

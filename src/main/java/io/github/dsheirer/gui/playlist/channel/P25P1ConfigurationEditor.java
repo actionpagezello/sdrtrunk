@@ -230,7 +230,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         if(mGraphicEQPane == null)
         {
             mGraphicEQPane = new TitledPane();
-            mGraphicEQPane.setText("10-Band Graphic Equalizer");
+            mGraphicEQPane.setText("10-Band Graphic Equalizer (200 Hz - 3.5 kHz)");
             mGraphicEQPane.setExpanded(false);
 
             VBox content = new VBox(10);

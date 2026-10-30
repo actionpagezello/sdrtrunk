@@ -195,8 +195,13 @@ public abstract class DecodeConfigP25 extends DecodeConfigJMBE
 
     /**
      * Gets the 10-band graphic equalizer band gains in dB.
+     *
+     * ap-15.10.6 replaced the bands (70 Hz - 3.2 kHz became 200 Hz - 3.5 kHz), so the gains are stored as a new element.
+     * The old graphic_eq_band_gains element was for different bands and isn't used, so every channel starts flat
+     * (0 dB).  The old element is preserved in the playlist (unknown elements are kept), so rolling back to an earlier
+     * version restores its settings.
      */
-    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains")
+    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains_200_3500")
     @JacksonXmlProperty(localName = "gain")
     public double[] getGraphicEQBandGains()
     {

@@ -58,8 +58,14 @@ public class P25P1DemodulatorLSM
      * the decoder has not produced a valid NID for at least 1 second (also true for the first second after startup)
      * and only after two rotated detections in the same direction that are at least one TSBK frame apart and within
      * 2 seconds of each other.
+     *
+     * ap fork: threshold raised from 90 to 120.  Lowell Police (Bailey UHF, 20 hours on 15.10.5) logged 690 corrections,
+     * 193 of them in the idle time between calls (median 56 seconds after the last call) that moved a correctly locked
+     * PLL 1200 Hz away, after which the channel decoded 21 calls per hour instead of 190 until another correction
+     * recovered it.  In replays, every correction that led to decoding had a rotated correlation of 134.9 - 138.0,
+     * whereas those made on noise scored 93.4 - 105.6.
      */
-    private static final float ROTATED_SYNC_THRESHOLD = 90.0f;
+    private static final float ROTATED_SYNC_THRESHOLD = 120.0f;
     private static final float ROTATED_SYNC_MARGIN = 30.0f;
     private static final int ROTATED_SYNC_LOCKOUT_SYMBOLS = 48;
     private static final int ROTATED_SYNC_NO_NID_SYMBOLS = 4800; //1 second

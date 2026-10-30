@@ -110,6 +110,7 @@ public class DMRDecoder extends FeedbackDecoder implements IByteBufferProvider, 
         mSymbolProcessor = new DMRSymbolProcessor(this, mMessageFramer);
         mMessageProcessor = new DMRMessageProcessor(config, crcMaskManager);
         mMessageProcessor.setMessageListener(getMessageListener());
+        mMessageProcessor.setColorCodeFilterEnabled(!isTrafficChannel);
         setSampleRate(25000.0);
 
         if(isTrafficChannel)

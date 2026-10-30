@@ -5,6 +5,44 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.6] - 2026-10-30
+
+### Fixed - DMR false messages from noise (color code filter)
+
+- The new DMR decoder (15.10.4, upstream #2517) uses lower sync thresholds, so it frames more bursts from noise, and
+  about 1 per minute of those passes its CRC by chance. On Salem State Police (Audubon, 16 hours on 15.10.5) these
+  showed up as 9 garbage SMS messages, a false 90 ms EMERGENCY group call and false channel grants. Each carries a
+  random color code (Salem State uses 12).
+- `DMRMessageProcessor`: on conventional and control channels, once 3 consecutive valid data bursts carry the same
+  color code, valid data bursts with a different color code are discarded; 5 consecutive valid data bursts with a
+  new color code switch to it. Tracked per channel (bursts from noise often have no timeslot yet). Not applied to
+  traffic channels or when Ignore CRC Checksums is enabled.
+- Replays, Salem State: valid wrong color code messages 18 -> 0 (17 min) and 23 -> 0 (19 min); voice frames, radio
+  ID link control, talker aliases and Hytera registrations unchanged. OneVoice Haverhill and Boston control channels
+  identical to 15.10.5. DMR unit tests: 18 pass.
+
+### Fixed - P25 LSM false-lock recovery firing on noise (Lowell Police)
+
+- 15.10.3's rotated sync recovery corrected Lowell Police's PLL 690 times in 20 hours on Bailey UHF. The 512 made at
+  key-up rescued a false lock, but 193 were made on noise in the idle time between calls (median 56 seconds after
+  the last call) and moved a correctly locked PLL 1200 Hz away. Until another correction recovered it, the channel
+  decoded 21 calls per hour instead of 190 - about 5.8 of the 21 hours.
+- `P25P1DemodulatorLSM`: rotated sync threshold raised from 90 to 120. In replays every correction that led to
+  decoding had a rotated correlation of 134.9 - 138.0; those made on noise scored 93.4 - 105.6.
+- Replays, Lowell Police voice frames 15.10.5 -> 15.10.6: today (3.5 min) 2,844 -> 2,844; 2026-10-28 recording as
+  recorded (-754 Hz) 1,953 -> 1,962, shifted to 0 Hz 2,070 -> 2,088, +246 Hz 2,079 -> 2,088, -1,754 Hz 1,953 ->
+  1,953, with fewer corrections. Cambridge and Boston Simulcast CoMIRS control channels (LSM) identical to 15.10.5.
+
+### Changed - P25 graphic equalizer bands
+
+- Bands replaced: 70 Hz - 3.2 kHz became 200, 280, 390, 550, 770 Hz, 1.1, 1.5, 2.1, 2.9 and 3.5 kHz. Sliders are
+  unchanged: -12 to +12 dB, 0 (middle) is flat. The equalizer is still off by default.
+- Band Q raised from 2.0 to 3.0 for the closer band spacing. With Q 2.0, +5 to +7 dB on the 390 Hz - 3.5 kHz bands
+  added up to +11.2 dB at 1.5 kHz; with Q 3.0 the same settings peak at +9.2 dB.
+- Gains are stored as `graphic_eq_band_gains_200_3500`. The old `graphic_eq_band_gains` values were for different
+  bands and aren't used, so every channel starts flat; whether the equalizer is enabled is kept. The old element
+  stays in the playlist (unknown elements are preserved), so rolling back to 15.10.5 keeps its settings.
+
 ## [0.6.2-ap-15.10.5] - 2026-10-29
 
 ### Fixed - DMR regressions from the 15.10.4 decoder rework (found on Salem State Police, Audubon)
