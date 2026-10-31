@@ -3,7 +3,104 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.10.2 (2026-10-29) — state as of 2026-10-29 15:00
+## Current Release: ap-15.10.7 (2026-10-30) — state as of 2026-10-31 08:00
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.10.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.10.7.zip`
+- Tree `1930b609c57991595530c793e42406c21dc7e110`, pushed 2026-10-30 as `d91eb1d4` (guard on the tree hash).
+- **Rollout:** 15.10.6 on the LSM machines first (Bailey UHF, Salisbury, Somerville), then 15.10.7 on Audubon (DMR);
+  Daly, Cambridge, Beauport, Bailey VHF at their next update (nothing in 15.10.6/7 affects their channels).
+- After rollout check: far fewer `P25P1 LSM rotated sync detected` lines on Lowell, Rockingham West/East, Watertown
+  and Arlington (15.10.5: ~35/h per channel, ~28% of them wrong-way) and more calls on those channels; Salem State
+  call events with no junk SMS / data packets / false emergency calls; P25 channels with the equalizer on start flat
+  on the new bands (re-enter settings).
+- JMBE 2 on every machine. Auto-PPM stays off. Diagnostics boxes: NBFM DEBUG is on for review (Somerville logs
+  ~200 MB/day); turn off when done.
+
+### Fleet versions (last seen in logs, 2026-10-30)
+| Machine | Version | Notes |
+|---|---|---|
+| Salisbury (SDR-9) | 15.10.6 (20:57 10-30) | Rockingham Sheriff West 154.815 / East 154.950 are LSM; Troop A baseband rollover `_2`..`_4.wav` confirmed |
+| Audubon | 15.10.6 (21:18 10-30) -> 15.10.7 | DMR Salem State (CC 12, Hytera), OneVoice Haverhill/Boston (Con+ control), NXDN Georgetown |
+| Bailey UHF (SDR-4) | 15.10.5 -> 15.10.6 | Lowell Police 482.4125 LSM |
+| Somerville | 15.10.5 -> 15.10.6 | Watertown Police 470.7125 and Arlington Police 471.1625 LSM; NBFM DEBUG on |
+| Cambridge | 15.10.5 | CoMIRS control: Massport C4FM (single tower), Cambridge and Boston Simulcast LSM |
+| Daly (DESKTOP) | 15.10.4 | P25 C4FM conventional only |
+| Beauport (SDR-13) | 15.10.5 | |
+| Bailey VHF (SDR-3) | 15.10.1 or later | not reviewed this cycle |
+
+### Releases 2026-10-29/30 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
+| Version | Tree | What |
+|---|---|---|
+| 15.10.3 | `e8b8d7ee` | Upstream #2478 (unmerged) P25 Phase 1 LSM false-lock recovery: rotated sync detectors (+/-90, 180 deg) correct the PLL after 1 s without a valid NID; PLL range +/-2000 Hz; clamp watchdog; leak toward the last valid PLL; framer rejects an over-corrected NID whose NAC isn't the tracked NAC (Manchester BTS uses only 0x526). Lowell replay voice frames 15.10.2 -> 15.10.3: -754 Hz 1,654 -> 1,922; 0 Hz 671 -> 2,027 |
+| 15.10.4 | `55cc0812` | Upstream #2517 (f2c98cdb, Denny Sheirer) DMR rework on the shared C4FM framework, soft decoding (BPTC, CACH, SLC, EMB). Fork deltas kept (C4FM health counters and bounds guards, OTA channel frequency). P25 C4FM (12), LSM (4), NXDN (23) replays identical. #2511 not included (needs upstream's per-channel JMBE 2 UI) |
+| 15.10.5 | `2b84ea12` | Two #2517 regressions on Salem State: (1) soft EMB decoding chose a word 4 bits away (Salem State's EMB is always 2 bits from a valid word) and broke embedded LC: radio IDs 25 -> 18, talker aliases 6 -> 0; `EMB` now takes the closest word and uses soft bits only to break ties (valid with 1 corrected bit, or 2 when the soft decision agrees). (2) lone voice frame A from false syncs started no-ID calls ~2/min; `DMRMessageProcessor` holds voice A until a voice B follows on that timeslot. Upstream test `testEMBSoftDecode` adjusted |
+| 15.10.6 | `fa8870f0` | (1) DMR color code filter (conventional/control channels): established after 3 consecutive valid data bursts, changed after 5; other-CC valid bursts dropped (junk SMS, false emergency call, false grants ~1/min). (2) LSM `ROTATED_SYNC_THRESHOLD` 90 -> 120: corrections that led to decoding scored 134.9-138.0, noise 93.4-105.6. (3) P25 graphic EQ bands 200/280/390/550/770/1100/1500/2100/2900/3500 Hz, Q 3.0, stored as `graphic_eq_band_gains_200_3500` (old 70 Hz-3.2 kHz values not used; channels start flat; old element kept so rollback restores it) |
+| 15.10.7 | `1930b609` | Color code filter also drops CRC-failed bursts with another CC once established (packet assembler built a "valid" packet from CRC-failed CC 10 headers on Salem State) |
+
+### Fleet review 2026-10-30 (15.10.4/15.10.5 logs, 16-22 h per machine)
+- **LSM wrong-way corrections (fixed in 15.10.6).** 15.10.3's recovery fired ~35/h per LSM channel; corrections at
+  key-up (median 3 s after the last call) rescued false locks, but those in idle time (median 56 s) moved a correctly
+  locked PLL 1200 Hz away and the channel stayed nearly deaf until another correction: Lowell 193 of 690 (21 vs 190
+  calls/h, 5.8 of 21 h); Rockingham West 5.6 vs 143 calls/h (5.9 h), East 12.4 vs 114 (5.1 h); Watertown 4.7 vs 72
+  (12.2 h), Arlington 9.1 vs 65 (10.3 h). A "move away from the last decoded offset" guard was tried first and
+  dropped: valid NIDs also decode at false-lock offsets (two Lowell test offsets collapsed). Threshold 120: Lowell
+  replays equal or better (today 2,844 = 2,844; -754 Hz 1,953 -> 1,962; 0 Hz 2,070 -> 2,088; +246 Hz 2,079 -> 2,088;
+  -1,754 Hz 1,953 = 1,953), CoMIRS LSM control channels identical, Rockingham 28-min replays unchanged. Salisbury first
+  half hour on 15.10.6: 48 -> 21 corrections/h, 0 wrong-way (13 in the 1.5 h before).
+- **Baseband rollover (15.10.2) confirmed** on Salisbury Troop A: `baseband.wav`, `_2`, `_3` at 4,294,967,292 bytes, `_4`.
+- **Cambridge (CoMIRS):** 18 h clean; Massport 863k syncs / 5 losses; Zello 1006 disconnects reconnect on the first
+  retry; memory floor flat ~170 MB.
+- **Daly:** P25 sync loss per 1000 syncs unchanged from 15.10.1 on all 14 channels. Rdio Scanner uploads: 12 HTTP
+  502/520 from the ingest servers (11:38, 12:35-12:38, 12:57) were not retried — those calls are missing server-side.
+- **Beauport/Salisbury/Daly:** one call/day muted for an unrecognised encryption algorithm ID (6 on Daly, 0x9A HDU on
+  Beauport 470.4) — mis-decoded frames on weak signals; watch only.
+- **Somerville:** tuner on USB port 5.1.1 has a saved maximum frequency of 160.545 MHz and a saved centre of 460.6 MHz,
+  so `TunerController.apply()` throws at `setFrequencyCorrection` on every start and skips its PPM/auto-PPM setup
+  (configuration, not code). Massport Zello channel: 44 `invalid password` logons 15:56-16:51.
+- **Audubon:** 6 Dispatcher queue-overflow warnings in 16 h (seen before 15.10.4 too); one benign
+  `ComplexSamplesWaveRecorder` ClosedChannelException at a traffic-channel recording close.
+- **Short / split calls (open).** Many transmissions are split into fragments: Somerville NBFM Brookline Fire 1,078 of
+  2,452 calls < 1 s, 1,011 of them within 2 s of another call, gaps mostly < 0.5 s; its carrier squelch opened/closed
+  ~3,200 times in a day. Brookline Police, Revere, Chelsea, Everett similar. P25 channels' short calls are mostly
+  0.5-2 s apart (normal exchanges). Fragments lose a few hundred ms at each break — the "bits of audio" Armen hears.
+
+### OPEN
+- Field-check 15.10.6/15.10.7 (see the rollout checks above).
+- **NBFM split transmissions** (Brookline Fire/Police first): try a lower squelch; or a 15-20 min Brookline Fire
+  baseband to decide between a squelch hang time (keep the gate open ~0.5 s after carrier drop) and other causes.
+- **Salem State (Audubon) decode quality**: weak at Audubon (38 of 94 calls < 1 s); need Armen's description and a
+  daytime baseband during traffic.
+- **Rdio Scanner upload retry** on HTTP 5xx with backoff — separate release (touches every machine's upload path).
+- Optional: `TunerController.apply()` to bring a saved frequency into the tuner's own limits before applying the PPM
+  correction.
+- JMBE 2 per-channel controls (upstream #2485/#2502/#2505, then #2511) — separate release if wanted; the P25 EQ
+  editor section must be kept.
+- Noise-framed DMR voice superframes on Salem State still occur occasionally (EMB with random CC, sometimes PI set);
+  they produced no call events in the logs — watch.
+- Carried: 15.10 weak-signal voice errors (low priority); Rowley Police (Beauport) never decodes; Derry Police
+  recalibrations; MASCO 464.600; Bailey UHF channels without a tuner; Methuen Police - Test; stream delete by
+  name+type; upstream #2403/#2428/#2477 when relevant.
+
+Replay toolkit (cloud container scratchpad, recreate if needed — never on the device VM): `pip install
+jdk4py==25.0.2.1` (Java 25 runtime); javac from the `jdk.compiler` + `jdk.internal.opt` jmods with
+`module-info.class` removed, run from the classpath; `jdk.incubator.vector` and JavaFX classes extracted from their
+jmods; changed classes compiled into an overlay directory ahead of `build\install\sdr-trunk\lib\*`; reflection
+harnesses `RP` (P25 C4FM) and `RPN` (NXDN) feed a 50 kHz wav through `ComplexWaveSource`. Whole-tree compile needs
+`--add-exports java.base/jdk.internal.vm.vector=ALL-UNNAMED`. Baseband WAVs cap at 4 GiB (5.97 h at 50 kHz);
+`Cut-Baseband.ps1` cuts a 30-min slice from a WAV that is still being written.
+
+### Working rules (from Armen)
+- Git runs on the Windows machine only, never through the device bridge (CRLF). Deliver `git format-patch`;
+  Armen applies with `git am --keep-cr --3way ap-<ver>.patch` and checks the tree hash. Stage explicit files,
+  never `git add -A`. Armen's build is the official compile; Armen pushes.
+- The device VM is for another project and never for SDRTrunk work: stage files into the cloud container instead.
+- Measure before diagnosing; no fix built on an unchecked assumption. Auto-PPM is unreliable — don't propose it.
+- Mute affects local speakers only. Paxton is not Armen's machine: read-only commands there.
+- Don't propose PRs to DSheirer/sdrtrunk; pulling from upstream is fine.
+- Playlists contain Zello credentials: read structure only, never print credential attributes.
+- Nothing changed in how the agencies transmit (frequencies, sites, modulation) — don't raise it again.
+
+## Previous state (2026-10-29): ap-15.10.2
 
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.10.2\sdr-trunk-windows-x86_64-v0.6.2-ap-15.10.2.zip`
 - Tree `1ab7a20218ab32f7b32f29cfdf117200f2adc426`, pushed 2026-10-29 as `32458980` (guard on the tree hash;
@@ -171,26 +268,6 @@ The 15.9.24-15.9.31 releases are listed in the previous state section below.
 - **Stream delete matches by name+type** (`BroadcastModel.getConfiguredBroadcast`), not by row — retest.
 - **Baker Action Ambulance** TDMA veto check; **Beauport Rockport Fire** is a slow channel (Armen).
 - Stay on JDK 25 / Gradle 9.2 (JDK 27 is non-LTS, support ends March 2027).
-
-Replay toolkit (cloud container scratchpad, recreate if needed — never on the device VM): `pip install
-jdk4py==25.0.2.1` (Java 25 runtime); javac from the `jdk.compiler` + `jdk.internal.opt` jmods with
-`module-info.class` removed, run from the classpath; `jdk.incubator.vector` and JavaFX classes extracted from their
-jmods; changed classes compiled into an overlay directory ahead of `build\install\sdr-trunk\lib\*`; reflection
-harnesses `RP` (P25 C4FM) and `RPN` (NXDN) feed a 50 kHz wav through `ComplexWaveSource`. Whole-tree compile needs
-`--add-exports java.base/jdk.internal.vm.vector=ALL-UNNAMED`. Baseband WAVs cap at 4 GiB (5.97 h at 50 kHz);
-`Cut-Baseband.ps1` cuts a 30-min slice from a WAV that is still being written.
-
-### Working rules (from Armen)
-- Git runs on the Windows machine only, never through the device bridge (CRLF). Deliver `git format-patch`;
-  Armen applies with `git am --keep-cr --3way ap-<ver>.patch` and checks the tree hash. Stage explicit files,
-  never `git add -A`. Armen's build is the official compile; Armen pushes.
-- The device VM is for another project and never for SDRTrunk work: stage files into the cloud container instead.
-- Measure before diagnosing; no fix built on an unchecked assumption. Auto-PPM is unreliable — don't propose it.
-- Mute affects local speakers only. Paxton is not Armen's machine: read-only commands there.
-- Don't propose PRs to DSheirer/sdrtrunk; pulling from upstream is fine.
-- Playlists contain Zello credentials: read structure only, never print credential attributes.
-- Nothing changed in how the agencies transmit (frequencies, sites, modulation) — don't raise it again.
-
 
 ## Previous state (2026-10-26): ap-15.9.31 release and the 15.9.32 diagnosis
 
