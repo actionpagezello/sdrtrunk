@@ -5,6 +5,25 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.8] - 2026-10-31
+
+### Fixed - NBFM transmissions split into several short calls (tone-filtered channels)
+
+- Somerville, 2026-10-31 00:00-10:27: the noise squelch closed and reopened within 0.5 s, with the channel's CTCSS
+  target confirmed <= 150 ms before the close, 430 times on Brookline Fire (MBTA Transit Police 1 260, Brookline
+  Police 196, Somerville Police 152, Everett Police 106). A 3.5-minute Brookline Fire recording shows a strong carrier
+  and a clean 131.8 Hz tone through those closes (322 of 329 half-second windows 131.8 Hz, 7 Wakefield 146.2 Hz): loud
+  or sibilant speech above 3 kHz reads as noise to the noise squelch. Each close ended the call and the reopen
+  started a new one - the short "bits of audio" heard on the streams.
+- `NBFMDecoder`: when the squelch closes while the target tone was confirmed within the last 0.25 s of audio, the call
+  end is deferred for 0.5 s; if the squelch reopens in that time (holdover branch) the same call continues. The
+  squelch itself is unchanged: holding it open instead was tried and added ~0.24 s of noise after the carrier dropped
+  at 7 of 20 transmission ends. Real call ends are reported 0.5 s later, with no extra audio. Timed in audio samples.
+  Squelch OPEN/CLOSE debug lines now carry the audio position and whether the call end was deferred; a "Call
+  continues" debug line counts each rejoin.
+- Replay (Brookline Fire, real time, default squelch thresholds): one split joined, all other calls unchanged, seven
+  call ends 0.5 s later. Live Brookline Fire uses its own squelch settings, so the field count is the real measure.
+
 ## [0.6.2-ap-15.10.7] - 2026-10-30
 
 ### Fixed - DMR color code filter let CRC-failed headers through

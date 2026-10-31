@@ -119,6 +119,23 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private static final long TONE_HOLDOVER_MS = 500;
     private volatile long mLastToneMatchTime = 0;
+    //AP-fork (ap-15.10.8): call rejoin.  Somerville logs 2026-10-31 00:00-10:27: the noise squelch closed and
+    //reopened within 0.5 s, with the CTCSS target confirmed <= 150 ms before the close, 430 times on Brookline Fire
+    //(MBTA Transit Police 1 260, Brookline Police 196, Somerville Police 152, Everett Police 106).  A Brookline Fire
+    //recording shows a strong carrier and a clean 131.8 Hz tone through those closes: loud or sibilant speech above
+    //3 kHz read as noise for 60+ ms.  Each close ended the call and the reopen started a new one, so one transmission
+    //became several short calls/streams.  When the squelch closes while the target was confirmed within the last
+    //TONE_RECENT_SECONDS of audio, the call end is deferred for CALL_REJOIN_SECONDS; a reopen in that time continues
+    //the same call.  The squelch itself is unchanged (holding it open instead added ~0.24 s of noise after the carrier
+    //dropped at 7 of 20 transmission ends in a replay).  Timed in audio samples so it behaves the same in replays.
+    //The recent-tone window covers the CTCSS block (~77 ms), the noise squelch look-ahead (~80 ms) and margin.
+    private static final double TONE_RECENT_SECONDS = 0.25;
+    private static final double CALL_REJOIN_SECONDS = 0.5;
+    private long mDeferredCallEndSampleCount = -1;
+    private int mCallRejoinCount = 0;
+    private long mDemodulatedSampleCount = 0;
+    private long mLastToneMatchSampleCount = -1;
+    private double mDemodulatedSampleRate = 0;
 
     /**
      * Maximum time (ms) a gate opened via holdover may continue passing audio without the
@@ -385,7 +402,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 // Only send call end if a call was actually active (tone was matched or no filter)
                 if(!mToneFilterEnabled || mToneMatch)
                 {
-                    notifyCallEnd();
+                    //AP-fork (ap-15.10.8): defer the call end when the target was confirmed moments ago, so a
+                    //reopen within CALL_REJOIN_SECONDS continues the call (see TONE_RECENT_SECONDS)
+                    if(mToneFilterEnabled && isTargetToneRecent() && !mWatchdogTripped)
+                    {
+                        mDeferredCallEndSampleCount = mDemodulatedSampleCount;
+                    }
+                    else
+                    {
+                        notifyCallEnd();
+                    }
                 }
 
                 //AP-fork: the episode ended without the target ever being re-confirmed, so closing the
@@ -424,6 +450,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
                 if(!mToneFilterEnabled)
                 {
+                    flushDeferredCallEnd();
+
                     // No tone filter — start call immediately (original behavior)
                     // Reset audio filter state to clear stale IIR values from previous transmission
                     if(mAudioFilters != null)
@@ -448,10 +476,26 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         // Arm the confirmation deadline: this gate is open on trust, and must
                         // earn a re-confirmation before HOLDOVER_CONFIRM_DEADLINE_MS elapses.
                         mHoldoverOpenTime = System.currentTimeMillis();
-                        notifyCallStart();
+
+                        //AP-fork (ap-15.10.8): a reopen while the call end is deferred continues the same call
+                        if(mDeferredCallEndSampleCount >= 0)
+                        {
+                            mDeferredCallEndSampleCount = -1;
+                            mCallRejoinCount++;
+                            mCallStartTimeMs = System.currentTimeMillis();
+                            mLog.debug("[{}] Call continues - squelch reopened within {}s with the target tone recent " +
+                                    "(rejoin {} this call, audio {}s)", mChannelLabel, CALL_REJOIN_SECONDS,
+                                    mCallRejoinCount, getAudioSeconds());
+                        }
+                        else
+                        {
+                            notifyCallStart();
+                        }
                     }
                     else
                     {
+                        flushDeferredCallEnd();
+
                         // Holdover expired or no previous match — full reset.
                         // Channel stays idle until detector confirms the correct tone.
                         mToneMatch = false;
@@ -499,11 +543,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             boolean holdover = mToneMatch && sinceLastToneMatchMs < TONE_HOLDOVER_MS;
             mLog.debug("[{}] Squelch OPEN - {} (toneMatch={}, last tone confirmation {}, holdover window {}ms, " +
-                            "targetWon latch={})",
+                            "targetWon latch={}, audio {}s)",
                     mChannelLabel, holdover ? "HOLDOVER branch, gate opens on trust" :
                             "FULL RESET branch, gate waits for confirmation", mToneMatch,
                     mLastToneMatchTime > 0 ? sinceLastToneMatchMs + "ms ago" : "never", TONE_HOLDOVER_MS,
-                    mRawTargetWonThisEpisode);
+                    mRawTargetWonThisEpisode, getAudioSeconds());
         }
     }
 
@@ -519,10 +563,40 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         if(mToneFilterEnabled && mLog.isDebugEnabled())
         {
-            mLog.debug("[{}] Squelch CLOSE after {} (toneMatch={}, last tone confirmation {}, gate unconfirmed for {})",
+            mLog.debug("[{}] Squelch CLOSE after {} (toneMatch={}, last tone confirmation {}, gate unconfirmed for {}, " +
+                            "call end {}, audio {}s)",
                     mChannelLabel, openedAt > 0 ? (now - openedAt) + "ms open" : "unknown time open", mToneMatch,
                     mLastToneMatchTime > 0 ? (now - mLastToneMatchTime) + "ms ago" : "never",
-                    mHoldoverOpenTime > 0 ? (now - mHoldoverOpenTime) + "ms" : "0ms");
+                    mHoldoverOpenTime > 0 ? (now - mHoldoverOpenTime) + "ms" : "0ms",
+                    mToneMatch && isTargetToneRecent() && !mWatchdogTripped ? "deferred (tone recent)" : "now",
+                    getAudioSeconds());
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.10.8): indicates the CTCSS/DCS target was confirmed within the last TONE_HOLD_OPEN_SECONDS of
+     * demodulated audio, which proves the carrier is still present.  Evaluated by the noise squelch when it would
+     * otherwise close (see TONE_HOLD_OPEN_SECONDS).
+     */
+    private String getAudioSeconds()
+    {
+        return mDemodulatedSampleRate > 0 ? String.format("%.3f", mDemodulatedSampleCount / mDemodulatedSampleRate) : "?";
+    }
+
+    private boolean isTargetToneRecent()
+    {
+        return mToneMatch && mLastToneMatchSampleCount >= 0 && mDemodulatedSampleRate > 0 &&
+                (mDemodulatedSampleCount - mLastToneMatchSampleCount) <= (long)(mDemodulatedSampleRate * TONE_RECENT_SECONDS);
+    }
+
+    /**
+     * AP-fork (ap-15.10.8): sends a deferred call end, if one is pending.
+     */
+    private void flushDeferredCallEnd()
+    {
+        if(mDeferredCallEndSampleCount >= 0)
+        {
+            notifyCallEnd();
         }
     }
 
@@ -1255,7 +1329,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         float[] demodulated = mDemodulator.demodulate(filteredI, filteredQ);
 
+        mDemodulatedSampleCount += demodulated.length;
         mNoiseSquelch.process(demodulated);
+
+        //AP-fork (ap-15.10.8): end a deferred call once the rejoin window has passed without a reopen
+        if(mDeferredCallEndSampleCount >= 0 && mDemodulatedSampleRate > 0 &&
+                (mDemodulatedSampleCount - mDeferredCallEndSampleCount) > (long)(mDemodulatedSampleRate * CALL_REJOIN_SECONDS))
+        {
+            flushDeferredCallEnd();
+        }
 
         //Once we process the sample buffer, if the ending state is squelch closed, update the decoder state that we
         // are idle.
@@ -1323,6 +1405,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private void notifyCallEnd()
     {
+        mDeferredCallEndSampleCount = -1;
+        mCallRejoinCount = 0;
+
         //AP-fork (ap-15.9.25): the call is over, so stop timing it.  The stuck-call timer was only cleared when the
         //carrier dropped, so on a channel whose carrier stays up between tone-gated transmissions it kept running
         //from the last call start, tripped 180 s later with no call in progress, and - because a tripped watchdog
@@ -1405,6 +1490,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         }
 
         mNoiseSquelch.setSampleRate(decimatedSampleRate);
+        mDemodulatedSampleRate = decimatedSampleRate;
 
         int passBandStop = (int) (mChannelBandwidth * .8);
         int stopBandStart = (int) mChannelBandwidth;
@@ -1457,6 +1543,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
                     mLastToneMatchTime = System.currentTimeMillis();
+                    mLastToneMatchSampleCount = mDemodulatedSampleCount;
                     // Confirmed detection — the gate no longer rests on holdover trust
                     noteHoldoverReconfirmed();
                     mHoldoverOpenTime = 0;
@@ -1552,6 +1639,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
                     mLastToneMatchTime = System.currentTimeMillis();
+                    mLastToneMatchSampleCount = mDemodulatedSampleCount;
                     // Confirmed detection — the gate no longer rests on holdover trust
                     noteHoldoverReconfirmed();
                     mHoldoverOpenTime = 0;
