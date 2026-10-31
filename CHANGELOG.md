@@ -5,6 +5,22 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.7] - 2026-10-30
+
+### Fixed - DMR color code filter let CRC-failed headers through
+
+- 15.10.6's color code filter only checked valid data bursts. Salem State Police (Audubon, first half hour on
+  15.10.6) still logged a junk data packet: data headers framed from noise with color code 10 failed their CRC, but
+  the packet assembler doesn't check header validity and built a "valid" defined short data packet from them.
+- `DMRMessageProcessor`: once the color code is established, invalid data bursts with a different color code are
+  discarded as well. Only valid data bursts establish or change the color code, as before.
+- Replays, Salem State: tonight's 19 minutes 38 -> 37 valid packets (the junk packet gone), wrong color code invalid
+  bursts 64 -> 0; 17 and 19 minute recordings 26 and 27 -> 0, with voice, radio IDs, talker aliases and Hytera
+  registrations unchanged. OneVoice Haverhill and Boston control channels identical to 15.10.5. DMR unit tests: 18 pass.
+- Field check of 15.10.6 on Salisbury (first half hour): LSM corrections 48 -> 21 per hour with no wrong-way
+  corrections (13 in the previous 1.5 hours on 15.10.5). Rockingham Sheriff East and West replays (28 minutes)
+  unchanged versus 15.10.5.
+
 ## [0.6.2-ap-15.10.6] - 2026-10-30
 
 ### Fixed - DMR false messages from noise (color code filter)

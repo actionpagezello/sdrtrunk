@@ -138,20 +138,27 @@ public class DMRMessageProcessor implements Listener<IMessage>
     }
 
     /**
-     * Applies the color code filter to valid data bursts.
+     * Applies the color code filter to data bursts.  Only valid data bursts establish the color code.  Once it's
+     * established, invalid data bursts with a different color code are discarded too: the packet assembler doesn't
+     * check header validity, so CRC-failed headers framed from noise produced a "valid" data packet (Salem State
+     * Police, Audubon, 15.10.6 first run: CC 10 headers with CRC errors became a valid defined short data packet).
      * @param message to check
      * @return true if the message should be discarded
      */
     private boolean isColorCodeMismatch(IMessage message)
     {
         if(!mColorCodeFilterEnabled || mCrcMaskManager.isIgnoreCRCChecksums() ||
-           !(message instanceof DataMessage dataMessage) || !dataMessage.isValid() ||
-           !dataMessage.getSlotType().isValid())
+           !(message instanceof DataMessage dataMessage) || !dataMessage.getSlotType().isValid())
         {
             return false;
         }
 
         int colorCode = dataMessage.getSlotType().getColorCode();
+
+        if(!dataMessage.isValid())
+        {
+            return mEstablishedColorCode >= 0 && colorCode != mEstablishedColorCode;
+        }
 
         if(colorCode == mEstablishedColorCode)
         {
