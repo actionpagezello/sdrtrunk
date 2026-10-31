@@ -5,6 +5,28 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.9] - 2026-10-31
+
+### Changed - P25 Phase 1 LSM decoder replaced by upstream #2523; NXDN talkgroup 0 valid (#2532)
+
+- Upstream DSheirer/sdrtrunk #2523 (Denny Sheirer): new `P25P1DifferentialDemodulatorLSM` and
+  `P25P1SymbolProcessorLSM` (4th-power carrier offset estimate, offset range search, reliability-weighted Viterbi,
+  shared C4FM symbol processor), fewer phantom TDUs, filter designers consolidated into `FilterFactory`, baseband
+  filter designed once and shared by I and Q. `P25P1DemodulatorLSM`, `P25P1DemodulatorC4FM`, `P25P1FilterDesigner`
+  and `NXDNFilterDesigner` are removed - this retires the fork's own LSM rotated-sync fixes, including the 15.10.6
+  correction threshold.
+- Upstream #2532: NXDN talkgroup 0 is a valid talkgroup.
+- Fork changes kept on top: sync waveform bounds guard and health counters (`C4FMSymbolProcessor`), NAC tracker
+  eviction by fewest observations then oldest (15.9.32; upstream evicts the least recently seen NAC, so its
+  `testLeastRecentlyObservedEvicted` test is replaced by `testWeakestNACEvicted`), allowed-NAC filter in the framer,
+  tuner frequency error no-measurement warning.
+- P25 C4FM baseband filter is now upstream's 5200/6500 Hz (was 3600/5000 Hz from #2520): the two tied on replay.
+- Replay against 15.10.8, voice frames: LSM Lowell 2,844 -> 2,898; Lowell 10/28 at -754 / +754 / +1000 / -1000 Hz
+  offset 1,962 / 2,088 / 2,088 / 1,953 -> 2,124 / 2,106 / 2,106 / 2,106; Rockingham West 8,010 -> 8,361; Rockingham East
+  2,556 -> 2,637; CoMIRS Cambridge/Boston control channel unchanged. C4FM: same voice frames on all 13 recordings,
+  fewer TDUs. DMR (Salem State, OneVoice Haverhill/Boston) and NXDN (24 Georgetown/MASCO) output byte-identical.
+- 53 unit tests pass (upstream's new P25 LSM/framer/NAC/Viterbi tests, DMR tests).
+
 ## [0.6.2-ap-15.10.8] - 2026-10-31
 
 ### Fixed - NBFM transmissions split into several short calls (tone-filtered channels)
