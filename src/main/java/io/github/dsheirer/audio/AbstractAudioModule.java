@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
 public abstract class AbstractAudioModule extends Module implements IAudioSegmentProvider, IdentifierUpdateListener
 {
     private final static Logger mLog = LoggerFactory.getLogger(AbstractAudioModule.class);
-    public static final long DEFAULT_SEGMENT_AUDIO_SAMPLE_LENGTH = 60 * 8000; // 1 minute @ 8kHz
+    public static final long DEFAULT_MAX_SEGMENT_LENGTH_MILLIS = 60_000; // 1 minute
     public static final int DEFAULT_TIMESLOT = 0;
     public static final int DEFAULT_AUDIO_HANGTIME_MS = 0;
     private final int mMaxSegmentAudioSampleLength;
@@ -70,12 +70,12 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
      * Constructs an abstract audio module
      *
      * @param aliasList for aliasing identifiers
-     * @param maxSegmentAudioSampleLength in milliseconds
+     * @param maxSegmentLengthMillis maximum audio segment length in milliseconds
      */
-    public AbstractAudioModule(AliasList aliasList, int timeslot, long maxSegmentAudioSampleLength)
+    public AbstractAudioModule(AliasList aliasList, int timeslot, long maxSegmentLengthMillis)
     {
         mAliasList = aliasList;
-        mMaxSegmentAudioSampleLength = (int)(maxSegmentAudioSampleLength * 8); //Convert milliseconds to samples
+        mMaxSegmentAudioSampleLength = (int)(maxSegmentLengthMillis * 8); //Convert milliseconds to samples
         mTimeslot = timeslot;
         mIdentifierCollection = new MutableIdentifierCollection(getTimeslot());
         mIdentifierUpdateNotificationBroadcaster.addListener(mIdentifierCollection);
@@ -86,7 +86,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
      */
     public AbstractAudioModule(AliasList aliasList)
     {
-        this(aliasList, DEFAULT_TIMESLOT, DEFAULT_SEGMENT_AUDIO_SAMPLE_LENGTH);
+        this(aliasList, DEFAULT_TIMESLOT, DEFAULT_MAX_SEGMENT_LENGTH_MILLIS);
     }
 
     /**

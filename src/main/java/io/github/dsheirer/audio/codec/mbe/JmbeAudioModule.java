@@ -26,6 +26,7 @@ import io.github.dsheirer.audio.squelch.ISquelchStateListener;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.IMessageListener;
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.preference.PreferenceType;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sample.Listener;
@@ -35,7 +36,10 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import jmbe.iface.IAudioCodec;
 import jmbe.iface.IAudioCodecLibrary;
 import jmbe.iface.IAudioCodecLibraryV2;
@@ -58,21 +62,67 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
     private static Path sLoadedJmbeLibraryPath;
 
     /**
-     * JMBE 2.x settings applied to every codec instance.  The 2.x synthesizers include their own automatic gain
-     * control, so audio modules must not apply their legacy fixed gain on top of it (see hasLibraryGainControl()).
+     * JMBE 2.x feature settings for this channel (AP-fork ap-15.10.10: from the channel's DecodeConfigJMBE, see
+     * DecoderFactory - previously fixed fleet values).  Kept so they are reapplied when the library is reloaded.  The
+     * 2.x synthesizers include their own automatic gain control, so audio modules must not apply their legacy fixed
+     * gain on top of it (see hasLibraryGainControl()).
      */
-    private static final boolean JMBE_AGC_ENABLED = true;
-    private static final float JMBE_TONE_GAIN = 1.0f;
-    private static final float JMBE_NOISE_GAIN = 1.0f;
+    private final Map<String,Object> mFeatureSettings = new LinkedHashMap<>();
 
     private boolean mLibraryGainControl = false;
 
     public JmbeAudioModule(UserPreferences userPreferences, AliasList aliasList, int timeslot)
     {
-        super(aliasList, timeslot, DEFAULT_SEGMENT_AUDIO_SAMPLE_LENGTH);
+        super(aliasList, timeslot, DEFAULT_MAX_SEGMENT_LENGTH_MILLIS);
         mUserPreferences = userPreferences;
+        mFeatureSettings.put(IAudioCodecV2.FEATURE_AUTOMATIC_GAIN_CONTROL, true);
+        mFeatureSettings.put(IAudioCodecV2.FEATURE_TONE_GENERATOR_GAIN, DecodeConfigJMBE.DEFAULT_TONE_GAIN);
+        mFeatureSettings.put(IAudioCodecV2.FEATURE_NOISE_GENERATOR_GAIN, DecodeConfigJMBE.DEFAULT_COMFORT_NOISE_GAIN);
         MyEventBus.getGlobalEventBus().register(this);
         loadConverter();
+    }
+
+    /**
+     * Applies the channel's JMBE settings to this module's codec (upstream #2483/#2511/#2530).  Settings that the
+     * loaded library doesn't support are kept and logged as n/a.
+     * @param config with the JMBE settings
+     */
+    public void setJmbeSettings(DecodeConfigJMBE config)
+    {
+        if(config == null)
+        {
+            return;
+        }
+
+        synchronized(JmbeAudioModule.class)
+        {
+            mFeatureSettings.put(IAudioCodecV2.FEATURE_AUTOMATIC_GAIN_CONTROL, config.isAGC());
+            mFeatureSettings.put(IAudioCodecV2.FEATURE_TONE_GENERATOR_GAIN, config.getToneGain());
+            mFeatureSettings.put(IAudioCodecV2.FEATURE_NOISE_GENERATOR_GAIN, config.getComfortNoiseGain());
+            mFeatureSettings.put(IAudioCodecV2.FEATURE_LEGACY_TONE_LEVELS, config.isLegacyToneLevels());
+            String settings = configureFeatures(mAudioCodec, mFeatureSettings);
+            String key = JMBE_AUDIO_LIBRARY + "-settings-" + getCodecName() + "-" + settings;
+
+            //Logged once per distinct codec and settings combination
+            if(mAudioCodec != null && !mLibraryLoadStatusLogged.contains(key))
+            {
+                mLog.info("JMBE " + getCodecName() + " codec channel settings: " + settings);
+                mLibraryLoadStatusLogged.add(key);
+            }
+        }
+    }
+
+    /**
+     * List of features supported by the loaded JMBE codec, empty for JMBE 1.x.
+     */
+    public List<String> getFeatures()
+    {
+        if(mAudioCodec instanceof IAudioCodecV2 v2)
+        {
+            return v2.getFeatures();
+        }
+
+        return Collections.emptyList();
     }
 
     @Override
@@ -258,11 +308,11 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
                             mLibraryLoadStatusLogged.add(JMBE_AUDIO_LIBRARY);
                         }
 
-                        String settings = configureFeatures(audioConverter);
+                        String settings = configureFeatures(audioConverter, mFeatureSettings);
 
                         if(!mLibraryLoadStatusLogged.contains(JMBE_AUDIO_LIBRARY + "-features-" + getCodecName()))
                         {
-                            mLog.info("JMBE " + getCodecName() + " codec: " + settings +
+                            mLog.info("JMBE " + getCodecName() + " codec defaults: " + settings +
                                     (libraryGainControl ? " - legacy 5x gain (P25 Phase 1, NXDN) bypassed" :
                                             " - legacy 5x gain (P25 Phase 1, NXDN) in use"));
                             mLibraryLoadStatusLogged.add(JMBE_AUDIO_LIBRARY + "-features-" + getCodecName());
@@ -333,10 +383,10 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
     }
 
     /**
-     * Applies the fleet JMBE 2.x feature settings to the codec.
+     * Applies the JMBE 2.x feature settings to the codec.
      * @return description of the settings in use, for the log
      */
-    private static String configureFeatures(IAudioCodec codec)
+    private static String configureFeatures(IAudioCodec codec, Map<String,Object> settings)
     {
         if(!(codec instanceof IAudioCodecV2 v2))
         {
@@ -344,10 +394,25 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
         }
 
         StringBuilder sb = new StringBuilder();
-        applyFeature(v2, IAudioCodecV2.FEATURE_AUTOMATIC_GAIN_CONTROL, JMBE_AGC_ENABLED, "AGC", sb);
-        applyFeature(v2, IAudioCodecV2.FEATURE_TONE_GENERATOR_GAIN, JMBE_TONE_GAIN, "tone gain", sb);
-        applyFeature(v2, IAudioCodecV2.FEATURE_NOISE_GENERATOR_GAIN, JMBE_NOISE_GAIN, "noise gain", sb);
+
+        for(Map.Entry<String,Object> entry: settings.entrySet())
+        {
+            applyFeature(v2, entry.getKey(), entry.getValue(), label(entry.getKey()), sb);
+        }
+
         return sb.toString();
+    }
+
+    private static String label(String feature)
+    {
+        return switch(feature)
+        {
+            case IAudioCodecV2.FEATURE_AUTOMATIC_GAIN_CONTROL -> "AGC";
+            case IAudioCodecV2.FEATURE_TONE_GENERATOR_GAIN -> "tone gain";
+            case IAudioCodecV2.FEATURE_NOISE_GENERATOR_GAIN -> "comfort noise gain";
+            case IAudioCodecV2.FEATURE_LEGACY_TONE_LEVELS -> "legacy tone levels";
+            default -> feature;
+        };
     }
 
     private static void applyFeature(IAudioCodecV2 codec, String feature, Object value, String label, StringBuilder sb)
@@ -357,7 +422,7 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
             sb.append(", ");
         }
 
-        if(!codec.supportsFeature(feature))
+        if(!codec.supportsFeature(feature) || !codec.getFeatures().contains(feature))
         {
             sb.append(label).append("=n/a");
             return;

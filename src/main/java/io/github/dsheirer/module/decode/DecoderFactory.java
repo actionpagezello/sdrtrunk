@@ -40,6 +40,7 @@ import io.github.dsheirer.module.decode.am.AMDecoder;
 import io.github.dsheirer.module.decode.am.AMDecoderState;
 import io.github.dsheirer.module.decode.am.DecodeConfigAM;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.dcs.DCSDecoder;
 import io.github.dsheirer.module.decode.dcs.DCSDecoderState;
@@ -261,6 +262,7 @@ public class DecoderFactory
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25 configP25)
         {
             p25p2Audio1.setGraphicEQ(configP25.isGraphicEQEnabled(), configP25.getGraphicEQBandGains());
+            p25p2Audio1.setJmbeSettings(configP25);
         }
         modules.add(p25p2Audio1);
         P25P2AudioModule p25p2Audio2 = new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList);
@@ -268,6 +270,7 @@ public class DecoderFactory
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25 configP25_ts2)
         {
             p25p2Audio2.setGraphicEQ(configP25_ts2.isGraphicEQEnabled(), configP25_ts2.getGraphicEQBandGains());
+            p25p2Audio2.setJmbeSettings(configP25_ts2);
         }
         modules.add(p25p2Audio2);
 
@@ -337,6 +340,7 @@ public class DecoderFactory
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25 configP25)
         {
             p25AudioModule.setGraphicEQ(configP25.isGraphicEQEnabled(), configP25.getGraphicEQBandGains());
+            p25AudioModule.setJmbeSettings(configP25);
         }
 
         modules.add(p25AudioModule);
@@ -500,7 +504,9 @@ public class DecoderFactory
             }
 
             modules.add(new NXDNDecoder(configNXDN));
-            modules.add(new NXDNAudioModule(userPreferences, aliasList));
+            NXDNAudioModule nxdnAudioModule = new NXDNAudioModule(userPreferences, aliasList);
+            nxdnAudioModule.setJmbeSettings(configNXDN);
+            modules.add(nxdnAudioModule);
 
             if(channel.getChannelType() == ChannelType.STANDARD)
             {
@@ -639,8 +645,12 @@ public class DecoderFactory
 
         modules.add(state1);
         modules.add(state2);
-        modules.add(new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_1));
-        modules.add(new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_2));
+        DMRAudioModule dmrAudioModule1 = new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_1);
+        DMRAudioModule dmrAudioModule2 = new DMRAudioModule(userPreferences, aliasList, DMRMessage.TIMESLOT_2);
+        dmrAudioModule1.setJmbeSettings(decodeConfig);
+        dmrAudioModule2.setJmbeSettings(decodeConfig);
+        modules.add(dmrAudioModule1);
+        modules.add(dmrAudioModule2);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
@@ -831,7 +841,9 @@ public class DecoderFactory
                     copyAM.setSquelchAutoTrack(origAM.isSquelchAutoTrack());
                     return copyAM;
                 case DMR:
-                    return new DecodeConfigDMR();
+                    DecodeConfigDMR copyDMR = new DecodeConfigDMR();
+                    transferJMBESettings((DecodeConfigDMR)config, copyDMR);
+                    return copyDMR;
                 case LTR_NET:
                     DecodeConfigLTRNet originalLTRNet = (DecodeConfigLTRNet)config;
                     DecodeConfigLTRNet copyLTRNet = new DecodeConfigLTRNet();
@@ -870,6 +882,7 @@ public class DecoderFactory
                     copyNXDN.setIgnoreDataCalls(origNXDN.isIgnoreDataCalls());
                     copyNXDN.setIgnoreEncryptedCalls(origNXDN.isIgnoreEncryptedCalls());
                     copyNXDN.setEncoding(origNXDN.getEncoding());
+                    transferJMBESettings(origNXDN, copyNXDN);
                     return copyNXDN;
                 case P25_PHASE1:
                     DecodeConfigP25Phase1 originalP25 = (DecodeConfigP25Phase1)config;
@@ -877,6 +890,7 @@ public class DecoderFactory
                     copyP25.setIgnoreDataCalls(originalP25.getIgnoreDataCalls());
                     copyP25.setModulation(originalP25.getModulation());
                     copyP25.setTrafficChannelPoolSize(originalP25.getTrafficChannelPoolSize());
+                    transferJMBESettings(originalP25, copyP25);
                     return copyP25;
                 case P25_PHASE2:
                     DecodeConfigP25Phase2 originalP25P2 = (DecodeConfigP25Phase2)config;
@@ -886,6 +900,7 @@ public class DecoderFactory
                     {
                         copyP25P2.setScrambleParameters(originalP25P2.getScrambleParameters().copy());
                     }
+                    transferJMBESettings(originalP25P2, copyP25P2);
                     return copyP25P2;
                 case PASSPORT:
                     return new DecodeConfigPassport();
@@ -895,5 +910,19 @@ public class DecoderFactory
         }
 
         return null;
+    }
+
+    /**
+     * Transfers the JMBE audio codec settings from one JMBE decode configuration to another (upstream #2499/#2511).
+     */
+    public static void transferJMBESettings(DecodeConfigJMBE from, DecodeConfigJMBE to)
+    {
+        if(from != null && to != null)
+        {
+            to.setAGC(from.isAGC());
+            to.setComfortNoiseGain(from.getComfortNoiseGain());
+            to.setToneGain(from.getToneGain());
+            to.setLegacyToneLevels(from.isLegacyToneLevels());
+        }
     }
 }

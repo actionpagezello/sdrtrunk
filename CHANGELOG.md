@@ -5,6 +5,44 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.10.10] - 2026-11-02
+
+### Added - per-channel JMBE audio settings (upstream #2483, #2485, #2488, #2502, #2505, #2511, #2530)
+
+- New "AMBE/IMBE Audio (JMBE 2.x)" pane in the P25 Phase 1, P25 Phase 2, DMR and NXDN channel editors: comfort
+  noise volume, AGC, tone volume and legacy tone levels, each slider with its value and a reset button. The settings
+  are applied to the channel's JMBE codec (previously the fork stored them but ran every channel with fixed fleet
+  values) and carry over to traffic channels and copied channels, including across P25 phases.
+- Defaults: AGC on, tone volume 1.0, comfort noise 0.05 (JMBE's own default; upstream's since #2530). The fork used
+  comfort noise 1.0 on every channel and wrote 1.0 to every playlist: the first time 15.10.10 loads a playlist on a
+  machine, a stored 1.0 becomes 0.05 (logged; values set afterwards are kept).
+- Built against JMBE API 2.1.0. JMBE 2.1 has upstream's redesigned AGC; use JMBE > Create JMBE Library to build the
+  latest library (2.1.1) and select it in User Preferences. JMBE 1.x and 2.0 still load; settings a library doesn't
+  support are logged as n/a. The legacy 5x P25 Phase 1/NXDN gain stays bypassed for JMBE 2.x.
+- JMBE creator logs more detail (#2488).
+
+### Fixed - from upstream
+
+- #2554: P25 Phase 1 "message under assembly is full - can't add additional dibits" (Cambridge CoMIRS, 2026-11-01)
+  and multi-block TSBKs lost at a new NID. Replay: 3-6 more valid control channel messages per CoMIRS recording, in
+  place of CRC-failed blocks.
+- #2550: a channel swapping tuner source could feed its decoder from two threads at once.
+- #2553: DMR talker alias no longer carries over to the next talker. #2551: Motorola talker alias with Cyrillic.
+- #2555: local playback - a higher-priority call no longer waits behind a queued lower-priority call; linked audio
+  continues ahead of queued calls.
+- #2547: NXDN Type-D radio/talkgroup aliases and TO identifiers tagged correctly in some NXDN messages.
+- #2467: Broadcastify duplicate-rejected calls tracked. #2470: Icecast 2.5 HTTP PUT connect.
+- Already in the fork: #2446 (RadioReference NXDN repeater channels), #2468 (MDC1200 emergency summary loop).
+
+### Tested
+
+- Replays against 15.10.9: P25 LSM (Lowell x5, Rockingham E/W), P25 C4FM (13), DMR (Salem State, OneVoice), NXDN
+  (24 Georgetown/MASCO) and NBFM (Brookline Fire) output identical; CoMIRS control channels gain the #2554 messages.
+- JMBE 2.1.0 library: AGC, comfort noise, tone volume and legacy tone level settings verified in the P25 (IMBE) and
+  DMR (AMBE) codecs.
+- 88 unit tests pass (upstream's new tests; upstream's PolyphaseChannelSourceTest from #2550 needs the #2534
+  channelizer and is left for 15.11).
+
 ## [0.6.2-ap-15.10.9] - 2026-10-31
 
 ### Changed - P25 Phase 1 LSM decoder replaced by upstream #2523; NXDN talkgroup 0 valid (#2532)

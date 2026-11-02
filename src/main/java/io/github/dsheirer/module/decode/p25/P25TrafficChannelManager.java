@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.module.decode.p25;
 
+import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.controller.channel.Channel;
@@ -159,6 +160,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             DecodeConfigP25Phase2 p2Config = new DecodeConfigP25Phase2();
             p2Config.setGraphicEQEnabled(phase1.isGraphicEQEnabled());
             p2Config.setGraphicEQBandGains(phase1.getGraphicEQBandGains());
+            DecoderFactory.transferJMBESettings(phase1, p2Config);
             createPhase2TrafficChannels(phase1.getTrafficChannelPoolSize(), p2Config);
         }
         else if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase2 phase2)
@@ -170,6 +172,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             DecodeConfigP25Phase1 p1Config = new DecodeConfigP25Phase1();
             p1Config.setGraphicEQEnabled(phase2.isGraphicEQEnabled());
             p1Config.setGraphicEQBandGains(phase2.getGraphicEQBandGains());
+            DecoderFactory.transferJMBESettings(phase2, p1Config);
             createPhase1TrafficChannels(phase2.getTrafficChannelPoolSize(), p1Config);
             createPhase2TrafficChannels(phase2.getTrafficChannelPoolSize(), phase2);
         }

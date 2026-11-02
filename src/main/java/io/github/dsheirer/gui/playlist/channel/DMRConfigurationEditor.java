@@ -27,6 +27,7 @@ import io.github.dsheirer.gui.playlist.source.FrequencyField;
 import io.github.dsheirer.gui.playlist.source.SourceConfigurationEditor;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.dmr.DecodeConfigDMR;
 import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
@@ -72,6 +73,7 @@ import org.slf4j.LoggerFactory;
  */
 public class DMRConfigurationEditor extends ChannelConfigurationEditor
 {
+    private JmbeSettingsPane mJmbeSettingsPane;
     private final static Logger mLog = LoggerFactory.getLogger(DMRConfigurationEditor.class);
     private TitledPane mDecoderPane;
     private TitledPane mEventLogPane;
@@ -105,6 +107,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
         getTitledPanesBox().getChildren().add(getSourcePane());
         getTitledPanesBox().getChildren().add(getDecoderPane());
+        getTitledPanesBox().getChildren().add(getJmbeSettingsPane());
         getTitledPanesBox().getChildren().add(getEventLogPane());
         getTitledPanesBox().getChildren().add(getRecordPane());
     }
@@ -619,9 +622,23 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         return mRecordConfigurationEditor;
     }
 
+    /**
+     * AP-fork (ap-15.10.10): per-channel JMBE audio settings (upstream #2484/#2511/#2530).
+     */
+    private JmbeSettingsPane getJmbeSettingsPane()
+    {
+        if(mJmbeSettingsPane == null)
+        {
+            mJmbeSettingsPane = new JmbeSettingsPane(() -> modifiedProperty().set(true));
+        }
+
+        return mJmbeSettingsPane;
+    }
+
     @Override
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
+        getJmbeSettingsPane().setConfiguration(config instanceof DecodeConfigJMBE jmbe ? jmbe : null);
         getIgnoreCRCChecksumsButton().setDisable(config == null);
         getIgnoreDataCallsButton().setDisable(config == null);
         getIgnoreUnaliasedTalkgroupsButton().setDisable(config == null);
@@ -685,6 +702,7 @@ public class DMRConfigurationEditor extends ChannelConfigurationEditor
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setUseCompressedTalkgroups(getUseCompressedTalkgroupsToggle().isSelected());
         config.setTimeslotMap(new ArrayList<>(getTimeslotTable().getItems()));
+        getJmbeSettingsPane().save(config);
         getItem().setDecodeConfiguration(config);
     }
 

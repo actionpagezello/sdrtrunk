@@ -26,6 +26,7 @@ import io.github.dsheirer.gui.playlist.source.FrequencyEditor;
 import io.github.dsheirer.gui.playlist.source.SourceConfigurationEditor;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.p25.phase2.DecodeConfigP25Phase2;
 import io.github.dsheirer.module.decode.p25.phase2.enumeration.ScrambleParameters;
@@ -57,6 +58,7 @@ import org.slf4j.LoggerFactory;
  */
 public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
 {
+    private JmbeSettingsPane mJmbeSettingsPane;
     private final static Logger mLog = LoggerFactory.getLogger(P25P2ConfigurationEditor.class);
     private TitledPane mDecoderPane;
     private TitledPane mEventLogPane;
@@ -83,6 +85,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
         getTitledPanesBox().getChildren().add(getSourcePane());
         getTitledPanesBox().getChildren().add(getDecoderPane());
+        getTitledPanesBox().getChildren().add(getJmbeSettingsPane());
         getTitledPanesBox().getChildren().add(getEventLogPane());
         getTitledPanesBox().getChildren().add(getRecordPane());
     }
@@ -341,9 +344,23 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
         return mRecordConfigurationEditor;
     }
 
+    /**
+     * AP-fork (ap-15.10.10): per-channel JMBE audio settings (upstream #2484/#2511/#2530).
+     */
+    private JmbeSettingsPane getJmbeSettingsPane()
+    {
+        if(mJmbeSettingsPane == null)
+        {
+            mJmbeSettingsPane = new JmbeSettingsPane(() -> modifiedProperty().set(true));
+        }
+
+        return mJmbeSettingsPane;
+    }
+
     @Override
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
+        getJmbeSettingsPane().setConfiguration(config instanceof DecodeConfigJMBE jmbe ? jmbe : null);
         if(config instanceof DecodeConfigP25Phase2 decodeConfig)
         {
             getWacnTextField().setDisable(false);
@@ -409,6 +426,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
         config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroupsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
 
+        getJmbeSettingsPane().save(config);
         getItem().setDecodeConfiguration(config);
     }
 

@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.playlist;
 
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -26,6 +27,7 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.broadcast.BroadcastModel;
+import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
 import io.github.dsheirer.controller.channel.ChannelEvent;
 import io.github.dsheirer.controller.channel.ChannelModel;
@@ -429,11 +431,69 @@ public class PlaylistManager implements Listener<ChannelEvent>
 
             mChannelMapModel.addChannelMaps(playlist.getChannelMaps());
 
+            boolean migrated = migrateJmbeComfortNoiseGain(playlist.getChannels());
+
             //Channel model has to be loaded last since it will auto-start channels that are enabled
             mChannelModel.addChannels(playlist.getChannels());
 
             mPlaylistLoading = false;
+
+            if(migrated)
+            {
+                schedulePlaylistSave();
+            }
         }
+    }
+
+    /**
+     * AP-fork (ap-15.10.10): the fork wrote JMBE comfort noise gain 1.0 (upstream's original default) to every digital
+     * channel before it applied the per-channel JMBE settings.  JMBE's own default, and upstream's since #2530, is 0.05.
+     * Once per playlist on each machine, a stored 1.0 becomes the default; values set after that are kept.
+     * @return true if any channel was changed
+     */
+    private boolean migrateJmbeComfortNoiseGain(List<Channel> channels)
+    {
+        Path path = mUserPreferences.getPlaylistPreference().getPlaylist();
+        String key = "apJmbeNoiseMigrated." + (path != null ? Integer.toHexString(path.toAbsolutePath().toString()
+                .toLowerCase().hashCode()) : "default");
+        int count = migrateJmbeComfortNoiseGain(channels,
+                java.util.prefs.Preferences.userNodeForPackage(PlaylistManager.class), key);
+
+        if(count >= 0)
+        {
+            mLog.info("JMBE comfort noise gain: " + count + " channel(s) changed from " +
+                    DecodeConfigJMBE.LEGACY_FORK_COMFORT_NOISE_GAIN + " to the default " +
+                    DecodeConfigJMBE.DEFAULT_COMFORT_NOISE_GAIN + " (one time for this playlist)");
+        }
+
+        return count > 0;
+    }
+
+    /**
+     * Changes a stored comfort noise gain of 1.0 to the default, unless the preference key shows it was done before.
+     * @return number of channels changed, or -1 if the migration was already done
+     */
+    static int migrateJmbeComfortNoiseGain(List<Channel> channels, java.util.prefs.Preferences preferences, String key)
+    {
+        if(channels == null || preferences.getBoolean(key, false))
+        {
+            return -1;
+        }
+
+        int count = 0;
+
+        for(Channel channel: channels)
+        {
+            if(channel.getDecodeConfiguration() instanceof DecodeConfigJMBE jmbe &&
+               jmbe.getComfortNoiseGain() == DecodeConfigJMBE.LEGACY_FORK_COMFORT_NOISE_GAIN)
+            {
+                jmbe.setComfortNoiseGain(DecodeConfigJMBE.DEFAULT_COMFORT_NOISE_GAIN);
+                count++;
+            }
+        }
+
+        preferences.putBoolean(key, true);
+        return count;
     }
 
     /**

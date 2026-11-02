@@ -141,6 +141,7 @@ public class AliasList
                 switch(id.getType())
                 {
                     case TALKGROUP:
+                    case NXDN_TYPE_D_TALKGROUP:
                         Talkgroup talkgroup = (Talkgroup)id;
 
                         TalkgroupAliasList talkgroupAliasList = mTalkgroupProtocolMap.get(talkgroup.getProtocol());
@@ -154,6 +155,7 @@ public class AliasList
                         talkgroupAliasList.add(talkgroup, alias);
                         break;
                     case TALKGROUP_RANGE:
+                    case NXDN_TYPE_D_TALKGROUP_RANGE:
                         TalkgroupRange talkgroupRange = (TalkgroupRange)id;
 
                         TalkgroupAliasList talkgroupRangeAliasList = mTalkgroupProtocolMap.get(talkgroupRange.getProtocol());
@@ -193,6 +195,7 @@ public class AliasList
                         p25TalkgroupAliasList.add(qualifiedTalkgroup, alias);
                         break;
                     case RADIO_ID:
+                    case NXDN_TYPE_D_RADIO_ID:
                         Radio radio = (Radio)id;
 
                         RadioAliasList radioAliasList = mRadioProtocolMap.get(radio.getProtocol());
@@ -206,6 +209,7 @@ public class AliasList
                         radioAliasList.add(radio, alias);
                         break;
                     case RADIO_ID_RANGE:
+                    case NXDN_TYPE_D_RADIO_ID_RANGE:
                         RadioRange radioRange = (RadioRange)id;
 
                         RadioAliasList radioRangeAliasList = mRadioProtocolMap.get(radioRange.getProtocol());

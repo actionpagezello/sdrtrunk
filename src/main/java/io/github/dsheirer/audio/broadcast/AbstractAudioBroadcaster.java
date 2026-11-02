@@ -40,6 +40,7 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     protected ObjectProperty<BroadcastState> mLastBadBroadcastState = new SimpleObjectProperty<>();
     protected StringProperty mLastErrorDetail = new SimpleStringProperty();
     protected int mStreamedAudioCount = 0;
+    protected int mDuplicateRejectedAudioCount = 0;
     protected int mErrorAudioCount = 0;
     protected int mAgedOffAudioCount = 0;
 
@@ -214,6 +215,22 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     public void incrementStreamedAudioCount()
     {
         mStreamedAudioCount++;
+    }
+
+    /**
+     * Number of audio recordings rejected by the remote service as duplicates.
+     */
+    public int getDuplicateRejectedAudioCount()
+    {
+        return mDuplicateRejectedAudioCount;
+    }
+
+    /**
+     * Increments the duplicate-rejected audio count by one.
+     */
+    public void incrementDuplicateRejectedAudioCount()
+    {
+        mDuplicateRejectedAudioCount++;
     }
 
     /**

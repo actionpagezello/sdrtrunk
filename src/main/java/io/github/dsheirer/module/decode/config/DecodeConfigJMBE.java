@@ -1,6 +1,6 @@
 /*******************************************************************************
  *     SDR Trunk 
- *     Copyright (C) 2014 Dennis Sheirer
+ *     Copyright (C) 2014-2026 Dennis Sheirer
  *
  *     This program is free software: you can redistribute it and/or modify
  *     it under the terms of the GNU General Public License as published by
@@ -20,20 +20,43 @@ package io.github.dsheirer.module.decode.config;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 
 /**
- * JMBE audio codec settings for the decoders that use it (DMR, NXDN, P25).  AP-fork (ap-15.9.26): taken from upstream
- * SDRTrunk (#2482/#2484) with the same attribute names and namespace, so a playlist keeps these settings whichever of
- * the two programs saves it.  The fork stores and writes them but does not yet apply them - it runs every channel with
- * AGC on (see JmbeAudioModule) because that is the level it has been measured at.
+ * JMBE audio codec settings for the decoders that use it (DMR, NXDN, P25).  Taken from upstream SDRTrunk
+ * (#2482/#2484/#2511/#2530) with the same attribute names and namespace, so a playlist keeps these settings whichever
+ * of the two programs saves it.  AP-fork (ap-15.10.10): the settings are applied to each channel's JMBE 2.x codec.
  */
 public abstract class DecodeConfigJMBE extends DecodeConfiguration
 {
-    private boolean mAGC = true;
-    private float mToneGain = 1.0f;
-    private float mNoiseGain = 1.0f;
+    public static float DEFAULT_COMFORT_NOISE_GAIN = 0.05f;
+    public static float DEFAULT_TONE_GAIN = 1.0f;
 
     /**
-     * Automatic Gain Control (AGC) for the JMBE audio codec
-     * @return is AGC enabled.
+     * AP-fork (ap-15.10.10): comfort noise gain the fork wrote to every playlist before the setting was applied
+     * (fleet setting 1.0, from upstream's original default).  PlaylistManager migrates it to the default once per
+     * machine.
+     */
+    public static float LEGACY_FORK_COMFORT_NOISE_GAIN = 1.0f;
+
+    private boolean mAGC = true;
+    private boolean mLegacyToneLevels;
+    private float mToneGain = DEFAULT_TONE_GAIN;
+    private float mComfortNoiseGain = DEFAULT_COMFORT_NOISE_GAIN;
+
+    /**
+     * Use the JMBE library's legacy (pre 2.0) AMBE tone levels.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "jmbeLegacyToneLevels", namespace = "http://www.w3.org/2001/XMLSchema-instance")
+    public boolean isLegacyToneLevels()
+    {
+        return mLegacyToneLevels;
+    }
+
+    public void setLegacyToneLevels(boolean enabled)
+    {
+        mLegacyToneLevels = enabled;
+    }
+
+    /**
+     * JMBE automatic gain control.
      */
     @JacksonXmlProperty(isAttribute = true, localName = "jmbeAGC", namespace = "http://www.w3.org/2001/XMLSchema-instance")
     public boolean isAGC()
@@ -41,18 +64,13 @@ public abstract class DecodeConfigJMBE extends DecodeConfiguration
         return mAGC;
     }
 
-    /**
-     * Sets the AGC enabled state for the JMBE audio codec
-     * @param enabled true to enable AGC
-     */
     public void setAGC(boolean enabled)
     {
         mAGC = enabled;
     }
 
     /**
-     * Tone generation gain (1.0 default) for the JMBE audio codec
-     * @return gain in range 0.0 (no tones) to 1.0 (default gain).
+     * Gain for the JMBE tone generator (0.0 - 1.0).
      */
     @JacksonXmlProperty(isAttribute = true, localName = "jmbeToneGain", namespace = "http://www.w3.org/2001/XMLSchema-instance")
     public float getToneGain()
@@ -60,53 +78,36 @@ public abstract class DecodeConfigJMBE extends DecodeConfiguration
         return mToneGain;
     }
 
-    /**
-     * Sets the tone generation gain for the JMBE audio codec
-     * @param gain in range 0.0 (no tones) to 1.0 (default gain)
-     */
     public void setToneGain(float gain)
     {
-        if(gain > 1.0f)
-        {
-            mToneGain = 1.0f;
-        }
-        else if(gain < 0)
-        {
-            mToneGain = 0;
-        }
-        else
-        {
-            mToneGain = gain;
-        }
+        mToneGain = clamp(gain);
     }
 
     /**
-     * Sets the comfort noise insertion gain for the JMBE audio codec
-     * @return noise gain in range 0.0 (no noise) to 1.0 (default noise)
+     * Gain for the JMBE comfort noise generator (0.0 - 1.0), heard in place of lost or muted voice frames.
      */
     @JacksonXmlProperty(isAttribute = true, localName = "jmbeNoiseGain", namespace = "http://www.w3.org/2001/XMLSchema-instance")
-    public float getNoiseGain()
+    public float getComfortNoiseGain()
     {
-        return mNoiseGain;
+        return mComfortNoiseGain;
     }
 
-    /**
-     * Sets the comfort noise insertion gain for the JMBE audio codec
-     * @param gain noise gain in range 0.0 (no noise) to 1.0 (default noise)
-     */
-    public void setNoiseGain(float gain)
+    public void setComfortNoiseGain(float gain)
+    {
+        mComfortNoiseGain = clamp(gain);
+    }
+
+    private static float clamp(float gain)
     {
         if(gain > 1.0f)
         {
-            mNoiseGain = 1.0f;
+            return 1.0f;
         }
         else if(gain < 0)
         {
-            mNoiseGain = 0;
+            return 0;
         }
-        else
-        {
-            mNoiseGain = gain;
-        }
+
+        return gain;
     }
 }

@@ -26,11 +26,13 @@ import io.github.dsheirer.dsp.c4fm.DibitSyncDetector;
  */
 public abstract class P25P1SyncDetector extends DibitSyncDetector
 {
+    public static final long SYNC_PATTERN = 0x5575F5FF77FFL;
+
     /**
      * Constructs an instance
      */
     public P25P1SyncDetector()
     {
-        super(0x5575F5FF77FFL, 24);
+        super(SYNC_PATTERN, 24);
     }
 }

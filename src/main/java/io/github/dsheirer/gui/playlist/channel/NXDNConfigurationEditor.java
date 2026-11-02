@@ -27,6 +27,7 @@ import io.github.dsheirer.gui.playlist.source.FrequencyField;
 import io.github.dsheirer.gui.playlist.source.SourceConfigurationEditor;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.dmr.DecodeConfigDMR;
 import io.github.dsheirer.module.decode.nxdn.DecodeConfigNXDN;
@@ -74,6 +75,7 @@ import org.slf4j.LoggerFactory;
  */
 public class NXDNConfigurationEditor extends ChannelConfigurationEditor
 {
+    private JmbeSettingsPane mJmbeSettingsPane;
     private final static Logger mLog = LoggerFactory.getLogger(NXDNConfigurationEditor.class);
     private TitledPane mDecoderPane;
     private TitledPane mEventLogPane;
@@ -106,6 +108,7 @@ public class NXDNConfigurationEditor extends ChannelConfigurationEditor
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
         getTitledPanesBox().getChildren().add(getSourcePane());
         getTitledPanesBox().getChildren().add(getDecoderPane());
+        getTitledPanesBox().getChildren().add(getJmbeSettingsPane());
         getTitledPanesBox().getChildren().add(getEventLogPane());
         getTitledPanesBox().getChildren().add(getRecordPane());
     }
@@ -576,9 +579,23 @@ public class NXDNConfigurationEditor extends ChannelConfigurationEditor
         return mRecordConfigurationEditor;
     }
 
+    /**
+     * AP-fork (ap-15.10.10): per-channel JMBE audio settings (upstream #2484/#2511/#2530).
+     */
+    private JmbeSettingsPane getJmbeSettingsPane()
+    {
+        if(mJmbeSettingsPane == null)
+        {
+            mJmbeSettingsPane = new JmbeSettingsPane(() -> modifiedProperty().set(true));
+        }
+
+        return mJmbeSettingsPane;
+    }
+
     @Override
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
+        getJmbeSettingsPane().setConfiguration(config instanceof DecodeConfigJMBE jmbe ? jmbe : null);
         getTransmissionModeButton().setDisable(config == null);
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
         getChannelMapTable().getItems().clear();
@@ -651,6 +668,7 @@ public class NXDNConfigurationEditor extends ChannelConfigurationEditor
         config.setChannelMap(channelFrequencies);
         config.setIgnoreDataCalls(getIgnoreDataCallsToggle().isSelected());
         config.setIgnoreEncryptedCalls(getIgnoreEncryptedCallsToggle().isSelected());
+        getJmbeSettingsPane().save(config);
         getItem().setDecodeConfiguration(config);
     }
 
