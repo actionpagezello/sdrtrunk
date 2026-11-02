@@ -53,6 +53,22 @@ plugins {
 repositories {
     mavenCentral()
     maven { url = "https://jitpack.io" }
+
+    //jHydraSDR (upstream #2541) is published as a GitHub release, with the native libraries for all platforms in the jar
+    ivy {
+        url = 'https://github.com/DSheirer/jHydraSDR/releases/download'
+        patternLayout { artifact 'v[revision]/[artifact]-[revision].[ext]' }
+        metadataSources { artifact() }
+        content { includeModule 'io.github.dsheirer', 'jhydrasdr' }
+    }
+
+    //jBladeRF (upstream #2543) is published as a GitHub release, with the native libraries for all platforms in the jar
+    ivy {
+        url = 'https://github.com/DSheirer/jBladeRF/releases/download'
+        patternLayout { artifact 'v[revision]/[artifact]-[revision].[ext]' }
+        metadataSources { artifact() }
+        content { includeModule 'io.github.dsheirer', 'jbladerf' }
+    }
 }
 
 //Version is defined in gradle.properties so that we can CLI override it for nightly builds.
@@ -100,6 +116,8 @@ dependencies {
     implementation 'com.mpatric:mp3agic:0.9.1'
     implementation 'commons-io:commons-io:2.21.0'
     implementation 'eu.hansolo:charts:1.0.5'
+    implementation 'io.github.dsheirer:jbladerf:2.6.0' //bladeRF tuners - GitHub release, see repositories
+    implementation 'io.github.dsheirer:jhydrasdr:1.1.3' //HydraSDR tuners - GitHub release, see repositories
     implementation 'io.github.dsheirer:radio-reference-api:18.0.0'
     implementation 'io.github.dsheirer:usb4java-native-libraries:1.3.3' //OSX & Windows aarch64 native libs
     implementation 'io.github.dsheirer:usb4java:1.3.5' //Fork with Loader support for OSX Multi-Version

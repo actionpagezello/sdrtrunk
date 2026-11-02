@@ -23,9 +23,9 @@ import io.github.dsheirer.dsp.filter.design.FilterDesignException;
 import io.github.dsheirer.sample.complex.InterleavedComplexSamples;
 import io.github.dsheirer.util.Dispatcher;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
 import org.apache.commons.math3.util.FastMath;
 import org.jtransforms.fft.FloatFFT_1D;
 import org.slf4j.Logger;
@@ -39,15 +39,15 @@ import org.slf4j.LoggerFactory;
  * Processing for Communications Systems, p230-233.
  *
  * Samples are loaded into this filter one block at a time (1/2 channel count) and a filtered output is calculated
- * to produce an overall 2x oversampled channel sample rate.  Each sample block load is preceded by a serpentine
- * shift of the existing sample blocks.  We use the java System.arrayCopy() method which is able to leverage
- * native processor intrinsics for efficiency.
+ * to produce an overall 2x oversampled channel sample rate.  Instead of shifting the existing sample blocks for each
+ * block load, the window of filtered samples moves toward the start of an oversized sample buffer, and the window is
+ * only copied back to the end of the buffer when it reaches the start.
  *
  * The prototype filter for the channelizer is rearranged to align with the structure of the sample buffer.
  *
  * Instead of using an array of channel filters as described in the Harris text, this filter and the sample buffer
  * are arranged as a contiguous array to maximize Java's ability to leverage native processor Single Instruction
- * Multiple Data (SIMD) intrinsics (since Java 8).  The filter process is broken into four steps:
+ * Multiple Data (SIMD) intrinsics (since Java 8).  The filter process is broken into three steps:
  *
  *   -Fused multiply and accumulate of the inline sample/filter arrays into each I/Q sub-channel accumulator
  *   -Rearrange the sub-channel results to correctly order the sub-channels
@@ -64,26 +64,37 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
     private static final int DEFAULT_MINIMUM_CHANNEL_BANDWIDTH = 25000;
 
     /**
-     * Determines how many processed channel results to dispatch for threaded IFFT processing per batch
+     * Determines how many processed channel results to dispatch for threaded IFFT processing per batch.
+     *
+     * Note: this value must be even.  Each dispatched batch then starts on an even block index, which lets downstream
+     * channel output processors (e.g. TwoChannelOutputProcessor) derive the absolute block index parity from each
+     * result's position within the batch.
      */
     private static final int PROCESSED_CHANNEL_RESULTS_THRESHOLD = 1024;
 
     /**
-     * Maximum number of channel results batches the IFFT dispatcher will queue before discarding the oldest.
-     *
-     * Each batch holds PROCESSED_CHANNEL_RESULTS_THRESHOLD arrays of getSubChannelCount() floats, so batch size grows
-     * with channel count - roughly 3.3 MB for a 400-channel 10 MSPS tuner and 0.8 MB for a 96-channel 2.4 MSPS tuner.
-     * Batch *rate*, however, is constant at about 24 per second for any tuner, because channel count scales with
-     * sample rate: rate = sampleRate / (threshold * channelCount) = 25000 / 1024.  A fixed element bound is therefore
-     * a fixed time bound, and 25 batches is approximately one second of backlog.
+     * Maximum queued channel results batches awaiting IFFT, about one second of samples.  A full batch is dropped when
+     * the IFFT processor falls behind, which preserves the even-sized batch block parity.
      */
-    private static final int MAX_QUEUED_CHANNEL_RESULTS_BATCHES = 25;
+    private static final int MAXIMUM_QUEUED_BATCHES = 50;
+
+    /**
+     * Maximum batch sample arrays held for reuse: the queued IFFT batches plus the batches queued for channel output.
+     */
+    private static final int MAXIMUM_POOLED_BATCHES = 2 * MAXIMUM_QUEUED_BATCHES;
 
     //Sized to process 40 times per second
     private IFFTProcessorDispatcher mIFFTProcessorDispatcher = new IFFTProcessorDispatcher(25);
     private FloatFFT_1D mFFT;
+    private ChannelDFT mChannelDFT;
     private float[] mInlineSamples;
     private float[] mInlineFilter;
+
+    /**
+     * Number of additional blocks of space in the sample buffer.  The window of filtered samples moves through this
+     * space one block at a time, so the window is copied once per this many blocks, instead of being shifted per block.
+     */
+    private static final int SAMPLE_BUFFER_SPARE_BLOCKS = 32;
 
     /**
      * Reusable sub-channel accumulator.  This is scratch space that is fully overwritten on each process() invocation
@@ -97,9 +108,13 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
     private int[] mTopBlockMap;
     private int[] mMiddleBlockMap;
     private int mSampleBufferPointer;
+    private int mWindowOffset;
     private int mSamplesPerBlock;
     private int mTapsPerChannel;
-    private List<float[]> mProcessedChannelResultsList = new ArrayList<>();
+    private Queue<float[]> mBatchPool;
+    private float[] mBatchSamples;
+    private int mBatchBlockCount;
+    private long mLatestSamplesTimestamp;
 
     /**
      * Creates a NMDPFB channelizer instance.
@@ -137,10 +152,11 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
     {
         super(sampleRate, getChannelCount(sampleRate));
 
-        mTapsPerChannel = tapsPerChannel;
-
         float[] filterTaps = FilterFactory.getSincM2Channelizer(getChannelSampleRate(), getChannelCount(),
-            mTapsPerChannel, false);
+            tapsPerChannel, false);
+
+        //The filter designer can increase the taps per channel in order to meet the band edge objective
+        mTapsPerChannel = filterTaps.length / getChannelCount();
 
         init(filterTaps);
     }
@@ -159,11 +175,14 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
     public void stop()
     {
         mIFFTProcessorDispatcher.stop();
+        mBatchPool.clear();
     }
 
     /**
      * Calculates the multiple of two number of channels that can be channelized from the specified sample rate so that
-     * each channel has a minimum bandwidth of the default channel bandwidth (12.5 kHz).
+     * each channel has a minimum bandwidth of the default channel bandwidth (25 kHz).  The channel count is the IFFT
+     * size, so it is reduced as needed to have only factors of 2, 3 and 5, which keeps the IFFT efficient.  Other prime
+     * factors are many times slower, for example 244 channels (2*2*61) takes 10x as long as 240 channels.
      * @param sampleRate to channelize
      * @return number of multiple of two channels that can be channelized.
      */
@@ -176,33 +195,15 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
             channels--;
         }
 
+        while(channels > 2 && !hasOnlyFactorsOf2And3And5(channels))
+        {
+            channels -= 2;
+        }
+
         mLog.info("Sample Rate [" + DECIMAL_FORMAT.format(sampleRate) + "] providing [" + channels +
             "] channels at [" + DECIMAL_FORMAT.format(sampleRate / (double)channels) + "] Hz each");
 
         return channels;
-    }
-
-    /**
-     * Updates this channelizer to use the new sample rate.  This method creates a new filter suitable for the
-     * sample rate and reinitializes all internal data structures to prepare for processing the new sample rate.
-     * @param sampleRate in hertz
-     */
-    @Override
-    public void setRates(double sampleRate, int channelCount)
-    {
-        try
-        {
-            super.setRates(sampleRate, channelCount);
-            float[] filterTaps = FilterFactory.getSincM2Channelizer(getChannelSampleRate(), getChannelCount(),
-                mTapsPerChannel, false);
-
-            init(filterTaps);
-        }
-        catch(FilterDesignException fde)
-        {
-            throw new IllegalArgumentException("Cannot create a channelizer filter for the specified sample rate [" +
-                sampleRate + "]");
-        }
     }
 
     /**
@@ -211,7 +212,7 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
     @Override
     public void receive(InterleavedComplexSamples complexSamples)
     {
-        mCurrentSamplesTimestamp = complexSamples.timestamp();
+        mLatestSamplesTimestamp = complexSamples.timestamp();
 
         float[] samples = complexSamples.samples();
 
@@ -230,7 +231,7 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
                     samplesToCopy = samplesDiff;
                 }
 
-                System.arraycopy(samples, samplesPointer, mInlineSamples, mSampleBufferPointer, samplesToCopy);
+                System.arraycopy(samples, samplesPointer, mInlineSamples, mWindowOffset + mSampleBufferPointer, samplesToCopy);
 
                 mSampleBufferPointer += samplesToCopy;
                 samplesPointer += samplesToCopy;
@@ -239,19 +240,52 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
             if(mSampleBufferPointer >= mSamplesPerBlock)
             {
                 //Filter buffered samples and produce a single sample across each of the polyphase channels
-                mProcessedChannelResultsList.add(process());
+                process();
 
-                if(mProcessedChannelResultsList.size() >= PROCESSED_CHANNEL_RESULTS_THRESHOLD)
+                if(++mBatchBlockCount >= PROCESSED_CHANNEL_RESULTS_THRESHOLD)
                 {
-                    mIFFTProcessorDispatcher.receive(new ArrayList<>(mProcessedChannelResultsList));
-                    mProcessedChannelResultsList.clear();
+                    ChannelResultsBatch batch = new ChannelResultsBatch(mBatchSamples, getSubChannelCount(),
+                        mLatestSamplesTimestamp, mBatchPool);
+
+                    if(!mIFFTProcessorDispatcher.offer(batch))
+                    {
+                        batch.release();
+                    }
+
+                    mBatchSamples = getBatchSamples();
+                    mBatchBlockCount = 0;
                 }
 
-                //Right-shift the samples in the buffer over to make room for a new block of samples
-                System.arraycopy(mInlineSamples, 0, mInlineSamples, mSamplesPerBlock, (mInlineSamples.length - mSamplesPerBlock));
+                //Move the window back one block to make room for a new block of samples, or when the window is at the
+                //start of the buffer, copy the samples that remain in the window to the end of the buffer
+                mWindowOffset -= mSamplesPerBlock;
+
+                if(mWindowOffset < 0)
+                {
+                    mWindowOffset = mSamplesPerBlock * SAMPLE_BUFFER_SPARE_BLOCKS;
+                    System.arraycopy(mInlineSamples, 0, mInlineSamples, mWindowOffset + mSamplesPerBlock,
+                        mInlineFilter.length - mSamplesPerBlock);
+                }
+
                 mSampleBufferPointer = 0;
             }
         }
+    }
+
+    /**
+     * Indicates if the value has no prime factors other than 2, 3 and 5.
+     */
+    private static boolean hasOnlyFactorsOf2And3And5(int value)
+    {
+        for(int factor : new int[]{2, 3, 5})
+        {
+            while(value % factor == 0)
+            {
+                value /= factor;
+            }
+        }
+
+        return value == 1;
     }
 
     /**
@@ -351,23 +385,34 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
 
 
     /**
-     * Processes the sample buffer for each new block of sample data that is loaded and distributes the results to any
-     * registered channel listeners.
+     * Provides a reused batch sample array when one is available, or a new array.  Reused arrays hold old samples, which
+     * doesn't matter since each batch is fully overwritten.
+     */
+    private float[] getBatchSamples()
+    {
+        float[] samples = mBatchPool.poll();
+        return samples != null ? samples : new float[PROCESSED_CHANNEL_RESULTS_THRESHOLD * getSubChannelCount()];
+    }
+
+    /**
+     * Processes the sample buffer for each new block of sample data that is loaded and writes the results to the next
+     * block of the current batch.
      *
-     * Note: mInlineSamples and mInlineFilter are both exactly (subChannelCount * tapsPerChannel) in length (see init()
-     * and getAlignedFilter()), so the fused multiply-accumulate loop below indexes every element of each array exactly
-     * once.  The multiply and per-sub-channel accumulation are fused into a single pass, which removes the previous
+     * Note: mInlineFilter and the window of mInlineSamples are both exactly (subChannelCount * tapsPerChannel) in length
+     * (see init() and getAlignedFilter()), so the fused multiply-accumulate loop below indexes every element of each
+     * exactly once.  The multiply and per-sub-channel accumulation are fused into a single pass, which removes the previous
      * per-call interim product array entirely and preserves bit-for-bit identical output: for each sub-channel the
      * tap products are summed in the same ascending tap order as before, and the JVM does not contract the separate
      * float multiply/add into an FMA without an explicit Math.fma() call.
      */
-    private float[] process()
+    private void process()
     {
         final int subChannelCount = getSubChannelCount();
         final int tapsPerChannel = mTapsPerChannel;
         final float[] inlineSamples = mInlineSamples;
         final float[] inlineFilter = mInlineFilter;
         final float[] filterAccumulator = mFilterAccumulator;
+        final int windowOffset = mWindowOffset;
 
         //Reset the reused accumulator to zero before summing this block's tap products
         Arrays.fill(filterAccumulator, 0.0f);
@@ -381,13 +426,12 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
             for(int channel = 0; channel < subChannelCount; channel++)
             {
                 final int index = tapOffset + channel;
-                filterAccumulator[channel] += inlineSamples[index] * inlineFilter[index];
+                filterAccumulator[channel] += inlineSamples[windowOffset + index] * inlineFilter[index];
             }
         }
 
-        //This output array is handed off to the IFFT dispatcher thread and therefore must be freshly allocated
-        //per block (it escapes this method and cannot be reused).
-        final float[] processed = new float[subChannelCount];
+        final float[] batchSamples = mBatchSamples;
+        final int batchOffset = mBatchBlockCount * subChannelCount;
 
         //Rearrange the accumulated sub-channels into the order required by the IFFT, alternating between the
         //top-block and middle-block orderings on successive blocks.
@@ -395,12 +439,10 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
 
         for(int x = 0; x < subChannelCount; x++)
         {
-            processed[x] = filterAccumulator[blockMap[x]];
+            batchSamples[batchOffset + x] = filterAccumulator[blockMap[x]];
         }
 
         mTopBlockIndicator = !mTopBlockIndicator;
-
-        return processed;
     }
 
     /**
@@ -412,50 +454,70 @@ public class ComplexPolyphaseChannelizerM2 extends AbstractComplexPolyphaseChann
     {
         int channelCount = getChannelCount();
         mFFT = new FloatFFT_1D(channelCount);
+        mChannelDFT = ChannelDFTFactory.getChannelDFT(channelCount);
         int bufferLength = getSubChannelCount() * mTapsPerChannel;
         mSamplesPerBlock = channelCount; //Same as subChannelCount / 2
         mTopBlockMap = getTopBlockMap(channelCount);
+        //The prototype filter group delay (taps per channel * channel count / 2 samples) rotates each channel k by
+        //PI * k * tapsPerChannel, so with an odd taps per channel count adjacent channel outputs are 180 degrees out of
+        //phase.  Starting with the middle block map applies an M/2 circular shift ahead of the IFFT, which multiplies
+        //channel k by (-1)^k and makes adjacent channels phase coherent for synthesis.
+        mTopBlockIndicator = (mTapsPerChannel % 2 == 0);
         mMiddleBlockMap = getMiddleBlockMap(channelCount);
         mInlineFilter = getAlignedFilter(coefficients, channelCount, mTapsPerChannel);
-        mInlineSamples = new float[bufferLength];
+        mWindowOffset = mSamplesPerBlock * SAMPLE_BUFFER_SPARE_BLOCKS;
+        mInlineSamples = new float[mWindowOffset + bufferLength];
         mFilterAccumulator = new float[getSubChannelCount()];
+        mBatchPool = new ArrayBlockingQueue<>(MAXIMUM_POOLED_BATCHES);
+        mBatchSamples = getBatchSamples();
     }
 
     /**
-     * Separate threaded processor to receive and enqueue filtered channel results buffers, perform IFFT on each array
-     * as required to align the phase of each polyphase channel, and then dispatch the results to any registered
-     * sample consumer channels.
+     * Separate threaded processor to receive and enqueue filtered channel results batches, transform each block as
+     * required to align the phase of each polyphase channel, and then dispatch the results to any registered sample
+     * consumer channels.  When few channels are in use, only those channels are transformed, and the results for all
+     * other channels are not valid.
      */
-    public class IFFTProcessorDispatcher extends Dispatcher<List<float[]>>
+    public class IFFTProcessorDispatcher extends Dispatcher<ChannelResultsBatch>
     {
         public IFFTProcessorDispatcher(long interval)
         {
-            super("sdrtrunk polyphase ifft processor", interval, MAX_QUEUED_CHANNEL_RESULTS_BATCHES);
+            super("sdrtrunk polyphase ifft processor", interval, MAXIMUM_QUEUED_BATCHES);
 
-            //We create a listener interface to receive the batched channel results arrays from the scheduled thread pool
+            //We create a listener interface to receive the batched channel results from the scheduled thread pool
             //dispatcher thread that is part of this continuous buffer processor.  We perform an IFFT on each
-            //channel results array contained in each results buffer and then dispatch the buffer
-            //so that it can be distributed to each channel listener.
-            setListener(list -> {
+            //block in the batch and then dispatch the batch so that it can be distributed to each channel listener.
+            setListener(batch -> {
                 try
                 {
-                    List<float[]> processedChannelResults = new ArrayList<>();
+                    float[] samples = batch.getSamples();
+                    int[] channels = prepareChannels();
 
-                    for(float[] channelResults: list)
+                    if(channels.length > 0 && channels.length <= mChannelDFT.getMaximumChannels())
                     {
-                        if(channelResults != null)
+                        //Rotate only the channels that are in use to the correct phase
+                        mChannelDFT.process(samples, channels);
+                    }
+                    else
+                    {
+                        int blockLength = batch.getBlockLength();
+
+                        for(int offset = 0; offset < samples.length; offset += blockLength)
                         {
                             //Rotate each of the channels to the correct phase using the IFFT
-                            mFFT.complexInverse(channelResults, true);
-                            processedChannelResults.add(channelResults);
+                            mFFT.complexInverse(samples, offset, true);
                         }
                     }
 
-                    dispatch(processedChannelResults);
+                    dispatch(batch);
                 }
                 catch(Throwable t)
                 {
                     mLog.error("Error during IFFT and dispatch of processed channel results", t);
+                }
+                finally
+                {
+                    batch.release();
                 }
             });
         }

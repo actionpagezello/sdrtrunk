@@ -130,6 +130,18 @@ public class Dispatcher<E> implements Listener<E>
     }
 
     /**
+     * Constructs an instance with upstream SDRTrunk's argument order (#2534).
+     * @param threadName to name the dispatcher thread
+     * @param interval for processing each batch in milliseconds
+     * @param heartbeatManager to receive heartbeats
+     * @param maxQueueSize maximum queued elements
+     */
+    public Dispatcher(String threadName, long interval, HeartbeatManager heartbeatManager, int maxQueueSize)
+    {
+        this(threadName, interval, maxQueueSize, heartbeatManager);
+    }
+
+    /**
      * Constructs an instance
      * @param threadName to name the dispatcher thread
      * @param interval for processing each batch in milliseconds.
@@ -225,6 +237,31 @@ public class Dispatcher<E> implements Listener<E>
     public void setListener(Listener<E> listener)
     {
         mListener = listener;
+    }
+
+    /**
+     * Queues the element only if there is room, without discarding older elements (upstream #2534).  Callers that
+     * must drop whole groups of elements - the polyphase channelizer drops a full batch to keep its two-channel
+     * synthesis block parity - use this instead of receive(), which discards the oldest elements.
+     * @param e element to queue
+     * @return true if the element was queued, or false if this dispatcher is stopped or its queue is full.
+     */
+    public boolean offer(E e)
+    {
+        if(!mRunning.get())
+        {
+            return false;
+        }
+
+        if(mQueueSize.get() >= mMaxQueueSize)
+        {
+            mDropCount.incrementAndGet();
+            return false;
+        }
+
+        mQueue.add(e);
+        mQueueSize.incrementAndGet();
+        return true;
     }
 
     /**

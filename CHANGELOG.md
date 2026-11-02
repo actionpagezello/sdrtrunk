@@ -5,6 +5,41 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.11] - 2026-11-02
+
+### Changed - channelizer, P25 Phase 2, tuners and AM from upstream
+
+- Polyphase channelizer (#2527, #2534, #2538): two-channel synthesis fixed for signals that straddle a channelizer
+  channel boundary, channel count limited to 2/3/5 factors, batch handling and buffer reuse reworked, vector
+  oscillator lanes no longer drift apart, half-band decimation filters normalized to unity gain.
+- P25 Phase 2 (#2525): same soft-symbol architecture as Phase 1/DMR/NXDN, improved timeslot and ISCH handling,
+  Reed-Solomon erasure decoding for FACCH/SACCH/LCCH and ESS (corrections in shortened symbols are still rejected).
+- HydraSDR (#2541): driver replaced by the jHydraSDR library (libhydrasdr, HIGH_DEFINITION decimation by default).
+- bladeRF tuner support (#2543, #2545), waterfall updates at all zoom levels (#2546), AM decoder squelch and filter
+  enhancements (#2556).
+- Build: the jHydraSDR and jBladeRF libraries are GitHub releases; their repositories are in build.gradle.
+
+### Kept from the fork
+
+- Dispatcher: receive() on a full queue still discards the oldest elements (ap-15.8); upstream's offer(), which
+  refuses new elements, is added for the channelizer's whole-batch drops. Polyphase buffer dispatcher keeps its
+  tuner name and rate-derived bound.
+- NBFM channel filter: upstream's ChannelFilterDesigner gives a different 135-tap filter for a 12.5 kHz channel at
+  50 kHz (the fork's design is 87 taps) and moved squelch decisions (Brookline Fire replay: 64 call events became
+  58), so NBFMDecoder keeps its own design.
+- Not taken: #2564 (TornadoVM experiment in the NBFM noise squelch), #2565 (dark mode alias colors).
+
+### Tested
+
+- Wideband test: a 150 s, 2.4 MSPS composite of four recordings (Lowell and Rockingham West LSM, Troop B and
+  Methuen C4FM), each placed centred on a channelizer channel and on a channel boundary, played through the
+  recording tuner and PolyphaseChannelManager. 15.11 boundary channels now decode the same as centred ones (Troop B
+  1,151/1,151 valid messages, 15.10.10 1,141/1,145; Methuen 795/795, 15.10.10 792/794).
+- Baseband replays against 15.10.10: Rockingham West +45 voice frames, Salem State DMR full recording 1,348 -> 1,364
+  valid messages, NXDN unchanged, other P25 unchanged apart from sync-loss timing; Brookline Fire NBFM 61 of 64 call
+  events identical (three short ones in a flickering weak transmission move).
+- 212 unit tests pass.
+
 ## [0.6.2-ap-15.10.10] - 2026-11-02
 
 ### Added - per-channel JMBE audio settings (upstream #2483, #2485, #2488, #2502, #2505, #2511, #2530)

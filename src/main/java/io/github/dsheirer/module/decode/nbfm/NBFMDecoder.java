@@ -1492,6 +1492,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mNoiseSquelch.setSampleRate(decimatedSampleRate);
         mDemodulatedSampleRate = decimatedSampleRate;
 
+        //AP-fork (ap-15.11): kept this channel filter rather than upstream #2556's ChannelFilterDesigner, which for a
+        //12.5 kHz channel at 50 kHz falls back to a different 135-tap filter (this design is 87 taps) and changes where
+        //the noise squelch opens and closes (Brookline Fire replay: 64 call events became 58).
         int passBandStop = (int) (mChannelBandwidth * .8);
         int stopBandStart = (int) mChannelBandwidth;
 
