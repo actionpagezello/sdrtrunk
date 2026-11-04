@@ -5,6 +5,29 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.11.3] - 2026-11-04
+
+### Added - Zello incident lines and a machine-wide connection limit
+
+- One "ZELLO INCIDENT" log line per connection event, with the fields Zello support asked for (2026-11-03): UTC
+  time, machine, network (Zello Work network or Zello Friends & Family), gateway username, channel, event, the
+  command and seq, the server error and full response, the WebSocket close code and reason, how long the
+  connection had been open, the last command sent, and reconnect attempt, delay and downtime. Events:
+  disconnect, socket_error, connect_failed, connection_timeout, keepalive_timeout, server_error,
+  stop_ack_timeout, reconnect_scheduled, reconnected, connect_rate_limited. Passwords are never logged and
+  token/key fields in server responses are masked.
+- Zello allows 10 new connections per minute per IP. Startup was already staggered at 9 per minute, but
+  reconnects were not limited: when the network dropped every channel at once, they all reconnected together
+  (Daly 2026-11-03 12:07: 11 channels within two minutes). All Zello channel connections on the machine now share
+  a budget of 9 per rolling minute; an attempt over the budget waits for the next free slot (logged as
+  connect_rate_limited). Nothing is refused. Shared-pool connections (not used on the fleet) are not limited.
+
+### Changed
+
+- "Zello Consumer" is now labeled "Zello Friends & Family" - Zello's name for the network - in the streaming
+  menu, the stream list and log lines. Display text only: playlists keep the same stream type, so existing
+  Zello Consumer streams load and run unchanged, and upstream SDRTrunk is unaffected.
+
 ## [0.6.2-ap-15.11.2] - 2026-11-03
 
 ### Added - NBFM tone coverage measurement (logging only)

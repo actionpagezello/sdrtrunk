@@ -46,7 +46,7 @@ public enum BroadcastServerType
     /**
      * Zello Consumer (Friends & Family) - real-time audio streaming
      */
-    ZELLO("Zello Consumer", null),
+    ZELLO("Zello Friends & Family", null),
 
     UNKNOWN("Unknown", null);
 

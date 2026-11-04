@@ -159,6 +159,13 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
      * connection failed: closed"; Daly 2026-11-03, Lawrence MA Fire and Londonderry NH Fire/Police, 155 times each).
      */
     private final AtomicBoolean mDisposed = new AtomicBoolean(false);
+
+    //AP-fork (ap-15.11.3): connection bookkeeping for ZelloIncidentLog lines - see incident().
+    private volatile long mConnectedSinceMs = -1;
+    private volatile long mDisconnectedAtMs = -1;
+    private volatile String mLastCommand = null;
+    private volatile int mLastCommandSeq = -1;
+    private volatile long mLastCommandTimeMs = -1;
     private final AtomicInteger mSequence = new AtomicInteger(1);
     private final AtomicInteger mKickedCount = new AtomicInteger(0);
     private final AtomicInteger mReconnectAttempts = new AtomicInteger(0);
@@ -236,6 +243,99 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     {
         ZelloChannelConfiguration config = zelloConfig();
         return config != null && config.getChannel() != null ? "[" + config.getChannel() + "] " : "";
+    }
+
+    /**
+     * AP-fork (ap-15.11.3): network label for incident lines - "Zello Work (network)" or "Zello Friends & Family", in
+     * the terms Zello support uses.
+     */
+    private String incidentNetwork()
+    {
+        String label = connectTargetLabel();
+        ZelloChannelConfiguration config = zelloConfig();
+        String network = config != null ? config.getNetworkName() : null;
+
+        if(network != null && !network.isEmpty())
+        {
+            return label + " (" + network + ")";
+        }
+
+        return label;
+    }
+
+    /**
+     * AP-fork (ap-15.11.3): logs a ZELLO INCIDENT line for this channel.
+     */
+    protected void incident(String event, String details)
+    {
+        try
+        {
+            ZelloChannelConfiguration config = zelloConfig();
+            ZelloIncidentLog.log(event, incidentNetwork(), config != null ? config.getUsername() : null,
+                    config != null ? config.getChannel() : null, details);
+        }
+        catch(Exception e)
+        {
+            mLog.debug("{}Couldn't log Zello incident [{}]", ch(), event, e);
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.11.3): connection age and the last command sent, for disconnect and error incident lines.
+     */
+    private String connectionContext()
+    {
+        long now = System.currentTimeMillis();
+        StringBuilder sb = new StringBuilder();
+        sb.append("connected_for=").append(ZelloIncidentLog.duration(mConnectedSinceMs > 0 ? now - mConnectedSinceMs : -1));
+
+        if(mLastCommand != null)
+        {
+            sb.append(" last_command=").append(mLastCommand).append(" last_seq=").append(mLastCommandSeq)
+              .append(" last_command_age=").append(ZelloIncidentLog.duration(now - mLastCommandTimeMs));
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * AP-fork (ap-15.11.3): records a command sent on this broadcaster's own connection.
+     */
+    private void noteCommand(String command, int seq)
+    {
+        mLastCommand = command;
+        mLastCommandSeq = seq;
+        mLastCommandTimeMs = System.currentTimeMillis();
+    }
+
+    /**
+     * AP-fork (ap-15.11.3): the session is up.  Logs a reconnected incident when this follows a disconnect.
+     */
+    private void markConnected()
+    {
+        long now = System.currentTimeMillis();
+
+        if(mDisconnectedAtMs > 0)
+        {
+            incident("reconnected", "downtime=" + ZelloIncidentLog.duration(now - mDisconnectedAtMs) +
+                    " reconnect_attempts=" + mReconnectAttempts.get());
+        }
+
+        mConnectedSinceMs = now;
+        mDisconnectedAtMs = -1;
+    }
+
+    /**
+     * AP-fork (ap-15.11.3): the session is down.  Keeps the first disconnect time across failed reconnects.
+     */
+    private void markDisconnected()
+    {
+        if(mDisconnectedAtMs <= 0)
+        {
+            mDisconnectedAtMs = System.currentTimeMillis();
+        }
+
+        mConnectedSinceMs = -1;
     }
 
     /**
@@ -900,6 +1000,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 // being reached and the 500 ms wait is back.
                 mLog.warn("{}Zello stop_stream ack not received within {} ms — clearing pending stop for " +
                     "stream_id={}", ch(), PENDING_STOP_TIMEOUT_MS, pending);
+                incident("stop_ack_timeout", "stream_id=" + pending + " timeout_ms=" + PENDING_STOP_TIMEOUT_MS + " " +
+                        connectionContext());
                 maybeSchedulePendingStreamStart();
             }
         }, PENDING_STOP_TIMEOUT_MS, TimeUnit.MILLISECONDS);
@@ -1353,7 +1455,47 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             ZelloProtocolUtil.OPUS_BITRATE / 1000, ZelloProtocolUtil.ZELLO_FRAME_SIZE_MS);
     }
 
+    /**
+     * AP-fork (ap-15.11.3): connects once the machine-wide connection budget allows it.  Zello limits new connections
+     * to 10 per minute per IP; ZelloConnectRateLimiter keeps every channel on this machine under that together.
+     */
     private void connectWebSocket()
+    {
+        if(mDisposed.get() || mStopped.get())
+        {
+            return;
+        }
+
+        long waitMs = ZelloConnectRateLimiter.getInstance().reserve();
+
+        if(waitMs > 0)
+        {
+            incident("connect_rate_limited", "wait_ms=" + waitMs + " machine_connections_last_minute=" +
+                    ZelloConnectRateLimiter.getInstance().getRecentCount() + " limit=" +
+                    ZelloConnectRateLimiter.MAX_CONNECTIONS_PER_WINDOW + "/" +
+                    (ZelloConnectRateLimiter.WINDOW_MS / 1000) + "s");
+            mLog.info("{}Delaying Zello connect {}ms - machine-wide limit of {} new connections per minute", ch(),
+                    waitMs, ZelloConnectRateLimiter.MAX_CONNECTIONS_PER_WINDOW);
+
+            if(mReconnectFuture != null && !mReconnectFuture.isDone())
+            {
+                mReconnectFuture.cancel(false);
+            }
+
+            mReconnectFuture = ThreadPool.SCHEDULED.schedule(() ->
+            {
+                if(!mConnected.get() && !mStopped.get() && !mDisposed.get())
+                {
+                    connectWebSocketNow();
+                }
+            }, waitMs, TimeUnit.MILLISECONDS);
+            return;
+        }
+
+        connectWebSocketNow();
+    }
+
+    private void connectWebSocketNow()
     {
         if(mDisposed.get())
         {
@@ -1422,6 +1564,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 .exceptionally(ex ->
                 {
                     mLog.error("{}WebSocket connection failed: {}", ch(), ex.getMessage());
+                    markDisconnected();
+                    incident("connect_failed", "error=" + ZelloIncidentLog.q(ex.getMessage()) + " attempt=" +
+                            (mReconnectAttempts.get() + 1));
                     setConnectionErrorDetail("WebSocket handshake failed");
                     setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
                     mReconnecting.set(false);
@@ -1469,6 +1614,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 mLog.warn("{}Zello connection timeout — no channel status after {}s. Forcing reconnect.",
                     ch(), CONNECTION_TIMEOUT_MS / 1000);
                 setConnectionErrorDetail("Connection timeout (" + CONNECTION_TIMEOUT_MS / 1000 + "s)");
+                incident("connection_timeout", "no_channel_status_after_s=" + CONNECTION_TIMEOUT_MS / 1000 + " " +
+                        connectionContext());
+                markDisconnected();
                 disconnectWebSocket();
                 setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
                 scheduleReconnect();
@@ -1506,6 +1654,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             long backoff = KICKED_BACKOFF_MS * (1L << Math.min(kickCount, 4));
             mLog.warn("{}Zello kicked - backing off {}s ({}/{})",
                 ch(), backoff / 1000, kickCount + 1, MAX_KICKED_RETRIES);
+            incident("reconnect_scheduled", "reason=kicked kick_count=" + (kickCount + 1) + " delay_ms=" + backoff +
+                    " since_disconnect=" + sinceDisconnect());
             scheduleReconnectWithDelay(backoff);
         }
         else
@@ -1517,8 +1667,15 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             long delay = base + jitter;
             mLog.warn("{}Scheduling reconnect in {}ms (base {}ms + jitter {}ms, attempt {})",
                 ch(), delay, base, jitter, attempt + 1);
+            incident("reconnect_scheduled", "attempt=" + (attempt + 1) + " delay_ms=" + delay + " since_disconnect=" +
+                    sinceDisconnect());
             scheduleReconnectWithDelay(delay);
         }
+    }
+
+    private String sinceDisconnect()
+    {
+        return ZelloIncidentLog.duration(mDisconnectedAtMs > 0 ? System.currentTimeMillis() - mDisconnectedAtMs : -1);
     }
 
     private void scheduleReconnectWithDelay(long delayMs)
@@ -1675,6 +1832,8 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     mWebSocket = null;
                 }
 
+                incident("keepalive_timeout", "missed_acks=" + mKeepaliveMissedAcks + " " + connectionContext());
+                markDisconnected();
                 setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
                 setConnectionErrorDetail("Keepalive timeout — connection dead");
                 scheduleReconnect();
@@ -1750,6 +1909,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         int seq = nextSequence();
         logon.addProperty("seq", seq);
         trackPendingCommand(seq, "logon");
+        noteCommand("logon", seq);
         JsonArray channels = new JsonArray();
         channels.add(zelloConfig().getChannel());
         logon.add("channels", channels);
@@ -1791,6 +1951,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         {
             seq = nextSequence();
             trackPendingCommand(seq, "start_stream");
+            noteCommand("start_stream", seq);
         }
 
         cmd.addProperty("seq", seq);
@@ -1839,6 +2000,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         {
             seq = nextSequence();
             trackPendingCommand(seq, STOP_STREAM_COMMAND + "(id=" + streamId + ")");
+            noteCommand("stop_stream", seq);
         }
 
         cmd.addProperty("seq", seq);
@@ -2161,6 +2323,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         public CompletionStage<?> onClose(WebSocket ws, int code, String reason)
         {
             mLog.info("{}Zello disconnected (code={} {})", ch(), code, reason);
+            incident("disconnect", "close_code=" + code + " reason=" + ZelloIncidentLog.q(reason) + " " +
+                    connectionContext());
+            markDisconnected();
             stopKeepalive();
             mConnected.set(false);
             mChannelOnline.set(false);
@@ -2197,6 +2362,9 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
         public void onError(WebSocket ws, Throwable error)
         {
             mLog.error("{}Zello WebSocket error: {}", ch(), error.getMessage());
+            incident("socket_error", "error=" + ZelloIncidentLog.q(error.getClass().getSimpleName() + ": " +
+                    error.getMessage()) + " " + connectionContext());
+            markDisconnected();
             stopKeepalive();
             mConnected.set(false);
             mChannelOnline.set(false);
@@ -2231,6 +2399,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 {
                     if(!mConnected.get())
                     {
+                        markConnected();
                         mConnected.set(true);
                         mKicked.set(false);
                         mReconnectAttempts.set(0);
@@ -2241,6 +2410,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     if(!mConnected.get())
                     {
                         mLog.debug("{}Zello logon accepted", ch());
+                        markConnected();
                         mConnected.set(true);
                         mKicked.set(false);
                         mReconnectAttempts.set(0);
@@ -2252,6 +2422,11 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                     int seq = json.has("seq") ? json.get("seq").getAsInt() : -1;
                     String originCmd = seq > 0 ? mPendingCommands.remove(seq) : null;
                     int bridgeCode = ZelloProtocolUtil.mapBridgeErrorCode(errorMsg);
+
+                    //AP-fork (ap-15.11.3): every server error, with the full response, before it is dispatched.
+                    incident("server_error", "command=" + (originCmd != null ? originCmd : "unsolicited") + " seq=" +
+                            seq + " error=" + ZelloIncidentLog.q(errorMsg) + " response=" +
+                            ZelloIncidentLog.q(ZelloIncidentLog.redact(message)) + " " + connectionContext());
 
                     //AP-fork: a faulted session is never retried, and is checked FIRST so that a
                     //shared bridge code cannot route it into either branch below.

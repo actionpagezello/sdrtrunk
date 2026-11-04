@@ -45,7 +45,7 @@ public class ZelloConsumerBroadcaster extends AbstractZelloBroadcaster<ZelloCons
     @Override
     protected String connectTargetLabel()
     {
-        return "Zello Consumer";
+        return "Zello Friends & Family";
     }
 
     @Override
