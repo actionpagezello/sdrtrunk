@@ -22,6 +22,7 @@ package io.github.dsheirer.source.tuner.manager;
 import io.github.dsheirer.gui.preference.tuner.RspDuoSelectionMode;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.source.ChannelizerType;
+import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.SourceException;
 import io.github.dsheirer.source.config.SourceConfigTuner;
@@ -77,6 +78,12 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     private final Context mLibUsbApplicationContext = new Context();
     private boolean mLibUsbInitialized = false;
     private SDRplay mSDRplay;
+    /**
+     * AP-fork (ap-15.11.1): SDRplay (RSP) devices seen on USB during discovery (vendor 0x1DF7), or -1 if unknown.
+     */
+    private int mSdrplayUsbDeviceCount = -1;
+    private static final int SDRPLAY_USB_VENDOR_ID = 0x1DF7;
+    private final RspRecoveryMonitor mRspRecoveryMonitor;
 
     /**
      * Constructs an instance
@@ -87,6 +94,67 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         mUserPreferences = userPreferences;
         mTunerConfigurationManager = new TunerConfigurationManager(userPreferences);
         mDiscoveredTunerModel = new DiscoveredTunerModel(mTunerConfigurationManager);
+        mRspRecoveryMonitor = new RspRecoveryMonitor(this::getAvailableRspDeviceInfos,
+            id -> mDiscoveredTunerModel.getDiscoveredTuner(id) != null, this::addRecoveredRsp);
+        mDiscoveredTunerModel.setRspRemovalListener(mRspRecoveryMonitor::rspRemoved);
+    }
+
+    /**
+     * AP-fork (ap-15.11.1): lets the RSP recovery monitor find and restart the channels of a removed RSP tuner.
+     */
+    public void setChannelProcessingManager(ChannelProcessingManager channelProcessingManager)
+    {
+        mRspRecoveryMonitor.setChannelProcessingManager(channelProcessingManager);
+    }
+
+    /**
+     * AP-fork (ap-15.11.1): devices currently available from the SDRplay API, for RSP recovery.  Reopens the API if
+     * it isn't open.
+     * @return device infos, or an empty list if the API isn't available
+     */
+    private synchronized List<DeviceInfo> getAvailableRspDeviceInfos()
+    {
+        try
+        {
+            if(mSDRplay == null)
+            {
+                mSDRplay = new SDRplay();
+            }
+
+            if(mSDRplay.isAvailable())
+            {
+                return mSDRplay.getDeviceInfos();
+            }
+        }
+        catch(SDRPlayException se)
+        {
+            mLog.debug("RSP recovery - SDRplay API not available - " + se.getMessage());
+        }
+
+        return Collections.emptyList();
+    }
+
+    /**
+     * AP-fork (ap-15.11.1): re-adds the discovered tuner(s) for an RSP that returned after removal, the same way as
+     * at startup.
+     * @return number of discovered tuners added
+     */
+    private synchronized int addRecoveredRsp(DeviceInfo deviceInfo)
+    {
+        ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
+        RspDuoSelectionMode duoSelectionMode = mUserPreferences.getTunerPreference().getRspDuoTunerMode();
+        int added = 0;
+
+        for(DiscoveredRspTuner tuner: TunerFactory.getRspTuners(deviceInfo, channelizerType, duoSelectionMode))
+        {
+            if(mDiscoveredTunerModel.getDiscoveredTuner(tuner.getId()) == null)
+            {
+                startAndConfigureTuner(tuner);
+                added++;
+            }
+        }
+
+        return added;
     }
 
     /**
@@ -221,6 +289,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
                 if(deviceCount >= 0)
                 {
                     mLog.info("LibUsb - discovered [" + deviceCount + "] potential usb devices");
+                    mSdrplayUsbDeviceCount = 0;
 
                     for(Device device: deviceList)
                     {
@@ -236,6 +305,11 @@ public class TunerManager implements IDiscoveredTunerStatusListener
                             {
                                 TunerClass tunerClass = TunerClass.lookup(deviceDescriptor.idVendor(),
                                         deviceDescriptor.idProduct());
+
+                                if((deviceDescriptor.idVendor() & 0xFFFF) == SDRPLAY_USB_VENDOR_ID)
+                                {
+                                    mSdrplayUsbDeviceCount++;
+                                }
 
                                 String portAddress = getPortAddress(device);
 
@@ -369,7 +443,23 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         }
         catch(SDRPlayException se)
         {
-            mLog.error("Couldn't load SDRPlay API");
+            //AP-fork (ap-15.11.1): say whether this matters.  With no RSP attached it is expected on any machine that
+            //has the SDRplay API installed (Cambridge); with an RSP attached those tuners are unusable (Paxton
+            //2026-11-02, every startup) and the reason used to be dropped.
+            if(mSdrplayUsbDeviceCount == 0)
+            {
+                mLog.info("SDRplay API service not available - no SDRplay (RSP) device is connected, so nothing is " +
+                    "affected [" + se.getMessage() + "]");
+            }
+            else
+            {
+                mLog.error("Couldn't open the SDRplay API service" + (mSdrplayUsbDeviceCount > 0 ? " while [" +
+                    mSdrplayUsbDeviceCount + "] SDRplay (RSP) device(s) are connected" : "") + " - RSP tuners are " +
+                    "unavailable. Reason: " + se.getMessage() + ". Restart 'SDRplay API Service' in Windows Services, " +
+                    "close other SDRplay programs (SDRuno, SDRconnect), or reinstall the SDRplay API 3.x, then " +
+                    "restart SDRTrunk.");
+            }
+
             mSDRplay = null;
         }
 
@@ -383,6 +473,12 @@ public class TunerManager implements IDiscoveredTunerStatusListener
 
                 if(deviceInfos.isEmpty())
                 {
+                    if(mSdrplayUsbDeviceCount > 0)
+                    {
+                        mLog.warn("SDRplay API lists no RSP devices but [" + mSdrplayUsbDeviceCount + "] SDRplay " +
+                            "device(s) are connected - another program (SDRuno, SDRconnect) may be using them");
+                    }
+
                     mSDRplay.close();
                     mSDRplay = null;
                     return;

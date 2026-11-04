@@ -5,6 +5,27 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.11.1] - 2026-11-03
+
+### Added - RSP recovery
+
+- When the SDRplay API reports an RSP removed (Daly 2026-11-01: RSP1B 24050F5260 removed while carrying its
+  channels, down 25 hours until SDRTrunk was restarted), SDRTrunk now checks the SDRplay API every 30 seconds for
+  the same serial number. When it is listed again the tuner is re-added and each playlist channel it was carrying
+  is stopped and started so it gets a source again. Traffic channels are recreated by their control channel.
+  Log lines start with "RSP recovery:".
+
+### Changed
+
+- SDRplay API logging: when the API can't be opened and no SDRplay USB device is connected, a single INFO line
+  instead of an ERROR (machines without an RSP). With an RSP connected the ERROR now says why and what to try
+  (restart the SDRplay API Service, close SDRuno/SDRconnect, reinstall API 3.x). A WARN when the API lists no
+  devices although SDRplay USB devices are present.
+- From upstream: #2568 mixed-radix complex FFT for the polyphase channelizer (any 2/3/5 channel count),
+  #2570 SDR# compatible baseband I/Q recordings. The baseband recorder's writes and close are now serialized,
+  which fixes the ClosedChannelException seen on Cambridge when a recording rolled over or stopped. The fork's
+  recorder queue bound (2000) and WAV rollover fix are kept.
+
 ## [0.6.2-ap-15.11] - 2026-11-02
 
 ### Changed - channelizer, P25 Phase 2, tuners and AM from upstream
