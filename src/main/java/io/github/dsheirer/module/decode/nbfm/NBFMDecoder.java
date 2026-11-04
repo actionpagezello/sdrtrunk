@@ -254,6 +254,19 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private volatile boolean mWatchdogTripped = false;
 
     /**
+     * AP-fork (ap-15.11.2): tone coverage measurement, logging only.  For each tone-filtered call, the call audio that
+     * passed the gate and how much of it passed while the detector held a confirmed target tone.  One INFO line per
+     * call says whether a coverage rule at TONE_COVERAGE_THRESHOLD would have kept or dropped it.  Nothing is dropped.
+     * Audubon 2026-11-03, Marblehead Police: 12 real calls carried the tone throughout; 4 noise fragments (0.5-2.4 s)
+     * were released on brief, chance 131.8 Hz confirmations while the channel was idle.
+     */
+    static final double TONE_COVERAGE_THRESHOLD = 0.60;
+    private boolean mCoverageActive = false;
+    private long mCoverageCallSamples = 0;
+    private long mCoverageToneSamples = 0;
+    private long mCoverageBufferedSamples = 0;
+
+    /**
      * AP-fork: wall time that audio last reached processResampledAudio(), i.e. the last moment the squelch actually
      * passed audio downstream.  Used only by the stuck-call watchdog to separate a real stuck carrier from a stale
      * call timer.
@@ -1031,6 +1044,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             }
         }
 
+        //AP-fork (ap-15.11.2): tone coverage measurement - this audio passed the gate and is call audio.
+        countToneCoverage(resampledAudio.length, false);
+
         // Step 2b: Mains hum measurement. Taken here, after the gate has decided to pass this audio
         // but before any audio filter touches it, so it measures what the demodulator delivered
         // rather than what survives the chain — and does not measure squelched noise, which the
@@ -1117,6 +1133,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         for(float[] audio : mPendingToneAudio)
         {
+            countToneCoverage(audio.length, true);
+
             if(mAudioFilters != null)
             {
                 mAudioFilters.process(audio);
@@ -1367,6 +1385,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         idleMs < 0 ? "never" : String.valueOf(idleMs / 1000),
                         idleMs > 5000 ? " - STALE CALL TIMER, not a stuck carrier" : "");
                     mWatchdogTripped = true;
+                    finishToneCoverage();
                     broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.END, State.CALL, 0));
                 }
             }
@@ -1384,7 +1403,97 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             return;
         }
         mCallStartTimeMs = System.currentTimeMillis();
+        startToneCoverage();
         broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.START, State.CALL, 0));
+    }
+
+    /**
+     * AP-fork (ap-15.11.2): starts tone coverage measurement for a tone-filtered call.
+     */
+    private void startToneCoverage()
+    {
+        mCoverageActive = mToneFilterEnabled;
+        mCoverageCallSamples = 0;
+        mCoverageToneSamples = 0;
+        mCoverageBufferedSamples = 0;
+    }
+
+    /**
+     * AP-fork (ap-15.11.2): counts call audio that passed the tone gate, and the part of it that passed while the
+     * detector held a confirmed target tone.
+     * @param samples count at the 8 kHz demodulated audio rate
+     * @param buffered true for audio buffered during confirmation and released when the tone confirmed.  It is call
+     * audio, but every call has it - the confirmation takes about 250 ms - so it is reported separately and left out
+     * of the coverage figure, which would otherwise count against short calls.
+     */
+    private void countToneCoverage(int samples, boolean buffered)
+    {
+        if(!mCoverageActive)
+        {
+            return;
+        }
+
+        if(buffered)
+        {
+            mCoverageBufferedSamples += samples;
+            return;
+        }
+
+        mCoverageCallSamples += samples;
+
+        if(isTargetToneConfirmedNow())
+        {
+            mCoverageToneSamples += samples;
+        }
+    }
+
+    /**
+     * Indicates if the CTCSS or DCS detector currently holds a confirmed target code.
+     */
+    private boolean isTargetToneConfirmedNow()
+    {
+        if(mCTCSSDetector != null)
+        {
+            CTCSSCode code = mCTCSSDetector.getDetectedCode();
+            return code != null && mTargetCTCSSCodes != null && mTargetCTCSSCodes.contains(code);
+        }
+
+        if(mDCSDetector != null)
+        {
+            return mToneMatch && mHoldoverOpenTime == 0;
+        }
+
+        return false;
+    }
+
+    /**
+     * AP-fork (ap-15.11.2): logs the call's tone coverage and what a coverage rule would have done.  Measurement only.
+     */
+    private void finishToneCoverage()
+    {
+        if(!mCoverageActive)
+        {
+            return;
+        }
+
+        mCoverageActive = false;
+
+        if(mCoverageCallSamples + mCoverageBufferedSamples <= 0)
+        {
+            return;
+        }
+
+        double buffered = mCoverageBufferedSamples / DEMODULATED_AUDIO_SAMPLE_RATE;
+        double seconds = mCoverageCallSamples / DEMODULATED_AUDIO_SAMPLE_RATE;
+        double toneSeconds = mCoverageToneSamples / DEMODULATED_AUDIO_SAMPLE_RATE;
+        double coverage = mCoverageCallSamples > 0 ? (double)mCoverageToneSamples / mCoverageCallSamples : 0.0;
+        boolean keep = coverage >= TONE_COVERAGE_THRESHOLD;
+
+        mLog.info("[{}] Tone coverage (measurement only): call {}s ({}s before confirmation + {}s after), target tone " +
+                        "confirmed for {}s of the {}s after ({}%) - a {}% rule would {} this call", mChannelLabel,
+                String.format("%.1f", buffered + seconds), String.format("%.1f", buffered),
+                String.format("%.1f", seconds), String.format("%.1f", toneSeconds), String.format("%.1f", seconds),
+                Math.round(coverage * 100), Math.round(TONE_COVERAGE_THRESHOLD * 100), keep ? "KEEP" : "DROP");
     }
 
     /**
@@ -1417,6 +1526,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         //upload (15:55:39-15:59:00 alone: 9, all present in the Zello vault from another machine).
         mCallStartTimeMs = 0;
         mWatchdogTripped = false;
+        finishToneCoverage();
         broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.END, State.CALL, 0));
     }
 

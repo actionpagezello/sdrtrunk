@@ -5,6 +5,25 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.11.2] - 2026-11-03
+
+### Added - NBFM tone coverage measurement (logging only)
+
+- For every tone-filtered (CTCSS/DCS) NBFM call, one INFO line at call end: how much of the call's audio after
+  tone confirmation passed while the target tone was still confirmed, and whether a 60% coverage rule would KEEP
+  or DROP the call. Nothing is dropped. The ~250 ms buffered before confirmation is reported separately and left
+  out of the figure, so short calls aren't penalized. Search the log for "Tone coverage". Audubon 2026-11-03,
+  Marblehead Police: real calls carried 131.8 Hz throughout; idle-channel noise fragments were released on brief
+  chance confirmations.
+
+### Fixed
+
+- Zello: a broadcaster replaced before its staggered startup ran (a reconnect from the streaming window within
+  the first minutes after startup) was disposed, but its scheduled start still ran and it retried on a closed
+  connection every 2 minutes for the rest of the session ("WebSocket connection failed: closed"; Daly 2026-11-03,
+  Lawrence MA Fire and Londonderry NH Fire/Police, 155 times each). Streaming was unaffected - the replacement
+  connection worked - but the log filled with errors. A disposed broadcaster now never starts or reconnects.
+
 ## [0.6.2-ap-15.11.1] - 2026-11-03
 
 ### Added - RSP recovery

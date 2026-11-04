@@ -150,6 +150,15 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     private final AtomicBoolean mKicked = new AtomicBoolean(false);
     private final AtomicBoolean mReconnecting = new AtomicBoolean(false);
     private final AtomicBoolean mStopped = new AtomicBoolean(false);
+
+    /**
+     * AP-fork (ap-15.11.2): set by dispose(), never cleared.  BroadcastModel schedules a broadcaster's start() for
+     * staggered startup; when the broadcaster is replaced before that start runs (a reconnect from the streaming
+     * window), the old instance is disposed - its HttpClient closed - and the scheduled start() then ran anyway.  It
+     * cleared mStopped and retried on the closed client every 2 minutes for the rest of the session ("WebSocket
+     * connection failed: closed"; Daly 2026-11-03, Lawrence MA Fire and Londonderry NH Fire/Police, 155 times each).
+     */
+    private final AtomicBoolean mDisposed = new AtomicBoolean(false);
     private final AtomicInteger mSequence = new AtomicInteger(1);
     private final AtomicInteger mKickedCount = new AtomicInteger(0);
     private final AtomicInteger mReconnectAttempts = new AtomicInteger(0);
@@ -294,6 +303,12 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     @Override
     public void start()
     {
+        if(mDisposed.get())
+        {
+            mLog.info("{}Start skipped - this broadcaster was replaced and disposed before its scheduled start", ch());
+            return;
+        }
+
         mStopped.set(false);
         startWatchdog();
         setBroadcastState(BroadcastState.CONNECTING);
@@ -419,6 +434,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
     @Override
     public void dispose()
     {
+        mDisposed.set(true);
         stop();
 
         //Release the HttpClient's selector and worker threads.  BroadcastModel destroys and recreates broadcasters on
@@ -1339,6 +1355,11 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
     private void connectWebSocket()
     {
+        if(mDisposed.get())
+        {
+            return;
+        }
+
         if(!mReconnecting.compareAndSet(false, true))
         {
             return;
@@ -1466,7 +1487,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
     private void scheduleReconnect()
     {
-        if(mStopped.get())
+        if(mStopped.get() || mDisposed.get())
         {
             return;
         }
