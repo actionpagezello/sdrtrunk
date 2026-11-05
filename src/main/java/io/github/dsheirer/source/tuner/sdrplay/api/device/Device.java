@@ -163,6 +163,19 @@ public abstract class Device<T extends CompositeParameters<?,?>, R extends RspTu
     }
 
     /**
+     * AP-fork (ap-15.11.4): releases this device after the API reported it removed, with the device API locked, so
+     * that the API lists it again.
+     */
+    public void releaseAfterRemoval() throws SDRPlayException
+    {
+        if(selected())
+        {
+            mSelected = false;
+            getAPI().releaseLocked(getDeviceMemorySegment());
+        }
+    }
+
+    /**
      * Indicates if this device is initialized for use
      */
     public boolean isInitialized()

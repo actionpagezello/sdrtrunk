@@ -47,6 +47,18 @@ public interface IControlRsp
     void deviceRemoved();
 
     /**
+     * AP-fork (ap-15.11.4): releases the device that deviceRemoved() set aside, so that the SDRplay API offers it
+     * again.  A device this program has selected is not listed by the API until it is released (API specification
+     * v3.15: "Once a device has been selected, it is no longer available"; ReleaseDevice "makes that device available").
+     * Called once by RSP recovery, never from the API callback thread.
+     * @return true if a removed device was released
+     */
+    default boolean releaseRemovedDevice()
+    {
+        return false;
+    }
+
+    /**
      * Selected tuner for this RSP.
      * @return selected tuner.
      */

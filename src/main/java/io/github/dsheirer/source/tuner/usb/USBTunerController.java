@@ -123,6 +123,72 @@ public abstract class USBTunerController extends TunerController
     protected abstract int getTransferBufferSize();
 
     /**
+     * AP-fork (ap-15.11.4): indicates if a transfer runaway (see UsbTransferMonitor) restarts streaming on this tuner.
+     * Off by default; enabled by tuners whose expected transfer rate is known to match getSampleRate() /
+     * getBufferSampleCount().  Status summaries are logged for every USB tuner.
+     */
+    protected boolean isTransferRunawayRecoveryEnabled()
+    {
+        return false;
+    }
+
+    /**
+     * AP-fork (ap-15.11.4): expected USB transfers per second at the current sample rate, or 0 when unknown.
+     */
+    private double getExpectedTransfersPerSecond()
+    {
+        try
+        {
+            int samples = getBufferSampleCount();
+            double rate = getSampleRate();
+            return samples > 0 && rate > 0 ? rate / samples : 0;
+        }
+        catch(Exception e)
+        {
+            return 0;
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.11.4): restarts streaming after a transfer runaway: stops the transfers and the USB event
+     * thread, clears a halt on the bulk endpoint, and starts streaming again.  Channels keep their tuner channel
+     * sources, so they resume receiving samples without being restarted.  Runs on a pool thread - never on the USB
+     * event thread, which stopStreaming() joins.
+     */
+    private synchronized void restartStreamingAfterRunaway(String reason)
+    {
+        if(!mStreaming.get())
+        {
+            return;
+        }
+
+        mLog.warn("USB tuner transfer runaway - " + reason + " - restarting streaming on [" + getTunerType() + "]");
+
+        try
+        {
+            stopStreaming();
+
+            if(mDeviceHandle != null)
+            {
+                int status = LibUsb.clearHalt(mDeviceHandle, USB_BULK_TRANSFER_ENDPOINT);
+
+                if(status != LibUsb.SUCCESS)
+                {
+                    mLog.info("USB tuner clear halt on the bulk endpoint returned [" + LibUsb.errorName(status) + "]");
+                }
+            }
+
+            startStreaming();
+            mLog.info("USB tuner streaming restarted after transfer runaway on [" + getTunerType() + "]");
+        }
+        catch(Exception e)
+        {
+            mLog.error("Error restarting USB tuner streaming after transfer runaway - stopping tuner", e);
+            setErrorMessage("USB transfer runaway - restart failed");
+        }
+    }
+
+    /**
      * Sub-class method to perform additional device setup steps after the USB interface has been claimed and before any
      * transfer operations start.
      * @throws SourceException if there is an issue in configuring the device
@@ -531,6 +597,9 @@ public abstract class USBTunerController extends TunerController
         private int mTransferErrorCount = 0;
         private List<Transfer> mErrorTransfers = new ArrayList<>();
         private int mResubmitFailureLogCount = 0;
+        //AP-fork (ap-15.11.4): transfer runaway detection and status summaries
+        private final UsbTransferMonitor mTransferMonitor = new UsbTransferMonitor(
+                USBTunerController.this::getExpectedTransfersPerSecond, getTransferBufferSize());
 
         /**
          * Creates USB Transfers to carry the streaming sample data.  Transfer buffers are backed by native memory
@@ -706,6 +775,7 @@ public abstract class USBTunerController extends TunerController
         public void processTransfer(Transfer transfer)
         {
             mInProgressTransfers.remove(transfer);
+            monitorTransfer(transfer);
 
             if(mErrorTransfers.contains(transfer))
             {
@@ -750,6 +820,65 @@ public abstract class USBTunerController extends TunerController
                                 "status [" + transfer.status() + "] - " + LibUsb.errorName(transfer.status())));
                     }
                     break;
+            }
+        }
+
+        /**
+         * AP-fork (ap-15.11.4): feeds the transfer monitor and acts on what it returns.  Called on the USB event
+         * thread, so anything that stops streaming is handed to the thread pool.
+         */
+        private void monitorTransfer(Transfer transfer)
+        {
+            if(!mAutoResubmitTransfers)
+            {
+                return;
+            }
+
+            UsbTransferMonitor.Status status = switch(transfer.status())
+            {
+                case LibUsb.TRANSFER_COMPLETED -> UsbTransferMonitor.Status.COMPLETED;
+                case LibUsb.TRANSFER_TIMED_OUT -> UsbTransferMonitor.Status.TIMED_OUT;
+                case LibUsb.TRANSFER_STALL -> UsbTransferMonitor.Status.STALL;
+                case LibUsb.TRANSFER_ERROR -> UsbTransferMonitor.Status.ERROR;
+                case LibUsb.TRANSFER_CANCELLED -> UsbTransferMonitor.Status.CANCELLED;
+                default -> UsbTransferMonitor.Status.OTHER;
+            };
+
+            long now = System.currentTimeMillis();
+            UsbTransferMonitor.Action action = mTransferMonitor.record(status, transfer.actualLength(), now);
+
+            switch(action)
+            {
+                case LOG_SUMMARY -> mLog.info("USB tuner [" + getTunerType() + "] transfer status: " +
+                        mTransferMonitor.takeSummary(now));
+                case RESTART_STREAMING ->
+                {
+                    String reason = mTransferMonitor.getLastRunawayRate() + " transfers/s against an expected " +
+                            Math.round(getExpectedTransfersPerSecond()) + "/s (" + mTransferMonitor.takeSummary(now) +
+                            ")";
+
+                    if(isTransferRunawayRecoveryEnabled())
+                    {
+                        ThreadPool.CACHED.submit(() -> restartStreamingAfterRunaway(reason));
+                    }
+                    else
+                    {
+                        mLog.warn("USB tuner [" + getTunerType() + "] transfer runaway - " + reason +
+                                " - automatic restart not enabled for this tuner type");
+                    }
+                }
+                case STOP_TUNER ->
+                {
+                    mLog.error("USB tuner [" + getTunerType() + "] transfer runaway persists after " +
+                            UsbTransferMonitor.RESTART_LIMIT + " restarts in " +
+                            (UsbTransferMonitor.RESTART_LIMIT_WINDOW_MS / 60000) + " minutes - stopping the tuner");
+
+                    if(isTransferRunawayRecoveryEnabled())
+                    {
+                        ThreadPool.CACHED.submit(() -> setErrorMessage("USB transfer runaway - tuner stopped"));
+                    }
+                }
+                default -> {}
             }
         }
 

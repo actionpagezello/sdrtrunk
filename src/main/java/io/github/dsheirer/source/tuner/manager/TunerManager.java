@@ -123,7 +123,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
 
             if(mSDRplay.isAvailable())
             {
-                return mSDRplay.getDeviceInfos();
+                return mSDRplay.getDeviceInfosLocked();
             }
         }
         catch(SDRPlayException se)

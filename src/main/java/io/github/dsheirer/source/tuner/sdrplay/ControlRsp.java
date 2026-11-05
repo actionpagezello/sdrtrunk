@@ -43,6 +43,8 @@ public abstract class ControlRsp<T extends Device> implements IControlRsp
 {
     private static final Logger mLog = LoggerFactory.getLogger(ControlRsp.class);
     private T mDevice;
+    //AP-fork (ap-15.11.4): the device cleared by deviceRemoved(), kept for releaseRemovedDevice()
+    private volatile T mRemovedDevice;
     protected RspSampleRate mSampleRate = RspSampleRate.RATE_8_000;
     protected int mLNA;
     protected int mBasebandGainReduction;
@@ -199,6 +201,7 @@ public abstract class ControlRsp<T extends Device> implements IControlRsp
     @Override
     public void deviceRemoved()
     {
+        mRemovedDevice = mDevice;
         clearDevice();
 
         mStreamingLock.lock();
@@ -210,6 +213,46 @@ public abstract class ControlRsp<T extends Device> implements IControlRsp
         finally
         {
             mStreamingLock.unlock();
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.11.4): releases the removed device back to the SDRplay API - uninitialize if it was still
+     * initialized, then release with the device API locked.  Each step is attempted once and any error is logged.
+     */
+    @Override
+    public boolean releaseRemovedDevice()
+    {
+        T device = mRemovedDevice;
+        mRemovedDevice = null;
+
+        if(device == null)
+        {
+            return false;
+        }
+
+        if(device.isInitialized())
+        {
+            try
+            {
+                device.uninitialize();
+            }
+            catch(Throwable t)
+            {
+                mLog.info("RSP recovery: uninitialize of the removed device failed - continuing with release - " +
+                        t.getMessage());
+            }
+        }
+
+        try
+        {
+            device.releaseAfterRemoval();
+            return true;
+        }
+        catch(Throwable t)
+        {
+            mLog.warn("RSP recovery: release of the removed device failed - " + t.getMessage());
+            return false;
         }
     }
 

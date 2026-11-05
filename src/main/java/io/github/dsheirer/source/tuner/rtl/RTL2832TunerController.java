@@ -90,6 +90,16 @@ public class RTL2832TunerController extends USBTunerController
         return USB_TRANSFER_BUFFER_SIZE;
     }
 
+    /**
+     * AP-fork (ap-15.11.4): RTL transfers carry getBufferSampleCount() samples each, so a transfer rate far above the
+     * sample rate is a runaway (Daly 2026-11-04) and streaming is restarted.
+     */
+    @Override
+    protected boolean isTransferRunawayRecoveryEnabled()
+    {
+        return true;
+    }
+
     @Override
     public int getBufferSampleCount()
     {

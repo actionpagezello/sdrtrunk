@@ -27,6 +27,8 @@ import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.tuner.channel.TunerChannel;
 import io.github.dsheirer.source.tuner.channel.TunerChannelSource;
 import io.github.dsheirer.source.tuner.sdrplay.DiscoveredRspTuner;
+import io.github.dsheirer.source.tuner.sdrplay.IControlRsp;
+import io.github.dsheirer.source.tuner.sdrplay.RspTunerController;
 import io.github.dsheirer.source.tuner.sdrplay.api.device.DeviceInfo;
 import io.github.dsheirer.util.ThreadPool;
 import java.util.ArrayList;
@@ -99,12 +101,22 @@ public class RspRecoveryMonitor
      * @param tuner that the SDRplay API reported as removed
      * @param tunerChannels the tuner was sourcing at the time of removal
      */
-    public synchronized void rspRemoved(DiscoveredRspTuner<?> tuner, Set<TunerChannel> tunerChannels)
+    public void rspRemoved(DiscoveredRspTuner<?> tuner, Set<TunerChannel> tunerChannels)
+    {
+        rspRemoved(tuner, tunerChannels, getReleaser(tuner));
+    }
+
+    /**
+     * Records the removal with an explicit releaser (tests).
+     */
+    synchronized void rspRemoved(DiscoveredRspTuner<?> tuner, Set<TunerChannel> tunerChannels,
+                                 Supplier<Boolean> releaser)
     {
         String serial = tuner.getDeviceInfo().getSerialNumber();
         List<Channel> affected = getAffectedChannels(tunerChannels);
         PendingRecovery pending = mPending.computeIfAbsent(serial, s -> new PendingRecovery(serial, tuner.getId()));
         pending.channels().addAll(affected);
+        pending.setReleaser(releaser);
 
         List<String> names = new ArrayList<>();
 
@@ -121,6 +133,33 @@ public class RspRecoveryMonitor
             mRetryFuture = ThreadPool.SCHEDULED.scheduleAtFixedRate(this::retry, RETRY_INTERVAL_SECONDS,
                 RETRY_INTERVAL_SECONDS, TimeUnit.SECONDS);
         }
+    }
+
+    /**
+     * AP-fork (ap-15.11.4): the removed tuner's control, captured while the tuner still exists, so that the retry can
+     * release the device back to the SDRplay API.  Daly 2026-11-04: without the release the API never listed either
+     * removed RSP again (90 minutes of checks), while a restart of SDRTrunk - which releases everything - found both.
+     */
+    private static Supplier<Boolean> getReleaser(DiscoveredRspTuner<?> tuner)
+    {
+        try
+        {
+            if(tuner.hasTuner() && tuner.getTuner().getTunerController() instanceof RspTunerController<?> controller)
+            {
+                IControlRsp control = controller.getControlRsp();
+
+                if(control != null)
+                {
+                    return control::releaseRemovedDevice;
+                }
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.debug("RSP recovery: couldn't get the removed tuner's control", e);
+        }
+
+        return null;
     }
 
     /**
@@ -177,6 +216,33 @@ public class RspRecoveryMonitor
             }
 
             toCheck = new ArrayList<>(mPending.values());
+        }
+
+        //AP-fork (ap-15.11.4): release each removed device once, before listing, so that the API can offer it again
+        for(PendingRecovery pending: toCheck)
+        {
+            if(!pending.isReleaseAttempted())
+            {
+                pending.setReleaseAttempted();
+                Supplier<Boolean> releaser = pending.getReleaser();
+
+                if(releaser != null)
+                {
+                    boolean released = false;
+
+                    try
+                    {
+                        released = releaser.get();
+                    }
+                    catch(Throwable t)
+                    {
+                        mLog.warn("RSP recovery: error releasing [" + pending.id() + "] - " + t.getMessage());
+                    }
+
+                    mLog.info("RSP recovery: [" + pending.id() + "] " + (released ? "released back to the SDRplay API " +
+                            "so that it can be listed again" : "had no device to release"));
+                }
+            }
         }
 
         List<DeviceInfo> deviceInfos;
@@ -309,6 +375,8 @@ public class RspRecoveryMonitor
         private final String mId;
         private final Set<Channel> mChannels = new LinkedHashSet<>();
         private int mAttempts;
+        private Supplier<Boolean> mReleaser;
+        private boolean mReleaseAttempted;
 
         PendingRecovery(String serial, String id)
         {
@@ -339,6 +407,30 @@ public class RspRecoveryMonitor
         int attempts()
         {
             return mAttempts;
+        }
+
+        void setReleaser(Supplier<Boolean> releaser)
+        {
+            if(releaser != null)
+            {
+                mReleaser = releaser;
+                mReleaseAttempted = false;
+            }
+        }
+
+        Supplier<Boolean> getReleaser()
+        {
+            return mReleaser;
+        }
+
+        boolean isReleaseAttempted()
+        {
+            return mReleaseAttempted;
+        }
+
+        void setReleaseAttempted()
+        {
+            mReleaseAttempted = true;
         }
     }
 }

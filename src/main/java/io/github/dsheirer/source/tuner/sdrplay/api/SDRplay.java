@@ -290,6 +290,42 @@ public class SDRplay
     }
 
     /**
+     * AP-fork (ap-15.11.4): releases a device with the device API locked, as the API specification describes for a
+     * device that is to be selected again.
+     */
+    public void releaseLocked(MemorySegment memorySegment) throws SDRPlayException
+    {
+        lockDeviceApi();
+
+        try
+        {
+            release(memorySegment);
+        }
+        finally
+        {
+            unlockDeviceApi();
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.11.4): lists the available devices with the device API locked (API specification: lock "prior to
+     * calling sdrplay_api_GetDevices()").
+     */
+    public List<DeviceInfo> getDeviceInfosLocked() throws SDRPlayException
+    {
+        lockDeviceApi();
+
+        try
+        {
+            return getDeviceInfos();
+        }
+        finally
+        {
+            unlockDeviceApi();
+        }
+    }
+
+    /**
      * Retrieves the initial composite parameters for each device.  This should only be invoked once, on
      * startup, for each device.  Changes made to the device parameters should invoke update() method to apply changes.
      *

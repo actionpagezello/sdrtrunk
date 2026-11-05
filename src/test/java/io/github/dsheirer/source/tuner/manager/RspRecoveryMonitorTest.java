@@ -103,6 +103,53 @@ public class RspRecoveryMonitorTest
     }
 
     /**
+     * Test (ap-15.11.4): the removed device is released once, before the first listing, and the API - which doesn't
+     * list a device this program still has selected (Daly 2026-11-04) - lists it again afterwards.
+     */
+    @Test
+    void testReleasesRemovedDeviceBeforeListing()
+    {
+        AtomicInteger releases = new AtomicInteger();
+        AtomicInteger adds = new AtomicInteger();
+        List<String> order = new ArrayList<>();
+        DiscoveredRsp1bTuner tuner = new DiscoveredRsp1bTuner(new DeviceInfo(DeviceType.RSP1B, SERIAL),
+            ChannelizerType.POLYPHASE);
+
+        RspRecoveryMonitor monitor = new RspRecoveryMonitor(() -> {
+                order.add("list");
+                return releases.get() > 0 ? List.of(new DeviceInfo(DeviceType.RSP1B, SERIAL)) : List.of();
+            }, id -> false, deviceInfo -> { adds.incrementAndGet(); return 1; });
+
+        monitor.rspRemoved(tuner, new TreeSet<>(), () -> { order.add("release"); releases.incrementAndGet(); return true; });
+        monitor.retry();
+
+        assertEquals(List.of("release", "list"), order, "Released before the first listing");
+        assertEquals(1, adds.get(), "Listed again after the release and re-added");
+        assertEquals(0, monitor.getPendingCount());
+    }
+
+    /**
+     * Test (ap-15.11.4): the release is attempted only once even if the device doesn't come back, and an error in it
+     * doesn't stop the checks.
+     */
+    @Test
+    void testReleaseAttemptedOnce()
+    {
+        AtomicInteger releases = new AtomicInteger();
+        DiscoveredRsp1bTuner tuner = new DiscoveredRsp1bTuner(new DeviceInfo(DeviceType.RSP1B, SERIAL),
+            ChannelizerType.POLYPHASE);
+        RspRecoveryMonitor monitor = new RspRecoveryMonitor(List::of, id -> false, deviceInfo -> 1);
+
+        monitor.rspRemoved(tuner, new TreeSet<>(), () -> { releases.incrementAndGet(); throw new IllegalStateException("api"); });
+        monitor.retry();
+        monitor.retry();
+        monitor.retry();
+
+        assertEquals(1, releases.get());
+        assertEquals(1, monitor.getPendingCount(), "Still checking");
+    }
+
+    /**
      * Test: a failed re-add is retried on the next check.
      */
     @Test

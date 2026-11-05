@@ -5,6 +5,29 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.11.4] - 2026-11-04
+
+### Fixed - RSP recovery re-attaches the removed RSP
+
+- RSP recovery (15.11.1) never saw a removed RSP come back: SDRTrunk stopped using the device but never released
+  it, and the SDRplay API doesn't list a device a program still has selected. Daly 2026-11-04: both RSP1Bs were
+  reported removed (17:57, 18:42), the recovery checked for 90 minutes without seeing either, and a restart of
+  SDRTrunk found both at once. On its first check (30 s after the removal) the recovery now releases the removed
+  device back to the API - once, off the API callback thread, errors logged - before listing devices. The device
+  list is read with the device API locked, as the SDRplay specification recommends.
+
+### Added - USB transfer runaway recovery (RTL-2832)
+
+- Daly 2026-11-04 15:19: an RTL-2832 at 2.4 MSPS (73 transfers/s) started completing ~17,500 transfers/s and kept
+  it up for four hours; its channels (North Andover Fire) got nothing until SDRTrunk was restarted. When transfers
+  arrive at more than 10x the rate the sample rate allows (and over 500/s) for 3 seconds, the RTL's streaming is
+  restarted (transfers and USB event thread stopped, endpoint halt cleared, streaming started again); channels keep
+  their sources. After 3 restarts in 10 minutes the tuner is stopped with an error instead. Logged as "USB tuner
+  transfer runaway".
+- Every USB tuner logs a once-a-minute summary of its transfer statuses (completed, short, empty, timed out,
+  stall, error, cancelled) whenever anything other than full-length completed transfers occurred. Automatic
+  restart is enabled for RTL-2832 only.
+
 ## [0.6.2-ap-15.11.3] - 2026-11-04
 
 ### Added - Zello incident lines and a machine-wide connection limit
