@@ -3,7 +3,71 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.10.7 (2026-10-30) — state as of 2026-10-31 08:00
+## Current Release: ap-15.11.3 (2026-11-04) — state as of 2026-11-04 22:30
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.11.3\sdr-trunk-windows-x86_64-v0.6.2-ap-15.11.3.zip`
+- Tree `37c77e84a2f966fc5c372eb1e7076219f2029109`, pushed 2026-11-04 as `8b2956b9` (guard on the tree hash;
+  commit hashes differ between machines).
+- **Running 15.11.3:** Daly, Somerville, Audubon (since 11-04 ~08:10-08:30). Cambridge, Somerville earlier on 15.11.
+- **Next build: ap-15.11.4** (planned, not built) — see OPEN.
+
+### Releases 2026-10-31 to 11-04 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
+| Version | Tree | Pushed | What |
+|---|---|---|---|
+| 15.10.8/15.10.9 | `fafb4a32` | `5f174ddd` | LSM decoding improvements (Lowell, Rockingham, Cambridge confirmed) |
+| 15.10.10 | `575ce837` | `15f7b065` | Per-channel JMBE settings (JMBE 2.1.x; comfort noise default 0.05, migrated once from 1.0); upstream #2554 #2550 #2553 #2551 #2555 #2547 #2467 #2470 |
+| 15.11 | `b364c02b` | `984ad3b5` | Upstream channelizer #2527/#2534/#2538, P25 Phase 2 #2525, HydraSDR #2541, bladeRF #2543/#2545, waterfall #2546, AM #2556. Kept: Dispatcher drop-oldest (+ `offer()`), fork NBFM channel filter (upstream's moved Brookline squelch decisions) |
+| 15.11.1 | `f5c5ddf2` | `8ffe9c8f` | RSP recovery (`RspRecoveryMonitor`), SDRplay API open-failure logging (INFO with no RSP on USB, ERROR with advice otherwise), upstream #2568 mixed-radix FFT and #2570 SDR# I/Q recording (recorder write/close serialized — fixes Cambridge `ClosedChannelException`) |
+| 15.11.2 | `ac2cf6a8` | `fa7120be` | NBFM "Tone coverage (measurement only)" INFO line per tone-filtered call; Zello: a disposed broadcaster never starts/reconnects (Daly stale-broadcaster loop, 155 errors x 3 channels) |
+| 15.11.3 | `37c77e84` | `8b2956b9` | "ZELLO INCIDENT" structured lines (UTC, machine, network, user, channel, command+seq, response, close code, connection age, reconnect timing); machine-wide Zello connect limit 9/min (Zello: 10/min/IP); "Zello Consumer" relabeled "Zello Friends & Family" (display only) |
+
+### Findings 2026-11-03/04
+- **Daly 11-04 outage (15.11.3):** (1) 15:19 RTL-2832 Bus 1 Port 9 entered a USB loop — ~17,500 buffers/s discarded
+  (normal 73/s) until shutdown; North Andover Fire (453.1875) and 453.2625 dead from 15:19. (2) 17:57 SDRplay API
+  reported RSP1B 24050F5260 removed (16 channels: Lawrence, Salem NH, Windham, Derry, Londonderry, Hudson,
+  Haverhill); (3) 18:42 RSP1B 24040A4B60 removed (6: Andover, North Andover Police, Methuen). Windows event log had
+  no USB/PnP events. A restart of SDRTrunk alone brought all three back -> software, not hardware or the API service.
+  RSP recovery checked every 30 s for 90 min and never saw the RSPs: **bug** — `ControlRsp.deviceRemoved()` clears
+  the device without `sdrplay_api_ReleaseDevice`, so the API keeps it selected and `GetDevices` never lists it
+  (spec v3.15: "Once a device has been selected, it is no longer available"; ReleaseDevice "makes that device
+  available"). RTL/USB code unchanged in 15.11.x. 24050F5260 removals: 11-01 11:12, 11-03 14:14 (15.10.7), 11-04.
+  13:06 network outage at Daly (all Zello reset, ConnectException, Rdio upload fail) recovered by 13:10.
+- **Tone coverage (measurement):** 60% rule drops real weak calls (Beverly Police 08:01:56 "903, can you back her?"
+  10.7 s at 56%; 53 long Beverly drops on 11-04). Candidate "short-call rule": drop only if coverage < 60% AND
+  < 2 s after confirmation. Results: overnight 3 machines 92 drops (12 checked by audio = noise); Somerville day
+  15,400 calls -> 554 (3.6%), Audubon day 8,750 -> 201 (2.3%, 23 on Beverly, unverified). Everett Police data
+  bursts carry the tone (100% coverage) — a coverage rule can't remove them; MDC1200 aux decoder to be enabled on
+  Everett to identify them. Armen: wait for more logs before adding the short-call verdict.
+- **Replay harness quirk:** `RPF2` with 2500-sample chunks makes the CTCSS detector alternate 131.8/151.4 Hz even on
+  a clean synthetic tone; 1000-5000 other sizes fine. Live unaffected. Unexplained (harness or resampler) — check
+  whether earlier NBFM replays used 2500 (`runf.sh` did).
+- **Zello:** Somerville 13.5 h: 23 disconnects (all 1006, no reason), all reconnected; incident file for Antwan
+  (Zello support) `logs\zello_incidents_SDR-8_2026-11-04.txt` (incidents A/B/C). Audubon: Lynn MA Police added 16:37,
+  invalid credentials twice then connected 16:39. Daly aliases stream to MISSING broadcasts (Jimmy Test Channel,
+  Rockingham County, Hillsborough County) — cleanup.
+- **Marblehead Police (Audubon):** reception fine (34-38 dB, 131.8 Hz) when active; idle bursts are the 460.175
+  DMR neighbour opening the squelch. Noise squelch can't be made stricter (defaults are the minimum).
+- **Audubon:** Wilmington Fire (154.2875) and Atlantic Amb 4 (152.285) "No Tuner Available" on every start; ingest
+  HTTP 500 "could not store audio" 08:44-08:53 (5) and 502 06:54; log 517 MB/day from CTCSS DEBUG (Lynnfield
+  Police 454k lines — squelch open on noise) — set CTCSS_DCS diagnostics to INFO.
+- **Somerville:** RTL Bus 1 Port 5.1.1 config error on every start (saved 460.6 MHz vs max 160.545 MHz).
+- **TLRTimeSync on Daly** fails ~5,500 times: `thin.actionpagezello.com` no such host — hostname needs updating
+  (check other machines).
+
+### OPEN
+- **ap-15.11.4 (planned):** (1) RSP recovery releases the removed device (`sdrplay_api_ReleaseDevice`, once, off
+  the API callback thread, errors caught) so the API lists it again; (2) LockDeviceApi/UnlockDeviceApi around the
+  recovery's GetDevices; (3) RTL runaway detector (buffer rate >> sample rate) -> log transfer status, restart the
+  tuner and its channels; (4) rate-limited logging of non-COMPLETED USB transfer statuses. Hardware test: unplug an
+  RSP / RTL for a minute on a watched machine.
+- Tone coverage: more logs, then a measure-only short-call verdict; per-channel enforcement switch later.
+- MDC1200 on Everett Police (Somerville) to identify the data bursts.
+- Zello support (Antwan): send incident file; answer "cross-linked channels still failing?".
+- Somerville Police NBFM rejoins full-day check (15.11); Rdio Scanner retry on 5xx; Chelsea Police - Pri repeated
+  headers; Audubon RTL wideband recordings as a channelizer A/B test; Salem State 10/30 recordings (Armen checking).
+- RSP recovery and RTL recovery are untested on hardware.
+
+## Previous release: ap-15.10.7 (2026-10-30) — state as of 2026-10-31 08:00
 
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.10.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.10.7.zip`
 - Tree `1930b609c57991595530c793e42406c21dc7e110`, pushed 2026-10-30 as `d91eb1d4` (guard on the tree hash).
