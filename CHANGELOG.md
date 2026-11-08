@@ -5,6 +5,27 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-15.11.5] - 2026-11-07
+
+### Fixed - a tuner whose saved frequency is outside its frequency range starts without its settings
+
+- Baker 2026-11-04 22:56: two RTL-2832s had a frequency range set while they were running - Port 6.2 to 150-170 MHz
+  while tuned to 483.5125 MHz (the middle of the Danvers/Salem/Manchester fire cluster), Port 6.1.1 to a 150 MHz
+  minimum while parked at 101.1 MHz. On the next start the saved frequency was re-tuned against the new range, failed
+  ("Frequency [483512500] is above the maximum [170000000]"), and the rest of the tuner configuration was never
+  applied - no gain settings, no configured sample rate, no auto-PPM setting. From then on Salem Fire and the
+  channels around it ran with the squelch held open on noise (about 35,600 tone lines an hour per channel), each
+  call started with held hiss, and Baker's log grew to 1.7 GB a day.
+- The frequency range is now applied first; a saved frequency outside it is moved inside (to the nearer edge, inset
+  by half the usable bandwidth) and logged as a WARN "saved frequency ... is outside its frequency range ... moved
+  to ...". Frequency and frequency-correction failures are logged and no longer stop the tuner's sample rate and
+  gain from being applied. An inverted range (minimum not below the maximum) is ignored with a WARN. Applies to every
+  tuner type.
+
+### Upstream
+
+- #2580: the Playlist Editor aliases tab identifier view sorts identifiers by protocol, then numeric value.
+
 ## [0.6.2-ap-15.11.4] - 2026-11-04
 
 ### Fixed - RSP recovery re-attaches the removed RSP

@@ -3,15 +3,15 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.11.3 (2026-11-04) — state as of 2026-11-04 22:30
+## Current Release: ap-15.11.4 (2026-11-05) — state as of 2026-11-07
 
-- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.11.3\sdr-trunk-windows-x86_64-v0.6.2-ap-15.11.3.zip`
-- Tree `37c77e84a2f966fc5c372eb1e7076219f2029109`, pushed 2026-11-04 as `8b2956b9` (guard on the tree hash;
-  commit hashes differ between machines).
-- **Running 15.11.3:** Daly, Somerville, Audubon (since 11-04 ~08:10-08:30). Cambridge, Somerville earlier on 15.11.
-- **Next build: ap-15.11.4** (planned, not built) — see OPEN.
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.11.4\sdr-trunk-windows-x86_64-v0.6.2-ap-15.11.4.zip`
+- Tree `4b011321`, pushed as `ed1d89c5` (guard on the tree hash; commit hashes differ between machines).
+- **Running:** Daly, Somerville, Audubon on 15.11.3 or later (confirm 15.11.4 from their next logs). Baker (Roger Baker, DESKTOP-3NNNO6F) on 15.11.3 since 11-04 22:56.
+- **Next build: ap-15.11.5** (patch `ap-15.11.5.patch` delivered 2026-11-07, not built) — tuner configuration
+  apply fix (Baker Salem Fire) + upstream #2580.
 
-### Releases 2026-10-31 to 11-04 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
+### Releases 2026-10-31 to 11-07 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
 | Version | Tree | Pushed | What |
 |---|---|---|---|
 | 15.10.8/15.10.9 | `fafb4a32` | `5f174ddd` | LSM decoding improvements (Lowell, Rockingham, Cambridge confirmed) |
@@ -20,6 +20,8 @@
 | 15.11.1 | `f5c5ddf2` | `8ffe9c8f` | RSP recovery (`RspRecoveryMonitor`), SDRplay API open-failure logging (INFO with no RSP on USB, ERROR with advice otherwise), upstream #2568 mixed-radix FFT and #2570 SDR# I/Q recording (recorder write/close serialized — fixes Cambridge `ClosedChannelException`) |
 | 15.11.2 | `ac2cf6a8` | `fa7120be` | NBFM "Tone coverage (measurement only)" INFO line per tone-filtered call; Zello: a disposed broadcaster never starts/reconnects (Daly stale-broadcaster loop, 155 errors x 3 channels) |
 | 15.11.3 | `37c77e84` | `8b2956b9` | "ZELLO INCIDENT" structured lines (UTC, machine, network, user, channel, command+seq, response, close code, connection age, reconnect timing); machine-wide Zello connect limit 9/min (Zello: 10/min/IP); "Zello Consumer" relabeled "Zello Friends & Family" (display only) |
+| 15.11.4 | `4b011321` | `ed1d89c5` | RSP recovery releases the removed RSP (`sdrplay_api_ReleaseDevice`) before listing, device list read under the API lock; RTL-2832 USB transfer runaway restart (10x expected rate for 3 s; stop after 3 restarts/10 min); per-minute USB transfer status summary when abnormal |
+| 15.11.5 | (see patch) | not yet | Tuner config apply: range first, saved frequency outside the range moved inside (WARN), frequency/PPM failures no longer skip sample rate and gain (Baker RTL 6.2/6.1.1); upstream #2580 alias identifier sort |
 
 ### Findings 2026-11-03/04
 - **Daly 11-04 outage (15.11.3):** (1) 15:19 RTL-2832 Bus 1 Port 9 entered a USB loop — ~17,500 buffers/s discarded
@@ -54,12 +56,25 @@
 - **TLRTimeSync on Daly** fails ~5,500 times: `thin.actionpagezello.com` no such host — hostname needs updating
   (check other machines).
 
+### Findings 2026-11-05/07
+- **Baker Salem Fire (15.11.3, 11-04 22:56 restart):** RTL Port 6.2 range 150-170 MHz with saved 483.5125 MHz and
+  Port 6.1.1 min 150 MHz with saved 101.1 MHz -> `TunerController.apply` threw at the frequency-correction step and
+  the RTL sample rate and gain were never applied (both restarts 22:56 and 23:03). From then Danvers Fire, Salem
+  Fire, Salem Ch2, Manchester BTS, Peabody Fire, Lynn FG2, Salem Ch5 squelch never open/close (~35,600 tone
+  lines/hour each, 1.7 GB/day log); Salem Fire idle tone 7-11 dB vs 23 dB before, 768 ms of held hiss at call
+  start vs 192 ms. Channel sourcing respects the range (`PolyphaseChannelSourceManager.isTunable`), so 6.2 itself
+  can't take UHF; the UHF cluster 6.2 used to serve moved to another tuner - which one not in the log (check the
+  Tuners tab; 6.1.1 runs unconfigured too). Ranges are intentional (VHF to the RSP1B). Fixed in 15.11.5;
+  workaround: set 6.2 / 6.1.1 frequency inside the range and restart.
+- **Everett MDC1200:** 216 IDs (42 units); 114 at voice start, 93 burst-only short calls, 9 split. Options offered
+  (flag/drop burst-only, mute the burst, unit ID as FROM) - Armen to choose.
+- **Upstream review:** #2580 in 15.11.5; NXDN #2529/#2577 apply clean, not taken; skip #2277, #2578. Airspy:
+  keep current driver, revisit jAirspy in 2-3 weeks.
+
 ### OPEN
-- **ap-15.11.4 (planned):** (1) RSP recovery releases the removed device (`sdrplay_api_ReleaseDevice`, once, off
-  the API callback thread, errors caught) so the API lists it again; (2) LockDeviceApi/UnlockDeviceApi around the
-  recovery's GetDevices; (3) RTL runaway detector (buffer rate >> sample rate) -> log transfer status, restart the
-  tuner and its channels; (4) rate-limited logging of non-COMPLETED USB transfer statuses. Hardware test: unplug an
-  RSP / RTL for a minute on a watched machine.
+- **ap-15.11.5:** build, deploy to Baker first (expect the WARN "saved frequency ... moved to" for 6.2 and 6.1.1,
+  squelch on Salem Fire opening/closing again, log size back to normal).
+- Hardware test of 15.11.4 RSP/RTL recovery: unplug an RSP / RTL for a minute on a watched machine.
 - Tone coverage: more logs, then a measure-only short-call verdict; per-channel enforcement switch later.
 - MDC1200 on Everett Police (Somerville) to identify the data bursts.
 - Zello support (Antwan): send incident file; answer "cross-linked channels still failing?".
