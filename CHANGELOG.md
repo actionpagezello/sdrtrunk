@@ -5,6 +5,33 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-16.0] - 2026-11-08
+
+Test build for Baker, Daly and Somerville. The rest of the fleet stays on 15.11.5 until it has run cleanly.
+
+### Upstream tuner libraries (replace the fork's built-in drivers)
+
+- #2590 RTL-SDR (Nooelec, RTL-SDR Blog): jRTL 1.4.0.1 - librtlsdr from rtl-sdr-blog with libusb, both bundled.
+  RTL gain settings are now one gain value plus AGC; saved master/LNA/mixer gains are converted on first load.
+- #2595 SDRplay RSP: jsdrplay 3.15.3 - frequency, gain and sample-rate changes wait for the previous change to
+  finish and report an error if the SDRplay API rejects one. Needs the SDRplay API 3.15+ installed (as before).
+- #2573 Airspy: jAirspy 1.0.12. #2593 Airspy HF+: jAirspyHF 1.8.1. #2597 HackRF: jHackRF; #2598 HackRF bias-T.
+- #2587 HydraSDR: jHydraSDR 1.1.4.
+- Tuner IDs are unchanged (RTL "USB Bus:x Port:y", RSP "RSP1B SER#..."), so saved tuner settings still match.
+
+### Removed (re-add only if testing shows they are needed)
+
+- RSP recovery monitor (15.11.1/15.11.4) and the fork's SDRplay API startup messages - jsdrplay releases a
+  removed RSP itself; a removed RSP still needs an SDRTrunk restart to come back.
+- RTL USB transfer runaway restart (15.11.4) - its code was part of the old driver.
+- The "TUNER REMOVED FROM SYSTEM" WARN (with the channel count) is kept.
+
+### Kept
+
+- 15.11.5 tuner-settings fix - upstream still stops applying a tuner's settings when its saved frequency is
+  outside its range. Change: with the bandwidth still unknown (an RSP sets its sample rate afterwards) the
+  frequency now moves to the middle of the range instead of the edge.
+
 ## [0.6.2-ap-15.11.5] - 2026-11-07
 
 ### Fixed - a tuner whose saved frequency is outside its frequency range starts without its settings

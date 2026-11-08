@@ -160,6 +160,7 @@ public class TunerControllerApplyTest
         assertEquals(168_920_000, TunerController.moveIntoRange(483_512_500, 150_000_000, 170_000_000, 1_080_000));
         assertEquals(151_080_000, TunerController.moveIntoRange(101_100_000, 150_000_000, 170_000_000, 1_080_000));
         assertEquals(150_500_000, TunerController.moveIntoRange(483_512_500, 150_000_000, 151_000_000, 1_080_000));
-        assertEquals(170_000_000, TunerController.moveIntoRange(483_512_500, 150_000_000, 170_000_000, 0));
+        assertEquals(160_000_000, TunerController.moveIntoRange(483_512_500, 150_000_000, 170_000_000, 0),
+                "Unknown bandwidth (RSP before its sample rate is set) - middle of the range");
     }
 }

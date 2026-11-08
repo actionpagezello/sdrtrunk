@@ -117,11 +117,6 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
         mUserPreferences = userPreferences;
         mChannelMetadataModel = new ChannelMetadataModel();
 
-        //AP-fork (ap-15.11.1): RSP recovery restarts the channels of a removed RSP when it returns
-        if(tunerManager != null)
-        {
-            tunerManager.setChannelProcessingManager(this);
-        }
     }
 
     /**

@@ -26,8 +26,6 @@ import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.DiscoveredUSBTuner;
 import io.github.dsheirer.source.tuner.manager.IDiscoveredTunerStatusListener;
 import io.github.dsheirer.source.tuner.manager.TunerStatus;
-import io.github.dsheirer.source.tuner.channel.TunerChannel;
-import io.github.dsheirer.source.tuner.sdrplay.DiscoveredRspTuner;
 import io.github.dsheirer.source.tuner.sdrplay.rspDuo.DiscoveredRspDuoTuner1;
 import io.github.dsheirer.source.tuner.sdrplay.rspDuo.DiscoveredRspDuoTuner2;
 import java.awt.EventQueue;
@@ -35,9 +33,6 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.function.BiConsumer;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -69,7 +64,6 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
     private DecimalFormat mFrequencyFormat = new DecimalFormat("0.00000");
     private Lock mLock = new ReentrantLock();
     private TunerConfigurationManager mTunerConfigurationManager;
-    private BiConsumer<DiscoveredRspTuner<?>,Set<TunerChannel>> mRspRemovalListener;
 
     /**
      * Constructs an instance
@@ -366,15 +360,6 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
         }
     }
 
-    /**
-     * AP-fork (ap-15.11.1): receives each RSP tuner the SDRplay API reports as removed, with the tuner channels it
-     * was sourcing, so that it can be re-attached when it returns (see RspRecoveryMonitor).
-     */
-    public void setRspRemovalListener(BiConsumer<DiscoveredRspTuner<?>,Set<TunerChannel>> listener)
-    {
-        mRspRemovalListener = listener;
-    }
-
     @Override
     public void tunerStatusUpdated(DiscoveredTuner discoveredTuner, TunerStatus previous, TunerStatus current)
     {
@@ -401,14 +386,12 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
             //Daly 2026-09-21 08:05:21: the RSP1B dropped out carrying 13 channels and eleven Zello feeds went
             //silent for just under two hours, with nothing at WARN or ERROR anywhere in the log.
             int removedChannelCount = -1;
-            Set<TunerChannel> removedTunerChannels = new TreeSet<>();
 
             try
             {
                 if(discoveredTuner.hasTuner() && discoveredTuner.getTuner().getChannelSourceManager() != null)
                 {
                     removedChannelCount = discoveredTuner.getTuner().getChannelSourceManager().getTunerChannelCount();
-                    removedTunerChannels.addAll(discoveredTuner.getTuner().getChannelSourceManager().getTunerChannels());
                 }
             }
             catch(Exception e)
@@ -416,24 +399,7 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
                 //Counting channels is best-effort - never let it suppress the warning below
             }
 
-            boolean recoverable = discoveredTuner instanceof DiscoveredRspTuner<?> && mRspRemovalListener != null;
-
-            if(recoverable)
-            {
-                mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] while carrying [" +
-                    Math.max(removedChannelCount, 0) + "] channel(s) - reported by the SDRplay API, not necessarily a " +
-                    "physical disconnect. RSP recovery will re-attach it and restart its channels if it comes back.");
-
-                try
-                {
-                    mRspRemovalListener.accept((DiscoveredRspTuner<?>)discoveredTuner, removedTunerChannels);
-                }
-                catch(Exception e)
-                {
-                    mLog.error("Error registering RSP tuner removal for recovery", e);
-                }
-            }
-            else if(removedChannelCount > 0)
+            if(removedChannelCount > 0)
             {
                 //AP-fork: the previous text said the channels would restart "when the device returns". They do not:
                 //RSP tuners are discovered once, at startup (TunerManager.discoverSdrPlayTuners()), and nothing looks
@@ -458,7 +424,7 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
 
             //Special handling for RSPduo Tuner 1 configured as master - remove the slave tuner also
             if(discoveredTuner instanceof DiscoveredRspDuoTuner1 master1 &&
-               master1.getDeviceInfo().getDeviceSelectionMode().isMasterMode())
+               master1.getDeviceSelectionMode().isMasterMode())
             {
                 DiscoveredTuner slave2 = getDiscoveredTuner(master1.getSlaveId());
 
@@ -471,7 +437,7 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
             }
             //Special handling for RSPduo Tuner 2 configured as slave - remove the master tuner also
             else if(discoveredTuner instanceof DiscoveredRspDuoTuner2 slave2 &&
-                    slave2.getDeviceInfo().getDeviceSelectionMode().isSlaveMode())
+                    slave2.getDeviceSelectionMode().isSlaveMode())
             {
                 String masterId = slave2.getMasterId();
 

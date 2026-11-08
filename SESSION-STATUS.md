@@ -8,8 +8,10 @@
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.11.4\sdr-trunk-windows-x86_64-v0.6.2-ap-15.11.4.zip`
 - Tree `4b011321`, pushed as `ed1d89c5` (guard on the tree hash; commit hashes differ between machines).
 - **Running:** Daly, Somerville, Audubon on 15.11.3 or later (confirm 15.11.4 from their next logs). Baker (Roger Baker, DESKTOP-3NNNO6F) on 15.11.3 since 11-04 22:56.
-- **Next build: ap-15.11.5** (patch `ap-15.11.5.patch` delivered 2026-11-07, not built) — tuner configuration
-  apply fix (Baker Salem Fire) + upstream #2580.
+- **15.11.5** built and pushed 2026-11-07 (`7ee1c957`, tree `721115e0`); running on Baker since 11-07 22:57.
+- **Next build: ap-16.0** (patch delivered 2026-11-08) — upstream tuner libraries (jRTL, jsdrplay, jAirspy,
+  jAirspyHF, jHackRF, jHydraSDR 1.1.4); RSP recovery and RTL runaway restart removed. Test on Baker, Daly,
+  Somerville only.
 
 ### Releases 2026-10-31 to 11-07 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
 | Version | Tree | Pushed | What |
@@ -21,7 +23,8 @@
 | 15.11.2 | `ac2cf6a8` | `fa7120be` | NBFM "Tone coverage (measurement only)" INFO line per tone-filtered call; Zello: a disposed broadcaster never starts/reconnects (Daly stale-broadcaster loop, 155 errors x 3 channels) |
 | 15.11.3 | `37c77e84` | `8b2956b9` | "ZELLO INCIDENT" structured lines (UTC, machine, network, user, channel, command+seq, response, close code, connection age, reconnect timing); machine-wide Zello connect limit 9/min (Zello: 10/min/IP); "Zello Consumer" relabeled "Zello Friends & Family" (display only) |
 | 15.11.4 | `4b011321` | `ed1d89c5` | RSP recovery releases the removed RSP (`sdrplay_api_ReleaseDevice`) before listing, device list read under the API lock; RTL-2832 USB transfer runaway restart (10x expected rate for 3 s; stop after 3 restarts/10 min); per-minute USB transfer status summary when abnormal |
-| 15.11.5 | (see patch) | not yet | Tuner config apply: range first, saved frequency outside the range moved inside (WARN), frequency/PPM failures no longer skip sample rate and gain (Baker RTL 6.2/6.1.1); upstream #2580 alias identifier sort |
+| 15.11.5 | `721115e0` | `7ee1c957` | Tuner config apply: range first, saved frequency outside the range moved inside (WARN), frequency/PPM failures no longer skip sample rate and gain (Baker RTL 6.2/6.1.1); upstream #2580 alias identifier sort |
+| 16.0 | (see patch) | not yet | Upstream tuner libraries #2573 #2590 #2593 #2595 #2597 #2598 #2587; RSP recovery + RTL runaway restart removed; 15.11.5 apply fix kept (middle of range when bandwidth unknown). Test: Baker, Daly, Somerville |
 
 ### Findings 2026-11-03/04
 - **Daly 11-04 outage (15.11.3):** (1) 15:19 RTL-2832 Bus 1 Port 9 entered a USB loop — ~17,500 buffers/s discarded
@@ -71,9 +74,18 @@
 - **Upstream review:** #2580 in 15.11.5; NXDN #2529/#2577 apply clean, not taken; skip #2277, #2578. Airspy:
   keep current driver, revisit jAirspy in 2-3 weeks.
 
+### Findings 2026-11-07/08 (Baker tuner layout)
+- 15.11.5 fixed the 483 MHz channels (squelch closes again). Armen's range edits ~22:20 11-07 moved VHF to the
+  RSP1B; on 15.11.3 the RSP1B's settings failed (saved 484.4 MHz vs 150-160) -> VHF "No Tuner Available"; on 15.11.5
+  VHF ran on the RSP1B and got only noise (Hamilton noise floor 0.124 vs 0.0028 on an RTL 11-04; spectrum flat).
+  Not gain/antenna/bias-T/notch (Armen). Unexplained - candidate: fork RSP update queue (Device.UpdateRequestManager)
+  waits forever for a completion event; jsdrplay (16.0) replaces it. Test on 16.0: RSP1B 150-160.
+- Working layout (11-08): RSP1B 480-490 (all 482-487 MHz channels), Nooelecs for VHF (Hamilton pair; Ipswich), 460s,
+  470s. One RTL (2.4 MSPS, ~2.2 MHz usable) can't hold 482.16-487.39 (5.2 MHz).
+
 ### OPEN
-- **ap-15.11.5:** build, deploy to Baker first (expect the WARN "saved frequency ... moved to" for 6.2 and 6.1.1,
-  squelch on Salem Fire opening/closing again, log size back to normal).
+- **ap-16.0:** build; deploy to Baker, Daly, Somerville. Check every tuner starts and keeps its settings (RTL gain is
+  now a single value - check it), RSP1B on VHF at Baker, any RSP removal / RTL stall (recovery code removed).
 - Hardware test of 15.11.4 RSP/RTL recovery: unplug an RSP / RTL for a minute on a watched machine.
 - Tone coverage: more logs, then a measure-only short-call verdict; per-channel enforcement switch later.
 - MDC1200 on Everett Police (Somerville) to identify the data bursts.

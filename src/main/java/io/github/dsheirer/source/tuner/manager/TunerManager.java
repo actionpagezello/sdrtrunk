@@ -22,7 +22,9 @@ package io.github.dsheirer.source.tuner.manager;
 import io.github.dsheirer.gui.preference.tuner.RspDuoSelectionMode;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.source.ChannelizerType;
-import io.github.dsheirer.controller.channel.ChannelProcessingManager;
+import io.github.dsheirer.sdrplay.DeviceInfo;
+import io.github.dsheirer.sdrplay.SDRplay;
+import io.github.dsheirer.sdrplay.SDRplayException;
 import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.SourceException;
 import io.github.dsheirer.source.config.SourceConfigTuner;
@@ -40,9 +42,6 @@ import io.github.dsheirer.source.tuner.configuration.TunerConfiguration;
 import io.github.dsheirer.source.tuner.configuration.TunerConfigurationManager;
 import io.github.dsheirer.source.tuner.recording.RecordingTunerConfiguration;
 import io.github.dsheirer.source.tuner.sdrplay.DiscoveredRspTuner;
-import io.github.dsheirer.source.tuner.sdrplay.api.SDRPlayException;
-import io.github.dsheirer.source.tuner.sdrplay.api.SDRplay;
-import io.github.dsheirer.source.tuner.sdrplay.api.device.DeviceInfo;
 import io.github.dsheirer.source.tuner.sdrplay.rspDuo.DiscoveredRspDuoTuner1;
 import io.github.dsheirer.source.tuner.ui.DiscoveredTunerModel;
 import io.github.dsheirer.util.ThreadPool;
@@ -78,12 +77,6 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     private final Context mLibUsbApplicationContext = new Context();
     private boolean mLibUsbInitialized = false;
     private SDRplay mSDRplay;
-    /**
-     * AP-fork (ap-15.11.1): SDRplay (RSP) devices seen on USB during discovery (vendor 0x1DF7), or -1 if unknown.
-     */
-    private int mSdrplayUsbDeviceCount = -1;
-    private static final int SDRPLAY_USB_VENDOR_ID = 0x1DF7;
-    private final RspRecoveryMonitor mRspRecoveryMonitor;
 
     /**
      * Constructs an instance
@@ -94,67 +87,6 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         mUserPreferences = userPreferences;
         mTunerConfigurationManager = new TunerConfigurationManager(userPreferences);
         mDiscoveredTunerModel = new DiscoveredTunerModel(mTunerConfigurationManager);
-        mRspRecoveryMonitor = new RspRecoveryMonitor(this::getAvailableRspDeviceInfos,
-            id -> mDiscoveredTunerModel.getDiscoveredTuner(id) != null, this::addRecoveredRsp);
-        mDiscoveredTunerModel.setRspRemovalListener(mRspRecoveryMonitor::rspRemoved);
-    }
-
-    /**
-     * AP-fork (ap-15.11.1): lets the RSP recovery monitor find and restart the channels of a removed RSP tuner.
-     */
-    public void setChannelProcessingManager(ChannelProcessingManager channelProcessingManager)
-    {
-        mRspRecoveryMonitor.setChannelProcessingManager(channelProcessingManager);
-    }
-
-    /**
-     * AP-fork (ap-15.11.1): devices currently available from the SDRplay API, for RSP recovery.  Reopens the API if
-     * it isn't open.
-     * @return device infos, or an empty list if the API isn't available
-     */
-    private synchronized List<DeviceInfo> getAvailableRspDeviceInfos()
-    {
-        try
-        {
-            if(mSDRplay == null)
-            {
-                mSDRplay = new SDRplay();
-            }
-
-            if(mSDRplay.isAvailable())
-            {
-                return mSDRplay.getDeviceInfosLocked();
-            }
-        }
-        catch(SDRPlayException se)
-        {
-            mLog.debug("RSP recovery - SDRplay API not available - " + se.getMessage());
-        }
-
-        return Collections.emptyList();
-    }
-
-    /**
-     * AP-fork (ap-15.11.1): re-adds the discovered tuner(s) for an RSP that returned after removal, the same way as
-     * at startup.
-     * @return number of discovered tuners added
-     */
-    private synchronized int addRecoveredRsp(DeviceInfo deviceInfo)
-    {
-        ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
-        RspDuoSelectionMode duoSelectionMode = mUserPreferences.getTunerPreference().getRspDuoTunerMode();
-        int added = 0;
-
-        for(DiscoveredRspTuner tuner: TunerFactory.getRspTuners(deviceInfo, channelizerType, duoSelectionMode))
-        {
-            if(mDiscoveredTunerModel.getDiscoveredTuner(tuner.getId()) == null)
-            {
-                startAndConfigureTuner(tuner);
-                added++;
-            }
-        }
-
-        return added;
     }
 
     /**
@@ -249,11 +181,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         mDiscoveredTunerModel.releaseDiscoveredTuners();
 
         //Shutdown SDRplay API instance
-        if(mSDRplay != null)
-        {
-            mSDRplay.close();
-            mSDRplay = null;
-        }
+        closeSDRplay();
 
         //Shutdown LibUsb
         if(mLibUsbInitialized)
@@ -289,7 +217,6 @@ public class TunerManager implements IDiscoveredTunerStatusListener
                 if(deviceCount >= 0)
                 {
                     mLog.info("LibUsb - discovered [" + deviceCount + "] potential usb devices");
-                    mSdrplayUsbDeviceCount = 0;
 
                     for(Device device: deviceList)
                     {
@@ -305,11 +232,6 @@ public class TunerManager implements IDiscoveredTunerStatusListener
                             {
                                 TunerClass tunerClass = TunerClass.lookup(deviceDescriptor.idVendor(),
                                         deviceDescriptor.idProduct());
-
-                                if((deviceDescriptor.idVendor() & 0xFFFF) == SDRPLAY_USB_VENDOR_ID)
-                                {
-                                    mSdrplayUsbDeviceCount++;
-                                }
 
                                 String portAddress = getPortAddress(device);
 
@@ -434,53 +356,36 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
         RspDuoSelectionMode duoSelectionMode = mUserPreferences.getTunerPreference().getRspDuoTunerMode();
 
-        //Note: we have to keep this first API instance open while we use any RSP tuners, otherwise the additional API
-        //instance(s) used by the individual tuners become unresponsive.  Note sure why.
+        if(!SDRplay.isInstalled())
+        {
+            mLog.info("SDRplay API is not installed - RSP tuners are not available");
+            return;
+        }
 
+        //Note: this session stays open while RSP tuners are in use.  Each RSP tuner opens its own session and the
+        //sessions share a single connection to the SDRplay API service, which closes when the last session closes.
         try
         {
-            mSDRplay = new SDRplay();
+            mSDRplay = SDRplay.open();
+            mLog.info("SDRplay API version [" + mSDRplay.apiVersion() + "] loaded from [" + mSDRplay.location() + "]");
         }
-        catch(SDRPlayException se)
+        catch(SDRplayException se)
         {
-            //AP-fork (ap-15.11.1): say whether this matters.  With no RSP attached it is expected on any machine that
-            //has the SDRplay API installed (Cambridge); with an RSP attached those tuners are unusable (Paxton
-            //2026-11-02, every startup) and the reason used to be dropped.
-            if(mSdrplayUsbDeviceCount == 0)
-            {
-                mLog.info("SDRplay API service not available - no SDRplay (RSP) device is connected, so nothing is " +
-                    "affected [" + se.getMessage() + "]");
-            }
-            else
-            {
-                mLog.error("Couldn't open the SDRplay API service" + (mSdrplayUsbDeviceCount > 0 ? " while [" +
-                    mSdrplayUsbDeviceCount + "] SDRplay (RSP) device(s) are connected" : "") + " - RSP tuners are " +
-                    "unavailable. Reason: " + se.getMessage() + ". Restart 'SDRplay API Service' in Windows Services, " +
-                    "close other SDRplay programs (SDRuno, SDRconnect), or reinstall the SDRplay API 3.x, then " +
-                    "restart SDRTrunk.");
-            }
-
+            mLog.error("Couldn't open SDRplay API - " + se.getMessage());
             mSDRplay = null;
         }
 
-        if(mSDRplay != null && mSDRplay.isAvailable())
+        if(mSDRplay != null)
         {
             try
             {
-                List<DeviceInfo> deviceInfos = mSDRplay.getDeviceInfos();
+                List<DeviceInfo> deviceInfos = mSDRplay.devices();
 
                 mLog.info("Discovered [" + deviceInfos.size() + "] RSP devices from SDRplay API");
 
                 if(deviceInfos.isEmpty())
                 {
-                    if(mSdrplayUsbDeviceCount > 0)
-                    {
-                        mLog.warn("SDRplay API lists no RSP devices but [" + mSdrplayUsbDeviceCount + "] SDRplay " +
-                            "device(s) are connected - another program (SDRuno, SDRconnect) may be using them");
-                    }
-
-                    mSDRplay.close();
-                    mSDRplay = null;
+                    closeSDRplay();
                     return;
                 }
 
@@ -494,16 +399,27 @@ public class TunerManager implements IDiscoveredTunerStatusListener
                     }
                 }
             }
-            catch(SDRPlayException se)
+            catch(SDRplayException se)
             {
-                mLog.info("Unable to get list of devices from SDRplay API");
+                mLog.info("Unable to get list of devices from SDRplay API - " + se.getMessage());
             }
         }
-        else
+    }
+
+    /**
+     * Closes the SDRplay API discovery session.
+     */
+    private void closeSDRplay()
+    {
+        if(mSDRplay != null)
         {
-            if(mSDRplay != null)
+            try
             {
                 mSDRplay.close();
+            }
+            catch(SDRplayException se)
+            {
+                mLog.warn("Error closing SDRplay API - " + se.getMessage());
             }
 
             mSDRplay = null;
@@ -555,7 +471,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         }
 
         //Special handling for RSPduo to auto-update enabled state for slave device when configured for master/slave operation
-        if(discoveredTuner instanceof DiscoveredRspDuoTuner1 rspDuoTuner1 && rspDuoTuner1.getDeviceInfo().getDeviceSelectionMode().isMasterMode())
+        if(discoveredTuner instanceof DiscoveredRspDuoTuner1 rspDuoTuner1 && rspDuoTuner1.getDeviceSelectionMode().isMasterMode())
         {
             String id = rspDuoTuner1.getId();
             id = id.replace(DiscoveredRspDuoTuner1.RSP_DUO_ID_PREFIX + "1", DiscoveredRspDuoTuner1.RSP_DUO_ID_PREFIX + "2");

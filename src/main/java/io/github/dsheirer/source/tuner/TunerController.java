@@ -343,7 +343,7 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
     /**
      * AP-fork (ap-15.11.5): moves a centre frequency inside a frequency range.  A frequency below the range moves to
      * minimum + half bandwidth and one above it to maximum - half bandwidth, so the usable band sits inside the range;
-     * when the range is narrower than the bandwidth it moves to the middle of the range.
+     * when the bandwidth is unknown or the range is narrower than the bandwidth it moves to the middle of the range.
      * @param frequency to check
      * @param minimum of the range
      * @param maximum of the range
@@ -359,7 +359,9 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
 
         long half = Math.max(0, halfBandwidth);
 
-        if(maximum - minimum < 2 * half)
+        //AP-fork (ap-16.0): an RSP applies its sample rate after this, so its bandwidth is still unknown here - use
+        //the middle of the range rather than an edge (Baker 2026-11-07: RSP1B moved to exactly 160 MHz)
+        if(half == 0 || maximum - minimum < 2 * half)
         {
             return minimum + (maximum - minimum) / 2;
         }
