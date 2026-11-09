@@ -26,9 +26,22 @@ package io.github.dsheirer.module.decode.smartnet;
  */
 public enum SmartNetBandPlan
 {
-    BAND_800_REBANDED,
-    BAND_800_STANDARD,
-    BAND_800_SPLINTER;
+    BAND_800_REBANDED("800 MHz rebanded"),
+    BAND_800_STANDARD("800 MHz standard (pre-rebanding)"),
+    BAND_800_SPLINTER("800 MHz splinter");
+
+    private final String mLabel;
+
+    SmartNetBandPlan(String label)
+    {
+        mLabel = label;
+    }
+
+    @Override
+    public String toString()
+    {
+        return mLabel;
+    }
 
     /**
      * Receive (outbound) frequency in Hz for a channel number, or 0 when the command is not a channel.

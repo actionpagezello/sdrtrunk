@@ -47,7 +47,8 @@ import org.w3c.dom.Node;
  *
  * <ul>
  *   <li>the playlist (default.xml) - everything except the element types only this fork has (Zello, Zello Consumer and
- *       ThinLine streams; CTCSS and NAC alias identifiers).  Upstream can open it.  Fork-only settings stay in it as
+ *       ThinLine streams; CTCSS and NAC alias identifiers; channels using a decoder only the fork has - Motorola Type
+ *       II - and alias identifiers for that decoder's protocol).  Upstream can open it.  Fork-only settings stay in it as
  *       extra attributes, which upstream ignores.</li>
  *   <li>the companion (default.ap.xml) - the complete playlist exactly as the fork holds it.  Upstream never reads it.</li>
  * </ul>
@@ -55,7 +56,8 @@ import org.w3c.dom.Node;
  * On load the fork reads the playlist and takes from the companion only what the playlist is missing:
  *
  * <ul>
- *   <li>always: the fork-only streams and alias identifiers, matched by stream name and by alias list + name.</li>
+ *   <li>always: the fork-only streams, channels and alias identifiers, matched by stream name, by system + site +
+ *       name and by alias list + name.</li>
  *   <li>when another program saved the playlist last (it has no fork save stamp): the fork-only settings that program
  *       dropped, filled into the matching channels and aliases.  Anything the other program did write - including any
  *       change made there - is kept.</li>
@@ -71,6 +73,12 @@ public class PlaylistCompatibility
 
     /** Alias identifier types that only this fork can read */
     public static final Set<String> FORK_ONLY_ALIAS_ID_TYPES = Set.of("ctcss", "nac");
+
+    /** Decode configuration types that only this fork can read - channels using them are kept out of the playlist */
+    public static final Set<String> FORK_ONLY_DECODE_TYPES = Set.of("decodeConfigSmartNet");
+
+    /** Protocols that only this fork has - talkgroup and radio alias identifiers using them are kept out */
+    public static final Set<String> FORK_ONLY_PROTOCOLS = Set.of("SMARTNET");
 
     /** Root attributes written by the fork on save and removed again before the playlist is read */
     /**
@@ -127,11 +135,19 @@ public class PlaylistCompatibility
             }
         }
 
+        for(Element channel : children(root, "channel"))
+        {
+            if(isForkOnlyChannel(channel))
+            {
+                root.removeChild(channel);
+            }
+        }
+
         for(Element alias : children(root, "alias"))
         {
             for(Element id : children(alias, "id"))
             {
-                if(FORK_ONLY_ALIAS_ID_TYPES.contains(id.getAttribute("type")))
+                if(isForkOnlyAliasId(id))
                 {
                     alias.removeChild(id);
                 }
@@ -148,10 +164,11 @@ public class PlaylistCompatibility
      * @param foreignWriter true when another program saved the playlist last
      * @param restoredStreams fork-only streams taken from the companion
      * @param restoredAliasIds fork-only alias identifiers taken from the companion
+     * @param restoredChannels fork-only channels (decoder only this fork has) taken from the companion
      * @param restoredSettings channels and aliases whose dropped fork-only settings were filled in from the companion
      */
     public record LoadResult(String xml, boolean foreignWriter, int restoredStreams, int restoredAliasIds,
-                             int restoredSettings) {}
+                             int restoredSettings, int restoredChannels) {}
 
     /**
      * Merges the companion into the playlist.
@@ -169,6 +186,7 @@ public class PlaylistCompatibility
         int streams = 0;
         int aliasIds = 0;
         int settings = 0;
+        int channels = 0;
 
         if(companionXml != null)
         {
@@ -189,6 +207,25 @@ public class PlaylistCompatibility
                 {
                     root.appendChild(playlist.importNode(stream, true));
                     streams++;
+                }
+            }
+
+            //Fork-only channels the playlist does not have, matched by system, site and name.  The other program
+            //never saw them, so it cannot have deleted them.
+            Set<String> channelKeys = new java.util.HashSet<>();
+
+            for(Element channel : children(root, "channel"))
+            {
+                channelKeys.add(value(channel, "system") + "|" + value(channel, "site") + "|" + value(channel, "name"));
+            }
+
+            for(Element channel : children(companion, "channel"))
+            {
+                if(isForkOnlyChannel(channel) &&
+                    channelKeys.add(value(channel, "system") + "|" + value(channel, "site") + "|" + value(channel, "name")))
+                {
+                    root.appendChild(playlist.importNode(channel, true));
+                    channels++;
                 }
             }
 
@@ -240,7 +277,7 @@ public class PlaylistCompatibility
 
                 for(Element id : children(source, "id"))
                 {
-                    if(FORK_ONLY_ALIAS_ID_TYPES.contains(id.getAttribute("type")) && !hasEqualChild(alias, id))
+                    if(isForkOnlyAliasId(id) && !hasEqualChild(alias, id))
                     {
                         alias.appendChild(playlist.importNode(id, true));
                         aliasIds++;
@@ -302,7 +339,7 @@ public class PlaylistCompatibility
         root.removeAttribute(ATTRIBUTE_FORMAT);
         root.removeAttribute(ATTRIBUTE_SAVE_ID);
         groupSiblings(root);
-        return new LoadResult(write(playlist), foreignWriter, streams, aliasIds, settings);
+        return new LoadResult(write(playlist), foreignWriter, streams, aliasIds, settings, channels);
     }
 
     /**
@@ -609,6 +646,32 @@ public class PlaylistCompatibility
     }
 
     /**
+     * True for a channel whose decoder only this fork has
+     */
+    static boolean isForkOnlyChannel(Element channel)
+    {
+        for(Element decode : children(channel, "decode_configuration"))
+        {
+            if(FORK_ONLY_DECODE_TYPES.contains(decode.getAttribute("type")))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * True for an alias identifier only this fork can read: a fork-only type, or a talkgroup/radio identifier for a
+     * protocol only this fork has.
+     */
+    static boolean isForkOnlyAliasId(Element id)
+    {
+        return FORK_ONLY_ALIAS_ID_TYPES.contains(id.getAttribute("type")) ||
+            FORK_ONLY_PROTOCOLS.contains(id.getAttribute("protocol"));
+    }
+
+    /**
      * A channel's tuning: decoder type and source frequency(ies).  Used to pair a channel renamed in the other program.
      */
     private static String channelIdentity(Element channel)
@@ -655,7 +718,7 @@ public class PlaylistCompatibility
         {
             String type = id.getAttribute("type");
 
-            if(type.startsWith("talkgroup") || type.startsWith("radio"))
+            if((type.startsWith("talkgroup") || type.startsWith("radio")) && !isForkOnlyAliasId(id))
             {
                 ids.add(type + "=" + id.getAttribute("value") + id.getAttribute("min") + "-" + id.getAttribute("max") +
                     "/" + id.getAttribute("protocol"));

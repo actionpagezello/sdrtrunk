@@ -853,6 +853,13 @@ public class AliasItemEditor extends Editor<Alias>
             passportMenu.getItems().add(new AddRadioIdItem(Protocol.PASSPORT));
             passportMenu.getItems().add(new AddRadioIdRangeItem(Protocol.PASSPORT));
 
+            //AP-fork: Motorola Type II
+            Menu smartNetMenu = new ProtocolMenu(Protocol.SMARTNET);
+            smartNetMenu.getItems().add(new AddTalkgroupItem(Protocol.SMARTNET));
+            smartNetMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.SMARTNET));
+            smartNetMenu.getItems().add(new AddRadioIdItem(Protocol.SMARTNET));
+            smartNetMenu.getItems().add(new AddRadioIdRangeItem(Protocol.SMARTNET));
+
             Menu taitMenu = new ProtocolMenu(Protocol.TAIT1200);
             taitMenu.setDisable(true);  //tbd
 
@@ -860,7 +867,7 @@ public class AliasItemEditor extends Editor<Alias>
             lojackMenu.getItems().add(new AddLojackItem());
 
             mAddIdentifierButton.getItems().addAll(amMenu, p25Menu, dmrMenu, fleetsyncMenu, ltrMenu, mdcMenu, mptMenu,
-                nbfmMenu, nxdnMenu, passportMenu, taitMenu, new SeparatorMenuItem(), lojackMenu);
+                nbfmMenu, nxdnMenu, passportMenu, smartNetMenu, taitMenu, new SeparatorMenuItem(), lojackMenu);
         }
 
         return mAddIdentifierButton;

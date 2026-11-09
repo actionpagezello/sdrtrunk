@@ -19,6 +19,12 @@
 
 package io.github.dsheirer.module.decode.smartnet;
 
+import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.protocol.Protocol;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * AP-fork (SmartNet): one Motorola Type II outbound signalling word (OSW) - 16-bit address, group flag and 10-bit
  * command, after error correction and the CRC check.
@@ -28,7 +34,7 @@ package io.github.dsheirer.module.decode.smartnet;
  * talkgroup address are status bits (bit 3 encrypted/digital, bits 2-0 options such as emergency or patch), so the
  * talkgroup itself is address & 0xFFF0 - Radio Reference lists MSP talkgroups this way (Troop A North 33168 = 0x8190).
  */
-public class SmartNetOSW
+public class SmartNetOSW implements IMessage
 {
     public static final int CMD_UNIT_ID = 0x308;        //first OSW of a two-OSW grant: calling unit / system ID
     public static final int CMD_IDLE = 0x2F8;
@@ -92,6 +98,30 @@ public class SmartNetOSW
     {
         int options = mAddress & 0x7;
         return options == 2 || options == 4 || options == 5;
+    }
+
+    @Override
+    public boolean isValid()
+    {
+        return true; //only CRC-checked OSWs are created
+    }
+
+    @Override
+    public Protocol getProtocol()
+    {
+        return Protocol.SMARTNET;
+    }
+
+    @Override
+    public int getTimeslot()
+    {
+        return 0;
+    }
+
+    @Override
+    public List<Identifier> getIdentifiers()
+    {
+        return Collections.emptyList();
     }
 
     @Override

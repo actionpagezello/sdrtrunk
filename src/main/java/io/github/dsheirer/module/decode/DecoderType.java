@@ -35,6 +35,7 @@ public enum DecoderType
     NBFM("NBFM", "NBFM", Protocol.NBFM),
     NXDN("NXDN", "NXDN", Protocol.NXDN),
     PASSPORT("Passport", "Passport", Protocol.PASSPORT),
+    SMARTNET("Motorola Type II", "Type II", Protocol.SMARTNET), //AP-fork
     P25_PHASE1("P25 Phase 1", "P25-1", Protocol.APCO25),
     P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2),
 
@@ -70,7 +71,8 @@ public enum DecoderType
         DecoderType.NXDN,
         DecoderType.P25_PHASE1,
         DecoderType.P25_PHASE2,
-        DecoderType.PASSPORT);
+        DecoderType.PASSPORT,
+        DecoderType.SMARTNET);
 
     /**
      * Auxiliary decoders that operate on in-band signalling in the decoded audio channel

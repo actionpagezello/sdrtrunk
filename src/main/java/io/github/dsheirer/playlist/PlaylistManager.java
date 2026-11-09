@@ -792,6 +792,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
 
         mLog.info("Playlist read - last saved by " + (result.foreignWriter() ? "ANOTHER PROGRAM (or an older version)" :
             "this fork") + "; from the companion: " + result.restoredStreams() + " stream(s), " +
+            result.restoredChannels() + " Type II channel(s), " +
             result.restoredAliasIds() + " alias identifier(s), fork settings for " + result.restoredSettings() +
             " channel(s)/alias(es); CTCSS/DCS taken from upstream squelch settings on " + adopted + " channel(s)");
 

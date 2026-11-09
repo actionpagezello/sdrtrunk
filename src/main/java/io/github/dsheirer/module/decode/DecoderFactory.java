@@ -102,6 +102,10 @@ import io.github.dsheirer.module.decode.p25.phase2.P25P2DecoderHDQPSK;
 import io.github.dsheirer.module.decode.p25.phase2.P25P2DecoderState;
 import io.github.dsheirer.module.decode.p25.phase2.message.P25P2Message;
 import io.github.dsheirer.module.decode.p25.phase2.message.filter.P25P2MessageFilterSet;
+import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
+import io.github.dsheirer.module.decode.smartnet.SmartNetDecoder;
+import io.github.dsheirer.module.decode.smartnet.SmartNetDecoderState;
+import io.github.dsheirer.module.decode.smartnet.SmartNetTrafficChannelManager;
 import io.github.dsheirer.module.decode.passport.DecodeConfigPassport;
 import io.github.dsheirer.module.decode.passport.PassportDecoder;
 import io.github.dsheirer.module.decode.passport.PassportDecoderState;
@@ -197,6 +201,9 @@ public class DecoderFactory
                 break;
             case PASSPORT:
                 processPassport(channel, modules, aliasList, decodeConfig);
+                break;
+            case SMARTNET:
+                processSmartNet(channel, modules, aliasList, channelType, (DecodeConfigSmartNet)decodeConfig);
                 break;
             case P25_PHASE1:
                 processP25Phase1(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
@@ -381,6 +388,39 @@ public class DecoderFactory
      * @param channelType for control or traffic
      * @param decodeConfig configuration
      */
+    /**
+     * AP-fork (SmartNet): Motorola Type II.  The control channel decodes the outbound signalling and starts a voice
+     * (traffic) channel for each call; a voice channel is plain analog FM audio carrying the call's identifiers.
+     */
+    private static void processSmartNet(Channel channel, List<Module> modules, AliasList aliasList,
+                                        ChannelType channelType, DecodeConfigSmartNet config)
+    {
+        if(channelType == ChannelType.STANDARD)
+        {
+            modules.add(new SmartNetDecoder());
+            SmartNetTrafficChannelManager trafficChannelManager = new SmartNetTrafficChannelManager(channel);
+            modules.add(trafficChannelManager);
+            modules.add(new SmartNetDecoderState(channelType, trafficChannelManager, config));
+        }
+        else
+        {
+            long maxAudioSegmentLengthMillis = config.getCallTimeoutSeconds() * 1000L + 5000;
+            AudioModule audioModule = new AudioModule(aliasList, AbstractAudioModule.DEFAULT_TIMESLOT,
+                maxAudioSegmentLengthMillis, AUDIO_FILTER_ENABLE);
+            audioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            modules.add(audioModule);
+
+            SourceType sourceType = channel.getSourceConfiguration().getSourceType();
+
+            if(sourceType == SourceType.TUNER || sourceType == SourceType.TUNER_MULTIPLE_FREQUENCIES)
+            {
+                modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
+            }
+
+            modules.add(new SmartNetDecoderState(channelType, null, config));
+        }
+    }
+
     private static void processMPT1327(ChannelMapModel channelMapModel, Channel channel, List<Module> modules,
                                        AliasList aliasList, ChannelType channelType, DecodeConfigMPT1327 decodeConfig,
                                        UserPreferences userPreferences)
@@ -814,6 +854,8 @@ public class DecoderFactory
                 return new DecodeConfigNXDN();
             case PASSPORT:
                 return new DecodeConfigPassport();
+            case SMARTNET:
+                return new DecodeConfigSmartNet();
             case P25_PHASE1:
                 return new DecodeConfigP25Phase1();
             case P25_PHASE2:
@@ -904,6 +946,14 @@ public class DecoderFactory
                     return copyP25P2;
                 case PASSPORT:
                     return new DecodeConfigPassport();
+                case SMARTNET:
+                    DecodeConfigSmartNet originalSmartNet = (DecodeConfigSmartNet)config;
+                    DecodeConfigSmartNet copySmartNet = new DecodeConfigSmartNet();
+                    copySmartNet.setBandPlan(originalSmartNet.getBandPlan());
+                    copySmartNet.setCallTimeoutSeconds(originalSmartNet.getCallTimeoutSeconds());
+                    copySmartNet.setTrafficChannelPoolSize(originalSmartNet.getTrafficChannelPoolSize());
+                    copySmartNet.setAudioHangtimeMs(originalSmartNet.getAudioHangtimeMs());
+                    return copySmartNet;
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
             }
