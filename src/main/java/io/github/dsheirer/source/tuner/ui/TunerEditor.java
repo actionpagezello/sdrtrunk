@@ -355,6 +355,7 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
                                             getMinimumFrequencyTextField().getText() + "] is below the supported frequency range for this tuner",
                                     "Invalid Frequency", JOptionPane.ERROR_MESSAGE);
                             getMinimumFrequencyTextField().setFrequency(mExistingFrequency);
+                            rangeRejected("minimum", getMinimumFrequencyTextField().getText());
                             return;
                         }
 
@@ -374,6 +375,7 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
                                                 "and maximum supported frequency for this tuner", "Invalid Frequency",
                                         JOptionPane.ERROR_MESSAGE);
                                 getMinimumFrequencyTextField().setFrequency(mExistingFrequency);
+                                rangeRejected("minimum", getMinimumFrequencyTextField().getText());
                                 return;
                             }
                         }
@@ -386,6 +388,8 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
                         adjustFrequencyControl(minimum, maximum);
                         setLoading(false);
                         save();
+                        mLog.info("Tuner [" + getTunerLabel() + "] frequency range changed to [" + minimum + "-" +
+                                maximum + "] and saved");
                     }
                 }
             });
@@ -492,6 +496,7 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
                                     getMaximumFrequencyTextField().getText() + "] is above the supported frequency " +
                                     "range for this tuner", "Invalid Frequency", JOptionPane.ERROR_MESSAGE);
                             getMaximumFrequencyTextField().setFrequency(mExistingFrequency);
+                            rangeRejected("maximum", getMaximumFrequencyTextField().getText());
                             return;
                         }
 
@@ -511,6 +516,7 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
                                                 "and minimum supported frequency for this tuner", "Invalid Frequency",
                                         JOptionPane.ERROR_MESSAGE);
                                 getMaximumFrequencyTextField().setFrequency(mExistingFrequency);
+                                rangeRejected("maximum", getMaximumFrequencyTextField().getText());
                                 return;
                             }
                         }
@@ -523,12 +529,41 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
                         adjustFrequencyControl(minimum, maximum);
                         setLoading(false);
                         save();
+                        mLog.info("Tuner [" + getTunerLabel() + "] frequency range changed to [" + minimum + "-" +
+                                maximum + "] and saved");
                     }
                 }
             });
         }
 
         return mMaximumFrequencyTextField;
+    }
+
+    /**
+     * AP-fork (ap-16.1): a rejected frequency range entry - logs it and releases the editor.  Before, the editor stayed
+     * in its loading state after the error message, so every later change was silently ignored and never saved.
+     */
+    private void rangeRejected(String which, String entered)
+    {
+        mLog.warn("Tuner [" + getTunerLabel() + "] " + which + " frequency [" + entered + "] rejected - outside " +
+                getMinimumTunableFrequency() + "-" + getMaximumTunableFrequency() + " Hz for this tuner or the current " +
+                "sample rate");
+        setLoading(false);
+    }
+
+    /**
+     * Label for log messages.
+     */
+    private String getTunerLabel()
+    {
+        try
+        {
+            return hasTuner() ? getTuner().getPreferredName() : "no tuner";
+        }
+        catch(Exception e)
+        {
+            return "unknown";
+        }
     }
 
     /**

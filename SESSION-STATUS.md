@@ -9,9 +9,12 @@
 - Tree `4b011321`, pushed as `ed1d89c5` (guard on the tree hash; commit hashes differ between machines).
 - **Running:** Daly, Somerville, Audubon on 15.11.3 or later (confirm 15.11.4 from their next logs). Baker (Roger Baker, DESKTOP-3NNNO6F) on 15.11.3 since 11-04 22:56.
 - **15.11.5** built and pushed 2026-11-07 (`7ee1c957`, tree `721115e0`); running on Baker since 11-07 22:57.
-- **Next build: ap-16.0** (patch delivered 2026-11-08) — upstream tuner libraries (jRTL, jsdrplay, jAirspy,
-  jAirspyHF, jHackRF, jHydraSDR 1.1.4); RSP recovery and RTL runaway restart removed. Test on Baker, Daly,
-  Somerville only.
+- **16.0** built and pushed 2026-11-08 (`a56666f4`; nightly workflow removed `10bb4e1d`, tree `43be91dd`). Running on
+  Baker, Daly, Somerville, Salisbury, Beauport, Summit 800 - 28 h review 11-09: no tuner removals, no setting errors.
+- **Next build: ap-16.1** (patch 2026-11-09) - upstream jLibUSB, DMR voice error detection, P25P1 adjacent status,
+  Airspy bias-T, two UI fixes; fork: RTL range editor fix, editor no longer stuck after an error, uncaught
+  exceptions logged.
+- Branches (GitHub): `edacs` (MBTA EDACS EA control channel, stage 1a), `smartnet` (Motorola Type II, stage 1a).
 
 ### Releases 2026-10-31 to 11-07 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
 | Version | Tree | Pushed | What |
@@ -24,7 +27,8 @@
 | 15.11.3 | `37c77e84` | `8b2956b9` | "ZELLO INCIDENT" structured lines (UTC, machine, network, user, channel, command+seq, response, close code, connection age, reconnect timing); machine-wide Zello connect limit 9/min (Zello: 10/min/IP); "Zello Consumer" relabeled "Zello Friends & Family" (display only) |
 | 15.11.4 | `4b011321` | `ed1d89c5` | RSP recovery releases the removed RSP (`sdrplay_api_ReleaseDevice`) before listing, device list read under the API lock; RTL-2832 USB transfer runaway restart (10x expected rate for 3 s; stop after 3 restarts/10 min); per-minute USB transfer status summary when abnormal |
 | 15.11.5 | `721115e0` | `7ee1c957` | Tuner config apply: range first, saved frequency outside the range moved inside (WARN), frequency/PPM failures no longer skip sample rate and gain (Baker RTL 6.2/6.1.1); upstream #2580 alias identifier sort |
-| 16.0 | (see patch) | not yet | Upstream tuner libraries #2573 #2590 #2593 #2595 #2597 #2598 #2587; RSP recovery + RTL runaway restart removed; 15.11.5 apply fix kept (middle of range when bandwidth unknown). Test: Baker, Daly, Somerville |
+| 16.0 | `43be91dd` | `10bb4e1d` | Upstream tuner libraries #2573 #2590 #2593 #2595 #2597 #2598 #2587; RSP recovery + RTL runaway restart removed; 15.11.5 apply fix kept (middle of range when bandwidth unknown). Test: Baker, Daly, Somerville |
+| 16.1 | (see patch) | not yet | Upstream #2605 jLibUSB #2608 #2602 #2599 #2603 #2591; RTL range editor fix; tuner editor error state; uncaught exceptions logged |
 
 ### Findings 2026-11-03/04
 - **Daly 11-04 outage (15.11.3):** (1) 15:19 RTL-2832 Bus 1 Port 9 entered a USB loop — ~17,500 buffers/s discarded

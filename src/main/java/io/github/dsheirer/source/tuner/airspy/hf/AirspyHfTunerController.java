@@ -32,18 +32,12 @@ import io.github.dsheirer.source.tuner.ITunerErrorListener;
 import io.github.dsheirer.source.tuner.TunerController;
 import io.github.dsheirer.source.tuner.TunerType;
 import io.github.dsheirer.source.tuner.configuration.TunerConfiguration;
-import io.github.dsheirer.source.tuner.manager.TunerManager;
+import io.github.dsheirer.source.tuner.manager.UsbDeviceLookup;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.usb4java.Context;
-import org.usb4java.Device;
-import org.usb4java.DeviceDescriptor;
-import org.usb4java.DeviceHandle;
-import org.usb4java.DeviceList;
-import org.usb4java.LibUsb;
 
 /**
  * Airspy HF+ Dual Port, HF+ Discovery and Ranger tuner controller, implemented with the jAirspyHF library
@@ -73,6 +67,8 @@ public class AirspyHfTunerController extends TunerController
     private Attenuation mAttenuation = Attenuation.A0;
     private boolean mAgcEnabled;
     private boolean mLnaEnabled;
+    private boolean mBiasTSupported;
+    private boolean mBiasTEnabled;
     private volatile float mSamplesPerMillisecond = DEFAULT_SAMPLE_RATE.getSampleRate() / 1000.0f;
     private volatile int mBufferSampleCount = DEFAULT_BUFFER_SAMPLE_COUNT;
     private boolean mStreaming = false;
@@ -116,6 +112,8 @@ public class AirspyHfTunerController extends TunerController
 
         try
         {
+            mBiasTSupported = false;
+            mBiasTEnabled = false;
             mDevice = AirspyHf.open(serialNumber);
 
             BoardInfo boardInfo = mDevice.boardInfo();
@@ -139,6 +137,8 @@ public class AirspyHfTunerController extends TunerController
             }
 
             mAvailableSampleRates = Collections.unmodifiableList(sampleRates);
+            mBiasTSupported = detectBiasTSupport(mDevice);
+            mBiasTEnabled = false;
 
             //Force the sample rate to be applied, since the rate discovery leaves the device at the last rate.
             mCurrentSampleRate = null;
@@ -161,6 +161,7 @@ public class AirspyHfTunerController extends TunerController
     public void stop()
     {
         AirspyHfDevice device;
+        boolean biasTEnabled;
 
         getLock().lock();
 
@@ -169,6 +170,8 @@ public class AirspyHfTunerController extends TunerController
             device = mDevice;
             mDevice = null;
             mStreaming = false;
+            biasTEnabled = mBiasTEnabled;
+            mBiasTEnabled = false;
         }
         finally
         {
@@ -176,7 +179,56 @@ public class AirspyHfTunerController extends TunerController
         }
 
         mNativeBufferBroadcaster.clear();
+
+        if(device != null && biasTEnabled)
+        {
+            try
+            {
+                device.setBiasTee(0);
+            }
+            catch(AirspyHfException | RuntimeException e)
+            {
+                mLog.warn("Error turning off Airspy HF bias-T before closing the device - " + e.getMessage());
+            }
+        }
+
         closeDevice(device);
+    }
+
+    /**
+     * Detects if the device firmware supports a bias-T.  Firmware without bias-T support rejects the bias-T commands.
+     * Some firmware (HF+ Discovery R5.0.1) rejects the bias-T count request, so this falls back to turning the bias-T
+     * off, which is a safe probe since the bias-T should be off at startup anyway.
+     * @param device to probe
+     * @return true if the device accepts bias-T commands
+     */
+    private static boolean detectBiasTSupport(AirspyHfDevice device)
+    {
+        try
+        {
+            if(device.biasTeeCount() > 0)
+            {
+                device.setBiasTee(0);
+                return true;
+            }
+
+            return false;
+        }
+        catch(AirspyHfException | RuntimeException e)
+        {
+            //Bias-T count not supported - fall through and probe with a bias-T off command.
+        }
+
+        try
+        {
+            device.setBiasTee(0);
+            return true;
+        }
+        catch(AirspyHfException | RuntimeException e)
+        {
+            mLog.debug("Airspy HF firmware doesn't support bias-T - " + e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -200,94 +252,13 @@ public class AirspyHfTunerController extends TunerController
 
     /**
      * Reads the serial number of the device at this controller's USB bus and port, since libairspyhf opens a specific
-     * device by serial number.  The device is closed again before returning so that libairspyhf can open it.
+     * device by serial number.  The USB serial string is formatted as: AIRSPYHF SN:0123456789ABCDEF
      * @return serial number
      * @throws SourceException if the device isn't found or can't be accessed.
      */
     private long readSerialNumber() throws SourceException
     {
-        Context context = new Context();
-        int status = LibUsb.init(context);
-
-        if(status != LibUsb.SUCCESS)
-        {
-            throw new SourceException("Can't initialize libusb library - " + LibUsb.errorName(status));
-        }
-
-        try
-        {
-            DeviceList deviceList = new DeviceList();
-            int count = LibUsb.getDeviceList(context, deviceList);
-
-            if(count < 0)
-            {
-                throw new SourceException("Can't get the USB device list - " + LibUsb.errorName(count));
-            }
-
-            try
-            {
-                for(Device device : deviceList)
-                {
-                    if(LibUsb.getBusNumber(device) == mBus && LibUsb.getPortNumber(device) > 0 &&
-                        mPortAddress != null && mPortAddress.equals(TunerManager.getPortAddress(device)))
-                    {
-                        return readSerialNumber(device);
-                    }
-                }
-            }
-            finally
-            {
-                LibUsb.freeDeviceList(deviceList, true);
-            }
-        }
-        finally
-        {
-            LibUsb.exit(context);
-        }
-
-        throw new SourceException("Couldn't find USB device at bus [" + mBus + "] port [" + mPortAddress + "]");
-    }
-
-    /**
-     * Reads the serial number from the device's USB serial string, formatted as: AIRSPYHF SN:0123456789ABCDEF
-     * @param device to read
-     * @return serial number
-     * @throws SourceException if the device can't be opened or the serial string isn't valid.
-     */
-    private static long readSerialNumber(Device device) throws SourceException
-    {
-        DeviceDescriptor descriptor = new DeviceDescriptor();
-        int status = LibUsb.getDeviceDescriptor(device, descriptor);
-
-        if(status != LibUsb.SUCCESS)
-        {
-            throw new SourceException("Can't obtain tuner's device descriptor - " + LibUsb.errorName(status));
-        }
-
-        DeviceHandle handle = new DeviceHandle();
-        status = LibUsb.open(device, handle);
-
-        if(status == LibUsb.ERROR_ACCESS)
-        {
-            mLog.error("Access to USB tuner denied - (windows) reinstall zadig driver or (linux) blacklist driver and/or check udev rules");
-            throw new SourceException("access denied - if using linux, blacklist the default driver and/or install udev rules");
-        }
-        else if(status != LibUsb.SUCCESS)
-        {
-            mLog.error("Can't open USB tuner - check driver or Linux udev rules");
-            throw new SourceException("Can't open USB tuner - reinstall driver? - " + LibUsb.errorName(status));
-        }
-
-        String serial;
-
-        try
-        {
-            serial = LibUsb.getStringDescriptor(handle, descriptor.iSerialNumber());
-        }
-        finally
-        {
-            LibUsb.close(handle);
-        }
+        String serial = UsbDeviceLookup.readSerialNumber(mBus, mPortAddress);
 
         try
         {
@@ -448,6 +419,11 @@ public class AirspyHfTunerController extends TunerController
                 setLna(airspyConfig.isLna());
                 setAttenuation(airspyConfig.getAttenuation());
                 setAgc(airspyConfig.isAgc());
+
+                if(isBiasTSupported())
+                {
+                    setBiasT(airspyConfig.isBiasT());
+                }
             }
             catch(SourceException se)
             {
@@ -669,5 +645,39 @@ public class AirspyHfTunerController extends TunerController
     {
         execute(device -> device.setAttenuationStep(attenuation.getValue()));
         mAttenuation = attenuation;
+    }
+
+    /**
+     * Indicates if the device firmware supports a bias-T, available once the tuner is started.
+     * @return true if supported
+     */
+    public boolean isBiasTSupported()
+    {
+        return mBiasTSupported;
+    }
+
+    /**
+     * Indicates if the Bias-T power output is enabled.
+     * @return enabled state
+     */
+    public boolean getBiasT()
+    {
+        return mBiasTEnabled;
+    }
+
+    /**
+     * Enables/disables the Bias-T (RF bias tee) power output for active antennas
+     * @param enabled true to enable Bias-T, false to disable
+     * @throws SourceException if the device doesn't support a bias-T or there is an error
+     */
+    public void setBiasT(boolean enabled) throws SourceException
+    {
+        if(!mBiasTSupported)
+        {
+            throw new SourceException("Airspy HF firmware doesn't support bias-T");
+        }
+
+        execute(device -> device.setBiasTee(enabled ? 1 : 0));
+        mBiasTEnabled = enabled;
     }
 }

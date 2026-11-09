@@ -75,7 +75,7 @@ public class RTL2832TunerEditor extends TunerEditor<RTL2832Tuner, RTL2832TunerCo
     {
         if(hasTuner())
         {
-            return getTuner().getController().getMinimumFrequency();
+            return getTuner().getController().getMinimumTunableFrequency();
         }
 
         return R8xTunerConfiguration.MINIMUM_TUNABLE_FREQUENCY_HZ;
@@ -86,7 +86,7 @@ public class RTL2832TunerEditor extends TunerEditor<RTL2832Tuner, RTL2832TunerCo
     {
         if(hasTuner())
         {
-            return getTuner().getController().getMaximumFrequency();
+            return getTuner().getController().getMaximumTunableFrequency();
         }
 
         return R8xTunerConfiguration.MAXIMUM_TUNABLE_FREQUENCY_HZ;

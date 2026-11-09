@@ -5,6 +5,28 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-16.1] - 2026-11-09
+
+### Fixed
+- **RTL tuner frequency range could not be moved** (16.0): the RTL editor checked a new range against the tuner's
+  current range instead of what the tuner can tune, so a range could only be narrowed - Baker's 450-459.9 MHz Nooelec
+  could not be set to 154-156.5 MHz. The controller now keeps the embedded tuner's limits for the editor.
+- **Tuner editor stopped saving after an "Invalid Frequency" message** (upstream): the editor stayed in its loading
+  state, so later changes were ignored and never saved. Rejected entries now release the editor and log a WARN;
+  saved range changes log an INFO line.
+- **Uncaught exceptions are written to the application log** (Swing/JavaFX threads included) - each distinct one in
+  full three times, then every 1000th with a count. Before, they went only to the console.
+
+### Upstream
+- #2605 jLibUSB - libusb and USB hotplug for the tuner libraries (replaces usb4java); jAirspy 1.0.12.1, jAirspyHF
+  1.8.1.1, jBladeRF 2.6.0.1, jHackRF 2026.01.3.1, jHydraSDR 1.1.4.1, jRTL 1.4.0.2. Tuner IDs unchanged.
+- #2608 DMR: voice frames with errors are not played and do not change call state (fewer squawks and false
+  encryption flags on noisy DMR).
+- #2602 P25 Phase 1 Adjacent Status Broadcast (uncoordinated band plan) handled as network configuration.
+- #2599 Bias-T for Airspy, Airspy HF and Funcube. #2603 frequency control mouse wheel. #2591 streaming editor
+  text fields expand.
+- Not taken: #2601 LimeSDR support, #2607 version 1.0.0 beta 1 label.
+
 ## [0.6.2-ap-16.0] - 2026-11-08
 
 Test build for Baker, Daly and Somerville. The rest of the fleet stays on 15.11.5 until it has run cleanly.

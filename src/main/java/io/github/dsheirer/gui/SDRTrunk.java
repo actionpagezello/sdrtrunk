@@ -928,6 +928,43 @@ public class SDRTrunk implements Listener<TunerEvent>
      */
     public static void main(String[] args)
     {
+        installUncaughtExceptionLogging();
         new SDRTrunk();
+    }
+
+    /**
+     * AP-fork (ap-16.1): writes exceptions that no code catches - on the Swing and JavaFX threads in particular - to
+     * the application log.  Before, they went only to the console, which nobody sees, so a failing editor control
+     * left no trace (Baker 2026-11-08: tuner range changes silently not saved).  Each distinct exception is logged
+     * in full three times, then every 1000th occurrence with a count.
+     */
+    private static void installUncaughtExceptionLogging()
+    {
+        java.util.concurrent.ConcurrentHashMap<String,java.util.concurrent.atomic.AtomicLong> counts =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            try
+            {
+                StackTraceElement[] stack = throwable.getStackTrace();
+                String key = throwable.getClass().getName() + (stack.length > 0 ? "@" + stack[0] : "");
+                long count = counts.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
+
+                if(count <= 3 || count % 1000 == 0)
+                {
+                    mLog.error("Uncaught exception on thread [" + thread.getName() + "] - occurrence " + count, throwable);
+                }
+            }
+            catch(Throwable ignored)
+            {
+                //Never let logging fail the thread
+            }
+
+            if(previous != null)
+            {
+                previous.uncaughtException(thread, throwable);
+            }
+        });
     }
 }
