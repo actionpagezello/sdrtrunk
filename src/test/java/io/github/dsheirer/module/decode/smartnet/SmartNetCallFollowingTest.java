@@ -199,6 +199,29 @@ public class SmartNetCallFollowingTest
     }
 
     /**
+     * Test: the talkgroup's next transmission granted on another channel closes the previous voice channel at once, so
+     * the two calls never overlap (overlap made duplicate call detection suppress the new one).
+     */
+    @Test
+    void testReplyOnAnotherChannel()
+    {
+        setup(4);
+        grant(RADIO, TALKGROUP, CHANNEL);
+        advance(1000);
+        grant(28366, TALKGROUP, 268);
+        assertEquals(2, mStarts.size());
+        assertEquals(1, mChannelEvents.size());
+        assertEquals(ChannelEvent.Event.REQUEST_DISABLE, mChannelEvents.get(0).getEvent());
+        assertEquals(mStarts.get(0).getChannel(), mChannelEvents.get(0).getChannel());
+        assertEquals(1, mManager.getCallCount());
+
+        //Another talkgroup on another channel is left alone
+        grant(1234, 33168, 238);
+        assertEquals(1, mChannelEvents.size());
+        assertEquals(2, mManager.getCallCount());
+    }
+
+    /**
      * Test: encrypted calls are listed but not followed; control channel announcements are ignored; a private call is
      * radio to radio.
      */

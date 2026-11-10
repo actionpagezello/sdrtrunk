@@ -162,6 +162,22 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
             endCall(key, call);
         }
 
+        //A talkgroup is on one voice channel at a time: a new grant for it on another channel means its previous
+        //transmission is over.  Close that voice channel now instead of 3 s later - while both were open, SDRTrunk's
+        //duplicate call detection suppressed the new transmission (MSP Summit 800, 16 of 58 calls on 2026-11-09).
+        Identifier to = getTo(identifiers);
+
+        if(to != null)
+        {
+            for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
+            {
+                if(entry.getKey() != key && to.equals(getTo(entry.getValue().mEvent.getIdentifierCollection())))
+                {
+                    endCall(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
         DecodeEvent event = DecodeEvent.builder(type, timestamp)
             .channel(channel)
             .identifiers(identifiers)
