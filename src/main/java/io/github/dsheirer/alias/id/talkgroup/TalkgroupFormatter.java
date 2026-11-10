@@ -63,6 +63,7 @@ public class TalkgroupFormatter
         mFormatterMap.put(Protocol.NXDN, new NXDNTalkgroupFormatter());
         mFormatterMap.put(Protocol.PASSPORT, new PassportTalkgroupFormatter());
         mFormatterMap.put(Protocol.SMARTNET, new PassportTalkgroupFormatter()); //AP-fork: same 16-bit decimal/hex
+        mFormatterMap.put(Protocol.EDACS, new PassportTalkgroupFormatter()); //AP-fork: decimal/hex
         mFormatterMap.put(Protocol.UNKNOWN, new UnknownTalkgroupFormatter());
     }
 

@@ -104,6 +104,12 @@ import io.github.dsheirer.module.decode.p25.phase2.P25P2DecoderHDQPSK;
 import io.github.dsheirer.module.decode.p25.phase2.P25P2DecoderState;
 import io.github.dsheirer.module.decode.p25.phase2.message.P25P2Message;
 import io.github.dsheirer.module.decode.p25.phase2.message.filter.P25P2MessageFilterSet;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
+import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
+import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.edacs.EDACSTrafficChannelManager;
+import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceAudioModule;
+import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceDecoder;
 import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
 import io.github.dsheirer.module.decode.smartnet.SmartNetDecoder;
 import io.github.dsheirer.module.decode.smartnet.SmartNetDecoderState;
@@ -206,6 +212,10 @@ public class DecoderFactory
                 break;
             case SMARTNET:
                 processSmartNet(channel, modules, aliasList, channelType, (DecodeConfigSmartNet)decodeConfig,
+                    userPreferences);
+                break;
+            case EDACS:
+                processEDACS(channel, modules, aliasList, channelType, (DecodeConfigEDACS)decodeConfig,
                     userPreferences);
                 break;
             case P25_PHASE1:
@@ -447,6 +457,72 @@ public class DecoderFactory
 
             modules.add(new SmartNetDecoderState(channelType, null, config));
         }
+    }
+
+    /**
+     * AP-fork (EDACS): EDACS Extended Addressing.  The control channel decodes the outbound control channel and starts
+     * a voice (traffic) channel for each call: ProVoice voice decoded through the JMBE IMBE codec, or analog FM.
+     */
+    private static void processEDACS(Channel channel, List<Module> modules, AliasList aliasList,
+                                     ChannelType channelType, DecodeConfigEDACS config, UserPreferences userPreferences)
+    {
+        if(channelType == ChannelType.STANDARD)
+        {
+            modules.add(new EDACSDecoder());
+            EDACSTrafficChannelManager trafficChannelManager = new EDACSTrafficChannelManager(channel);
+            modules.add(trafficChannelManager);
+            modules.add(new EDACSDecoderState(channelType, trafficChannelManager, config));
+
+            if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                sctmf.hasMultipleFrequencies())
+            {
+                List<State> activeStates = new ArrayList<>();
+                activeStates.add(State.CONTROL);
+                modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
+            }
+        }
+        else if(config.getVoiceMode() == DecodeConfigEDACS.VoiceMode.ANALOG)
+        {
+            AudioModule audioModule = new AudioModule(aliasList, AbstractAudioModule.DEFAULT_TIMESLOT,
+                config.getCallTimeoutSeconds() * 1000L + 5000, AUDIO_FILTER_ENABLE);
+            audioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            modules.add(audioModule);
+
+            SourceType sourceType = channel.getSourceConfiguration().getSourceType();
+
+            if(sourceType == SourceType.TUNER || sourceType == SourceType.TUNER_MULTIPLE_FREQUENCIES)
+            {
+                FMDemodulatorModule demodulator = new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, new NoiseSquelch(
+                    NoiseSquelch.DEFAULT_NOISE_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_NOISE_CLOSE_THRESHOLD,
+                    NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD));
+                demodulator.setGraphicEqualizer(edacsEqualizer(config));
+                modules.add(demodulator);
+            }
+
+            modules.add(new EDACSDecoderState(channelType, null, config));
+        }
+        else
+        {
+            modules.add(new ProVoiceDecoder());
+            ProVoiceAudioModule audioModule = new ProVoiceAudioModule(userPreferences, aliasList);
+            audioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            audioModule.setGraphicEqualizer(edacsEqualizer(config));
+            modules.add(audioModule);
+            modules.add(new EDACSDecoderState(channelType, null, config));
+        }
+    }
+
+    private static GraphicEqualizer edacsEqualizer(DecodeConfigEDACS config)
+    {
+        if(!config.isGraphicEQEnabled())
+        {
+            return null;
+        }
+
+        GraphicEqualizer equalizer = new GraphicEqualizer(8000.0);
+        equalizer.setBandGains(config.getGraphicEQBandGains());
+        equalizer.setEnabled(true);
+        return equalizer;
     }
 
     private static void processMPT1327(ChannelMapModel channelMapModel, Channel channel, List<Module> modules,
@@ -884,6 +960,8 @@ public class DecoderFactory
                 return new DecodeConfigPassport();
             case SMARTNET:
                 return new DecodeConfigSmartNet();
+            case EDACS:
+                return new DecodeConfigEDACS();
             case P25_PHASE1:
                 return new DecodeConfigP25Phase1();
             case P25_PHASE2:
@@ -984,6 +1062,8 @@ public class DecoderFactory
                     copySmartNet.setGraphicEQEnabled(originalSmartNet.isGraphicEQEnabled());
                     copySmartNet.setGraphicEQBandGains(originalSmartNet.getGraphicEQBandGains());
                     return copySmartNet;
+                case EDACS:
+                    return ((DecodeConfigEDACS)config).copy();
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
             }

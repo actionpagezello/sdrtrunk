@@ -19,47 +19,66 @@
 
 package io.github.dsheirer.module.decode.edacs;
 
-/**
- * AP-fork (EDACS): one EDACS Extended Addressing outbound control channel message - 28 data bits after the BCH check.
- *
- * Field layout worked out from MBTA (Extended Addressing, ProVoice) on 2026-11-09 and checked against the voice
- * channels: a group voice grant names the logical channel (LCN) and talkgroup, and is followed by a message carrying
- * the calling unit.  LCN numbering matches the Radio Reference channel list (LCN 2 = 851.225 ... LCN 14 = 851.9625).
- * <pre>
- *   bits 27-23  message type 1 (MT1)
- *   MT1 = 3, bits 27-16 != 0x1A0:  group voice grant   - LCN bits 21-17, flags bits 16-15?, talkgroup bits 15-0
- *   MT1 = 3, bits 27-16 == 0x1A0:  calling unit        - unit (LID) bits 19-0
- *   bits 27-20 == 0xFC:            idle / filler
- *   bits 27-20 == 0xFD:            system / site information
- * </pre>
- * Anything else is kept as OTHER with its raw value so later work can name it.
- */
-public class EDACSMessage
-{
-    public enum Type {GROUP_VOICE_GRANT, CALLING_UNIT, IDLE, SYSTEM_INFORMATION, OTHER}
+import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.protocol.Protocol;
+import java.util.Collections;
+import java.util.List;
 
-    private final int mData;
+/**
+ * AP-fork (EDACS): one EDACS Extended Addressing outbound control channel frame - two 28-bit messages, each after the
+ * BCH check.  The second message is absent (-1) when it failed the check.
+ *
+ * Field layout follows DSD-FME's edacs-fme.c (GPL) for Extended Addressing and was checked on MBTA (2026-11-09):
+ * <pre>
+ *   message 1, bits 27-23  MT1 (bits 22-19 MT2 when MT1 = 0x1F)
+ *   MT1 = 0x03 / 0x06      digital (ProVoice) / analog group voice call, assignment or update:
+ *                            message 1: LCN bits 21-17, update flag bit 16, group bits 15-0
+ *                            message 2: transmission trunking bit 21, emergency bit 20, source (LID) bits 19-0
+ * </pre>
+ * LCN numbering matches the Radio Reference channel list.  LCNs above 25 are status values (busy, queued, denied).
+ */
+public class EDACSMessage implements IMessage
+{
+    public static final int MT1_DIGITAL_GROUP_VOICE = 0x03;
+    public static final int MT1_ANALOG_GROUP_VOICE = 0x06;
+    public static final int MAX_LCN = 25;
+
+    private final int mMessage1;
+    private final int mMessage2;
     private final long mTimestamp;
     private final boolean mCorrected;
 
     /**
-     * Constructs an instance
-     * @param data 28 data bits
-     * @param timestamp of the message
+     * @param message1 28 data bits
+     * @param message2 28 data bits, or -1 when the second message failed the BCH check
+     * @param timestamp of the frame
      * @param corrected true when the three copies disagreed and the majority vote was needed
      */
-    public EDACSMessage(int data, long timestamp, boolean corrected)
+    public EDACSMessage(int message1, int message2, long timestamp, boolean corrected)
     {
-        mData = data & 0xFFFFFFF;
+        mMessage1 = message1 & 0xFFFFFFF;
+        mMessage2 = message2 < 0 ? -1 : message2 & 0xFFFFFFF;
         mTimestamp = timestamp;
         mCorrected = corrected;
     }
 
-    public int getData()
+    public int getMessage1()
     {
-        return mData;
+        return mMessage1;
     }
 
+    public int getMessage2()
+    {
+        return mMessage2;
+    }
+
+    public boolean hasMessage2()
+    {
+        return mMessage2 >= 0;
+    }
+
+    @Override
     public long getTimestamp()
     {
         return mTimestamp;
@@ -72,62 +91,99 @@ public class EDACSMessage
 
     public int getMT1()
     {
-        return (mData >> 23) & 0x1F;
+        return (mMessage1 >> 23) & 0x1F;
     }
 
-    public Type getType()
+    public int getMT2()
     {
-        int top8 = (mData >> 20) & 0xFF;
-
-        if(top8 == 0xFC)
-        {
-            return Type.IDLE;
-        }
-        if(top8 == 0xFD)
-        {
-            return Type.SYSTEM_INFORMATION;
-        }
-        if(getMT1() == 3)
-        {
-            return ((mData >> 16) & 0xFFF) == 0x1A0 ? Type.CALLING_UNIT : Type.GROUP_VOICE_GRANT;
-        }
-        return Type.OTHER;
+        return (mMessage1 >> 19) & 0xF;
     }
 
     /**
-     * Logical channel number of a group voice grant.
+     * Group voice call assignment or update, with its source (message 2 valid)
      */
+    public boolean isGroupVoice()
+    {
+        return (getMT1() == MT1_DIGITAL_GROUP_VOICE || getMT1() == MT1_ANALOG_GROUP_VOICE) && hasMessage2();
+    }
+
+    /**
+     * Digital (ProVoice) group voice call, as opposed to analog
+     */
+    public boolean isDigital()
+    {
+        return getMT1() == MT1_DIGITAL_GROUP_VOICE;
+    }
+
+    /**
+     * Update for a call in progress, as opposed to its first assignment
+     */
+    public boolean isUpdate()
+    {
+        return ((mMessage1 >> 16) & 1) == 1;
+    }
+
     public int getLCN()
     {
-        return (mData >> 17) & 0x1F;
+        return (mMessage1 >> 17) & 0x1F;
     }
 
-    /**
-     * Talkgroup of a group voice grant.
-     */
-    public int getTalkgroup()
+    public int getGroup()
     {
-        return mData & 0xFFFF;
+        return mMessage1 & 0xFFFF;
     }
 
-    /**
-     * Unit (logical ID) of a calling unit message.
-     */
-    public int getUnit()
+    public int getSource()
     {
-        return mData & 0xFFFFF;
+        return hasMessage2() ? mMessage2 & 0xFFFFF : 0;
+    }
+
+    public boolean isEmergency()
+    {
+        return hasMessage2() && ((mMessage2 >> 20) & 1) == 1;
+    }
+
+    public boolean isTransmissionTrunking()
+    {
+        return hasMessage2() && ((mMessage2 >> 21) & 1) == 1;
+    }
+
+    @Override
+    public boolean isValid()
+    {
+        return true;
+    }
+
+    @Override
+    public Protocol getProtocol()
+    {
+        return Protocol.EDACS;
+    }
+
+    @Override
+    public int getTimeslot()
+    {
+        return 0;
+    }
+
+    @Override
+    public List<Identifier> getIdentifiers()
+    {
+        return Collections.emptyList();
     }
 
     @Override
     public String toString()
     {
-        return switch(getType())
+        if(isGroupVoice())
         {
-            case GROUP_VOICE_GRANT -> "EDACS EA GROUP GRANT LCN:" + getLCN() + " TG:" + getTalkgroup();
-            case CALLING_UNIT -> "EDACS EA CALLING UNIT:" + getUnit();
-            case IDLE -> "EDACS IDLE";
-            case SYSTEM_INFORMATION -> "EDACS SYSTEM " + String.format("%07X", mData);
-            case OTHER -> "EDACS MSG " + String.format("%07X", mData);
-        };
+            return String.format("EDACS EA %s GROUP CALL %s GROUP:%d SOURCE:%d LCN:%d%s%s",
+                isDigital() ? "DIGITAL" : "ANALOG", isUpdate() ? "UPDATE" : "ASSIGNMENT", getGroup(), getSource(),
+                getLCN(), isEmergency() ? " EMERGENCY" : "", isTransmissionTrunking() ? "" : " MESSAGE TRUNKING");
+        }
+
+        return String.format("EDACS EA MT1:%02X%s MSG1:%07X MSG2:%s", getMT1(),
+            getMT1() == 0x1F ? " MT2:" + Integer.toHexString(getMT2()).toUpperCase() : "", mMessage1,
+            hasMessage2() ? String.format("%07X", mMessage2) : "-");
     }
 }

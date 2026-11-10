@@ -67,8 +67,7 @@ public class EDACSMessageFramer
             if(mPayloadIndex == PAYLOAD_BITS)
             {
                 mCollecting = false;
-                decode(0, timestamp);
-                decode(120, timestamp);
+                decodeFrame(timestamp);
                 mShift = 0;
             }
             return;
@@ -102,12 +101,51 @@ public class EDACSMessageFramer
     }
 
     /**
-     * Majority votes the three copies starting at the offset and dispatches the message when the BCH check passes.
+     * Majority votes the three copies of each message.  A frame is passed on when its first message passes the BCH
+     * check; the second message is included when it passes too (-1 otherwise).
      */
-    private void decode(int offset, long timestamp)
+    private void decodeFrame(long timestamp)
+    {
+        boolean[] corrected = new boolean[1];
+        long first = vote(0, corrected);
+        long second = vote(120, corrected);
+
+        if(EDACSBCH.isValid(first))
+        {
+            mValidCount++;
+            int message2 = -1;
+
+            if(EDACSBCH.isValid(second))
+            {
+                mValidCount++;
+                message2 = (int)(second >> EDACSBCH.CHECK_BITS);
+            }
+            else
+            {
+                mInvalidCount++;
+            }
+
+            mListener.accept(new EDACSMessage((int)(first >> EDACSBCH.CHECK_BITS), message2, timestamp,
+                corrected[0]));
+        }
+        else
+        {
+            mInvalidCount++;
+
+            if(EDACSBCH.isValid(second))
+            {
+                mValidCount++; //counted, but the frame is not usable without its first message
+            }
+            else
+            {
+                mInvalidCount++;
+            }
+        }
+    }
+
+    private long vote(int offset, boolean[] corrected)
     {
         long codeword = 0;
-        boolean corrected = false;
 
         for(int x = 0; x < 40; x++)
         {
@@ -118,21 +156,13 @@ public class EDACSMessageFramer
 
             if(a != b || b != c)
             {
-                corrected = true;
+                corrected[0] = true;
             }
 
             codeword = (codeword << 1) | (vote ? 1 : 0);
         }
 
-        if(EDACSBCH.isValid(codeword))
-        {
-            mValidCount++;
-            mListener.accept(new EDACSMessage((int)(codeword >> EDACSBCH.CHECK_BITS), timestamp, corrected));
-        }
-        else
-        {
-            mInvalidCount++;
-        }
+        return codeword;
     }
 
     public long getSyncCount()

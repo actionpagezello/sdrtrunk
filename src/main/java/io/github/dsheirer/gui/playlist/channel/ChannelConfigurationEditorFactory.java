@@ -69,6 +69,8 @@ public class ChannelConfigurationEditorFactory
                 return new PassportConfigurationEditor(playlistManager, tunerManager, userPreferences, filterProcessor);
             case SMARTNET:
                 return new SmartNetConfigurationEditor(playlistManager, tunerManager, userPreferences, filterProcessor);
+            case EDACS:
+                return new EDACSConfigurationEditor(playlistManager, tunerManager, userPreferences, filterProcessor);
             case P25_PHASE1:
                 return new P25P1ConfigurationEditor(playlistManager, tunerManager, userPreferences, filterProcessor);
             case P25_PHASE2:

@@ -52,23 +52,32 @@ public class EDACSControlChannelTest
     }
 
     /**
-     * Test: group grant and calling unit fields (Orange Line Wellington Yard on LCN 5, unit 4461).
+     * Test: group voice call fields (Orange Line Wellington Yard 296 on LCN 5, source 4461) per DSD-FME's layout.
      */
     @Test
     void testMessageFields()
     {
-        EDACSMessage grant = new EDACSMessage(0x18B0128, 0, false);
-        assertEquals(EDACSMessage.Type.GROUP_VOICE_GRANT, grant.getType());
-        assertEquals(5, grant.getLCN());
-        assertEquals(296, grant.getTalkgroup());
+        EDACSMessage call = new EDACSMessage(0x18B0128, 0x1A0116D, 0, false);
+        assertTrue(call.isGroupVoice());
+        assertTrue(call.isDigital());
+        assertTrue(call.isUpdate()); //recorded as an update of the call
+        assertEquals(5, call.getLCN());
+        assertEquals(296, call.getGroup());
+        assertEquals(4461, call.getSource());
+        assertTrue(call.isTransmissionTrunking());
+        assertFalse(call.isEmergency());
 
-        EDACSMessage unit = new EDACSMessage(0x1A0116D, 0, false);
-        assertEquals(EDACSMessage.Type.CALLING_UNIT, unit.getType());
-        assertEquals(4461, unit.getUnit());
+        //Update flag, analog type, emergency
+        EDACSMessage update = new EDACSMessage(0x3010111, 0x0100010, 0, false);
+        assertTrue(update.isGroupVoice());
+        assertFalse(update.isDigital());
+        assertTrue(update.isUpdate());
+        assertEquals(273, update.getGroup());
+        assertTrue(update.isEmergency());
 
-        assertEquals(EDACSMessage.Type.IDLE, new EDACSMessage(0xFC00000, 0, false).getType());
-        assertEquals(EDACSMessage.Type.SYSTEM_INFORMATION, new EDACSMessage(0xFD60121, 0, false).getType());
-        assertEquals(273, new EDACSMessage(0x1850111, 0, false).getTalkgroup());
+        //Without its second message a call has no source and is not used
+        assertFalse(new EDACSMessage(0x18B0128, -1, 0, false).isGroupVoice());
+        assertFalse(new EDACSMessage(0xFC00000, 0, 0, false).isGroupVoice());
     }
 
     /**
@@ -134,12 +143,14 @@ public class EDACSControlChannelTest
             framer.process(b, 0);
         }
 
-        assertEquals(5, messages.size());
-        assertEquals(296, messages.get(0).getTalkgroup());
-        assertEquals(4461, messages.get(1).getUnit());
-        assertEquals(273, messages.get(2).getTalkgroup());
-        assertEquals(305, messages.get(4).getTalkgroup());
-        assertTrue(messages.get(4).isCorrected());
+        //Frames: normal, inverted, damaged (first message voted good, second rejected)
+        assertEquals(3, messages.size());
+        assertEquals(296, messages.get(0).getGroup());
+        assertEquals(4461, messages.get(0).getSource());
+        assertEquals(273, messages.get(1).getGroup());
+        assertEquals(305, messages.get(2).getGroup());
+        assertFalse(messages.get(2).hasMessage2());
+        assertTrue(messages.get(2).isCorrected());
         assertEquals(1, framer.getInvalidCount());
     }
 
@@ -181,7 +192,8 @@ public class EDACSControlChannelTest
 
         demodulator.process(i, q, samples);
 
-        assertTrue(messages.size() >= 96, "Decoded " + messages.size() + " of 100 messages");
-        assertTrue(messages.stream().anyMatch(m -> m.getTalkgroup() == 273 + 10), "Frame 10 decoded");
+        assertTrue(messages.size() >= 48, "Decoded " + messages.size() + " of 50 frames");
+        assertTrue(messages.stream().anyMatch(m -> m.getGroup() == 273 + 10 && m.getSource() == 4010),
+            "Frame 10 decoded");
     }
 }

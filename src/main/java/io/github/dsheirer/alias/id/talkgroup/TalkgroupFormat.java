@@ -53,6 +53,8 @@ public enum TalkgroupFormat
         "Passport valid value range is 1-65,535"),
     SMARTNET("*****", 0, 0xFFFF, "0 to 65,535",
         "Motorola Type II talkgroup valid range is 0 to 65,535"),
+    EDACS("*****", 0, 0xFFFF, "0 to 65,535",
+        "EDACS Extended Addressing group valid range is 0 to 65,535"),
     UNKNOWN("********", 1, 0xFFFFFF, "1 to 16,777,215",
         "Unknown protocol valid value range is 1-16,777,215");
 
@@ -146,6 +148,8 @@ public enum TalkgroupFormat
                 return PASSPORT;
             case SMARTNET:
                 return SMARTNET;
+            case EDACS:
+                return EDACS;
             default:
                 return UNKNOWN;
         }

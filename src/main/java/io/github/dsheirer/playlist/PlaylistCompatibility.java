@@ -75,10 +75,10 @@ public class PlaylistCompatibility
     public static final Set<String> FORK_ONLY_ALIAS_ID_TYPES = Set.of("ctcss", "nac");
 
     /** Decode configuration types that only this fork can read - channels using them are kept out of the playlist */
-    public static final Set<String> FORK_ONLY_DECODE_TYPES = Set.of("decodeConfigSmartNet");
+    public static final Set<String> FORK_ONLY_DECODE_TYPES = Set.of("decodeConfigSmartNet", "decodeConfigEDACS");
 
     /** Protocols that only this fork has - talkgroup and radio alias identifiers using them are kept out */
-    public static final Set<String> FORK_ONLY_PROTOCOLS = Set.of("SMARTNET");
+    public static final Set<String> FORK_ONLY_PROTOCOLS = Set.of("SMARTNET", "EDACS");
 
     /** Root attributes written by the fork on save and removed again before the playlist is read */
     /**

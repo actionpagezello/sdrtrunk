@@ -31,6 +31,7 @@ import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
 import io.github.dsheirer.module.decode.smartnet.SmartNetBandPlan;
 import io.github.dsheirer.protocol.Protocol;
@@ -177,5 +178,39 @@ public class PlaylistCompatibilitySmartNetTest
         assertTrue(hasSmartNetChannel(loaded));
         assertTrue(loaded.getChannels().stream().anyMatch(c -> c.getName().equals("Fire Dispatch")));
         assertEquals(3, loaded.getAliases().get(0).getAliasIdentifiers().size());
+    }
+
+    /**
+     * Test: EDACS channels (with their LCN list) and EDACS identifiers are kept out of the playlist file and restored.
+     */
+    @Test
+    void testEDACS() throws Exception
+    {
+        ObjectMapper mapper = mapper();
+        PlaylistV2 playlist = playlist();
+        DecodeConfigEDACS edacs = new DecodeConfigEDACS();
+        edacs.setLcnFrequencies(List.of(851_175_000L, 851_225_000L, 851_425_000L));
+        playlist.getChannels().add(channel("MBTA Control", edacs, 853_725_000L));
+        Alias orange = new Alias("Orange Line");
+        orange.setAliasListName("MBTA");
+        orange.addAliasID(new Talkgroup(Protocol.EDACS, 296));
+        orange.addAliasID(new Radio(Protocol.EDACS, 13254));
+        playlist.getAliases().add(orange);
+
+        PlaylistCompatibility.SaveFiles files = PlaylistCompatibility.prepareSave(mapper.writeValueAsString(playlist),
+            "s1");
+        assertFalse(files.playlist().contains("decodeConfigEDACS"), files.playlist());
+        assertFalse(files.playlist().contains("\"EDACS\""), files.playlist());
+        mapper.readValue(files.playlist(), PlaylistV2.class);
+
+        PlaylistCompatibility.LoadResult result = PlaylistCompatibility.prepareLoad(files.playlist(), files.companion());
+        assertEquals(2, result.restoredChannels());
+        PlaylistV2 loaded = mapper.readValue(result.xml(), PlaylistV2.class);
+        DecodeConfigEDACS restored = (DecodeConfigEDACS)loaded.getChannels().stream()
+            .filter(c -> c.getName().equals("MBTA Control")).findFirst().orElseThrow().getDecodeConfiguration();
+        assertEquals(List.of(851_175_000L, 851_225_000L, 851_425_000L), restored.getLcnFrequencies());
+        Alias restoredAlias = loaded.getAliases().stream().filter(x -> x.getName().equals("Orange Line"))
+            .findFirst().orElseThrow();
+        assertEquals(2, restoredAlias.getAliasIdentifiers().size());
     }
 }
