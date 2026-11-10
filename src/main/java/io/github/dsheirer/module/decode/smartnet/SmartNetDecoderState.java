@@ -24,19 +24,25 @@ import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
+import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
+import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.event.DecodeEventType;
 import io.github.dsheirer.module.decode.smartnet.identifier.SmartNetRadio;
 import io.github.dsheirer.module.decode.smartnet.identifier.SmartNetTalkgroup;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.sample.real.IRealBufferListener;
 import io.github.dsheirer.source.heartbeat.Heartbeat;
 import io.github.dsheirer.source.heartbeat.IHeartbeatListener;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.LongSupplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * AP-fork (SmartNet): Motorola Type II decoder state.
@@ -50,8 +56,10 @@ import java.util.function.LongSupplier;
  * channel starts and keeps the call going until the traffic channel manager tears the channel down (the control
  * channel stopped announcing the call), or the configured call time limit passes.
  */
-public class SmartNetDecoderState extends DecoderState implements IHeartbeatListener
+public class SmartNetDecoderState extends DecoderState implements IHeartbeatListener, IRealBufferListener
 {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SmartNetDecoderState.class);
+    private static final double AUDIO_SAMPLE_RATE = 8000.0;
     private final ChannelType mChannelType;
     private final SmartNetTrafficChannelManager mTrafficChannelManager;
     private final SmartNetBandPlan mBandPlan;
@@ -63,6 +71,10 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
     private long mTrafficStart;
     private long mLastContinuation;
     private boolean mTrafficEnded;
+    private boolean mTrafficStarted;
+    private long mAudioSamples;
+    private long mLoggedControlFrequency;
+    private final Listener<float[]> mAudioListener = audio -> mAudioSamples += audio.length;
 
     //Activity summary
     private long mOSWCount;
@@ -104,6 +116,13 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         if(message instanceof SmartNetOSW osw)
         {
             mOSWCount++;
+
+            if(mChannelType != ChannelType.TRAFFIC && mFrequency != 0 && mFrequency != mLoggedControlFrequency)
+            {
+                mLoggedControlFrequency = mFrequency;
+                LOGGER.info("Motorola Type II control channel decoding on " + format(mFrequency));
+            }
+
             SmartNetOSW previous = mPrevious;
             mPrevious = osw;
             broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
@@ -219,8 +238,47 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             mTrafficStart = mClock.getAsLong();
             mLastContinuation = mTrafficStart;
             mTrafficEnded = false;
+            mTrafficStarted = true;
+            mAudioSamples = 0;
             broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
         }
+    }
+
+    /**
+     * Voice channel: one log line per followed call - how long the voice channel was open and how much audio got past
+     * the squelch (0 s means nothing was heard, so there was nothing to play or stream).
+     */
+    @Override
+    public void stop()
+    {
+        super.stop();
+
+        if(mChannelType == ChannelType.TRAFFIC && mTrafficStarted)
+        {
+            mTrafficStarted = false;
+            long frequency = mFrequency != 0 ? mFrequency : getCurrentFrequency();
+            LOGGER.info(String.format("Motorola Type II call TO:%s FROM:%s on %s - voice channel open %.1f s, " +
+                    "audio %.1f s%s", first(Role.TO), first(Role.FROM), format(frequency),
+                (mClock.getAsLong() - mTrafficStart) / 1000.0, mAudioSamples / AUDIO_SAMPLE_RATE,
+                mTrafficEnded ? " - stopped at the call limit" : ""));
+        }
+    }
+
+    private String first(Role role)
+    {
+        List<Identifier> identifiers = getIdentifierCollection().getIdentifiers(role);
+        return identifiers.isEmpty() ? "-" : identifiers.get(0).toString();
+    }
+
+    private static String format(long frequency)
+    {
+        return frequency > 0 ? String.format("%.4f MHz", frequency / 1e6) : "unknown frequency";
+    }
+
+    @Override
+    public Listener<float[]> getBufferListener()
+    {
+        return mAudioListener;
     }
 
     @Override

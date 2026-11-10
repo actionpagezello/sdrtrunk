@@ -177,6 +177,7 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
         else if(channel.getDownlinkFrequency() <= 0)
         {
             event.setDetails(append(details, "NO FREQUENCY FOR CHANNEL " + key + " IN THE BAND PLAN"));
+            LOGGER.info("Motorola Type II call on channel " + key + " not followed - no frequency in the band plan");
         }
         else if(channel.getDownlinkFrequency() == getCurrentControlFrequency())
         {
@@ -189,6 +190,8 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
             if(trafficChannel == null)
             {
                 event.setDetails(append(details, MAX_TRAFFIC_CHANNELS_EXCEEDED));
+                LOGGER.info("Motorola Type II call on channel " + channel + " not followed - all " +
+                    mManagedTrafficChannels.size() + " voice channels in use");
             }
             else
             {
@@ -302,6 +305,8 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
                         String reason = channelEvent.getDescription() != null ? channelEvent.getDescription() :
                             CHANNEL_START_REJECTED;
                         call.mEvent.setDetails(append(call.mEvent.getDetails(), reason));
+                        LOGGER.info("Motorola Type II voice channel " + call.mEvent.getChannelDescriptor() +
+                            " could not start - " + reason);
                         broadcast(call.mEvent);
                     }
                 }

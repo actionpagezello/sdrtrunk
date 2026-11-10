@@ -277,6 +277,10 @@ public class SmartNetCallFollowingTest
         mNow[0] += 2000;
         state.getHeartbeatListener().receive(new Heartbeat());
         assertEquals(count, events.size(), "ends once");
+
+        //Logs one line on stop, with the audio that got past the squelch
+        state.getBufferListener().receive(new float[8000]);
+        state.stop();
     }
 
     /**
