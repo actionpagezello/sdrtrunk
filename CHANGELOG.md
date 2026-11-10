@@ -10,6 +10,24 @@ Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 Test builds for Cambridge (MBTA) and Monson (MSP). Built as `0.6.2-ap-16.1-edacs` (`0.6.2-ap-16.1-smartnet` on
 the `smartnet` branch) so they never overwrite the 16.1 zip.
 
+### Build numbers
+From build 9 every `edacs` build has its own number: the version is `0.6.2-ap-16.1-edacs-<n>`, the patch is
+`edacs-<n>.patch`, and the zip goes to its own `v0.6.2-ap-16.1-edacs-<n>` folder, so no build overwrites another.
+The "SDRTrunk Version" log line shows the number. Builds 1-8 were all named `0.6.2-ap-16.1-edacs` (patches 1a-1h)
+and can only be told apart by the "Build Timestamp" log line.
+
+| Build | Patch | What |
+|---|---|---|
+| 1 | 1a | EDACS EA control channel |
+| 2 | 1b | Voice channel following, ProVoice audio, LCN list editor |
+| 3 | 1c | ProVoice concealment of damaged frames |
+| 4 | 1d | Radio Reference import of EDACS EA sites |
+| 5 | 1e | Diagnostics checkboxes, graphic EQ on EDACS voice |
+| 6 | 1f | Type II carrier squelch and low-speed data filter |
+| 7 | 1g | Deadlock fix by deferred requests - withdrawn (the 10:36 build, stopped twice at Cambridge) |
+| 8 | 1h | Deadlock fix the P25 way (the 11:45 build) |
+| 9 | edacs-9 | Same code as build 8; adds the build number only |
+
 ### Added - Motorola Type II SmartNet/SmartZone (`smartnet` branch)
 - Control channel decoding (3600 baud OSWs: grants, updates, system ID, band plans incl. splinter and custom) and
   call following: a grant starts an analog voice channel with talkgroup and calling radio; the call ends 3 s after
