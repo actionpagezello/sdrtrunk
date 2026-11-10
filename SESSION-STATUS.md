@@ -3,7 +3,83 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current Release: ap-15.11.4 (2026-11-05) — state as of 2026-11-07
+## Current state 2026-11-10 12:00: `edacs` branch test builds (Motorola Type II + EDACS EA / ProVoice)
+
+- **Master:** ap-16.1 (upstream jLibUSB, DMR voice error detection, RTL range editor fix). Earlier state below.
+- **`smartnet` branch** (on 16.1): Motorola Type II SmartNet/SmartZone control channel and call following, builds
+  as `0.6.2-ap-16.1-smartnet`. Tree `de521ff4`, pushed `6fc43fa9`. Superseded by `edacs`, which contains it.
+- **`edacs` branch** (on `smartnet`): EDACS Extended Addressing with ProVoice audio, builds as
+  `0.6.2-ap-16.1-edacs`. Current: tree `255ad01b`, pushed `275a3219` (2026-11-10 11:45), zip
+  `sdrtrunk-ap-versions\v0.6.2-ap-16.1-edacs\sdr-trunk-windows-x86_64-v0.6.2-ap-16.1-edacs.zip` (each `edacs`
+  build overwrites this zip - same version name).
+- **Deploy next:** Cambridge (MBTA EDACS + P25) and Monson (MSP Type II) on the 11:45 build.
+- Decide whether to merge `edacs` into master as **ap-16.2** once Cambridge and Monson run cleanly.
+
+### `edacs` branch patches (`edacs-1<x>.patch`, `git am --keep-cr --3way`, in order on `smartnet`)
+| Patch | Tree | What |
+|---|---|---|
+| 1a | `a5d35fec` | EDACS EA control channel (9600 baud): assignments, talkgroups, units |
+| 1b | `0cd1d8c1` | Voice channel following; ProVoice decoder (IMBE 7100 -> P25 IMBE -> JMBE); analog EDACS voice; LCN list editor; playlist compatibility |
+| 1c | `e16befb5` | ProVoice concealment like mbelib: > 5 errors repeats the last good frame, silence after 3 |
+| 1d | `a4f78893` | Radio Reference import of EDACS EA sites (LCN list in RR order, all control channels) |
+| 1e | `befdae14` | Diagnostics checkboxes "Motorola Type II decoder" and "EDACS / ProVoice decoder" (DEBUG); graphic EQ on EDACS voice. Pushed `7a9652dc` |
+| 1f | `36ccaf96` | Type II voice: carrier squelch (mute when the carrier is 20 dB below the call level) + LowSpeedDataFilter (cut < 250 Hz, flat > 350 Hz); EDACS analog voice: carrier squelch |
+| 1g | `7ccff279` | Deadlock fix by sending start/stop requests after the manager lock - **withdrawn** (see 1h). Pushed `08773d66` |
+| 1h | `255ad01b` | Replaces 1g: managers ignore other channels' events before taking their lock (as P25 does). Pushed `275a3219` |
+
+### Findings 2026-11-09/10
+- **MBTA EDACS EA (Cambridge):** control 853.725 (LCN 10). LCN list in Radio Reference order: 851.175, 851.225,
+  851.425, 851.475, 851.9375, 851.9875, 852.175, 852.25, 853.6625, 853.725, 853.9, 851.0625, 851.45, 851.9625,
+  853.925. Assignment MT1 0x03 = ProVoice group call, 0x06 = analog; LCN > 25 are status values. Updates every
+  0.1-0.6 s while a call lasts; call ends 1.5 s after the last update. Control replay: 247 assignments, 235 calls.
+- **ProVoice audio:** about 8% of voice frames concealed on LCN 5 (1.7%-89% per transmission). Armen: 70-80% clear,
+  a little muffled/gargle, occasional digital sounds. Suggested EQ +4-6 dB at 2.1/2.9/3.5 kHz, -3 dB at 200/280 Hz.
+- **Cambridge 11-10 08:24-08:45 (07:44 build):** 481 calls, all ProVoice; 9 TUNER UNAVAILABLE (851.0625 and
+  851.2-851.4 tuners busy); 15 of 291 voice channels closed with no audio - not explained yet (needs EDACS DEBUG).
+- **Cambridge deadlock 08:45 (07:44 build):** P25 thread (857.0125) inside `ChannelProcessingManager.startProcessing`
+  delivering a P25 channel event to `EDACSTrafficChannelManager.processChannelEvent` (synchronized, membership
+  checked inside the lock) while the EDACS control thread held the manager lock posting a
+  `ChannelStartProcessingRequest`. Both systems stopped. Report `20261110_084512_..._diagnostic_report`.
+- **10:36 build (1f + 1g) stopped twice** at Cambridge (11:10:56, 11:11:45), each about 1 s after the first EDACS
+  voice channel closed; nothing logged (no exception, no deadlock report, all threads silent). No hs_err file
+  checked. 1g changed exactly the voice channel close path, so it was withdrawn (1h). Cause not proven.
+- **Monson tone (MSP Type II, 854.4875):** the tone is the Type II sub-audible low-speed data (150 baud), not a PL
+  tone - a line spectrum 7.14 Hz apart (42.75, 50.0, 57.25, 64.25, 71.5, 78.5 Hz; 150/21 = 7.14 -> a repeating
+  21-bit word), strongest at 50 Hz, +15 dB over the pauses before 1f, -42 dB after. A 112 Hz burst at unkey.
+  No 97.3 Hz tone, although Radio Reference lists MSP "Connect Tone: 97.30" - the connect tone values appear to
+  name a data code, not an audio frequency.
+- **Monson tail:** the noise squelch passed up to 1.7 s of noise after the carrier dropped; fixed by the 1f carrier
+  squelch (audio ends at the carrier drop on the five recordings).
+- **Monson config:** control channels only 855.9375 and 854.9375 (Radio Reference lists the wrong one first);
+  voice 855.6875, 855.4125, 854.4875. Monson needs `ChannelRotationMonitor` (multi-frequency control) - fixed on
+  `smartnet`.
+- **MSP Metro Boston (Type II):** 16 of 58 calls were lost to duplicate call suppression when a talkgroup moved
+  channel; fixed (a new grant for the talkgroup on another channel ends its old call).
+- **jLibUSB (16.1) renumbers USB buses** on machines with several USB controllers, so "RTL-2832 USB Bus:X Port:Y"
+  tuner settings no longer match. Fixed by editing `tuner_configuration.json`: Monson bus 1 <-> 2; Paxton old
+  Bus 2 -> 5, 4 -> 2, 5 -> 4 (files `tuner_configuration_monson.json` / `_paxton.json` delivered; Paxton not yet
+  installed).
+
+### OPEN (edacs)
+- Deploy the 11:45 build to Cambridge and Monson; Cambridge: tick "EDACS / ProVoice decoder" and send an hour of
+  log (damaged-frame rate per transmission; the zero-audio voice channels).
+- If it stops again: window closed or frozen? `hs_err_pid*.log` in the SDRTrunk start folder?
+- Type II signaling squelch (open only while the 150-baud low-speed data is present; optional check of the site's
+  connect tone code) - needs more Monson voice recordings first (weak transmissions, unkeys).
+- ProVoice audio quality (muffled/gargle) - more recordings; EQ first.
+- Automatic migration of tuner settings when jLibUSB renumbers buses (optional, code).
+- 16.1 logs from the other machines; Daly pre-reboot log; Summit 800 overnight log; Paxton tuner file.
+- Decide whether to merge `edacs` into master as ap-16.2.
+
+### Working rules added 2026-11-09/10
+- Patches go to `C:\Users\Admin\projects\logs`; run `git am` from `C:\Users\Admin\projects\sdrtrunk-ap`. Don't
+  delete `*.patch` from the logs folder before they are applied. Copy only the commands, not `->` result lines.
+- Fork-only playlist types (Type II, EDACS) are kept out of `default.xml` and restored from `default.ap.xml`, so
+  the playlist still loads in upstream SDRTrunk.
+- Stop-hook "unpushed commits" messages: this session can't push - Armen pushes; `edacs16` is the session's local
+  name for `edacs`.
+
+## Previous state (2026-11-07): ap-15.11.4 to ap-16.1
 
 - Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.11.4\sdr-trunk-windows-x86_64-v0.6.2-ap-15.11.4.zip`
 - Tree `4b011321`, pushed as `ed1d89c5` (guard on the tree hash; commit hashes differ between machines).

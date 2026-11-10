@@ -5,6 +5,42 @@ DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recor
 
 Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
 
+## [0.6.2-ap-16.1-edacs] - 2026-11-10 (`edacs` branch test builds, on 16.1)
+
+Test builds for Cambridge (MBTA) and Monson (MSP). Built as `0.6.2-ap-16.1-edacs` (`0.6.2-ap-16.1-smartnet` on
+the `smartnet` branch) so they never overwrite the 16.1 zip.
+
+### Added - Motorola Type II SmartNet/SmartZone (`smartnet` branch)
+- Control channel decoding (3600 baud OSWs: grants, updates, system ID, band plans incl. splinter and custom) and
+  call following: a grant starts an analog voice channel with talkgroup and calling radio; the call ends 3 s after
+  the control channel stops updating it. Shown as "Motorola Type II".
+- Several control channel frequencies are rotated through until one decodes (Monson).
+- Noise squelch and graphic EQ on voice channels; an INFO line per call (voice channel open time and audio time).
+- Playlist: Type II channels are kept out of `default.xml` (restored from `default.ap.xml`) so upstream SDRTrunk
+  can still read the playlist.
+
+### Added - EDACS Extended Addressing with ProVoice (`edacs` branch)
+- EDACS EA control channel (9600 baud): group call assignments with talkgroup and unit; voice channels followed per
+  call as ProVoice or analog, ending 1.5 s after the last update. LCN frequency list in the channel editor.
+- ProVoice voice decoding: 9600-baud frames, IMBE 7100 error correction, converted to P25 IMBE and played through
+  JMBE; damaged frames concealed like mbelib (repeat the last good frame, silence after 3).
+- Radio Reference import of EDACS EA sites: LCN list in Radio Reference order, every control channel.
+- Diagnostics checkboxes "Motorola Type II decoder" and "EDACS / ProVoice decoder" (DEBUG per call and per
+  minute); INFO per EDACS call with the damaged-frame percentage; graphic EQ on EDACS voice channels.
+
+### Fixed
+- **Motorola Type II voice: sub-audible tone and squelch tail (Monson).** The tone is the Type II low-speed data
+  (150 baud, below 250 Hz) - a new filter removes it (-55 dB to 250 Hz, flat from 350 Hz). A carrier squelch mutes
+  as soon as the carrier drops 20 dB below the call's level; the noise squelch alone let up to 1.7 s of noise
+  through. EDACS analog voice channels get the carrier squelch too.
+- **Motorola Type II: replies lost as duplicates** (MSP Metro Boston, 16 of 58 calls): a grant for a talkgroup on
+  another channel now ends its previous call.
+- **EDACS / Type II deadlock with P25** (Cambridge 2026-11-10 08:45): the EDACS manager took its lock before checking
+  whether a channel event was for one of its channels, while a P25 channel thread held the channel processing
+  manager's lock - both systems stopped. Events for other channels now return before the lock, as in the P25
+  manager. (A first fix that deferred the voice channel start/stop requests was withdrawn: that build stopped
+  twice at Cambridge right after an EDACS voice channel closed.)
+
 ## [0.6.2-ap-16.1] - 2026-11-09
 
 ### Fixed
