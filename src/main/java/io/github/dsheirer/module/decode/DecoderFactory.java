@@ -203,7 +203,8 @@ public class DecoderFactory
                 processPassport(channel, modules, aliasList, decodeConfig);
                 break;
             case SMARTNET:
-                processSmartNet(channel, modules, aliasList, channelType, (DecodeConfigSmartNet)decodeConfig);
+                processSmartNet(channel, modules, aliasList, channelType, (DecodeConfigSmartNet)decodeConfig,
+                    userPreferences);
                 break;
             case P25_PHASE1:
                 processP25Phase1(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
@@ -393,7 +394,8 @@ public class DecoderFactory
      * (traffic) channel for each call; a voice channel is plain analog FM audio carrying the call's identifiers.
      */
     private static void processSmartNet(Channel channel, List<Module> modules, AliasList aliasList,
-                                        ChannelType channelType, DecodeConfigSmartNet config)
+                                        ChannelType channelType, DecodeConfigSmartNet config,
+                                        UserPreferences userPreferences)
     {
         if(channelType == ChannelType.STANDARD)
         {
@@ -401,6 +403,16 @@ public class DecoderFactory
             SmartNetTrafficChannelManager trafficChannelManager = new SmartNetTrafficChannelManager(channel);
             modules.add(trafficChannelManager);
             modules.add(new SmartNetDecoderState(channelType, trafficChannelManager, config));
+
+            //Several control channel frequencies (Radio Reference import lists every 'c' frequency): move to the
+            //next one while no control channel is decoded
+            if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                sctmf.hasMultipleFrequencies())
+            {
+                List<State> activeStates = new ArrayList<>();
+                activeStates.add(State.CONTROL);
+                modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
+            }
         }
         else
         {
