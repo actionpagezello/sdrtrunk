@@ -27,6 +27,7 @@ import io.github.dsheirer.gui.playlist.channel.ViewChannelRequest;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.dmr.DecodeConfigDMR;
 import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
 import io.github.dsheirer.module.decode.nxdn.DecodeConfigNXDN;
@@ -348,10 +349,16 @@ public class SiteEditor extends GridPane
 
                 config.setScrambleParameters(new ScrambleParameters(wacn, system, nac));
                 return config;
+            case EDACS:
+                //AP-fork: the decoder needs every site frequency in LCN order
+                DecodeConfigEDACS edacs = new DecodeConfigEDACS();
+                edacs.setLcnFrequencies(RadioReferenceDecoder.getLcnFrequencies(site));
+                return edacs;
             default:
                 return DecoderFactory.getDecodeConfiguration(decoderType);
         }
     }
+
 
     /**
      * Loads the user selected site info into this editor.
