@@ -64,6 +64,15 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
     private double mChannelBandwidth;
     private NoiseSquelch mNoiseSquelch;
     private GraphicEqualizer mGraphicEqualizer;
+    private IRealFilter mOutputFilter;
+    private boolean mCarrierSquelch;
+    private double mCarrierReferenceDb = Double.NEGATIVE_INFINITY;
+    private double mDecimatedSampleRate;
+
+    /** AP-fork: carrier squelch mutes when the carrier is this far below the call's carrier level */
+    public static final double CARRIER_DROP_DB = 20.0;
+    /** AP-fork: how fast the carrier reference follows a weakening signal */
+    private static final double CARRIER_REFERENCE_DECAY_DB_PER_SECOND = 3.0;
 
     /**
      * Creates an FM demodulator for the specified channel bandwidth and output sample rate.
@@ -97,6 +106,13 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
      */
     protected void broadcast(float[] demodulatedSamples)
     {
+        IRealFilter outputFilter = mOutputFilter;
+
+        if(outputFilter != null)
+        {
+            demodulatedSamples = outputFilter.filter(demodulatedSamples);
+        }
+
         GraphicEqualizer equalizer = mGraphicEqualizer;
 
         if(equalizer != null && equalizer.isEnabled())
@@ -108,6 +124,47 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
         {
             mResampledBufferListener.receive(demodulatedSamples);
         }
+    }
+
+    /**
+     * AP-fork (SmartNet): filter applied to the 8 kHz audio before the equalizer, or null for none
+     */
+    public void setOutputFilter(IRealFilter filter)
+    {
+        mOutputFilter = filter;
+    }
+
+    /**
+     * AP-fork (SmartNet): carrier squelch for trunked voice channels.  The channel is only open while a call is on it,
+     * so the audio is dropped whenever the received carrier falls CARRIER_DROP_DB below the call's carrier level - the
+     * transmitter has stopped.  Works with the noise squelch: audio passes only when both are open.
+     */
+    public void setCarrierSquelch(boolean enabled)
+    {
+        mCarrierSquelch = enabled;
+    }
+
+    /**
+     * Carrier squelch decision for one block of filtered samples - true to drop the block.  Package-private for testing.
+     */
+    boolean carrierSquelched(float[] i, float[] q)
+    {
+        if(!mCarrierSquelch || i.length == 0)
+        {
+            return false;
+        }
+
+        double power = 0;
+
+        for(int x = 0; x < i.length; x++)
+        {
+            power += i[x] * i[x] + q[x] * q[x];
+        }
+
+        double db = 10 * Math.log10(power / i.length + 1e-20);
+        double seconds = mDecimatedSampleRate > 0 ? i.length / mDecimatedSampleRate : 0.01;
+        mCarrierReferenceDb = Math.max(db, mCarrierReferenceDb - CARRIER_REFERENCE_DECAY_DB_PER_SECOND * seconds);
+        return db < mCarrierReferenceDb - CARRIER_DROP_DB;
     }
 
     /**
@@ -171,6 +228,11 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
         float[] demodulated = mDemodulator.demodulate(filteredI, filteredQ);
         mPowerMonitor.process(filteredI, filteredQ);
 
+        if(carrierSquelched(filteredI, filteredQ))
+        {
+            return; //AP-fork: carrier gone - the transmission is over
+        }
+
         if(mNoiseSquelch != null)
         {
             mNoiseSquelch.process(demodulated);
@@ -223,6 +285,7 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
                     decimatedSampleRate /= decimationRate;
                 }
 
+                mDecimatedSampleRate = decimatedSampleRate;
                 mIDecimationFilter = DecimationFilterFactory.getRealDecimationFilter(decimationRate);
                 mQDecimationFilter = DecimationFilterFactory.getRealDecimationFilter(decimationRate);
 

@@ -110,6 +110,7 @@ import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
 import io.github.dsheirer.module.decode.edacs.EDACSTrafficChannelManager;
 import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceAudioModule;
 import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceDecoder;
+import io.github.dsheirer.module.decode.smartnet.LowSpeedDataFilter;
 import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
 import io.github.dsheirer.module.decode.smartnet.SmartNetDecoder;
 import io.github.dsheirer.module.decode.smartnet.SmartNetDecoderState;
@@ -444,6 +445,10 @@ public class DecoderFactory
                     NoiseSquelch.DEFAULT_NOISE_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_NOISE_CLOSE_THRESHOLD,
                     NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD));
 
+                //Trunked voice channel: mute as soon as the carrier drops, and remove the sub-audible low-speed data
+                demodulator.setCarrierSquelch(true);
+                demodulator.setOutputFilter(LowSpeedDataFilter.create());
+
                 if(config.isGraphicEQEnabled())
                 {
                     GraphicEqualizer equalizer = new GraphicEqualizer(8000.0);
@@ -495,6 +500,7 @@ public class DecoderFactory
                 FMDemodulatorModule demodulator = new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, new NoiseSquelch(
                     NoiseSquelch.DEFAULT_NOISE_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_NOISE_CLOSE_THRESHOLD,
                     NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD));
+                demodulator.setCarrierSquelch(true);
                 demodulator.setGraphicEqualizer(edacsEqualizer(config));
                 modules.add(demodulator);
             }
