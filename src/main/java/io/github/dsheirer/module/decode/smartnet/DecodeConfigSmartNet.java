@@ -20,7 +20,9 @@
 package io.github.dsheirer.module.decode.smartnet;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.config.WithCallTimeout;
@@ -43,6 +45,8 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     private int mCallTimeoutSeconds = CALL_TIMEOUT_DEFAULT_SECONDS;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mTrafficChannel = false;
+    private boolean mGraphicEQEnabled = false;
+    private double[] mGraphicEQBandGains = new double[GraphicEqualizer.BAND_COUNT];
 
     public DecodeConfigSmartNet()
     {
@@ -99,6 +103,40 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     }
 
     /**
+     * Graphic equalizer (the same 10-band 200 Hz - 3.5 kHz equalizer as P25) applied to voice channel audio
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "graphic_eq_enabled")
+    public boolean isGraphicEQEnabled()
+    {
+        return mGraphicEQEnabled;
+    }
+
+    public void setGraphicEQEnabled(boolean enabled)
+    {
+        mGraphicEQEnabled = enabled;
+    }
+
+    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains_200_3500")
+    @JacksonXmlProperty(localName = "gain")
+    public double[] getGraphicEQBandGains()
+    {
+        return mGraphicEQBandGains;
+    }
+
+    /**
+     * @param gains in dB (-12 to +12), one per band; a shorter array is padded with 0 dB
+     */
+    public void setGraphicEQBandGains(double[] gains)
+    {
+        if(gains != null && gains.length > 0)
+        {
+            double[] copy = new double[GraphicEqualizer.BAND_COUNT];
+            System.arraycopy(gains, 0, copy, 0, Math.min(gains.length, GraphicEqualizer.BAND_COUNT));
+            mGraphicEQBandGains = copy;
+        }
+    }
+
+    /**
      * True for the copy given to the voice channels the control channel starts (never saved).
      */
     @JsonIgnore
@@ -118,6 +156,8 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
         copy.setCallTimeoutSeconds(getCallTimeoutSeconds());
         copy.setTrafficChannelPoolSize(getTrafficChannelPoolSize());
         copy.setAudioHangtimeMs(getAudioHangtimeMs());
+        copy.setGraphicEQEnabled(isGraphicEQEnabled());
+        copy.setGraphicEQBandGains(getGraphicEQBandGains());
         copy.mTrafficChannel = true;
         return copy;
     }

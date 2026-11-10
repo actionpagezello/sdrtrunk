@@ -288,5 +288,13 @@ public class SmartNetCallFollowingTest
         DecodeConfigSmartNet config = new DecodeConfigSmartNet();
         assertEquals(12500, config.getChannelSpecification().getBandwidth());
         assertEquals(25000, config.copyForTrafficChannel().getChannelSpecification().getBandwidth());
+
+        //Voice channels get the equalizer settings
+        config.setGraphicEQEnabled(true);
+        config.setGraphicEQBandGains(new double[]{-6, 0, 0, 0, 0, 0, 0, 0, 0, 3});
+        DecodeConfigSmartNet voice = config.copyForTrafficChannel();
+        assertTrue(voice.isGraphicEQEnabled());
+        assertEquals(-6.0, voice.getGraphicEQBandGains()[0]);
+        assertEquals(3.0, voice.getGraphicEQBandGains()[9]);
     }
 }

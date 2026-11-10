@@ -22,6 +22,7 @@ import io.github.dsheirer.dsp.filter.FilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.DecimationFilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
 import io.github.dsheirer.dsp.filter.design.FilterDesignException;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.dsp.filter.fir.FIRFilterSpecification;
 import io.github.dsheirer.dsp.filter.fir.real.IRealFilter;
 import io.github.dsheirer.dsp.filter.resample.RealResampler;
@@ -62,6 +63,7 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
     private Listener<float[]> mResampledBufferListener;
     private double mChannelBandwidth;
     private NoiseSquelch mNoiseSquelch;
+    private GraphicEqualizer mGraphicEqualizer;
 
     /**
      * Creates an FM demodulator for the specified channel bandwidth and output sample rate.
@@ -95,10 +97,25 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
      */
     protected void broadcast(float[] demodulatedSamples)
     {
+        GraphicEqualizer equalizer = mGraphicEqualizer;
+
+        if(equalizer != null && equalizer.isEnabled())
+        {
+            demodulatedSamples = equalizer.process(demodulatedSamples);
+        }
+
         if(mResampledBufferListener != null)
         {
             mResampledBufferListener.receive(demodulatedSamples);
         }
+    }
+
+    /**
+     * AP-fork (SmartNet): graphic equalizer applied to the 8 kHz demodulated audio, or null for none
+     */
+    public void setGraphicEqualizer(GraphicEqualizer equalizer)
+    {
+        mGraphicEqualizer = equalizer;
     }
 
     @Override

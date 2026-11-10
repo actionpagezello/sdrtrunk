@@ -35,6 +35,7 @@ import io.github.dsheirer.filter.IFilter;
 import io.github.dsheirer.identifier.patch.PatchGroupManager;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.MessageDirection;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.dsp.squelch.NoiseSquelch;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.am.AMDecoder;
@@ -429,9 +430,19 @@ public class DecoderFactory
             {
                 //Noise squelch: the voice channel stays open until the control channel stops announcing the call,
                 //a few seconds after the transmitter drops - this keeps that static out of the audio
-                modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, new NoiseSquelch(
+                FMDemodulatorModule demodulator = new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, new NoiseSquelch(
                     NoiseSquelch.DEFAULT_NOISE_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_NOISE_CLOSE_THRESHOLD,
-                    NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD)));
+                    NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD));
+
+                if(config.isGraphicEQEnabled())
+                {
+                    GraphicEqualizer equalizer = new GraphicEqualizer(8000.0);
+                    equalizer.setBandGains(config.getGraphicEQBandGains());
+                    equalizer.setEnabled(true);
+                    demodulator.setGraphicEqualizer(equalizer);
+                }
+
+                modules.add(demodulator);
             }
 
             modules.add(new SmartNetDecoderState(channelType, null, config));
@@ -970,6 +981,8 @@ public class DecoderFactory
                     copySmartNet.setCallTimeoutSeconds(originalSmartNet.getCallTimeoutSeconds());
                     copySmartNet.setTrafficChannelPoolSize(originalSmartNet.getTrafficChannelPoolSize());
                     copySmartNet.setAudioHangtimeMs(originalSmartNet.getAudioHangtimeMs());
+                    copySmartNet.setGraphicEQEnabled(originalSmartNet.isGraphicEQEnabled());
+                    copySmartNet.setGraphicEQBandGains(originalSmartNet.getGraphicEQBandGains());
                     return copySmartNet;
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());

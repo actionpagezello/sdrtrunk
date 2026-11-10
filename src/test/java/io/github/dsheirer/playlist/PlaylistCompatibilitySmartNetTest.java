@@ -79,6 +79,8 @@ public class PlaylistCompatibilitySmartNetTest
         DecodeConfigSmartNet smartNet = new DecodeConfigSmartNet();
         smartNet.setBandPlan(SmartNetBandPlan.BAND_800_SPLINTER);
         smartNet.setTrafficChannelPoolSize(6);
+        smartNet.setGraphicEQEnabled(true);
+        smartNet.setGraphicEQBandGains(new double[]{-6, 0, 0, 0, 0, 0, 0, 0, 0, 3});
         channels.add(channel("MSP Control", smartNet, 854_562_500L));
         playlist.setChannels(channels);
 
@@ -130,6 +132,9 @@ public class PlaylistCompatibilitySmartNetTest
             .filter(c -> c.getName().equals("MSP Control")).findFirst().orElseThrow().getDecodeConfiguration();
         assertEquals(SmartNetBandPlan.BAND_800_SPLINTER, config.getBandPlan());
         assertEquals(6, config.getTrafficChannelPoolSize());
+        assertTrue(config.isGraphicEQEnabled());
+        assertEquals(-6.0, config.getGraphicEQBandGains()[0]);
+        assertEquals(3.0, config.getGraphicEQBandGains()[9]);
 
         List<AliasID> ids = loaded.getAliases().get(0).getAliasIdentifiers();
         assertEquals(3, ids.size());
