@@ -43,7 +43,7 @@ public enum Protocol
     MPT1327("MPT-1327", "MPT1327", 1200),
     NXDN("NXDN", "NXDN", 9600),
     PASSPORT("Passport", "PASSPORT", 300),
-    SMARTNET("Type II", "SMARTNET", 3600), //AP-fork: Motorola Type II (SmartNet/SmartZone)
+    SMARTNET("Motorola Type II", "SMARTNET", 3600), //AP-fork: Motorola Type II (SmartNet/SmartZone)
     TAIT1200("Tait 1200", "TAIT1200", 1200),
     UDP("UDP", "UDP", 0),
     CTCSS("CTCSS", "CTCSS", 0),
