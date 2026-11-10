@@ -27,6 +27,23 @@ and can only be told apart by the "Build Timestamp" log line.
 | 7 | 1g | Deadlock fix by deferred requests - withdrawn (the 10:36 build, stopped twice at Cambridge) |
 | 8 | 1h | Deadlock fix the P25 way (the 11:45 build) |
 | 9 | edacs-9 | Same code as build 8; adds the build number only |
+| 10 | edacs-10 | TEST: RTL tuners keep their sample stream running between channels (Monson crash) |
+
+### Build 10 - RTL tuner crash at Monson (test build)
+- **Seen:** on 2026-11-10 Monson stopped 23 times with no shutdown in the log, on the 11-09 `smartnet` build and on
+  build 9. The Java crash reports (`hs_err_pid*.log` in the `bin` folder) all show `EXCEPTION_ACCESS_VIOLATION` in
+  `ntdll.dll`, reached from `libusb-1.0.dll` and `rtlsdr.dll` - the standard RTL driver adopted in 16.x - on a
+  scheduled thread. The two reports read in full both come from `ChannelRotationMonitor` rotating a multi-frequency
+  channel: one faults in the buffer reset inside `startRx`, the other in set frequency. With channel auto-start
+  cancelled and only the Type II channel running, Monson ran 84 minutes without a crash.
+- **Theory, not proven:** when the rotating channel is alone on its RTL tuner, removing it stops the sample stream,
+  and a control transfer sent to the device after that can fault inside libusb.
+- **Change:** `RTL2832TunerController` no longer stops the stream when the last channel leaves the tuner. The
+  stream runs from the first channel until the tuner is stopped, and samples are dropped before they are copied
+  while there is no channel. On close, the bias-T is turned off before the stream is stopped, so nothing is sent
+  between stopping the stream and closing the device.
+- **Not compiled or run before delivery** - the build environment had no Gradle access. Test: Monson with the full
+  playlist auto-started; it crashed within 1-2.5 minutes on 13 of 15 runs of build 9.
 
 ### Added - Motorola Type II SmartNet/SmartZone (`smartnet` branch)
 - Control channel decoding (3600 baud OSWs: grants, updates, system ID, band plans incl. splinter and custom) and
