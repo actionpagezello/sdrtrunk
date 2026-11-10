@@ -35,6 +35,11 @@ import java.util.List;
  *
  * Each 80 ms frame starts with a 32-bit sync; both the conventional/standard and the Extended Addressing sync are
  * searched, in either polarity (MBTA transmits it inverted).
+ *
+ * Damaged voice frames are concealed the way mbelib does it: a voice frame with more than MAX_ERRORS corrected bit
+ * errors is replaced by the last good one, and after MAX_REPEATS replacements in a row by silence.  Without this the
+ * damaged frames reach JMBE looking error free (they are re-encoded cleanly) and play as warbles (MBTA 2026-11-09:
+ * about 9% of voice frames on LCN 5 recorded in Somerville).
  */
 public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener, Listener<ComplexSamples>,
     ISourceEventListener
@@ -43,6 +48,11 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     public static final long SYNC = pattern("13131333111311311133113311331133");
     public static final long SYNC_EA = pattern("31131311331331111133131311311133");
     private static final int MAX_SYNC_ERRORS = 2;
+    /** mbelib's threshold: more corrected errors than this and the frame is not trusted */
+    public static final int MAX_ERRORS = 5;
+    public static final int MAX_REPEATS = 3;
+    /** Bits without a frame after which the next frame starts a new transmission (about 0.25 s) */
+    private static final long NEW_TRANSMISSION_BITS = 2400;
 
     private final Listener<SourceEvent> mSourceEventListener = this::process;
     private final int[] mFrame = new int[ProVoiceFrameDecoder.FRAME_BITS];
@@ -55,6 +65,10 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     private long mTimestamp;
     private long mFrameCount;
     private long mErrorCount;
+    private long mConcealedCount;
+    private byte[] mLastGood;
+    private int mRepeats;
+    private long mLastFrameBit = -NEW_TRANSMISSION_BITS;
 
     private static long pattern(String symbols)
     {
@@ -160,19 +174,59 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
 
     private void dispatch()
     {
+        if(mBitCount - mLastFrameBit > NEW_TRANSMISSION_BITS)
+        {
+            mLastGood = null; //new transmission - nothing to repeat
+            mRepeats = 0;
+        }
+        mLastFrameBit = mBitCount;
+
         ProVoiceFrameDecoder.VoiceFrame[] voiceFrames = ProVoiceFrameDecoder.decode(mFrame);
         List<byte[]> imbeFrames = new ArrayList<>(4);
         int errors = 0;
 
         for(ProVoiceFrameDecoder.VoiceFrame voiceFrame : voiceFrames)
         {
-            imbeFrames.add(IMBEFrameEncoder.encode(voiceFrame.parameters()));
+            imbeFrames.add(conceal(IMBEFrameEncoder.encode(voiceFrame.parameters()), voiceFrame.errors()));
             errors += voiceFrame.errors();
         }
 
         mFrameCount++;
         mErrorCount += errors;
         getMessageListener().receive(new ProVoiceMessage(imbeFrames, errors, mTimestamp));
+    }
+
+    /**
+     * Frame concealment: returns the frame to play - this one, the last good one repeated, or null for silence.
+     * Package-private for testing.
+     */
+    byte[] conceal(byte[] frame, int errors)
+    {
+        if(errors <= MAX_ERRORS)
+        {
+            mLastGood = frame;
+            mRepeats = 0;
+            return frame;
+        }
+
+        mConcealedCount++;
+
+        if(mLastGood != null && mRepeats < MAX_REPEATS)
+        {
+            mRepeats++;
+            return mLastGood;
+        }
+
+        mLastGood = null;
+        return null;
+    }
+
+    /**
+     * Voice frames (20 ms) replaced by a repeat or silence
+     */
+    public long getConcealedCount()
+    {
+        return mConcealedCount;
     }
 
     public long getFrameCount()

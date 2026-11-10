@@ -35,6 +35,7 @@ import io.github.dsheirer.sample.Listener;
  */
 public class ProVoiceAudioModule extends ImbeAudioModule
 {
+    private static final int SILENCE_SAMPLES = 160; //20 ms at 8 kHz
     private final NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
     private final Listener<SquelchStateEvent> mSquelchStateListener = this::squelch;
     private volatile GraphicEqualizer mGraphicEQ;
@@ -60,6 +61,13 @@ public class ProVoiceAudioModule extends ImbeAudioModule
         {
             for(byte[] frame : voice.getIMBEFrames())
             {
+                if(frame == null)
+                {
+                    addAudio(new float[SILENCE_SAMPLES]); //damaged frame, concealed as silence
+                    mFrameCount++;
+                    continue;
+                }
+
                 float[] audio = getAudioCodec().getAudio(frame);
 
                 //JMBE 2.x applies its own AGC - a fixed gain on top of it would clip

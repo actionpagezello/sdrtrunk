@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * AP-fork (EDACS ProVoice): decoding a ProVoice frame recorded on MBTA LCN 5 (851.9375 MHz, 2026-11-09) and building
@@ -157,5 +159,29 @@ public class ProVoiceTest
                 assertEquals(0, syndrome, "Hamming " + c);
             }
         }
+    }
+
+    /**
+     * Test: damaged voice frames are replaced by the last good frame up to three times, then by silence (null); a good
+     * frame resets it.
+     */
+    @Test
+    void testConcealment()
+    {
+        ProVoiceDecoder decoder = new ProVoiceDecoder();
+        byte[] good = new byte[18];
+        byte[] bad = new byte[18];
+        byte[] next = new byte[18];
+
+        assertNull(decoder.conceal(bad, 9), "nothing to repeat yet");
+        assertSame(good, decoder.conceal(good, ProVoiceDecoder.MAX_ERRORS));
+        assertSame(good, decoder.conceal(bad, 6));
+        assertSame(good, decoder.conceal(bad, 7));
+        assertSame(good, decoder.conceal(bad, 8));
+        assertNull(decoder.conceal(bad, 6));
+        assertNull(decoder.conceal(bad, 6));
+        assertSame(next, decoder.conceal(next, 0));
+        assertSame(next, decoder.conceal(bad, 11));
+        assertEquals(7, decoder.getConcealedCount());
     }
 }

@@ -26,7 +26,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * AP-fork (EDACS ProVoice): one ProVoice frame (80 ms) as four P25 IMBE voice frames for JMBE.
+ * AP-fork (EDACS ProVoice): one ProVoice frame (80 ms) as four P25 IMBE voice frames for JMBE.  A null frame is a
+ * damaged voice frame that is played as 20 ms of silence.
  */
 public class ProVoiceMessage implements IMessage
 {
