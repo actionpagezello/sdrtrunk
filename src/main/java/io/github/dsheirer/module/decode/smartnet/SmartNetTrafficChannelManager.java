@@ -72,6 +72,8 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
     private final List<Channel> mManagedTrafficChannels;
     private final Map<Integer,Channel> mAllocatedTrafficChannels = new HashMap<>();
     private final Map<Integer,Call> mCalls = new HashMap<>();
+    /** Guarded by this - see dispatch() */
+    private final List<Runnable> mDeferred = new ArrayList<>();
     private final Listener<ChannelEvent> mTeardownMonitor = this::processChannelEvent;
     private final Listener<Heartbeat> mHeartbeatListener = heartbeat -> checkCallEnds();
     private Listener<ChannelEvent> mChannelEventListener;
@@ -135,124 +137,145 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
      * @param follow false for a call that is not to be listened to (encrypted)
      * @param timestamp of the OSW
      */
-    public synchronized void processGrant(SmartNetChannel channel, IdentifierCollection identifiers,
+    public void processGrant(SmartNetChannel channel, IdentifierCollection identifiers,
                                           DecodeEventType type, String details, boolean follow, long timestamp)
     {
-        int key = channel.getChannelNumber();
-        long now = mClock.getAsLong();
-        Call call = mCalls.get(key);
-
-        if(call != null)
+        try
         {
-            if(Objects.equals(getTo(call.mEvent.getIdentifierCollection()), getTo(identifiers)))
+            synchronized(this)
             {
-                call.mLastUpdate = now;
-                call.mEvent.end(timestamp);
+                int key = channel.getChannelNumber();
+                long now = mClock.getAsLong();
+                Call call = mCalls.get(key);
 
-                //A late-joined call (updates only) learns its calling radio from a later grant
-                if(getFrom(call.mEvent.getIdentifierCollection()) == null && getFrom(identifiers) != null)
+                if(call != null)
                 {
-                    call.mEvent.setIdentifierCollection(identifiers);
-                    broadcast(call.mEvent);
+                    if(Objects.equals(getTo(call.mEvent.getIdentifierCollection()), getTo(identifiers)))
+                    {
+                        call.mLastUpdate = now;
+                        call.mEvent.end(timestamp);
+
+                        //A late-joined call (updates only) learns its calling radio from a later grant
+                        if(getFrom(call.mEvent.getIdentifierCollection()) == null && getFrom(identifiers) != null)
+                        {
+                            call.mEvent.setIdentifierCollection(identifiers);
+                            broadcast(call.mEvent);
+                        }
+                        return;
+                    }
+
+                    //Another talkgroup on this channel - the previous call is over
+                    endCall(key, call, "another talkgroup granted on the channel");
                 }
-                return;
-            }
 
-            //Another talkgroup on this channel - the previous call is over
-            endCall(key, call, "another talkgroup granted on the channel");
-        }
+                //A talkgroup is on one voice channel at a time: a new grant for it on another channel means its previous
+                //transmission is over.  Close that voice channel now instead of 3 s later - while both were open, SDRTrunk's
+                //duplicate call detection suppressed the new transmission (MSP Summit 800, 16 of 58 calls on 2026-11-09).
+                Identifier to = getTo(identifiers);
 
-        //A talkgroup is on one voice channel at a time: a new grant for it on another channel means its previous
-        //transmission is over.  Close that voice channel now instead of 3 s later - while both were open, SDRTrunk's
-        //duplicate call detection suppressed the new transmission (MSP Summit 800, 16 of 58 calls on 2026-11-09).
-        Identifier to = getTo(identifiers);
-
-        if(to != null)
-        {
-            for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
-            {
-                if(entry.getKey() != key && to.equals(getTo(entry.getValue().mEvent.getIdentifierCollection())))
+                if(to != null)
                 {
-                    endCall(entry.getKey(), entry.getValue(), "talkgroup granted on " + channel);
+                    for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
+                    {
+                        if(entry.getKey() != key && to.equals(getTo(entry.getValue().mEvent.getIdentifierCollection())))
+                        {
+                            endCall(entry.getKey(), entry.getValue(), "talkgroup granted on " + channel);
+                        }
+                    }
                 }
+
+                DecodeEvent event = DecodeEvent.builder(type, timestamp)
+                    .channel(channel)
+                    .identifiers(identifiers)
+                    .details(details)
+                    .protocol(Protocol.SMARTNET)
+                    .build();
+                mCalls.put(key, new Call(event, now));
+
+                if(!follow)
+                {
+                    //Not followed
+                }
+                else if(channel.getDownlinkFrequency() <= 0)
+                {
+                    event.setDetails(append(details, "NO FREQUENCY FOR CHANNEL " + key + " IN THE BAND PLAN"));
+                    LOGGER.info("Motorola Type II call on channel " + key + " not followed - no frequency in the band plan");
+                }
+                else if(channel.getDownlinkFrequency() == getCurrentControlFrequency())
+                {
+                    event.setDetails(append(details, "GRANT IS FOR THE CONTROL CHANNEL"));
+                }
+                else
+                {
+                    Channel trafficChannel = mAvailableTrafficChannels.poll();
+
+                    if(trafficChannel == null)
+                    {
+                        event.setDetails(append(details, MAX_TRAFFIC_CHANNELS_EXCEEDED));
+                        LOGGER.info("Motorola Type II call on channel " + channel + " not followed - all " +
+                            mManagedTrafficChannels.size() + " voice channels in use");
+                    }
+                    else
+                    {
+                        SourceConfigTuner sourceConfig = new SourceConfigTuner();
+                        sourceConfig.setFrequency(channel.getDownlinkFrequency());
+                        trafficChannel.setSourceConfiguration(sourceConfig);
+                        mAllocatedTrafficChannels.put(key, trafficChannel);
+                        ChannelStartProcessingRequest request = new ChannelStartProcessingRequest(trafficChannel, channel, identifiers);
+                        mDeferred.add(() -> getInterModuleEventBus().post(request));
+                    }
+                }
+
+                if(LOGGER.isDebugEnabled())
+                {
+                    LOGGER.debug("Motorola Type II call start " + channel + " TO:" + getTo(identifiers) + " FROM:" +
+                        getFrom(identifiers) + " " + type + (event.getDetails() != null ? " [" + event.getDetails() + "]" : "") +
+                        (mAllocatedTrafficChannels.containsKey(key) ? " - voice channel started" : " - not followed"));
+                }
+
+                broadcast(event);
             }
         }
-
-        DecodeEvent event = DecodeEvent.builder(type, timestamp)
-            .channel(channel)
-            .identifiers(identifiers)
-            .details(details)
-            .protocol(Protocol.SMARTNET)
-            .build();
-        mCalls.put(key, new Call(event, now));
-
-        if(!follow)
+        finally
         {
-            //Not followed
+            dispatch();
         }
-        else if(channel.getDownlinkFrequency() <= 0)
-        {
-            event.setDetails(append(details, "NO FREQUENCY FOR CHANNEL " + key + " IN THE BAND PLAN"));
-            LOGGER.info("Motorola Type II call on channel " + key + " not followed - no frequency in the band plan");
-        }
-        else if(channel.getDownlinkFrequency() == getCurrentControlFrequency())
-        {
-            event.setDetails(append(details, "GRANT IS FOR THE CONTROL CHANNEL"));
-        }
-        else
-        {
-            Channel trafficChannel = mAvailableTrafficChannels.poll();
-
-            if(trafficChannel == null)
-            {
-                event.setDetails(append(details, MAX_TRAFFIC_CHANNELS_EXCEEDED));
-                LOGGER.info("Motorola Type II call on channel " + channel + " not followed - all " +
-                    mManagedTrafficChannels.size() + " voice channels in use");
-            }
-            else
-            {
-                SourceConfigTuner sourceConfig = new SourceConfigTuner();
-                sourceConfig.setFrequency(channel.getDownlinkFrequency());
-                trafficChannel.setSourceConfiguration(sourceConfig);
-                mAllocatedTrafficChannels.put(key, trafficChannel);
-                getInterModuleEventBus().post(new ChannelStartProcessingRequest(trafficChannel, channel, identifiers));
-            }
-        }
-
-        if(LOGGER.isDebugEnabled())
-        {
-            LOGGER.debug("Motorola Type II call start " + channel + " TO:" + getTo(identifiers) + " FROM:" +
-                getFrom(identifiers) + " " + type + (event.getDetails() != null ? " [" + event.getDetails() + "]" : "") +
-                (mAllocatedTrafficChannels.containsKey(key) ? " - voice channel started" : " - not followed"));
-        }
-
-        broadcast(event);
     }
 
     /**
      * Ends calls whose updates have stopped.  Called on the control channel's heartbeat.
      */
-    public synchronized void checkCallEnds()
+    public void checkCallEnds()
     {
-        long now = mClock.getAsLong();
-
-        if(now - mLastCheck < HEARTBEAT_INTERVAL_MS)
+        try
         {
-            return;
-        }
-
-        mLastCheck = now;
-        Iterator<Map.Entry<Integer,Call>> it = mCalls.entrySet().iterator();
-
-        while(it.hasNext())
-        {
-            Map.Entry<Integer,Call> entry = it.next();
-
-            if(now - entry.getValue().mLastUpdate > CALL_END_MS)
+            synchronized(this)
             {
-                it.remove();
-                finishCall(entry.getKey(), entry.getValue(), "updates stopped");
+                long now = mClock.getAsLong();
+
+                if(now - mLastCheck < HEARTBEAT_INTERVAL_MS)
+                {
+                    return;
+                }
+
+                mLastCheck = now;
+                Iterator<Map.Entry<Integer,Call>> it = mCalls.entrySet().iterator();
+
+                while(it.hasNext())
+                {
+                    Map.Entry<Integer,Call> entry = it.next();
+
+                    if(now - entry.getValue().mLastUpdate > CALL_END_MS)
+                    {
+                        it.remove();
+                        finishCall(entry.getKey(), entry.getValue(), "updates stopped");
+                    }
+                }
             }
+        }
+        finally
+        {
+            dispatch();
         }
     }
 
@@ -298,55 +321,73 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
         return mAllocatedTrafficChannels.size();
     }
 
-    private synchronized void processChannelEvent(ChannelEvent channelEvent)
+    private void processChannelEvent(ChannelEvent channelEvent)
     {
-        Channel channel = channelEvent.getChannel();
+        Channel eventChannel = channelEvent.getChannel();
 
-        if(!channel.isTrafficChannel() || !mManagedTrafficChannels.contains(channel))
+        //Sees events for every channel in the application - checked before taking this manager's lock
+        if(!eventChannel.isTrafficChannel() || !mManagedTrafficChannels.contains(eventChannel))
         {
             return;
         }
 
-        switch(channelEvent.getEvent())
+        try
         {
-            case NOTIFICATION_PROCESSING_STOP ->
+            synchronized(this)
             {
-                Integer key = keyOf(channel);
+                Channel channel = channelEvent.getChannel();
 
-                if(key != null)
+                if(!channel.isTrafficChannel() || !mManagedTrafficChannels.contains(channel))
                 {
-                    //Stopped by itself (call time limit or tuner) - the call stays listed until its updates stop, but
-                    //is not restarted
-                    mAllocatedTrafficChannels.remove(key);
+                    return;
                 }
 
-                release(channel);
-            }
-            case NOTIFICATION_PROCESSING_START_REJECTED ->
-            {
-                Integer key = keyOf(channel);
-
-                if(key != null)
+                switch(channelEvent.getEvent())
                 {
-                    mAllocatedTrafficChannels.remove(key);
-                    Call call = mCalls.get(key);
-
-                    if(call != null)
+                    case NOTIFICATION_PROCESSING_STOP ->
                     {
-                        String reason = channelEvent.getDescription() != null ? channelEvent.getDescription() :
-                            CHANNEL_START_REJECTED;
-                        call.mEvent.setDetails(append(call.mEvent.getDetails(), reason));
-                        LOGGER.info("Motorola Type II voice channel " + call.mEvent.getChannelDescriptor() +
-                            " could not start - " + reason);
-                        broadcast(call.mEvent);
+                        Integer key = keyOf(channel);
+
+                        if(key != null)
+                        {
+                            //Stopped by itself (call time limit or tuner) - the call stays listed until its updates stop, but
+                            //is not restarted
+                            mAllocatedTrafficChannels.remove(key);
+                        }
+
+                        release(channel);
+                    }
+                    case NOTIFICATION_PROCESSING_START_REJECTED ->
+                    {
+                        Integer key = keyOf(channel);
+
+                        if(key != null)
+                        {
+                            mAllocatedTrafficChannels.remove(key);
+                            Call call = mCalls.get(key);
+
+                            if(call != null)
+                            {
+                                String reason = channelEvent.getDescription() != null ? channelEvent.getDescription() :
+                                    CHANNEL_START_REJECTED;
+                                call.mEvent.setDetails(append(call.mEvent.getDetails(), reason));
+                                LOGGER.info("Motorola Type II voice channel " + call.mEvent.getChannelDescriptor() +
+                                    " could not start - " + reason);
+                                broadcast(call.mEvent);
+                            }
+                        }
+
+                        release(channel);
+                    }
+                    default ->
+                    {
                     }
                 }
-
-                release(channel);
             }
-            default ->
-            {
-            }
+        }
+        finally
+        {
+            dispatch();
         }
     }
 
@@ -389,31 +430,76 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
     }
 
     @Override
-    protected synchronized void processControlFrequencyUpdate(long previous, long current, Channel channel)
+    protected void processControlFrequencyUpdate(long previous, long current, Channel channel)
     {
-        for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
+        try
         {
-            if(entry.getValue().mEvent.getChannelDescriptor() != null &&
-                entry.getValue().mEvent.getChannelDescriptor().getDownlinkFrequency() == current)
+            synchronized(this)
             {
-                endCall(entry.getKey(), entry.getValue(), "granted on the control channel frequency");
+                for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
+                {
+                    if(entry.getValue().mEvent.getChannelDescriptor() != null &&
+                        entry.getValue().mEvent.getChannelDescriptor().getDownlinkFrequency() == current)
+                    {
+                        endCall(entry.getKey(), entry.getValue(), "granted on the control channel frequency");
+                    }
+                }
             }
+        }
+        finally
+        {
+            dispatch();
         }
     }
 
     private void broadcast(DecodeEvent event)
     {
-        if(mDecodeEventListener != null)
-        {
-            mDecodeEventListener.receive(event);
-        }
+        mDeferred.add(() -> {
+            Listener<IDecodeEvent> listener = mDecodeEventListener;
+
+            if(listener != null)
+            {
+                listener.receive(event);
+            }
+        });
     }
 
     private void broadcast(ChannelEvent channelEvent)
     {
-        if(mChannelEventListener != null)
+        mDeferred.add(() -> {
+            Listener<ChannelEvent> listener = mChannelEventListener;
+
+            if(listener != null)
+            {
+                listener.receive(channelEvent);
+            }
+        });
+    }
+
+    /**
+     * Runs the channel start/stop requests and event broadcasts queued while this manager's lock was held.  They go
+     * out after the lock is released: the channel processing manager holds its own lock while it notifies every
+     * channel's listeners, so calling it with this lock held deadlocked against another system's channel thread
+     * (Cambridge, 2026-11-10 08:45: a P25 channel thread and the EDACS control channel thread).
+     */
+    private void dispatch()
+    {
+        List<Runnable> actions;
+
+        synchronized(this)
         {
-            mChannelEventListener.receive(channelEvent);
+            if(mDeferred.isEmpty())
+            {
+                return;
+            }
+
+            actions = new ArrayList<>(mDeferred);
+            mDeferred.clear();
+        }
+
+        for(Runnable action : actions)
+        {
+            action.run();
         }
     }
 
@@ -464,13 +550,23 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
     }
 
     @Override
-    public synchronized void stop()
+    public void stop()
     {
-        for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
+        try
         {
-            endCall(entry.getKey(), entry.getValue(), "control channel stopped");
-        }
+            synchronized(this)
+            {
+                for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
+                {
+                    endCall(entry.getKey(), entry.getValue(), "control channel stopped");
+                }
 
-        mAvailableTrafficChannels.clear();
+                mAvailableTrafficChannels.clear();
+            }
+        }
+        finally
+        {
+            dispatch();
+        }
     }
 }

@@ -36,9 +36,12 @@ import io.github.dsheirer.source.config.SourceConfigTuner;
 import io.github.dsheirer.source.heartbeat.Heartbeat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -58,6 +61,7 @@ public class SmartNetCallFollowingTest
 
     private final long[] mNow = {1_000_000L};
     private final List<ChannelStartProcessingRequest> mStarts = new ArrayList<>();
+    private boolean mCalledOutUnderLock;
     private final List<ChannelEvent> mChannelEvents = new ArrayList<>();
     private final List<IDecodeEvent> mEvents = new ArrayList<>();
     private SmartNetTrafficChannelManager mManager;
@@ -78,12 +82,19 @@ public class SmartNetCallFollowingTest
             @Subscribe
             public void start(ChannelStartProcessingRequest request)
             {
+                mCalledOutUnderLock |= Thread.holdsLock(mManager);
                 mStarts.add(request);
             }
         });
         mManager.setInterModuleEventBus(bus);
-        mManager.setChannelEventListener(mChannelEvents::add);
-        mManager.addDecodeEventListener(mEvents::add);
+        mManager.setChannelEventListener(event -> {
+            mCalledOutUnderLock |= Thread.holdsLock(mManager);
+            mChannelEvents.add(event);
+        });
+        mManager.addDecodeEventListener(event -> {
+            mCalledOutUnderLock |= Thread.holdsLock(mManager);
+            mEvents.add(event);
+        });
 
         mState = new SmartNetDecoderState(Channel.ChannelType.STANDARD, mManager, config);
         mState.receiveDecoderStateEvent(new DecoderStateEvent(this, DecoderStateEvent.Event.NOTIFICATION_SOURCE_FREQUENCY,
@@ -323,5 +334,57 @@ public class SmartNetCallFollowingTest
         assertTrue(voice.isGraphicEQEnabled());
         assertEquals(-6.0, voice.getGraphicEQBandGains()[0]);
         assertEquals(3.0, voice.getGraphicEQBandGains()[9]);
+    }
+
+    /**
+     * Test: voice channel start/stop requests and event broadcasts go out after the manager's lock is released, and
+     * channel events for other systems' channels never wait on that lock.  Cambridge 2026-11-10 08:45: the EDACS
+     * control channel thread held the manager's lock while asking the channel processing manager to stop a voice
+     * channel, while a P25 channel thread held the channel processing manager's lock and was delivering a P25 channel
+     * event to this manager - a deadlock that stopped both systems.
+     */
+    @Test
+    void testNoDeadlockWithChannelProcessingManager() throws Exception
+    {
+        setup(2);
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(1, mStarts.size());
+        Channel voice = mStarts.get(0).getChannel();
+        advance(SmartNetTrafficChannelManager.CALL_END_MS + 500);
+        assertEquals(ChannelEvent.Event.REQUEST_DISABLE, mChannelEvents.get(mChannelEvents.size() - 1).getEvent());
+        mManager.getChannelEventListener().receive(new ChannelEvent(voice, ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
+        assertFalse(mCalledOutUnderLock, "called out while holding the manager's lock");
+
+        //Another thread holds the manager's lock - an event for another system's channel must not wait for it
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            synchronized(mManager)
+            {
+                locked.countDown();
+                try
+                {
+                    release.await(5, TimeUnit.SECONDS);
+                }
+                catch(InterruptedException ie)
+                {
+                    //done
+                }
+            }
+        });
+        holder.start();
+        assertTrue(locked.await(5, TimeUnit.SECONDS));
+        Channel other = new Channel("P25", Channel.ChannelType.TRAFFIC);
+        CountDownLatch delivered = new CountDownLatch(1);
+        Thread p25 = new Thread(() -> {
+            mManager.getChannelEventListener().receive(new ChannelEvent(other, ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
+            delivered.countDown();
+        });
+        p25.start();
+        boolean done = delivered.await(2, TimeUnit.SECONDS);
+        release.countDown();
+        holder.join(5000);
+        p25.join(5000);
+        assertTrue(done, "event for another channel waited on the manager's lock");
     }
 }
