@@ -27,6 +27,7 @@ import io.github.dsheirer.dsp.filter.fir.real.IRealFilter;
 import io.github.dsheirer.dsp.filter.resample.RealResampler;
 import io.github.dsheirer.dsp.fm.FmDemodulatorFactory;
 import io.github.dsheirer.dsp.fm.IDemodulator;
+import io.github.dsheirer.dsp.squelch.NoiseSquelch;
 import io.github.dsheirer.dsp.squelch.PowerMonitor;
 import io.github.dsheirer.dsp.window.WindowType;
 import io.github.dsheirer.module.Module;
@@ -60,6 +61,7 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
     private SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
     private Listener<float[]> mResampledBufferListener;
     private double mChannelBandwidth;
+    private NoiseSquelch mNoiseSquelch;
 
     /**
      * Creates an FM demodulator for the specified channel bandwidth and output sample rate.
@@ -71,6 +73,20 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
     public FMDemodulatorModule(double channelBandwidth)
     {
         mChannelBandwidth = channelBandwidth;
+    }
+
+    /**
+     * AP-fork (SmartNet): FM demodulator whose audio passes through a noise squelch before resampling, so noise
+     * (no carrier) is dropped and only received audio is broadcast.  Used on Motorola Type II voice channels, which stay
+     * open a few seconds after the transmitter drops.
+     *
+     * @param channelBandwidth as above
+     * @param noiseSquelch applied to the demodulated audio
+     */
+    public FMDemodulatorModule(double channelBandwidth, NoiseSquelch noiseSquelch)
+    {
+        this(channelBandwidth);
+        mNoiseSquelch = noiseSquelch;
     }
 
     /**
@@ -138,7 +154,11 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
         float[] demodulated = mDemodulator.demodulate(filteredI, filteredQ);
         mPowerMonitor.process(filteredI, filteredQ);
 
-        if(mResampler != null)
+        if(mNoiseSquelch != null)
+        {
+            mNoiseSquelch.process(demodulated);
+        }
+        else if(mResampler != null)
         {
             mResampler.resample(demodulated);
         }
@@ -238,6 +258,13 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
 
                 mResampler = new RealResampler(decimatedSampleRate, DEMODULATED_AUDIO_SAMPLE_RATE, 4192, 512);
                 mResampler.setListener(resampled -> broadcast(resampled));
+
+                if(mNoiseSquelch != null)
+                {
+                    final RealResampler resampler = mResampler;
+                    mNoiseSquelch.setSampleRate(decimatedSampleRate);
+                    mNoiseSquelch.setAudioListener(audio -> resampler.resample(audio));
+                }
             }
         }
     }

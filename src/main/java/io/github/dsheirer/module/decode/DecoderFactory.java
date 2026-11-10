@@ -35,6 +35,7 @@ import io.github.dsheirer.filter.IFilter;
 import io.github.dsheirer.identifier.patch.PatchGroupManager;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.MessageDirection;
+import io.github.dsheirer.dsp.squelch.NoiseSquelch;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.am.AMDecoder;
 import io.github.dsheirer.module.decode.am.AMDecoderState;
@@ -426,7 +427,11 @@ public class DecoderFactory
 
             if(sourceType == SourceType.TUNER || sourceType == SourceType.TUNER_MULTIPLE_FREQUENCIES)
             {
-                modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
+                //Noise squelch: the voice channel stays open until the control channel stops announcing the call,
+                //a few seconds after the transmitter drops - this keeps that static out of the audio
+                modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, new NoiseSquelch(
+                    NoiseSquelch.DEFAULT_NOISE_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_NOISE_CLOSE_THRESHOLD,
+                    NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD)));
             }
 
             modules.add(new SmartNetDecoderState(channelType, null, config));
