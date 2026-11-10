@@ -94,7 +94,35 @@ public class SmartNetDecoder extends Decoder implements IComplexSamplesListener,
         {
             mTimestamp = samples.timestamp();
             demodulator.process(samples.i(), samples.q(), samples.i().length);
+            logStatistics();
         }
+    }
+
+    private long mStatisticsTimestamp;
+    private long mStatisticsValid;
+    private long mStatisticsInvalid;
+
+    /**
+     * Diagnostics (DEBUG): decode statistics once a minute
+     */
+    private void logStatistics()
+    {
+        if(mTimestamp - mStatisticsTimestamp < 60_000)
+        {
+            return;
+        }
+
+        if(mStatisticsTimestamp > 0 && LOGGER.isDebugEnabled())
+        {
+            long valid = getValidCount() - mStatisticsValid;
+            long invalid = getInvalidCount() - mStatisticsInvalid;
+            LOGGER.debug("Motorola Type II control channel last minute: " + valid + " OSWs decoded, " + invalid + " failed the check" +
+                (valid + invalid > 0 ? String.format(" (%.1f%%)", 100.0 * invalid / (valid + invalid)) : " - no signal"));
+        }
+
+        mStatisticsTimestamp = mTimestamp;
+        mStatisticsValid = getValidCount();
+        mStatisticsInvalid = getInvalidCount();
     }
 
     private void dispatch(SmartNetOSW osw)

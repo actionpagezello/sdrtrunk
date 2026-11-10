@@ -29,6 +29,8 @@ import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * AP-fork (EDACS ProVoice): decodes a ProVoice voice channel - 9600 baud FSK - into voice frames for the audio module.
@@ -44,6 +46,8 @@ import java.util.List;
 public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener, Listener<ComplexSamples>,
     ISourceEventListener
 {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProVoiceDecoder.class);
+
     /** Sync patterns from DSD-FME (symbol 3 = 1, symbol 1 = 0) */
     public static final long SYNC = pattern("13131333111311311133113311331133");
     public static final long SYNC_EA = pattern("31131311331331111133131311311133");
@@ -176,6 +180,7 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     {
         if(mBitCount - mLastFrameBit > NEW_TRANSMISSION_BITS)
         {
+            logTransmission();
             mLastGood = null; //new transmission - nothing to repeat
             mRepeats = 0;
         }
@@ -184,6 +189,7 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
         ProVoiceFrameDecoder.VoiceFrame[] voiceFrames = ProVoiceFrameDecoder.decode(mFrame);
         List<byte[]> imbeFrames = new ArrayList<>(4);
         int errors = 0;
+        long concealedBefore = mConcealedCount;
 
         for(ProVoiceFrameDecoder.VoiceFrame voiceFrame : voiceFrames)
         {
@@ -191,9 +197,42 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
             errors += voiceFrame.errors();
         }
 
+        int concealed = (int)(mConcealedCount - concealedBefore);
         mFrameCount++;
         mErrorCount += errors;
-        getMessageListener().receive(new ProVoiceMessage(imbeFrames, errors, mTimestamp));
+        mTransmissionFrames++;
+        mTransmissionErrors += errors;
+        mTransmissionConcealed += concealed;
+        getMessageListener().receive(new ProVoiceMessage(imbeFrames, errors, concealed, mTimestamp));
+    }
+
+    private long mTransmissionFrames;
+    private long mTransmissionErrors;
+    private long mTransmissionConcealed;
+
+    /**
+     * Diagnostics (DEBUG): one line per transmission - frames, corrected bit errors and damaged voice frames
+     */
+    private void logTransmission()
+    {
+        if(mTransmissionFrames > 0 && LOGGER.isDebugEnabled())
+        {
+            LOGGER.debug(String.format("ProVoice transmission: %.1f s, %.2f bit errors per voice frame, %d of %d " +
+                    "voice frames damaged (%.1f%%), sync %s", mTransmissionFrames * 0.08,
+                mTransmissionErrors / (4.0 * mTransmissionFrames), mTransmissionConcealed, 4 * mTransmissionFrames,
+                100.0 * mTransmissionConcealed / (4.0 * mTransmissionFrames), mInverted ? "inverted" : "normal"));
+        }
+
+        mTransmissionFrames = 0;
+        mTransmissionErrors = 0;
+        mTransmissionConcealed = 0;
+    }
+
+    @Override
+    public void stop()
+    {
+        logTransmission();
+        super.stop();
     }
 
     /**

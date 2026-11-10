@@ -33,12 +33,14 @@ public class ProVoiceMessage implements IMessage
 {
     private final List<byte[]> mIMBEFrames;
     private final int mErrors;
+    private final int mConcealed;
     private final long mTimestamp;
 
-    public ProVoiceMessage(List<byte[]> imbeFrames, int errors, long timestamp)
+    public ProVoiceMessage(List<byte[]> imbeFrames, int errors, int concealed, long timestamp)
     {
         mIMBEFrames = imbeFrames;
         mErrors = errors;
+        mConcealed = concealed;
         mTimestamp = timestamp;
     }
 
@@ -53,6 +55,14 @@ public class ProVoiceMessage implements IMessage
     public int getErrors()
     {
         return mErrors;
+    }
+
+    /**
+     * Voice frames of the four that were damaged and replaced (repeat or silence)
+     */
+    public int getConcealed()
+    {
+        return mConcealed;
     }
 
     @Override

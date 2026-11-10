@@ -116,6 +116,7 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         if(message instanceof SmartNetOSW osw)
         {
             mOSWCount++;
+            logCommands(osw);
 
             if(mChannelType != ChannelType.TRAFFIC && mFrequency != 0 && mFrequency != mLoggedControlFrequency)
             {
@@ -180,6 +181,13 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             else
             {
                 return; //individual channel OSW that is not a grant
+            }
+
+            if(grant && LOGGER.isDebugEnabled())
+            {
+                LOGGER.debug("Motorola Type II grant: radio " + previous.getAddress() + " -> " +
+                    (osw.isGroup() ? "talkgroup " + osw.getTalkgroup() + " status " + osw.getStatus() : "radio " +
+                        osw.getAddress()) + " on channel " + osw.getCommand() + " " + format(frequency));
             }
 
             if(grant)
@@ -261,6 +269,36 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                     "audio %.1f s%s", first(Role.TO), first(Role.FROM), format(frequency),
                 (mClock.getAsLong() - mTrafficStart) / 1000.0, mAudioSamples / AUDIO_SAMPLE_RATE,
                 mTrafficEnded ? " - stopped at the call limit" : ""));
+        }
+    }
+
+    private final Map<Integer,Integer> mMinuteCommands = new TreeMap<>();
+    private long mMinuteStart;
+
+    /**
+     * Diagnostics (DEBUG): the commands seen each minute, most frequent first
+     */
+    private void logCommands(SmartNetOSW osw)
+    {
+        if(!LOGGER.isDebugEnabled())
+        {
+            return;
+        }
+
+        mMinuteCommands.merge(osw.getCommand(), 1, Integer::sum);
+
+        if(osw.getTimestamp() - mMinuteStart >= 60_000)
+        {
+            if(mMinuteStart > 0)
+            {
+                StringBuilder sb = new StringBuilder();
+                mMinuteCommands.entrySet().stream().sorted((x, y) -> y.getValue() - x.getValue()).limit(12)
+                    .forEach(e -> sb.append(String.format(" %03X:%d", e.getKey(), e.getValue())));
+                LOGGER.debug("Motorola Type II OSW commands last minute (hex:count):" + sb);
+            }
+
+            mMinuteCommands.clear();
+            mMinuteStart = osw.getTimestamp();
         }
     }
 

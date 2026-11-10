@@ -162,7 +162,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             }
 
             //Another talkgroup on this channel - the previous call is over
-            endCall(key, call);
+            endCall(key, call, "another talkgroup granted on the channel");
         }
 
         //A talkgroup is on one voice channel at a time: a new grant for it on another channel means its previous
@@ -176,7 +176,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             {
                 if(entry.getKey() != key && to.equals(getTo(entry.getValue().mEvent.getIdentifierCollection())))
                 {
-                    endCall(entry.getKey(), entry.getValue());
+                    endCall(entry.getKey(), entry.getValue(), "talkgroup granted on " + channel);
                 }
             }
         }
@@ -226,6 +226,13 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             }
         }
 
+        if(LOGGER.isDebugEnabled())
+        {
+            LOGGER.debug("EDACS call start " + channel + " TO:" + getTo(identifiers) + " FROM:" +
+                getFrom(identifiers) + " " + type + (event.getDetails() != null ? " [" + event.getDetails() + "]" : "") +
+                (mAllocatedTrafficChannels.containsKey(key) ? " - voice channel started" : " - not followed"));
+        }
+
         broadcast(event);
     }
 
@@ -251,19 +258,27 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             if(now - entry.getValue().mLastUpdate > CALL_END_MS)
             {
                 it.remove();
-                finishCall(entry.getKey(), entry.getValue());
+                finishCall(entry.getKey(), entry.getValue(), "updates stopped");
             }
         }
     }
 
-    private void endCall(int key, Call call)
+    private void endCall(int key, Call call, String reason)
     {
         mCalls.remove(key);
-        finishCall(key, call);
+        finishCall(key, call, reason);
     }
 
-    private void finishCall(int key, Call call)
+    private void finishCall(int key, Call call, String reason)
     {
+        if(LOGGER.isDebugEnabled())
+        {
+            LOGGER.debug("EDACS call end " + call.mEvent.getChannelDescriptor() + " TO:" +
+                getTo(call.mEvent.getIdentifierCollection()) + " after " +
+                (call.mEvent.getDuration() / 1000.0) + " s - " + reason +
+                (mAllocatedTrafficChannels.containsKey(key) ? " - voice channel stopped" : ""));
+        }
+
         broadcast(call.mEvent);
         Channel trafficChannel = mAllocatedTrafficChannels.remove(key);
 
@@ -388,7 +403,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             if(entry.getValue().mEvent.getChannelDescriptor() != null &&
                 entry.getValue().mEvent.getChannelDescriptor().getDownlinkFrequency() == current)
             {
-                endCall(entry.getKey(), entry.getValue());
+                endCall(entry.getKey(), entry.getValue(), "granted on the control channel frequency");
             }
         }
     }
@@ -460,7 +475,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     {
         for(Map.Entry<Integer,Call> entry : new ArrayList<>(mCalls.entrySet()))
         {
-            endCall(entry.getKey(), entry.getValue());
+            endCall(entry.getKey(), entry.getValue(), "control channel stopped");
         }
 
         mAvailableTrafficChannels.clear();

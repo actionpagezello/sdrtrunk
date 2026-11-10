@@ -91,7 +91,35 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         {
             mTimestamp = samples.timestamp();
             demodulator.process(samples.i(), samples.q(), samples.i().length);
+            logStatistics();
         }
+    }
+
+    private long mStatisticsTimestamp;
+    private long mStatisticsValid;
+    private long mStatisticsInvalid;
+
+    /**
+     * Diagnostics (DEBUG): decode statistics once a minute
+     */
+    private void logStatistics()
+    {
+        if(mTimestamp - mStatisticsTimestamp < 60_000)
+        {
+            return;
+        }
+
+        if(mStatisticsTimestamp > 0 && LOGGER.isDebugEnabled())
+        {
+            long valid = getValidCount() - mStatisticsValid;
+            long invalid = getInvalidCount() - mStatisticsInvalid;
+            LOGGER.debug("EDACS control channel last minute: " + valid + " messages decoded, " + invalid + " failed the check" +
+                (valid + invalid > 0 ? String.format(" (%.1f%%)", 100.0 * invalid / (valid + invalid)) : " - no signal"));
+        }
+
+        mStatisticsTimestamp = mTimestamp;
+        mStatisticsValid = getValidCount();
+        mStatisticsInvalid = getInvalidCount();
     }
 
     private void dispatch(EDACSMessage message)

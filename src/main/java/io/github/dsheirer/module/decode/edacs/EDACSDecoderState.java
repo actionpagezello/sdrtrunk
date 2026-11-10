@@ -71,6 +71,8 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
     private boolean mTrafficEnded;
     private boolean mTrafficStarted;
     private long mAudioSamples;
+    private long mVoiceFrames;
+    private long mConcealedFrames;
     private long mLoggedControlFrequency;
     private final Listener<float[]> mAudioListener = audio -> mAudioSamples += audio.length;
 
@@ -111,15 +113,18 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
     @Override
     public void receive(IMessage message)
     {
-        if(message instanceof ProVoiceMessage)
+        if(message instanceof ProVoiceMessage voice)
         {
             mAudioSamples += 640; //80 ms of voice at 8 kHz
+            mVoiceFrames += 4;
+            mConcealedFrames += voice.getConcealed();
             return;
         }
 
         if(message instanceof EDACSMessage edacs)
         {
             mFrameCount++;
+            logTypes(edacs);
 
             if(mChannelType != ChannelType.TRAFFIC && mFrequency != 0 && mFrequency != mLoggedControlFrequency)
             {
@@ -162,6 +167,13 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
             if(edacs.isEmergency())
             {
                 details = "EMERGENCY " + details;
+            }
+
+            if(!edacs.isUpdate() && LOGGER.isDebugEnabled())
+            {
+                LOGGER.debug("EDACS " + (edacs.isDigital() ? "ProVoice" : "analog") + " call: group " +
+                    edacs.getGroup() + " unit " + edacs.getSource() + " on LCN " + lcn + " " + format(frequency) +
+                    (edacs.isEmergency() ? " EMERGENCY" : ""));
             }
 
             if(!edacs.isUpdate())
@@ -219,6 +231,8 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
             mTrafficEnded = false;
             mTrafficStarted = true;
             mAudioSamples = 0;
+            mVoiceFrames = 0;
+            mConcealedFrames = 0;
             broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
         }
     }
@@ -239,7 +253,41 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
             LOGGER.info(String.format("EDACS call TO:%s FROM:%s on %s - voice channel open %.1f s, " +
                     "audio %.1f s%s", first(Role.TO), first(Role.FROM), format(frequency),
                 (mClock.getAsLong() - mTrafficStart) / 1000.0, mAudioSamples / AUDIO_SAMPLE_RATE,
-                mTrafficEnded ? " - stopped at the call limit" : ""));
+                (mVoiceFrames > 0 ? String.format(", damaged frames %d of %d (%.1f%%)", mConcealedFrames,
+                    mVoiceFrames, 100.0 * mConcealedFrames / mVoiceFrames) : "") +
+                (mTrafficEnded ? " - stopped at the call limit" : "")));
+        }
+    }
+
+    private final Map<String,Integer> mMinuteTypes = new TreeMap<>();
+    private long mMinuteStart;
+
+    /**
+     * Diagnostics (DEBUG): the message types seen each minute, most frequent first
+     */
+    private void logTypes(EDACSMessage message)
+    {
+        if(!LOGGER.isDebugEnabled())
+        {
+            return;
+        }
+
+        String type = message.getMT1() == 0x1F ? String.format("1F/%X", message.getMT2()) :
+            String.format("%02X", message.getMT1());
+        mMinuteTypes.merge(type, 1, Integer::sum);
+
+        if(message.getTimestamp() - mMinuteStart >= 60_000)
+        {
+            if(mMinuteStart > 0)
+            {
+                StringBuilder sb = new StringBuilder();
+                mMinuteTypes.entrySet().stream().sorted((x, y) -> y.getValue() - x.getValue()).limit(12)
+                    .forEach(e -> sb.append(" ").append(e.getKey()).append(":").append(e.getValue()));
+                LOGGER.debug("EDACS message types last minute (MT1 or 1F/MT2:count):" + sb);
+            }
+
+            mMinuteTypes.clear();
+            mMinuteStart = message.getTimestamp();
         }
     }
 
