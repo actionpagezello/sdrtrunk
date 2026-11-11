@@ -28,6 +28,15 @@ and can only be told apart by the "Build Timestamp" log line.
 | 8 | 1h | Deadlock fix the P25 way (the 11:45 build) |
 | 9 | edacs-9 | Same code as build 8; adds the build number only |
 | 10 | edacs-10 | TEST: RTL tuners keep their sample stream running between channels (Monson crash) |
+| 11 | edacs-11 | ProVoice DEBUG line: damaged voice frames by position in the transmission; docs |
+
+### Build 11 - where ProVoice damage falls (measurement only)
+- **Why:** Cambridge build 9, 4,397 calls: damaged voice frames fit about 19 per call plus 2.4% of the rest, the same
+  on all 13 LCNs. So most of the 10.4% is a fixed ~0.4 s per call, probably at the start or the end.
+- **Change:** with "EDACS / ProVoice decoder" ticked, each transmission now also logs
+  `ProVoice damage by position: first 0.48 s X of Y, middle X of Y, last 0.48 s X of Y voice frames`. The first six
+  80 ms frames count as the start, the last six after those as the end. Audio is unchanged.
+- Not compiled or run before delivery.
 
 ### Build 10 - RTL tuner crash at Monson (test build)
 - **Seen:** on 2026-11-10 Monson stopped 23 times with no shutdown in the log, on the 11-09 `smartnet` build and on
@@ -42,8 +51,9 @@ and can only be told apart by the "Build Timestamp" log line.
   stream runs from the first channel until the tuner is stopped, and samples are dropped before they are copied
   while there is no channel. On close, the bias-T is turned off before the stream is stopped, so nothing is sent
   between stopping the stream and closing the device.
-- **Not compiled or run before delivery** - the build environment had no Gradle access. Test: Monson with the full
-  playlist auto-started; it crashed within 1-2.5 minutes on 13 of 15 runs of build 9.
+- **Result so far:** compiled and built by Armen; Monson ran build 10 with the full playlist for 27 and 30 minutes
+  with no crash (2026-11-10 17:40-18:40). An overnight run is still needed. Original test plan: Monson with the full
+  playlist auto-started; build 9 crashed there 15 times, 12 of them within 2.5 minutes of starting.
 
 ### Added - Motorola Type II SmartNet/SmartZone (`smartnet` branch)
 - Control channel decoding (3600 baud OSWs: grants, updates, system ID, band plans incl. splinter and custom) and

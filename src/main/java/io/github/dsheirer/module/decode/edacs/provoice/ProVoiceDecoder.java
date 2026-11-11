@@ -200,18 +200,53 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
         int concealed = (int)(mConcealedCount - concealedBefore);
         mFrameCount++;
         mErrorCount += errors;
+        //Position of the damage within the transmission (edacs-11 measurement): the first EDGE_FRAMES frames are counted
+        //as the start, and the most recent EDGE_FRAMES frames after those are held in a ring so that they can be counted
+        //as the end when the transmission is logged.
+        if(mTransmissionFrames < EDGE_FRAMES)
+        {
+            mTransmissionConcealedStart += concealed;
+        }
+        else
+        {
+            int index = (int)((mTransmissionFrames - EDGE_FRAMES) % EDGE_FRAMES);
+            mTransmissionConcealedRecent[index] = concealed;
+        }
+
         mTransmissionFrames++;
         mTransmissionErrors += errors;
         mTransmissionConcealed += concealed;
         getMessageListener().receive(new ProVoiceMessage(imbeFrames, errors, concealed, mTimestamp));
     }
 
+    //Frames (80 ms, four voice frames each) that count as the start and as the end of a transmission: 0.48 s each
+    static final int EDGE_FRAMES = 6;
     private long mTransmissionFrames;
     private long mTransmissionErrors;
     private long mTransmissionConcealed;
+    private long mTransmissionConcealedStart;
+    private final int[] mTransmissionConcealedRecent = new int[EDGE_FRAMES];
 
     /**
-     * Diagnostics (DEBUG): one line per transmission - frames, corrected bit errors and damaged voice frames
+     * Damaged voice frames in the last EDGE_FRAMES frames of the current transmission, not counting any of the first
+     * EDGE_FRAMES frames, so that a short transmission is never counted twice.  Package-private for testing.
+     */
+    long getTransmissionConcealedEnd()
+    {
+        long endFrames = Math.min(EDGE_FRAMES, Math.max(0, mTransmissionFrames - EDGE_FRAMES));
+        long total = 0;
+
+        for(int x = 0; x < endFrames; x++)
+        {
+            total += mTransmissionConcealedRecent[x];
+        }
+
+        return total;
+    }
+
+    /**
+     * Diagnostics (DEBUG): one line per transmission - frames, corrected bit errors and damaged voice frames, and
+     * where in the transmission the damaged voice frames fall (start, middle, end).
      */
     private void logTransmission()
     {
@@ -221,11 +256,22 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
                     "voice frames damaged (%.1f%%), sync %s", mTransmissionFrames * 0.08,
                 mTransmissionErrors / (4.0 * mTransmissionFrames), mTransmissionConcealed, 4 * mTransmissionFrames,
                 100.0 * mTransmissionConcealed / (4.0 * mTransmissionFrames), mInverted ? "inverted" : "normal"));
+
+            long startFrames = Math.min(EDGE_FRAMES, mTransmissionFrames);
+            long endFrames = Math.min(EDGE_FRAMES, mTransmissionFrames - startFrames);
+            long middleFrames = mTransmissionFrames - startFrames - endFrames;
+            long end = getTransmissionConcealedEnd();
+            long middle = mTransmissionConcealed - mTransmissionConcealedStart - end;
+            LOGGER.debug(String.format("ProVoice damage by position: first %.2f s %d of %d, middle %d of %d, " +
+                    "last %.2f s %d of %d voice frames", startFrames * 0.08, mTransmissionConcealedStart,
+                4 * startFrames, middle, 4 * middleFrames, endFrames * 0.08, end, 4 * endFrames));
         }
 
         mTransmissionFrames = 0;
         mTransmissionErrors = 0;
         mTransmissionConcealed = 0;
+        mTransmissionConcealedStart = 0;
+        java.util.Arrays.fill(mTransmissionConcealedRecent, 0);
     }
 
     @Override

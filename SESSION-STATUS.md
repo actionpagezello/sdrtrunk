@@ -3,7 +3,92 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-10 12:00: `edacs` branch test builds (Motorola Type II + EDACS EA / ProVoice)
+## Current state 2026-11-10 19:30: `edacs` build 11 (numbered builds, RTL crash fix under test)
+
+- **`edacs` branch builds are numbered from build 9:** version `0.6.2-ap-16.1-edacs-<n>`, patch `edacs-<n>.patch`,
+  zip in its own `sdrtrunk-ap-versions\v0.6.2-ap-16.1-edacs-<n>\` folder. Patches 1a-1h are builds 1-8 (table in
+  CHANGELOG.md). Build 9 = 1h + number (tree `b27e61eb`, pushed `667ecd90`). Build 10 = RTL stream kept running
+  (tree `9ce6cf64`, pushed `77bcb05b`). Build 11 = ProVoice damage-by-position DEBUG line + these docs.
+- **Running:** Monson build 10; Cambridge, Paxton and Summit 800 were last seen on build 9 or the 10:36 build.
+- **Next:** build 11 on Cambridge with "EDACS / ProVoice decoder" ticked for a few hours; Monson on build 10 or 11
+  overnight with the full playlist; Summit 800 on the current build with "Motorola Type II decoder" ticked.
+
+### Findings 2026-11-10 afternoon/evening
+- **MONSON CRASH = RTL driver, not Type II/EDACS.** 23 stops with no shutdown in the 11-10 log (8 on the 11-09
+  `smartnet` build 07:53-08:10, 15 on build 9 14:08-17:10; 12 of the 15 within 2.5 min of start). Crash reports
+  are `hs_err_pid*.log` in the build's `bin` folder ON THE MACHINE (not in the SDRTrunk log folder, and Windows
+  logs no event). All 13 read: `EXCEPTION_ACCESS_VIOLATION` in `ntdll.dll` <- `libusb-1.0.dll` <- `rtlsdr.dll`
+  (jRTL 1.4.0.2 / jLibUSB 1.0.30.1, adopted in 16.x) on an `sdrtrunk scheduled thread`. Java frames (two reports):
+  `ChannelRotationMonitor.checkState -> MultiFrequencyTunerChannelSource.rotate -> getNextSource ->` either
+  `TunerManager.getSource -> updateTunerFrequency -> RtlSdrDevice.setCenterFrequency` or
+  `HalfBandTunerChannelSource.start -> RTL2832TunerController.addBufferListener -> startStreaming ->
+  RtlSdrDevice.startRx -> resetBuffer`. With auto-start cancelled and only the Type II channel running, build 9
+  ran 84 min clean. jRTL `stopRx()` does join its stream thread, so the Java side is not obviously racing.
+- **Build 10 fix (theory NOT proven):** a control transfer sent after the stream was stopped faults in libusb.
+  `RTL2832TunerController.removeBufferListener` no longer stops the stream; `receive()` drops samples while there
+  is no listener; `closeDevice` turns the bias-T off before `stopRx`. Monson on build 10 with the full playlist:
+  27 min and 30 min, both closed normally, no crash. Needs an overnight run. Any 16.x machine with RTL dongles and
+  a rotating multi-frequency channel could have the same crash (master ap-16.1 has the same code) - port the
+  change to master if the overnight run holds.
+- **Command to find crash reports on any machine** (prints the key lines):
+  `Get-ChildItem C:\ -Recurse -Filter 'hs_err_pid*.log' -EA SilentlyContinue | Sort LastWriteTime | % { "==== $($_.FullName) $($_.LastWriteTime)"; Select-String -Path $_.FullName -Pattern '^#  |Problematic frame|Current thread|^C  \[|dsheirer|Java frames' | Select -First 40 | % { $_.Line } }`
+- **Cambridge has NO crash reports** (searched all of C: at 17:00), so its two stops on the 10:36 build (1g) were not
+  the RTL crash. Both came 0.2-0.8 s after the first EDACS voice channel closed and 0.7-2.7 s after a playlist
+  save. Still unexplained; did not recur.
+- **Cambridge build 9, 13:38-17:48 (4 h 09 min, normal close): 1h holds.** 4,449 EDACS calls; 49 with no audio
+  (1.1%, was 5.8% on the 07:44 build); audio 75% of channel-open time; 31 TUNER UNAVAILABLE (LCN 1, 2, 12, 15).
+  44 of the 49 no-audio calls had the channel open <= 0.1 s; only 5 were open >= 1 s with nothing decoded.
+- **BUG, not fixed:** `ConcurrentModificationException` at `ProcessingChain.start(ProcessingChain.java:740)` from
+  `ChannelProcessingManager.startProcessing` on the EDACS control thread, with "Error removing polyphase channel
+  source - channel source was not previously added" just before it (Cambridge 13:52:21 and 14:01:45). A voice
+  channel is stopped while it is still starting; the call logs "open 0.0 s, audio 0.0 s". 2 in 4,449 calls.
+- **ProVoice "damaged frames" is about 19 voice frames per call plus about 2.4% of the rest** (linear fit over
+  4,397 calls; 53% damaged on calls under 50 frames, 5.4% over 400 frames; all 13 LCNs 9.4-11.2%). So the 10.4%
+  figure is mostly a fixed ~0.4 s per call, probably at the start or end, and mid-speech damage is 2-3%. Build 11
+  adds a DEBUG line per transmission, "ProVoice damage by position: first 0.48 s X of Y, middle X of Y, last
+  0.48 s X of Y voice frames", to say which. The EDACS box was not ticked on 11-10, so no DEBUG data yet.
+- **Summit 800 (MSP Metro Boston Type II, Airspy):** overnight on the older build 2,970 calls, 3 with no audio; the 3
+  were on 860.6375, 851.225 and 851.425 and two TUNER UNAVAILABLE on 868.2 and 866.375 - not site frequencies,
+  probably wrong channel numbers from the control channel (not confirmed). 338 calls (11%) had no source ID.
+  10:36 build, 11:13-11:27: 53 calls, all with audio and source ID, normal close. Max Java memory there is 4 GB.
+- **Type II low-speed data is on every keyed moment (strong signals):** Summit 800, 53 calls, 9,458 blocks of
+  50 ms, none without it; lines 150/21 = 7.14 Hz apart from 21.5 to 121.5 Hz, same as Monson. Audio ends within
+  0.2 s of the carrier drop on all 53. Monson build 10, 18 calls on 854.4875: audio ends within 0.25 s of the carrier
+  drop; the last ~0.5 s of each call carries a different pattern (75, 112.4, 150 Hz); about half of the carrier
+  time has no voice (2-29 s per call, repeater hang between talkers). All of these signals were 50-60 dB above
+  the floor - NO weak-signal recordings yet, which is what the signaling squelch decision needs.
+- **Paxton build 9, 13:57-14:23:** 144 Type II calls on MSP Troop C, all with audio, 19 without source ID, no crash.
+- **Zello `kicked` on C-PTL-1 and C-PTL-3 at both Monson and Paxton** - probably the two machines logging in to the
+  same channels (not confirmed).
+- **Diagnostics boxes:** Zello and ThinLine default to ticked. The "Diagnostics category ... set to" lines are written
+  before the log file opens, so the log never shows what is ticked; infer it from which packages log DEBUG.
+- **Log volume (measured, DEFERRED by Armen until the build work is done):** per-call "Call ... complete" 31-38%,
+  NBFM "Tone coverage (measurement only)" 16-25%, NBFM filter setup lines per channel start 6-18%, P25 health
+  reports 7-9%, ThinLine upload DEBUG 5-7%, Zello stream started/stopped up to 9%. None of these exist upstream
+  (upstream root level is DEBUG, the fork's is INFO). Plan when the time comes: move all but the per-call and
+  trunked call lines behind their Diagnostics boxes, and log the ticked boxes at startup.
+
+### OPEN (edacs) as of 2026-11-10 evening
+- Monson overnight on build 10/11 with the full playlist - proves or disproves the RTL stream fix. If it holds, port
+  to master.
+- Cambridge a few hours on build 11 with "EDACS / ProVoice decoder" ticked - damage position, and the no-audio calls.
+- `ConcurrentModificationException` in `ProcessingChain.start` (voice channel stopped while starting).
+- Summit 800 with "Motorola Type II decoder" ticked - off-site frequencies and missing source IDs.
+- Type II signaling squelch - still needs WEAK recordings; the six Monson basebands of 11-10 08:45 are unmeasured.
+- Cambridge 10:36-build stops - unexplained, not recurring.
+- Log trimming - deferred (above). Earlier OPEN items below still stand unless listed here.
+
+### Working rules added 2026-11-10 evening
+- If `git rev-parse "HEAD^{tree}"` does not match the hash given, STOP - do not build or push. (Build 10: the
+  patch delivered was the copy from before a CHANGELOG correction; code identical, one sentence differed.)
+- Claude writes a fresh patch file name for every regeneration, or re-reads the delivered file's hash, so a stale
+  copy cannot be delivered again.
+- Crash with no error in the log = look for `hs_err_pid*.log` in the build's `bin` folder first.
+- Logs and recordings in `C:\Users\Admin\projects\logs` are deleted by Armen as soon as they are reviewed - write
+  findings into these docs the same day.
+- Commit trailer names the model that did the work (this session: `Co-Authored-By: Claude Fable 5.2`).
+
+## Previous state 2026-11-10 12:00: `edacs` branch test builds (Motorola Type II + EDACS EA / ProVoice)
 
 - **Master:** ap-16.1 (upstream jLibUSB, DMR voice error detection, RTL range editor fix). Earlier state below.
 - **`smartnet` branch** (on 16.1): Motorola Type II SmartNet/SmartZone control channel and call following, builds
