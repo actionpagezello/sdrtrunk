@@ -29,6 +29,25 @@ and can only be told apart by the "Build Timestamp" log line.
 | 9 | edacs-9 | Same code as build 8; adds the build number only |
 | 10 | edacs-10 | TEST: RTL tuners keep their sample stream running between channels (Monson crash) |
 | 11 | edacs-11 | ProVoice DEBUG line: damaged voice frames by position in the transmission; docs |
+| 12 | edacs-12 | Airspy / HydraSDR dropped-sample warning and Diagnostics box; tests; docs |
+
+### Build 12 - Airspy / HydraSDR stream logging (logging only)
+- **Why:** both driver libraries count the samples they drop before the application sees them, and the fork ignored
+  the count. Summit 800 (Airspy) decodes MBTA with 20% of mid-speech ProVoice frames damaged against 2-3% at
+  Cambridge, and the log could not say whether samples were being lost.
+- **Always on:** `Tuner [...] DROPPED n samples in the last 60 s (x% of its stream)` - WARN, at most once a minute
+  per tuner, and only when samples were dropped. A healthy tuner logs nothing.
+- **New Diagnostics box "Airspy / HydraSDR tuners"** (unticked by default): device opened (board, firmware, serial),
+  settings applied, each retune, stream started / stopped, and once a minute buffers received, measured against
+  nominal sample rate, largest gap between buffers and dropped samples.
+- New `WidebandStreamMonitor` (package `source.tuner.wideband`) does the counting; the two tuner controllers only
+  call it. Nothing about how the tuners run is changed.
+- `ProVoiceDamagePosition`: the build 11 position counting moved into its own class, same log line, with tests.
+- Tuner-removed warning no longer says "USB hotplug is not supported on Windows" (not true for dongles from 16.1).
+- **Tests:** `.\gradlew test --tests "*WidebandStreamMonitor*" --tests "*ProVoice*"`. The two new classes were
+  compiled and their 10 tests passed in Claude's workspace against stand-in logging and test libraries; the tuner
+  controller edits were not compiled before delivery.
+- **Build 10 result:** Monson 13.2 h and Paxton 13.7 h overnight with no crash (2026-11-10/11).
 
 ### Build 11 - where ProVoice damage falls (measurement only)
 - **Why:** Cambridge build 9, 4,397 calls: damaged voice frames fit about 19 per call plus 2.4% of the rest, the same

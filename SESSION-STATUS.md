@@ -3,7 +3,101 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-10 19:30: `edacs` build 11 (numbered builds, RTL crash fix under test)
+## Current state 2026-11-11 21:30: `edacs` build 12 (RTL fix held overnight; Airspy / HydraSDR logging)
+
+- **Builds:** 12 = Airspy / HydraSDR dropped-sample warning and Diagnostics box, ProVoice damage-position class with
+  tests, corrected hotplug warning text, these docs. Build 11 pushed as `8f9325cd` (tree `e8af30e3`). Build 10 is
+  the RTL stream fix. `master` is still ap-16.1.
+- **Plan (Armen, 11-11):** when the `edacs` work is done it becomes 16.2 and EVERY machine runs it. No separate RTL
+  patch for `master`.
+- **Who runs what:** 16.1 = Baker, Beauport, Daly, Salisbury, Somerville only. `edacs` builds = Monson and Paxton
+  (build 10), Cambridge and Summit 800 (build 11). The rest of the fleet is not on 16.x.
+- **Summit 800 now runs MBTA (EDACS) and the MSP Metro Boston Type II site together on its Airspy.** Cambridge was
+  NOT running MBTA overnight 11-10/11-11 (zero EDACS calls on build 11).
+
+### Priorities - DRAFT, not yet confirmed by Armen (proposed 2026-11-11)
+When two conflict, the higher one wins.
+1. Never miss a call the radio could have received. No change may skip, delay or close a channel to save tuners,
+   CPU or log space.
+2. Stay running unattended - no crashes, freezes or states that need a restart.
+3. Audio goes to the right place with the right label (talkgroup, alias, stream).
+4. Don't cut speech - no clipped starts or ends, no gaps mid-call.
+5. Audio is clean - no tones, noise tails, data bursts, distortion or blips reaching listeners.
+6. Nobody's files are harmed - playlists and settings keep working; going back to upstream loses nothing.
+7. Low delay to Zello and ThinLine.
+8. Efficient use of tuners and CPU.
+9. Small, tidy logs.
+- A change that risks 1 or 2 does not ship switched on: it goes behind a checkbox or stays a measurement.
+- Say what a change costs against this list BEFORE building it. (11-11: a "confirm a Type II grant on an unknown
+  channel" idea was dropped for this reason - it would have missed about one first call per two restarts to remove
+  5 silent 3-second channel openings a night.)
+
+### Findings 2026-11-10 evening to 2026-11-11
+- **RTL stream fix (build 10) HELD.** Monson 18:45 -> 07:56 (13.2 h), full playlist auto-started, 7,918 calls
+  streamed, 199 Type II calls all with audio and source ID, normal close. Paxton 18:18 -> 07:58 (13.7 h), 1,448
+  Type II calls all with audio, normal close. Build 9 crashed on Monson 15 times, 12 within 2.5 minutes.
+- **Cambridge build 11:** 20:34 -> 07:58 (11.4 h), normal close, no exceptions - but no EDACS traffic to judge.
+- **Summit 800 build 11, 21:32 -> 08:06 (10.6 h), normal close, EDACS + Type II boxes ticked:** 6,057 EDACS calls,
+  1,645 Type II calls, 2 TUNER UNAVAILABLE, no exceptions.
+- **ProVoice damage by position (Summit 800, 8,518 transmissions):** first 0.48 s 63.6%, middle 19.8%, last 0.48 s
+  43.0%, overall 31.9%. The start figure is about 60% for every transmission length, so the start damage is
+  systematic (decoder or signal format), which matches Cambridge's "19 voice frames per call". Summit 800 receives
+  MBTA far worse than Cambridge (middle 20% against 2-3% implied). 2,168 transmissions are shorter than 0.5 s and
+  76.5% damaged. NEXT: read what the decoder does with the first frames of a transmission.
+- **EDACS no-audio calls at Summit 800: 168 (2.8%).** 63 are "open 0.0 s, audio 0.0 s" lines logged from the voice
+  channel's own thread in the same millisecond as "call start" - looks like a summary line written when the channel
+  starts, NOT confirmed in code. 88 were open >= 1 s with nothing decoded.
+- **Type II off-site frequencies = misread control words.** The Summit 800 control channel fails the check on 13.7%
+  of OSWs in the median minute (p10 6.1%, p90 25.5%). A grant to an unused channel (e.g. channel 512 852.8250,
+  channel 472 851.8250) appears once, is never repeated, and the voice channel closes after 3 s with "updates
+  stopped", audio 0.0 s. 5 in 1,645 calls. A real grant is repeated in 0.10 s median, 0.25 s p90. About 10% of real
+  calls were announced only once, so a repeat must NOT be required on known channels.
+- **Type II calls with no source ID (283, 17%)** start from "call start ... FROM:null": the first OSW of the grant,
+  which carries the radio ID, was lost.
+- **Silent calls never reach Zello/ThinLine/Rdio (verified):** no audio = no audio segment = no AudioStreamingManager
+  entry. But very short segments do: Summit 800 had 1,829 of 5,938 segments under 0.2 s (31%) and 570 of 0.2-0.5 s;
+  Cambridge MBTA build 9 had 8 of 4,368. A minimum length before streaming was offered and DECLINED by Armen
+  (11-11) - fix Summit's reception first.
+- **Airspy and HydraSDR drivers both report dropped samples** (`SampleBuffer.droppedSamples()`: Airspy per block,
+  HydraSDR running total) and the fork ignored it until build 12.
+- **The Airspy and HydraSDR controllers stop the stream when the last channel leaves the tuner** - the pattern that
+  build 10 removed for RTL. No evidence that they crash; watch the stream start/stop DEBUG lines.
+- **16.1 review, 5 machines, 11-09 ~17:30 -> 11-10 ~20:45 (about 27 h each):** no restarts, crashes, exceptions,
+  queue overflows or tuner errors. Calls on 11-10: Baker 2,606, Beauport 1,448, Daly 9,924, Salisbury 9,210,
+  Somerville 21,774. They run almost only conventional NBFM, so they do not exercise the rotation path that crashed
+  Monson. Every dongle is on USB bus 1 with the same bus:port under 16.0 and 16.1 - no tuner-configuration edit
+  needed (the bus swap applies only to machines with dongles on more than one bus: Monson, Paxton).
+- Daly's upgrade: `sdrplay_api_Open failed` three times 17:27-17:28 (once on 16.0), 66 "No Tuner Available";
+  fine from the 17:31 start. Rdio Scanner server returned HTTP 502 to Baker, Beauport, Daly and Salisbury about
+  11:54-13:00 on 11-10 (server side). "CTCSS / DCS squelch codes" DEBUG is ticked on Baker and Somerville (93-96% of
+  their logs; Somerville 240-280 MB/day) and on Daly from 11-10.
+- **4 GB max Java memory is the deliberate 16.x setting** (an 11-10 remark calling it off-standard was wrong).
+- **USB hotplug:** from 16.1 jLibUSB polls the USB device list on Windows ("LibUsb - started USB hotplug detection
+  (polling)"), so a dongle plugged in while running is detected and added; before 16.1 Windows had no detection.
+  RSPs are still found only at startup. Stopped channels are not restarted when a dongle returns (code reading).
+  No log shows a real plug/unplug yet - UNTESTED.
+- **Upstream as of 11-11** (`e7f4f655`): same jRTL 1.4.0.2 / jLibUSB 1.0.30.1 and the same stop-on-last-listener RTL
+  code that crashed Monson. No newer jRTL exists. JMBE 2.0-2.1.1 (Oct 2026) were gain/AGC fixes from user reports.
+
+### OPEN (edacs) as of 2026-11-11
+- ProVoice: why about 60% of the first 0.48 s of every transmission is damaged.
+- Summit 800 MBTA reception: run build 12 and look for the dropped-sample WARN.
+- EDACS "open 0.0 s" lines - confirm they are a logging artifact.
+- `ConcurrentModificationException` in `ProcessingChain.start` (Cambridge, 2 in 4,449 calls) - not fixed.
+- P25 added to Summit 800 alongside EDACS and Type II - waiting for a clean baseline first.
+- Hotplug test: unplug and replug one RTL dongle on a test machine and send the log.
+- Type II signaling squelch - still needs weak-signal recordings.
+- Deferred: log trimming; a minimum segment length before streaming.
+
+### Working rules added 2026-11-11
+- **Every patch comes with tests for what it changes and a test line to run between `git am` and the build:**
+  `.\gradlew test --tests "<filter>"`. If it fails, paste the output and do not build or push.
+- Claude's workspace cannot download Gradle, Maven Central, JitPack or the BellSoft JDK (network policy), so the
+  full build happens only on Armen's PC. Standalone classes can be compiled and exercised in the workspace.
+- Claude never posts a command block that is not meant to be run as written (11-11: a template block with a
+  placeholder filter was run; it only rebuilt build 11).
+
+## Previous state 2026-11-10 19:30: `edacs` build 11 (numbered builds, RTL crash fix under test)
 
 - **`edacs` branch builds are numbered from build 9:** version `0.6.2-ap-16.1-edacs-<n>`, patch `edacs-<n>.patch`,
   zip in its own `sdrtrunk-ap-versions\v0.6.2-ap-16.1-edacs-<n>\` folder. Patches 1a-1h are builds 1-8 (table in

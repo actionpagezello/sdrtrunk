@@ -31,6 +31,8 @@ public enum DiagnosticsCategory
     RDIO("Rdio Scanner streaming", "io.github.dsheirer.audio.broadcast.rdioscanner"),
     SDRPLAY("SDRPlay / RSP tuners", "io.github.dsheirer.source.tuner.sdrplay"),
     RTLSDR("Nooelec / RTL-SDR tuners", "io.github.dsheirer.source.tuner.rtl"),
+    //edacs-12: both tuner types log through WidebandStreamMonitor, whose loggers are all named under this prefix
+    AIRSPY_HYDRA("Airspy / HydraSDR tuners", "io.github.dsheirer.source.tuner.wideband"),
     CHANNELIZER("Channelizer / DDC", "io.github.dsheirer.dsp.filter.channelizer"),
     TUNER_POOL("Tuner manager / pool", "io.github.dsheirer.source.tuner.manager"),
     P25("P25 decoder", "io.github.dsheirer.module.decode.p25"),

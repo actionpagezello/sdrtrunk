@@ -408,9 +408,9 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
                 //USB or PnP event at all - the removal was reported by the SDRplay API, not by the operating system.
                 mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] while carrying [" + removedChannelCount +
                     "] channel(s) - those channels have STOPPED and will not restart on their own, even if the device comes " +
-                    "back: restart SDRTrunk to recover them (RSP tuners are only discovered at startup, and USB hotplug " +
-                    "is not supported on Windows). Reported by the device driver/API - not necessarily a physical " +
-                    "disconnect.");
+                    "back: restart SDRTrunk to recover them (RSP tuners are only discovered at startup. From ap-16.1 a " +
+                    "USB dongle that is plugged back in is detected and added again, but its channels are not " +
+                    "restarted). Reported by the device driver/API - not necessarily a physical disconnect.");
             }
             else
             {
