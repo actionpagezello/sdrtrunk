@@ -31,6 +31,44 @@ and can only be told apart by the "Build Timestamp" log line.
 | 11 | edacs-11 | ProVoice DEBUG line: damaged voice frames by position in the transmission; docs |
 | 12 | edacs-12 | Airspy / HydraSDR dropped-sample warning and Diagnostics box; tests; docs |
 | 13 | edacs-13 | jRTL 1.4.0.3: upstream's driver fix for the Monson crash; upstream C4FM test; docs |
+| 14 | edacs-14 | RSP recovery (Daly); log lines when a channel hunts for its control channel (MBTA); docs |
+
+### Build 14 - RSP recovery, and log lines for control channel hunting
+- **Why (Daly):** RSP1B SER#24050F5260 was reported removed by the SDRplay API on 2026-11-11 18:05:53 and again on
+  2026-11-12 09:20:53, each time carrying 16 channels, which stayed down until SDRTrunk was restarted by hand (4.5
+  and 2.7 hours). Windows listed the device as present and working throughout and logged no USB or power event;
+  the second RSP1B on the same API service kept running. A restart found the device at once both times.
+- **RSP recovery (new `RspRecoveryMonitor`):** when the SDRplay API reports an RSP removed, SDRTrunk asks the API
+  for its device list 10 seconds later and then every 30 seconds. When the serial number is listed again the tuner
+  is added the same way as at startup (its saved settings apply) and, 3 seconds later, the playlist channels the
+  removal stopped are started. A channel that fails to start is tried once more after 15 seconds. Log lines start
+  with `RSP recovery:`; the removal and the return are WARN.
+  - The channels restarted are exactly those that were running before the removal and not after it. Channels on
+    other tuners are untouched; a channel someone started by hand meanwhile, or deleted, is left alone.
+  - A channel with a frequency list is not stopped by the removal: it keeps asking for a tuner and picks the
+    returned RSP up by itself.
+  - A returned RSP that is listed but will not start is taken out again and retried at the next check.
+  - **Not yet proven on a real removal.** 15.11.1 and 15.11.4 had a recovery that never saw a device return
+    because the old driver code kept it selected; the 16.x driver code releases a removed device itself, so this
+    version only lists and re-adds. What is unknown is whether the SDRplay API lists the device again while another
+    RSP in the same program is still open - the first check line after a removal says what the API listed.
+  - Does nothing unless an RSP is removed. No change to decoding, audio or streaming.
+- **Why (MBTA):** on 2026-11-12 the MBTA control channel was off the air for about 50 minutes. Summit 800 was
+  hunting through its frequency list the whole time, as it should, but hunting wrote nothing to the log, so the log
+  could not show it or where the channel locked when the signal returned.
+- **Hunting log lines (new `FrequencyHunt`, used by `MultiFrequencyTunerChannelSource`):** INFO, per channel:
+  - `Channel [18/EDACS] has had no control channel for 15 seconds (lost on 853.7250 MHz) - hunting through its [6]
+    frequencies`
+  - `... is still hunting for a control channel after 10 minutes - none found on any of its [6] frequencies`
+    (every 10 minutes)
+  - `... found a control channel on 853.7250 MHz after hunting for 49 minutes - the same frequency it lost` (or
+    `- it lost <frequency> MHz`)
+  - Hunts shorter than 15 seconds (a fade at a weak site) are not logged; they are counted and the count is given
+    with the next hunt that is logged. Rotation itself is unchanged.
+- **Checked before delivery:** compiled and the full suite run in Claude's workspace - 334 tests in 86 classes, 333
+  pass; the one failure needs a display the workspace does not have. New tests: `RspRecoveryMonitorTest` (13),
+  `FrequencyHuntTest` (5). The parts that touch the SDRplay API and a real tuner cannot be tested without an RSP.
+- **Test line:** `.\gradlew test --tests "*RspRecoveryMonitor*" --tests "*FrequencyHunt*"`
 
 ### Build 13 - jRTL 1.4.0.3, upstream's fix for the RTL crash on retune
 - **Upstream found the cause of the Monson crash** (jRTL issue #4, sdrtrunk #2621): when a stream ended, the RTL

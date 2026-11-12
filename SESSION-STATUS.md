@@ -3,7 +3,95 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-11 22:15: `edacs` build 13 (jRTL 1.4.0.3 - upstream's fix for the Monson crash)
+## Current state 2026-11-12 14:00: `edacs` build 14 (RSP recovery; hunting log lines)
+
+- **Builds:** 14 = RSP recovery (`RspRecoveryMonitor`), log lines when a channel hunts for its control channel
+  (`FrequencyHunt`), these docs. Build 13 pushed as `4d04a647` (tree `a000b191`).
+- **Where it goes:** Daly, which runs 16.1 from `master` and has no recovery until it takes an `edacs` build.
+  Monson, Summit 800 and Cambridge run build 13 and can take 14 at any restart. Paxton has not run 13 yet (system
+  maintenance).
+- **RSP recovery is not proven on hardware.** The next Daly drop is the test. What to read in its log: the
+  `RSP recovery:` lines - the first check (10 s after the removal) says what the SDRplay API listed.
+
+### Findings 2026-11-11 night to 2026-11-12 afternoon
+- **Monson, build 13 (jRTL 1.4.0.3):** 2026-11-11 22:12:55 to 11-12 12:03:55, 13 h 51 min, no crash, no restart, no
+  RTL or USB error. Longer than the build 10 run (13.2 h). The `bin` folder has not been checked for
+  `hs_err_pid*.log` yet. Paxton not tested.
+- **Daly (16.1), RSP1B SER#24050F5260 removed twice:** 11-11 18:05:53 and 11-12 09:20:53 (10 h 44 min after the
+  22:36:44 restart), 16 NH/Haverhill channels each time. Identical pattern: working normally seconds before, then
+  `Processing device removal for tuner [A]`. Measured on the machine at 12:00 on 11-12: Windows lists both RSP1Bs
+  present and OK; no USB, PnP, power or service event in the System log for 24 h; USB selective suspend is disabled
+  on AC; `sdrplay_apiService` running since 11-09 17:29 (never restarted); RSP1B SER#24040A4B60 on the same service
+  unaffected.
+- **Daly USB layout (Dell, measured):** everything is on the motherboard's Intel xHCI controller, no hub - RSP1B
+  5260 on port 1, Logitech receiver port 5, RSP1B 4B60 port 7, NESDR SMArt v5 (serial 00002003) port 9. The Renesas
+  USB 3.0 card Armen installed is seen by Windows and has nothing plugged into it. **Test agreed:** move 5260 to
+  the Renesas card (SDRTrunk closed first). Still drops there -> the radio or its cable; stops -> motherboard port 1.
+- **Monson uploads, `s1.scannerwx.com`:** HTTP 502 from 09:53:30, last accepted upload 10:31:45, then Cloudflare
+  error 1033 (tunnel has no connector - the server end) to the end of the log at 12:03; 296 ThinLine recordings aged
+  off. Armen: most Cloudflare errors are on our server; the disconnections are not the concern, the receiving end
+  is. Each stream retests a failed server every 5 s (stock value; several streams to one host added up to 6,568
+  tests in two hours). **Decision: retry timing stays.** Logging the first line of an HTML error body instead of
+  the whole page goes with the deferred log trimming.
+- **Summit 800, build 13, 11-11 22:24 to 11-12 13:04:** MBTA control channel errors 2.6% median (about 15% on the
+  morning of 11-11, build 11); ProVoice damaged frames mid-call about 7% (was about 22%), last 0.48 s 24% (was 40%).
+  Nothing in build 12 or 13 touches the Airspy or EDACS path, so something else changed between 08:00 and 22:24 on
+  11-11 - asked Armen, not answered yet. MSP Type II OSW failures 26.6% median, still poor. Airspy dropped samples
+  in four minutes after startup (22:53, 23:09, 23:10, 23:11; at most 0.208%), none in the 13.5 h after.
+- **ProVoice start-of-transmission damage does not follow reception:** first 0.48 s is 62% damaged at Summit 800
+  with mid-call at 7%, and the same order at Cambridge (19 of 24 frames on single calls). It is the decoder, not
+  the signal, and it is the audible "digital sound" at the start of calls. **Top decoding item after build 14.**
+- **Audio comparison, Summit 800 against Cambridge (recordings 11-11 22:48-23:06, 100 calls paired by talkgroup,
+  radio and time):** Summit lacks 52 s of the 489 s Cambridge has (10.7%; 40 s mid-call), 28 of 95 calls lack more
+  than 0.5 s; level, clipping and frequency balance are the same at both sites, so "muffled" is repeated and
+  silenced frames, not filtering. CORRECTION to what Armen was first told: the "20% sounds different" figure used a
+  similarity cut-off that was too strict, and it does not match the log, which shows 4-7% mid-call damage for that
+  hour; two of the dropped-sample minutes fall inside the recordings.
+- **MBTA outage 2026-11-12:** control channel on 853.7250 MHz gone from about 11:55 to 12:45 real time (Cambridge
+  log 11:49:58-12:39:50, its clock is 5-6 minutes slow; Summit 800 log 11:56:35 to a restart at 12:43:55, locked at
+  12:45). Both sites decoded again on 853.7250 without help. Restarting the channel and the program did nothing
+  because there was no signal.
+  - **The two sites are configured differently.** Summit 800's MBTA channel has a frequency list and hunts (its
+    thread is named `[32/EDACS] MULTI FREQ`). Cambridge's has the single frequency 853.7250 and cannot hunt (thread
+    `[18/EDACS] 853725000`, no `MULTI FREQ` anywhere in its log) - it waited and resumed. If the control channel
+    ever does move, Cambridge will not follow until its channel is given the full list.
+  - **Claude was wrong twice here:** said the control channel had moved to a frequency outside the list, and then
+    that a new channel with all frequencies had found it. It never moved. The causes: hunting logged nothing, and
+    the two machines' clocks differ by about 5 minutes.
+    Build 14 adds the hunting lines. RULE: compare the clocks before comparing times across machines.
+  - MBTA channel as configured: Source list 851.175, 851.425, 851.9375, 852.25, 853.725, 851.45 (rotation 1000 ms);
+    LCN list 1-15 = 851.175, 851.225, 851.425, 851.475, 851.9375, 851.9875, 852.175, 852.25, 853.6625, 853.725,
+    853.9, 851.0625, 851.45, 851.9625, 853.925. Armen added a second MBTA channel with all 15 frequencies on Summit
+    800; from 12:49 both channels were decoding there, so each call was handled twice until one is stopped.
+- **Code note:** `MultiFrequencyTunerChannelSource` sends its rotation success / failure notifications into its own
+  consumer adapter, where `TunerChannelSource.process` ignores them - no module ever receives them (upstream
+  behaviour, left alone).
+- **Upstream re-read 2026-11-12 13:30:** head `a53f6e9d` (#2628 ThumbDV support removed, 11-12). Libraries: jrtl
+  1.4.0.3, jsdrplay 3.15.3 (latest tag, 11-07), jlibusb 1.0.30.1, jairspy 1.0.12.1, jhydrasdr 1.1.4.1 - all the same
+  as the fork; JMBE 2.1.1 upstream against 2.1.0 in the fork (2.1.1 only tidies tests). Nothing new for the RSP.
+
+### OPEN (edacs) as of 2026-11-12
+- **Armen to do:** Daly - move RSP1B 5260 to the Renesas card, load build 14. Cambridge - fix the clock (5-6 min
+  slow) and give its MBTA channel the full frequency list. Summit 800 - one MBTA channel, Auto-Start on. Check the Monson and Paxton `bin` folders
+  for `hs_err_pid*.log`.
+- **Armen to answer:** what changed on Summit 800 on 11-11 between 08:00 and 22:24; the order of the DRAFT
+  priorities (section below).
+- **Next investigations:** ProVoice start-of-transmission damage (decoder); EDACS "open 0.0 s" lines;
+  `ConcurrentModificationException` in `ProcessingChain.start` (once more at Summit 800, 11-12 01:41:24, on the
+  MBTA control channel's thread, with a polyphase "channel source was not previously added" error beside it); Type II at Summit 800; Zello "kicked" on C-PTL-1 / C-PTL-3 (Monson) - unexplained,
+  not a priority for Armen.
+- **Deferred by Armen:** log trimming (now including one-line HTML error bodies); minimum segment length before
+  streaming. Upstream build-script rework, ThumbDV removal and library updates: not taken, each its own build.
+
+### Working rules added 2026-11-12
+- A PowerShell block that writes a file must not assume `$env:USERPROFILE\Desktop` exists (Daly's Desktop is
+  under OneDrive): use `[Environment]::GetFolderPath('Desktop')`.
+- `PlaylistManager.java` and `gradle.properties` have CRLF line endings; most other sources are LF. An edit made by
+  a script must keep the file's endings (`open(..., newline='')`), or the patch rewrites the whole file.
+- Say "I can't tell from the log" before offering a cause. On 11-12 two confident causes for the MBTA outage were
+  wrong within the hour.
+
+## Previous state 2026-11-11 22:15: `edacs` build 13 (jRTL 1.4.0.3 - upstream's fix for the Monson crash)
 
 - **Builds:** 13 = jRTL 1.4.0.3 (upstream's fix for the Monson crash) with the build 10 stream change kept as a second
   layer, upstream's C4FM score test, corrected docs. Build 12 pushed as `7fb66b2b` (tree `2997af12`).

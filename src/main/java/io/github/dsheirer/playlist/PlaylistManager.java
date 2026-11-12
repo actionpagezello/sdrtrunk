@@ -137,6 +137,13 @@ public class PlaylistManager implements Listener<ChannelEvent>
         MyEventBus.getGlobalEventBus().register(mChannelProcessingManager);
 
         mChannelModel.addListener(mChannelProcessingManager);
+
+        //AP-fork (edacs-14): RSP recovery restarts the channels that the removal of an RSP tuner stopped
+        if(mTunerManager != null)
+        {
+            mTunerManager.setRspRecoveryChannels(mChannelProcessingManager,
+                channel -> mChannelModel.getChannels().contains(channel));
+        }
         mChannelProcessingManager.addChannelEventListener(mChannelModel);
 
         //Register for alias, channel and channel map events so that we can

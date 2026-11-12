@@ -27,11 +27,13 @@ import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.SourceEvent;
 import io.github.dsheirer.source.SourceException;
 import io.github.dsheirer.source.heartbeat.Heartbeat;
+import io.github.dsheirer.source.tuner.channel.rotation.FrequencyHunt;
 import io.github.dsheirer.source.tuner.channel.rotation.FrequencyLockChangeRequest;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.util.ThreadPool;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
@@ -59,6 +61,10 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
     private AtomicBoolean mChangingChannels = new AtomicBoolean();
     private boolean mStarted;
     private ConsumerSourceEventAdapter mConsumerSourceEventAdapter = new ConsumerSourceEventAdapter();
+    //AP-fork (edacs-14): logs when this channel starts hunting for its control channel and where it finds one
+    private FrequencyHunt mFrequencyHunt;
+    private ScheduledFuture<?> mFrequencyHuntFuture;
+    private final Object mFrequencyHuntLock = new Object();
 
     public MultiFrequencyTunerChannelSource(TunerManager tunerManager, TunerChannelSource tunerChannelSource,
                                             List<Long> frequencies, ChannelSpecification channelSpecification,
@@ -71,6 +77,61 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
         mFrequencies = frequencies;
         mChannelSpecification = channelSpecification;
         mPreferredTuner = preferredTuner;
+        mFrequencyHunt = new FrequencyHunt("Channel [" + (threadName != null ?
+            threadName.replace("sdrtrunk channel ", "").replace(" MULTI FREQ", "").replace("[", "").replace("]", "") :
+            "?") + "]",
+            frequencies != null ? frequencies.size() : 0);
+    }
+
+    /**
+     * AP-fork (edacs-14): notes the rotation request and, while the channel is hunting, checks once a second for
+     * the hunt to be logged, reported or ended.  The check stops itself when the hunt ends.
+     */
+    private void trackFrequencyHunt()
+    {
+        synchronized(mFrequencyHuntLock)
+        {
+            mFrequencyHunt.requested(System.currentTimeMillis(), getFrequency());
+
+            if(mFrequencyHuntFuture == null)
+            {
+                mFrequencyHuntFuture = ThreadPool.SCHEDULED.scheduleWithFixedDelay(this::checkFrequencyHunt, 1, 1,
+                    TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    private void checkFrequencyHunt()
+    {
+        try
+        {
+            String line;
+
+            synchronized(mFrequencyHuntLock)
+            {
+                if(!mStarted)
+                {
+                    mFrequencyHunt.reset();
+                }
+
+                line = mFrequencyHunt.check(System.currentTimeMillis(), getFrequency());
+
+                if(!mFrequencyHunt.isHunting() && mFrequencyHuntFuture != null)
+                {
+                    mFrequencyHuntFuture.cancel(false);
+                    mFrequencyHuntFuture = null;
+                }
+            }
+
+            if(line != null)
+            {
+                mLog.info(line);
+            }
+        }
+        catch(Throwable t)
+        {
+            mLog.error("Error checking the frequency hunt", t);
+        }
     }
 
     /**
@@ -89,6 +150,8 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
      */
     private void rotate()
     {
+        trackFrequencyHunt();
+
         if(mChangingChannels.compareAndSet(false, true))
         {
             long frequency = getNextFrequency();
