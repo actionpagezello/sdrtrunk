@@ -33,6 +33,38 @@ and can only be told apart by the "Build Timestamp" log line.
 | 13 | edacs-13 | jRTL 1.4.0.3: upstream's driver fix for the Monson crash; upstream C4FM test; docs |
 | 14 | edacs-14 | RSP recovery (Daly); log lines when a channel hunts for its control channel (MBTA); docs |
 | 15 | edacs-15 | ProVoice: the header at the start of each transmission is no longer played as voice |
+| 16 | edacs-16 | ProVoice: the sign-off at the end of a transmission is not played; flag bit not counted as an error |
+
+### Build 16 - ProVoice: the sign-off is not voice, and the flag bit is not an error
+- **Build 15 confirmed on the machines** (2026-11-12, 15:05-15:32): damaged voice frames in the first 0.48 s 0.9% at
+  Cambridge and 2.5% at Summit 800 (about 60% before); header found on 279 of 282 and 201 of 204 transmissions,
+  median 0.40 s. That left the last 0.48 s as the worst part: 21.0% and 19.3%.
+- **Found, by comparing the same 33 calls recorded at both sites** (Armen's question: if both sites have the same
+  damaged frames, is it damage at all?). Summit 800 received them at 34-41 dB, Cambridge at 55-68 dB. Of 4,424 voice
+  frames, 2.9% were "damaged" at both sites and in 118 of those 130 the whole 80 ms frame was bit-for-bit identical
+  at the two sites - sent that way. 4.4% were damaged at Summit only (its reception), 0.4% at Cambridge only.
+- **Sign-off.** A transmission ends with dotting (alternating bits - the pattern edacs-fm's dot detector looks for)
+  and up to half a second of other data before the carrier drops. The dotting usually starts part way through a
+  frame. The decoder read all of it as damaged voice, repeated the last good 20 ms over it and played anything that
+  passed the error check by chance. **Change:** when a frame holds 16 or more alternating bits and both voice frames
+  of the pair they start in fail the check, the voice frames before that point are played and nothing after it,
+  until the next transmission or until a frame reads as voice again. Dotting alone is not enough: clean voice
+  frames with 17 and 18 alternating bits exist.
+- **Flag bit.** Some radios send bit 17 of the first two code words of every voice frame inverted, for the whole
+  call: at Cambridge 11 of 33 calls had no corrected bit anywhere, about 10 had exactly this bit corrected in every
+  voice frame, and of 1,570 voice frames with any correction 1,112 and 732 were this bit in the first and second
+  code word. The code words after it decode with no errors once it is corrected, so the voice is unaffected - but
+  each one was counted as an error, using one or two of the five a voice frame is allowed. **Change:** a correction
+  of that bit is not counted. (This is the constant 1-1-1-1 / 2-1-2-1 pattern seen since 11-09.)
+- **Measured on the 68 recordings, build 15 against build 16:** voice frames concealed as damaged, Cambridge 3.97%
+  -> 1.41%, Summit 800 7.81% -> 4.45%. Sign-off voice frames no longer played: 142 and 161 (about 4 per call).
+- **Not in this build:** the header read by its structure, stricter handling of real bursts, soft-decision
+  decoding for weak signals (build 17 candidate; dsd-neo issue #588 proposes the same and has no code yet).
+- **Log:** the DEBUG `ProVoice transmission:` line ends `header 0.40 s and sign-off 0.08 s not played`. The check
+  on the machines: "last 0.48 s" damage falls from about 20% towards the mid-call figure.
+- **Checked before delivery:** full suite - 348 tests in 88 classes, 347 pass; the one failure needs a display.
+  New: `ProVoiceSignOffTest` (6) on real end-of-call frames (`provoice_transmission_ends.txt`).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
 
 ### Build 15 - ProVoice: the header at the start of a transmission is not voice
 - **Found:** a ProVoice transmission does not start with voice. It starts with a header frame sent three to five

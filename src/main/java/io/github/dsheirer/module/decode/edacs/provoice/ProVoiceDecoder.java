@@ -184,6 +184,7 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
             mLastGood = null; //new transmission - nothing to repeat
             mRepeats = 0;
             mHeaderDetector.reset();
+            mSignedOff = false;
         }
         mLastFrameBit = mBitCount;
 
@@ -204,14 +205,30 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
             return;
         }
 
+        //AP-fork (edacs-16): the sign-off at the end of a transmission is not voice and is not played
+        boolean[] signOff = signOff(frameErrors);
+
         List<byte[]> imbeFrames = new ArrayList<>(4);
         int errors = 0;
         long concealedBefore = mConcealedCount;
 
-        for(ProVoiceFrameDecoder.VoiceFrame voiceFrame : voiceFrames)
+        for(int x = 0; x < voiceFrames.length; x++)
         {
+            if(signOff[x])
+            {
+                mSignOffCount++;
+                mTransmissionSignOff++;
+                continue;
+            }
+
+            ProVoiceFrameDecoder.VoiceFrame voiceFrame = voiceFrames[x];
             imbeFrames.add(conceal(IMBEFrameEncoder.encode(voiceFrame.parameters()), voiceFrame.errors()));
             errors += voiceFrame.errors();
+        }
+
+        if(imbeFrames.isEmpty())
+        {
+            return;
         }
 
         int concealed = (int)(mConcealedCount - concealedBefore);
@@ -233,6 +250,112 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     private final ProVoiceHeaderDetector mHeaderDetector = new ProVoiceHeaderDetector();
     private long mTransmissionHeaders;
     private long mHeaderCount;
+    private long mTransmissionSignOff;
+    private long mSignOffCount;
+    private boolean mSignedOff;
+
+    /** Alternating bits (dotting) that mark the end of a transmission.  The longest run in 1,874 voice frames of the
+     * MBTA recording of 2026-11-09 that were not the last of their transmission was 15. */
+    static final int DOTTING_BITS = 16;
+
+    /**
+     * AP-fork (edacs-16): decides which of the frame's four voice frames belong to the sign-off at the end of the
+     * transmission and must not be played.
+     *
+     * A transmission ends with dotting - alternating bits - and what the transmitter sends from there on is not
+     * voice.  The dotting usually starts part way through a frame (MBTA: most often at bit 496, after the first pair
+     * of voice frames), and up to half a second of other non-voice frames can follow before the carrier drops.
+     * Until this the decoder read all of it as damaged voice: it repeated the last good 20 ms up to three times and
+     * played whatever passed the error check by chance - 2 or 4 "damaged" voice frames at the end of nearly every
+     * call, identical bit for bit at Cambridge and Summit 800 (2026-11-12), about 20% of the last 0.48 s.
+     *
+     * The sign-off is recognized by dotting with both voice frames of the pair it starts in failing the error check
+     * - a clean voice frame can hold 17 or 18 alternating bits, so dotting alone is not enough.  In that frame the
+     * voice frames before the dotting that pass the check are played; from then on nothing is played until the next
+     * transmission, or until a frame reads as voice again (3 of its 4 voice frames pass), which undoes a false
+     * detection.
+     */
+    private boolean[] signOff(int[] frameErrors)
+    {
+        boolean[] drop = new boolean[frameErrors.length];
+        int dotting = dottingStart(mFrame);
+        int passing = 0;
+
+        for(int error : frameErrors)
+        {
+            if(error <= MAX_ERRORS)
+            {
+                passing++;
+            }
+        }
+
+        if(mSignedOff)
+        {
+            //After the sign-off has started: nothing is played unless the frame reads as voice again
+            if(dotting < 0 && passing >= ProVoiceHeaderDetector.VOICE_FRAMES_NEEDED)
+            {
+                mSignedOff = false;
+            }
+            else
+            {
+                java.util.Arrays.fill(drop, true);
+            }
+
+            return drop;
+        }
+
+        if(dotting >= 0)
+        {
+            int pair = dotting < ProVoiceFrameDecoder.FIRST_PAIR_END ? 0 : 2;
+
+            if(frameErrors[pair] > MAX_ERRORS && frameErrors[pair + 1] > MAX_ERRORS)
+            {
+                //The sign-off starts in this frame: the voice frames before it that pass the check are the last
+                //of the voice
+                mSignedOff = true;
+
+                for(int x = 0; x < drop.length; x++)
+                {
+                    drop[x] = x >= pair || frameErrors[x] > MAX_ERRORS;
+                }
+            }
+        }
+
+        return drop;
+    }
+
+    /**
+     * Start of the first run of at least DOTTING_BITS alternating bits, or -1.  Package-private for testing.
+     */
+    static int dottingStart(int[] frame)
+    {
+        int run = 1;
+
+        for(int x = 1; x < frame.length; x++)
+        {
+            if(frame[x] != frame[x - 1])
+            {
+                if(++run >= DOTTING_BITS)
+                {
+                    return x - run + 1;
+                }
+            }
+            else
+            {
+                run = 1;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Voice frames (20 ms) at the end of transmissions that were sign-off, not voice, and were not played
+     */
+    public long getSignOffCount()
+    {
+        return mSignOffCount;
+    }
 
     /**
      * Diagnostics (DEBUG): one line per transmission - frames, corrected bit errors and damaged voice frames, and
@@ -243,10 +366,11 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
         if(mTransmissionFrames > 0 && LOGGER.isDebugEnabled())
         {
             LOGGER.debug(String.format("ProVoice transmission: %.1f s, %.2f bit errors per voice frame, %d of %d " +
-                    "voice frames damaged (%.1f%%), sync %s, header %.2f s not played", mTransmissionFrames * 0.08,
+                    "voice frames damaged (%.1f%%), sync %s, header %.2f s and sign-off %.2f s not played",
+                mTransmissionFrames * 0.08,
                 mTransmissionErrors / (4.0 * mTransmissionFrames), mTransmissionConcealed, 4 * mTransmissionFrames,
                 100.0 * mTransmissionConcealed / (4.0 * mTransmissionFrames), mInverted ? "inverted" : "normal",
-                mTransmissionHeaders * 0.08));
+                mTransmissionHeaders * 0.08, mTransmissionSignOff * 0.02));
             LOGGER.debug(mDamagePosition.describe());
         }
         else if(mTransmissionHeaders > 0 && LOGGER.isDebugEnabled())
@@ -256,6 +380,7 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
         }
 
         mTransmissionHeaders = 0;
+        mTransmissionSignOff = 0;
 
         mTransmissionFrames = 0;
         mTransmissionErrors = 0;

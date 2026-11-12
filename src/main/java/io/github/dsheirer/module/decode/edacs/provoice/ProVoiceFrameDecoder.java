@@ -43,6 +43,12 @@ public class ProVoiceFrameDecoder
 {
     /** Bits after the sync */
     public static final int FRAME_BITS = 736;
+    /** First bit after the first pair of voice frames (144 + 286) */
+    public static final int FIRST_PAIR_END = 430;
+    /** First bit of the second pair of voice frames */
+    public static final int SECOND_PAIR_START = 448;
+    /** Bit of the first two code words of a voice frame that some radios send inverted as a flag - not an error */
+    static final int FLAG_BIT = 17;
 
     private static final int[] W = {0, 1, 2, 3, 4, 6, 0, 1, 2, 3, 4, 6, 0, 1, 2, 3, 4, 6, 0, 1, 2, 3, 5, 6, 0, 1, 2, 3, 5,
         6, 0, 1, 2, 3, 5, 6, 0, 1, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 6, 0, 1, 2, 3, 4, 6, 0, 1, 2, 3, 4, 6, 0, 1,
@@ -196,6 +202,22 @@ public class ProVoiceFrameDecoder
      */
     private static int golay(int[] in, int[] out)
     {
+        return golay(in, out, -1);
+    }
+
+    /**
+     * AP-fork (edacs-16): as above, without counting a correction of the flag bit.
+     *
+     * Some radios send bit {@link #FLAG_BIT} of the first two code words of every voice frame inverted, for a whole
+     * call - MBTA 2026-11-12, 33 calls recorded at Cambridge at 55-68 dB: 11 calls had no corrected bit in any voice
+     * frame, about 10 had this one bit corrected in the first code word, the second or both in every voice frame, and
+     * of 1,570 voice frames with a correction 1,112 and 732 were this bit.  The code words that follow descramble and
+     * decode with no errors once it is corrected, so the correction is right and the voice is not altered - but
+     * counted as errors the flag used up one or two of the five allowed in every voice frame of those calls.
+     * @param flagBit index of the bit whose correction is not an error, or -1
+     */
+    private static int golay(int[] in, int[] out, int flagBit)
+    {
         int block = 0;
 
         for(int i = 22; i >= 0; i--)
@@ -215,7 +237,7 @@ public class ProVoiceFrameDecoder
         int errors = 0;
         for(int i = 22; i >= 11; i--)
         {
-            if(out[i] != in[i])
+            if(out[i] != in[i] && i != flagBit)
             {
                 errors++;
             }
@@ -269,7 +291,7 @@ public class ProVoiceFrameDecoder
         {
             in[j] = fr[0][j + 1];
         }
-        int errors = golay(in, out);
+        int errors = golay(in, out, FLAG_BIT);
         for(int j = 0; j < 18; j++)
         {
             fr[0][j + 1] = out[j];
@@ -318,7 +340,7 @@ public class ProVoiceFrameDecoder
         {
             in[j] = fr[1][j + 1];
         }
-        errors += golay(in, out);
+        errors += golay(in, out, FLAG_BIT);
         for(int j = 22; j > 10; j--)
         {
             d[n++] = out[j];

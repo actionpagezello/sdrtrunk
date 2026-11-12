@@ -98,7 +98,7 @@ public class ProVoiceTest
 
         //Flip a few payload bits well apart: corrected by the Golay/Hamming codes
         boolean[] damaged = bits(RECORDED);
-        damaged[32 + 150] ^= true;
+        damaged[32 + 152] ^= true; //not bit 150, which is the flag bit that is no longer counted (edacs-16)
         damaged[32 + 400] ^= true;
         damaged[32 + 650] ^= true;
         List<ProVoiceMessage> corrected = decode(damaged);

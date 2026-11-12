@@ -115,8 +115,9 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
     {
         if(message instanceof ProVoiceMessage voice)
         {
-            mAudioSamples += 640; //80 ms of voice at 8 kHz
-            mVoiceFrames += 4;
+            //20 ms of voice at 8 kHz each; a frame holds fewer than four when the transmission signs off in it
+            mAudioSamples += 160L * voice.getIMBEFrames().size();
+            mVoiceFrames += voice.getIMBEFrames().size();
             mConcealedFrames += voice.getConcealed();
             return;
         }
