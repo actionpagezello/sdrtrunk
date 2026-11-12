@@ -183,10 +183,27 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
             logTransmission();
             mLastGood = null; //new transmission - nothing to repeat
             mRepeats = 0;
+            mHeaderDetector.reset();
         }
         mLastFrameBit = mBitCount;
 
         ProVoiceFrameDecoder.VoiceFrame[] voiceFrames = ProVoiceFrameDecoder.decode(mFrame);
+
+        //AP-fork (edacs-15): the header frames a transmission starts with are not voice and are not played
+        int[] frameErrors = new int[voiceFrames.length];
+
+        for(int x = 0; x < voiceFrames.length; x++)
+        {
+            frameErrors[x] = voiceFrames[x].errors();
+        }
+
+        if(mHeaderDetector.isHeader(mFrame, frameErrors))
+        {
+            mHeaderCount++;
+            mTransmissionHeaders++;
+            return;
+        }
+
         List<byte[]> imbeFrames = new ArrayList<>(4);
         int errors = 0;
         long concealedBefore = mConcealedCount;
@@ -213,6 +230,9 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     private long mTransmissionErrors;
     private long mTransmissionConcealed;
     private final ProVoiceDamagePosition mDamagePosition = new ProVoiceDamagePosition();
+    private final ProVoiceHeaderDetector mHeaderDetector = new ProVoiceHeaderDetector();
+    private long mTransmissionHeaders;
+    private long mHeaderCount;
 
     /**
      * Diagnostics (DEBUG): one line per transmission - frames, corrected bit errors and damaged voice frames, and
@@ -223,11 +243,19 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
         if(mTransmissionFrames > 0 && LOGGER.isDebugEnabled())
         {
             LOGGER.debug(String.format("ProVoice transmission: %.1f s, %.2f bit errors per voice frame, %d of %d " +
-                    "voice frames damaged (%.1f%%), sync %s", mTransmissionFrames * 0.08,
+                    "voice frames damaged (%.1f%%), sync %s, header %.2f s not played", mTransmissionFrames * 0.08,
                 mTransmissionErrors / (4.0 * mTransmissionFrames), mTransmissionConcealed, 4 * mTransmissionFrames,
-                100.0 * mTransmissionConcealed / (4.0 * mTransmissionFrames), mInverted ? "inverted" : "normal"));
+                100.0 * mTransmissionConcealed / (4.0 * mTransmissionFrames), mInverted ? "inverted" : "normal",
+                mTransmissionHeaders * 0.08));
             LOGGER.debug(mDamagePosition.describe());
         }
+        else if(mTransmissionHeaders > 0 && LOGGER.isDebugEnabled())
+        {
+            LOGGER.debug(String.format("ProVoice transmission: no voice - %.2f s of header only, not played",
+                mTransmissionHeaders * 0.08));
+        }
+
+        mTransmissionHeaders = 0;
 
         mTransmissionFrames = 0;
         mTransmissionErrors = 0;
@@ -278,6 +306,14 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     public long getFrameCount()
     {
         return mFrameCount;
+    }
+
+    /**
+     * Frames (80 ms) at the start of transmissions that were header, not voice, and were not played
+     */
+    public long getHeaderCount()
+    {
+        return mHeaderCount;
     }
 
     public long getErrorCount()

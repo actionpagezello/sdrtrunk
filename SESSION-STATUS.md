@@ -3,7 +3,32 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-12 14:00: `edacs` build 14 (RSP recovery; hunting log lines)
+## Current state 2026-11-12 15:30: `edacs` build 15 (ProVoice header no longer played as voice)
+
+- **Builds:** 15 = `ProVoiceHeaderDetector` (see CHANGELOG build 15 for the measurement). Build 14 pushed as
+  `23fae4f4` (tree `90b0420d`) and running on Daly since about 13:55 on 11-12.
+- **Run 15 on Cambridge and Summit 800** with "EDACS / ProVoice decoder" ticked. Confirmation: `ProVoice
+  transmission:` lines end with `header 0.xx s not played`, and the "first 0.48 s" damage figure drops from about
+  60% to about the mid-call figure. If it does not, the header at those sites differs from the recording's.
+- **How it was found:** `/home/claude/pv/Replay.java` in the workspace (not in the repo) feeds a baseband WAV to
+  `EDACSDemodulator` one sample at a time, frames it like `ProVoiceDecoder`, and prints sample position, sync type,
+  the four voice-frame error counts and the 736 bits of every frame. The MBTA-5 baseband (50 kHz I/Q, 1992 s,
+  `20261109_220431_851937500_MBTA_MBTA_MBTA-5_127_baseband_cut.wav`, kept in the logs folder) gave 1927 frames in 40
+  transmissions. Similarity to the previous frame is 1.00 for header repeats and about 0.65 for voice.
+- **Ruled out on the way:** DC removal and timing recovery settling (carrier offset is 100-200 Hz against about
+  1.9 kHz deviation, and the damage has a hard edge at the header's end, not a decay).
+- **Since 14:00 on 11-12:** Monson has no `hs_err_pid*.log` after 13.8 h on build 13 - the RTL crash fix is
+  confirmed. Armen may have changed the Airspy gain on Summit 800 on 11-11 (not certain), which would explain its
+  better MBTA reception. Cambridge clock being fixed.
+- **"SDR 2" playlist (machine not identified yet):** `default.xml` was the empty `<playlist version="4"/>` (25
+  bytes); `default.xml.backup` was whole (124,058 bytes, 57 channels, 285 aliases, 10 Zello streams, 13 auto-start,
+  all cross-references good). Armen given a guarded PowerShell block to restore it and keep a spare copy. Cause
+  unknown - needs that machine's log from the time it happened. SDRTrunk replaces the backup at each save, so a
+  second wipe could overwrite the good backup.
+- **Upstream re-read 13:40 on 11-12:** nothing worth taking now; table given to Armen (ThumbDV removal no, JMBE
+  2.1.1 no, build-script rework and library updates later as one maintenance build).
+
+## Previous state 2026-11-12 14:00: `edacs` build 14 (RSP recovery; hunting log lines)
 
 - **Builds:** 14 = RSP recovery (`RspRecoveryMonitor`), log lines when a channel hunts for its control channel
   (`FrequencyHunt`), these docs. Build 13 pushed as `4d04a647` (tree `a000b191`).
@@ -76,7 +101,8 @@
   for `hs_err_pid*.log`.
 - **Armen to answer:** what changed on Summit 800 on 11-11 between 08:00 and 22:24; the order of the DRAFT
   priorities (section below).
-- **Next investigations:** ProVoice start-of-transmission damage (decoder); EDACS "open 0.0 s" lines;
+- **Next investigations:** ProVoice start-of-transmission damage - DONE in build 15; ProVoice end-of-transmission
+  frame and decoding the header's contents; EDACS "open 0.0 s" lines;
   `ConcurrentModificationException` in `ProcessingChain.start` (once more at Summit 800, 11-12 01:41:24, on the
   MBTA control channel's thread, with a polyphase "channel source was not previously added" error beside it); Type II at Summit 800; Zello "kicked" on C-PTL-1 / C-PTL-3 (Monson) - unexplained,
   not a priority for Armen.

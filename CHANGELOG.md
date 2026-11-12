@@ -32,6 +32,40 @@ and can only be told apart by the "Build Timestamp" log line.
 | 12 | edacs-12 | Airspy / HydraSDR dropped-sample warning and Diagnostics box; tests; docs |
 | 13 | edacs-13 | jRTL 1.4.0.3: upstream's driver fix for the Monson crash; upstream C4FM test; docs |
 | 14 | edacs-14 | RSP recovery (Daly); log lines when a channel hunts for its control channel (MBTA); docs |
+| 15 | edacs-15 | ProVoice: the header at the start of each transmission is no longer played as voice |
+
+### Build 15 - ProVoice: the header at the start of a transmission is not voice
+- **Found:** a ProVoice transmission does not start with voice. It starts with a header frame sent three to five
+  times, bit for bit the same, then one or two frames of other data, then voice - 0.3 to 0.6 s in all (median
+  0.48 s). Every one of these frames carries the voice sync, so the decoder read them as voice. Read that way they
+  are noise: most of their 20 ms voice frames failed the error check and were silenced, but about one in seven
+  passed by chance, was played, and was then repeated by the concealment. That is the digital noise at the start of
+  MBTA calls, and it is why "first 0.48 s: 60% damaged" showed at every site whatever the reception.
+- **Measured** by replaying the MBTA LCN 5 baseband of 2026-11-09 22:04 (33 minutes, 40 transmissions) through
+  `EDACSDemodulator` and `ProVoiceFrameDecoder`: 26 of 27 real transmissions start with the repeated header; the
+  first four frames were 72-98% "damaged", frames 4-6 34-69%, frame 7 onward 4%.
+- **Change (new `ProVoiceHeaderDetector`, used by `ProVoiceDecoder`):** in the first 16 frames of a transmission a
+  frame that repeats the one before it is header; after a header, frames stay header until one reads as voice (3
+  of its 4 voice frames pass the error check); the first frame of a transmission is played only if it reads as
+  clean voice. Header frames are dropped - not played, not concealed, not counted as damaged voice. After the first
+  16 frames nothing is changed.
+- **Effect on the recording:** damaged voice frames in the first 0.48 s of voice 73.8% -> 4.0%; header voice frames
+  played as noise 77 -> 0; clean voice lost: 2 frames (160 ms) in 33 minutes, both a voice frame that repeated
+  exactly. The 13 one-to-eight-frame bursts that carry a header and no voice are now dropped whole.
+- **What changes for the listener:** calls begin at the first word instead of 0.3-0.6 s of silence and noise, so
+  each transmission's audio is that much shorter.
+- **Log:** the DEBUG `ProVoice transmission:` line ends with `header 0.48 s not played`; a burst with no voice
+  logs `no voice - 0.32 s of header only, not played`. The damage-by-position line now starts at the first voice
+  frame, so its "first 0.48 s" figure should fall to about the mid-call figure. That is the check on the machines.
+- **Not changed, seen in the same recording:** 19 of 22 transmissions end with a frame whose last voice frames are
+  not voice while the carrier stays up (errors like 0 0 8 8). Concealment repeats the last good 20 ms up to three
+  times there. Small; left for a later build. The header's contents (it differs between calls and is likely the
+  talkgroup and radio) are not decoded.
+- **Proven on one recording from one site.** Cambridge and Summit 800 logs are the confirmation.
+- **Checked before delivery:** full suite in Claude's workspace - 342 tests in 87 classes, 341 pass; the one
+  failure needs a display. New: `ProVoiceHeaderDetectorTest` (8), on the first frames of five real transmissions
+  (`src/test/resources/edacs/provoice_transmission_starts.txt`).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
 
 ### Build 14 - RSP recovery, and log lines for control channel hunting
 - **Why (Daly):** RSP1B SER#24050F5260 was reported removed by the SDRplay API on 2026-11-11 18:05:53 and again on
