@@ -30,6 +30,21 @@ and can only be told apart by the "Build Timestamp" log line.
 | 10 | edacs-10 | TEST: RTL tuners keep their sample stream running between channels (Monson crash) |
 | 11 | edacs-11 | ProVoice DEBUG line: damaged voice frames by position in the transmission; docs |
 | 12 | edacs-12 | Airspy / HydraSDR dropped-sample warning and Diagnostics box; tests; docs |
+| 13 | edacs-13 | jRTL 1.4.0.3: upstream's driver fix for the Monson crash; upstream C4FM test; docs |
+
+### Build 13 - jRTL 1.4.0.3, upstream's fix for the RTL crash on retune
+- **Upstream found the cause of the Monson crash** (jRTL issue #4, sdrtrunk #2621): when a stream ended, the RTL
+  driver freed its USB transfers before Windows had handed all of them back, and a retune on another thread then
+  processed a transfer that no longer existed. jRTL 1.4.0.3 waits for every transfer before freeing any.
+- **Change:** `jrtl` 1.4.0.2 -> 1.4.0.3. The build 10 change (RTL stream kept running between channels) stays as a
+  second layer: it covers only the stop-then-retune path, the driver fix also covers a transfer that fails
+  mid-stream.
+- Upstream's `C4FMSymbolProcessorScoreTest` added (#2622). The code change it tests has been in the fork since
+  ap-15.10.1.
+- **Checked before delivery:** compiled and the full suite run in Claude's workspace - 316 tests, 315 pass; the one
+  failure needs a display the workspace does not have. The driver fix itself is Windows native code and can only be
+  proven on Monson.
+- **Test line:** `.\gradlew test --tests "*C4FM*" --tests "*RTL*" --tests "*WidebandStreamMonitor*"`
 
 ### Build 12 - Airspy / HydraSDR stream logging (logging only)
 - **Why:** both driver libraries count the samples they drop before the application sees them, and the fork ignored

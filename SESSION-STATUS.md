@@ -3,7 +3,56 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-11 21:30: `edacs` build 12 (RTL fix held overnight; Airspy / HydraSDR logging)
+## Current state 2026-11-11 22:15: `edacs` build 13 (jRTL 1.4.0.3 - upstream's fix for the Monson crash)
+
+- **Builds:** 13 = jRTL 1.4.0.3 (upstream's fix for the Monson crash) with the build 10 stream change kept as a second
+  layer, upstream's C4FM score test, corrected docs. Build 12 pushed as `7fb66b2b` (tree `2997af12`).
+- **Run it on Monson and Paxton** (RTL machines with trunked systems). Summit 800 and Cambridge can take it too.
+
+### Findings and corrections 2026-11-11 late evening
+- **CORRECTION: a newer jRTL DID exist.** The 11-11 21:30 section below says "No newer jRTL exists" and that upstream
+  as of `e7f4f655` used jRTL 1.4.0.2. Both are wrong. jRTL **1.4.0.3** was released 2026-11-11 02:06 and upstream
+  moved to it at 03:16 (`000ac51f`, issue #2621 "Windows rtl-sdr crashing on retune", jRTL issue #4). The version was
+  checked on 11-10 and not re-checked when upstream was fetched again on 11-11. RULE: when reporting upstream's
+  state, re-read `build.gradle` versions and the release tags of the driver libraries at that moment.
+- **Root cause of the Monson crash (upstream's diagnosis, native patch 0002 in jRTL):** `rtlsdr_read_async` freed its
+  bulk transfers when the stream ended without waiting for libusb to hand them all back. A control transfer on
+  another thread (a retune) then handled the completion of a freed transfer and crashed in
+  `windows_handle_transfer_completion` -> `RtlEnterCriticalSection`. Triggers: the stream being cancelled, OR a
+  transfer failing mid-stream (on Windows any status other than completed or cancelled sets `dev_lost`). The fix
+  counts transfers in flight and frees them only when the count is zero; a stream that dies without being cancelled
+  now returns `LIBUSB_ERROR_IO`.
+- **Build 10 against the driver fix:** build 10 (never stop the RTL stream) removes the stop-then-retune path only.
+  It does NOT cover a transfer failing mid-stream during a retune. jRTL 1.4.0.3 covers both, at no cost. Build 13
+  has both. To prove the driver fix alone is enough, a later build would restore stop-on-last-listener and run on
+  Monson; until then the stream change stays.
+- The jRTL 1.4.0.3 jar carries a different `windows-x86_64/rtlsdr.dll` (182,272 bytes) from 1.4.0.2 (181,760).
+- **C4FM "bounds check the start of the buffer" (upstream #2622, 11-11):** the fork made the identical change
+  (`bufferPointer >= 0 &&`) on 2026-10-28 in ap-15.10.1 and also guards a second index upstream does not. Upstream
+  added a test; build 13 takes it (`C4FMSymbolProcessorScoreTest`) and it passes on the fork's code.
+- **Upstream since the fork's 11-09 sync, NOT taken yet:** build script rework #2610/#2612/#2614/#2616 (Gradle
+  wrapper, unused OS/arch tuner libraries stripped from the artifacts, JFXPanel packaging, runtime plugin) and
+  library updates (logback 1.6.6, jackson 2.23.0, flatlaf 3.8, guava 33.8.0, MINA 2.2.10, controlsfx 11.2.6, slf4j
+  2.0.20, commons-io 2.22.0, commons-lang3 3.21.0, gson 2.15.0, miglayout 11.5.2, JTransforms 3.2, JMBE 2.1.1 -
+  2.1.1 only tidies tests). Each should be its own build. Still not taken by decision: LimeSDR, 1.0.0 beta label.
+
+### Claude's workspace can now build and test (from 2026-11-11)
+- Armen set the Claude network setting to allow all websites, which opened Gradle, Maven Central, JitPack and
+  BellSoft. (On the Max plan there is no per-domain list.)
+- Recipe, about 5 minutes in a new session:
+  1. `git clone --branch edacs https://github.com/actionpagezello/sdrtrunk.git`
+  2. Download the BellSoft **Full** JDK (it has JavaFX; the one Gradle auto-provisions does not and the compile
+     fails with "package javafx... does not exist"):
+     `https://download.bell-sw.com/java/25.0.1+11/bellsoft-jdk25.0.1+11-linux-amd64-full.tar.gz`, unpack it.
+  3. `./gradlew --no-daemon -Porg.gradle.java.installations.paths=<unpacked jdk> -Porg.gradle.java.installations.auto-download=false -Porg.gradle.java.installations.auto-detect=false test`
+  4. Maven Central sometimes answers 429 "Too Many Requests"; wait a minute and run again.
+- Full suite in the workspace on build 13: 316 tests in 84 classes, 315 pass. The one failure,
+  `ZelloBroadcasterTimingTest`, is "Unable to open DISPLAY" - the workspace has no screen. Not a code fault.
+- **Every patch is now compiled and run through the full suite in the workspace before delivery.** Armen's steps
+  are unchanged: tree hash, test line, build, push. The Windows build and anything in a native driver can only be
+  verified on his PC and on the machines.
+
+## Previous state 2026-11-11 21:30: `edacs` build 12 (RTL fix held overnight; Airspy / HydraSDR logging)
 
 - **Builds:** 12 = Airspy / HydraSDR dropped-sample warning and Diagnostics box, ProVoice damage-position class with
   tests, corrected hotplug warning text, these docs. Build 11 pushed as `8f9325cd` (tree `e8af30e3`). Build 10 is
@@ -76,7 +125,7 @@ When two conflict, the higher one wins.
   (polling)"), so a dongle plugged in while running is detected and added; before 16.1 Windows had no detection.
   RSPs are still found only at startup. Stopped channels are not restarted when a dongle returns (code reading).
   No log shows a real plug/unplug yet - UNTESTED.
-- **Upstream as of 11-11** (`e7f4f655`): same jRTL 1.4.0.2 / jLibUSB 1.0.30.1 and the same stop-on-last-listener RTL
+- **[WRONG - see the 22:15 correction above: jRTL 1.4.0.3 existed]** Upstream as of 11-11 (`e7f4f655`): same jRTL 1.4.0.2 / jLibUSB 1.0.30.1 and the same stop-on-last-listener RTL
   code that crashed Monson. No newer jRTL exists. JMBE 2.0-2.1.1 (Oct 2026) were gain/AGC fixes from user reports.
 
 ### OPEN (edacs) as of 2026-11-11

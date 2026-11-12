@@ -562,6 +562,12 @@ public class RTL2832TunerController extends TunerController
      * transfers are only ever sent to a streaming device, which is what every shared tuner already does.  The cost is
      * that an RTL tuner with no channels keeps its USB stream open; its samples are dropped in receive() before they
      * are copied.
+     *
+     * edacs-13: upstream found the cause (jRTL issue #4, fixed in jRTL 1.4.0.3, which this build uses).  When a stream
+     * ended, librtlsdr freed its USB transfers before libusb had handed all of them back, and a control transfer on
+     * another thread then processed the completion of a freed transfer.  That confirms the theory above for the
+     * stop-then-retune path, and the driver fix also covers a transfer that fails in the middle of a stream, which this
+     * change does not.  This change is kept as a second layer until Monson has run the driver fix without it.
      */
     @Override
     public void removeBufferListener(Listener<INativeBuffer> listener)
