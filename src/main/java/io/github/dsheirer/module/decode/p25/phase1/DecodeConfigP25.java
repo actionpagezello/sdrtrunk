@@ -51,6 +51,7 @@ public abstract class DecodeConfigP25 extends DecodeConfigJMBE
     // 10-band graphic equalizer settings
     private boolean mGraphicEQEnabled = false;
     private double[] mGraphicEQBandGains = new double[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    private boolean mIgnoreEncryptedCalls = false;
 
     public DecodeConfigP25()
     {
@@ -76,6 +77,25 @@ public abstract class DecodeConfigP25 extends DecodeConfigJMBE
     public void setIgnoreUnaliasedTalkgroups(boolean ignore)
     {
         mIgnoreUnaliasedTalkgroups = ignore;
+    }
+
+    /**
+     * Indicates if the traffic channel manager should not allocate (ie tune) a traffic channel for a channel grant
+     * where the service options indicate the call is encrypted.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "ignore_encrypted_calls")
+    public boolean getIgnoreEncryptedCalls()
+    {
+        return mIgnoreEncryptedCalls;
+    }
+
+    /**
+     * Sets the ignore encrypted calls option.
+     * @param ignore true to not allocate traffic channels for encrypted calls.
+     */
+    public void setIgnoreEncryptedCalls(boolean ignore)
+    {
+        mIgnoreEncryptedCalls = ignore;
     }
 
 

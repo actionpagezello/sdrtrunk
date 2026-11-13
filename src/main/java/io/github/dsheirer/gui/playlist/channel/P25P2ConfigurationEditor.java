@@ -73,6 +73,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
     private IntegerTextField mNacTextField;
     private ToggleSwitch mIgnoreDataCallsButton;
     private ToggleSwitch mIgnoreUnaliasedTalkgroupsButton;
+    private ToggleSwitch mIgnoreEncryptedCallsButton;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
     private ToggleSwitch mJmbeAGCButton;
     private Slider mJmbeToneGainSlider;
@@ -144,12 +145,20 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(directionLabel, 3, row);
             gridPane.getChildren().add(directionLabel);
 
-            GridPane.setConstraints(getIgnoreUnaliasedTalkgroupsButton(), 4, row);
+            GridPane.setConstraints(getIgnoreEncryptedCallsButton(), 4, row);
+            gridPane.getChildren().add(getIgnoreEncryptedCallsButton());
+
+            Label ignoreEncryptedLabel = new Label("Ignore Encrypted Calls");
+            ignoreEncryptedLabel.setLabelFor(getIgnoreEncryptedCallsButton());
+            GridPane.setHalignment(ignoreEncryptedLabel, HPos.LEFT);
+            GridPane.setConstraints(ignoreEncryptedLabel, 5, row);
+            gridPane.getChildren().add(ignoreEncryptedLabel);
+            GridPane.setConstraints(getIgnoreUnaliasedTalkgroupsButton(), 6, row);
             gridPane.getChildren().add(getIgnoreUnaliasedTalkgroupsButton());
 
             Label ignoreUnaliasedLabel = new Label("Ignore Unaliased TGs");
             GridPane.setHalignment(ignoreUnaliasedLabel, HPos.LEFT);
-            GridPane.setConstraints(ignoreUnaliasedLabel, 5, row);
+            GridPane.setConstraints(ignoreUnaliasedLabel, 7, row);
             gridPane.getChildren().add(ignoreUnaliasedLabel);
 
             Label wacnLabel = new Label("WACN");
@@ -310,6 +319,21 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
         return mEventLogConfigurationEditor;
     }
 
+    private ToggleSwitch getIgnoreEncryptedCallsButton()
+    {
+        if(mIgnoreEncryptedCallsButton == null)
+        {
+            mIgnoreEncryptedCallsButton = new AccessibleToggleSwitch();
+            mIgnoreEncryptedCallsButton.setDisable(true);
+            mIgnoreEncryptedCallsButton.setTooltip(new Tooltip("Don't tune a traffic channel when the channel grant indicates the call is encrypted.  " +
+                    "Phase 2: the channel is still tuned when the other timeslot has a clear call."));
+            mIgnoreEncryptedCallsButton.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreEncryptedCallsButton;
+    }
+
     private ToggleSwitch getIgnoreDataCallsButton()
     {
         if(mIgnoreDataCallsButton == null)
@@ -442,6 +466,8 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
             getIgnoreUnaliasedTalkgroupsButton().setDisable(false);
             getIgnoreUnaliasedTalkgroupsButton().setSelected(decodeConfig.getIgnoreUnaliasedTalkgroups());
+            getIgnoreEncryptedCallsButton().setDisable(false);
+            getIgnoreEncryptedCallsButton().setSelected(decodeConfig.getIgnoreEncryptedCalls());
             getTrafficChannelPoolSizeSpinner().setDisable(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
             getJmbeAGCButton().setSelected(decodeConfig.isAGC());
@@ -459,6 +485,8 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
             getNacTextField().setDisable(true);
             getIgnoreDataCallsButton().setDisable(true);
             getIgnoreUnaliasedTalkgroupsButton().setDisable(true);
+            getIgnoreEncryptedCallsButton().setDisable(true);
+            getIgnoreEncryptedCallsButton().setSelected(false);
             getTrafficChannelPoolSizeSpinner().setDisable(true);
             getJmbeAGCButton().setDisable(true);
             getJmbeNoiseGainSlider().setDisable(true);
@@ -492,6 +520,7 @@ public class P25P2ConfigurationEditor extends ChannelConfigurationEditor
         config.setScrambleParameters(new ScrambleParameters(wacn, system, nac));
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
         config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroupsButton().isSelected());
+        config.setIgnoreEncryptedCalls(getIgnoreEncryptedCallsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setAGC(getJmbeAGCButton().selectedProperty().getValue());
         config.setComfortNoiseGain((float)getJmbeNoiseGainSlider().getValue());
