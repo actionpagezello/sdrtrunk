@@ -194,7 +194,9 @@ public class ProVoiceHeaderDetectorTest
     {
         ProVoiceDecoder decoder = new ProVoiceDecoder();
         List<IMessage> messages = new ArrayList<>();
-        decoder.setMessageListener(messages::add);
+        List<IMessage> headers = new ArrayList<>();
+        decoder.setMessageListener(message -> (message instanceof ProVoiceHeaderMessage ? headers : messages)
+            .add(message));
         int frames = 0;
 
         for(int transmission : new int[]{3, 2, 0})
@@ -224,6 +226,7 @@ public class ProVoiceHeaderDetectorTest
         assertEquals(29, frames);
         assertEquals(4 + 7, decoder.getHeaderCount());
         assertEquals(frames - 11, messages.size());
+        assertEquals(2, headers.size(), "edacs-17: the header of each transmission that has one is read, once");
         assertEquals(0, decoder.getConcealedCount(), "With the header out of the way no voice frame here is damaged");
 
         for(IMessage message : messages)

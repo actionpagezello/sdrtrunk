@@ -34,6 +34,44 @@ and can only be told apart by the "Build Timestamp" log line.
 | 14 | edacs-14 | RSP recovery (Daly); log lines when a channel hunts for its control channel (MBTA); docs |
 | 15 | edacs-15 | ProVoice: the header at the start of each transmission is no longer played as voice |
 | 16 | edacs-16 | ProVoice: the sign-off at the end of a transmission is not played; flag bit not counted as an error |
+| 17 | edacs-17 | ProVoice: the header is read - talkgroup checked against the call; back-to-back transmissions told apart |
+
+### Build 17 - ProVoice: the header is read, and its talkgroup checked against the call
+- **Build 16 confirmed on the machines** (2026-11-12, 17:52-18:42): damaged voice frames in the last 0.48 s 3.4% at
+  Cambridge and 5.2% at Summit 800 (about 20% before); over whole transmissions 1.0% and 2.7% (build 15: 5.3% and
+  5.9%). Sign-off removed on 574 of 665 Cambridge transmissions.
+- **The header word.** The header is a 48-bit word sent word / inverse / word, three times per frame. The word is
+  36 data bits and 12 check bits of the control channel's BCH code (generator 0x1539, `EDACSBCH`): all four words
+  first read on 11-12 divide by it with no remainder. Data: `A8`, six zero bits, the 16-bit talkgroup, six bits not
+  understood (they change with the talkgroup, not with the caller). The calling radio is not in the word.
+- **Change 1 - talkgroup check (measurement only).** The voice channel reads the talkgroup from the header of each
+  transmission and compares it with the talkgroup the control channel assigned the call to. The call line gains
+  `talkgroup in 3 of 3 headers`; a transmission for another talkgroup adds `(others: [280])` and one WARN line.
+  Nothing else changes: the audio is played and labelled as before. On the 71 calls recorded 11-12 at both sites
+  the header could be read in 68, and in 68 of 68 it named the call's talkgroup - so this is expected to stay quiet,
+  and what to do about a mismatch is left until one is seen.
+- **Change 2 - a header is a header wherever it is.** Until now a header was looked for only in the first 1.28 s
+  after a gap of a quarter of a second. One recorded call (Summit 800, 15:17:22, 851.9375) holds two transmissions
+  0.23 s apart: the second one's 0.64 s header was read as damaged voice. A frame that reads as a header now starts
+  a new transmission whatever came before. A header that cannot be read (weak signal, or a system whose header is
+  laid out differently) is recognized by its behaviour, as in build 15.
+- **Measured on the 72 recordings, build 16 against build 17:** voice frames concealed as damaged 631 of 19,091
+  (3.31%) -> 605 of 19,051 (3.18%); 10 more header frames not played; 1 back-to-back transmission. A small gain: the
+  purpose of this build is the check, not the audio.
+- **Tried and not built - soft-decision decoding** (the build 17 candidate of the build 16 notes). Prototype (Chase
+  decoding on the least reliable bits of each code word) scored on 3,082 Summit 800 voice frames whose Cambridge
+  copy is error free: it recovered none of the 34 rejected frames, fixed 23 wrongly corrected ones and broke 13
+  that were right. Of 126 frames accepted but different from Cambridge's, 47 were test alignment faults and 79 real,
+  mostly 1 to 3 of the least protected bits. Rules to reject those cost about as many good frames as they caught
+  (3 or more corrected errors: 38 caught, 10 good lost; soft metric: 53 / 60; weak bits: 17 / 15). After builds 15
+  and 16 Summit 800's remaining losses are reception.
+- **Also explained:** Summit 800's evening "header only" bursts (178 in 50 minutes) are false syncs on noise in
+  recordings with no signal - calls it cannot hear, nothing lost.
+- **Log:** call line `... damaged frames 2 of 180 (1.1%), talkgroup in 2 of 2 headers`; DEBUG `ProVoice
+  transmission:` line ends `, header talkgroup 273` or `, header not read`.
+- **Checked before delivery:** full suite - 358 tests in 90 classes, 357 pass; the one failure needs a display.
+  New: `ProVoiceHeaderTest` (7), `EDACSHeaderTalkgroupTest` (3).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
 
 ### Build 16 - ProVoice: the sign-off is not voice, and the flag bit is not an error
 - **Build 15 confirmed on the machines** (2026-11-12, 15:05-15:32): damaged voice frames in the first 0.48 s 0.9% at

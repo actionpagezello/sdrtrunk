@@ -68,6 +68,23 @@ public class ProVoiceHeaderDetector
     }
 
     /**
+     * AP-fork (edacs-17): the frame was read as a header ({@link ProVoiceHeader}).  The frames that follow are header
+     * until one reads as voice.  A header that arrives when none was expected starts the window again.
+     * @param frame bits, without the sync
+     */
+    public void header(int[] frame)
+    {
+        if(!mHeader)
+        {
+            mIndex = 0;
+        }
+
+        mIndex++;
+        mHeader = true;
+        System.arraycopy(frame, 0, mPrevious, 0, frame.length);
+    }
+
+    /**
      * Decides if the frame is part of the header at the start of the transmission.
      * @param frame bits, without the sync
      * @param errors corrected bit errors of each of its voice frames

@@ -3,7 +3,23 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-12 18:00: `edacs` build 16 (ProVoice sign-off and flag bit)
+## Current state 2026-11-12 20:15: `edacs` build 17 (ProVoice header read; talkgroup check)
+
+- **Builds:** 17 = header word read (BCH checked), talkgroup compared with the call (log only), a readable header
+  starts a new transmission wherever it is (CHANGELOG build 17 has the measurements). Build 16 pushed as `941c2bd4`
+  (tree `128011a1`), running on Cambridge and Summit 800 since about 17:50 on 11-12 and confirmed there
+  (overall damaged 1.0% / 2.7%). Build 14 running on Daly; no RSP drop reported since.
+- **Run 17 on Cambridge and Summit 800.** Look for `talkgroup in N of N headers` on the EDACS call lines and for
+  WARN `the voice channel is carrying a transmission for talkgroup`.
+- **Soft-decision decoding: tested, not built** (CHANGELOG build 17). Summit 800's remaining losses are reception.
+- **Next:** one-off mbelib-neo / dsd-neo comparison on the clean-but-muffled call
+  (`20261112_151820_851475000_..._35_baseband.wav`, 280 from 1407, every frame 0 errors); Daly recovery test when
+  its RSP1B drops; the six header bits after the talkgroup and the frames after the header (caller ID?) are not
+  decoded.
+- **Tools (workspace, not in the repo):** `/home/claude/pv/hdr.py` (header words per recording), `Run17.java`
+  (whole decoder over recordings), `soft.py` / `verify.py` (soft-decision prototype).
+
+## Previous state 2026-11-12 18:00: `edacs` build 16 (ProVoice sign-off and flag bit)
 
 - **Builds:** 16 = sign-off not played, flag bit not counted (CHANGELOG build 16 has the measurements). Build 15
   pushed as `ef5343ec` (tree `d217c7bd`), running on Cambridge and Summit 800 since about 15:05 on 11-12 and

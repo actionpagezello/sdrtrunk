@@ -33,6 +33,8 @@ import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.event.DecodeEventType;
 import io.github.dsheirer.module.decode.edacs.identifier.EDACSRadio;
 import io.github.dsheirer.module.decode.edacs.identifier.EDACSTalkgroup;
+import io.github.dsheirer.identifier.talkgroup.TalkgroupIdentifier;
+import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceHeaderMessage;
 import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceMessage;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.real.IRealBufferListener;
@@ -73,6 +75,9 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
     private long mAudioSamples;
     private long mVoiceFrames;
     private long mConcealedFrames;
+    private int mHeaders;
+    private int mHeadersConfirmed;
+    private final java.util.Set<Integer> mOtherTalkgroups = new java.util.TreeSet<>();
     private long mLoggedControlFrequency;
     private final Listener<float[]> mAudioListener = audio -> mAudioSamples += audio.length;
 
@@ -119,6 +124,12 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
             mAudioSamples += 160L * voice.getIMBEFrames().size();
             mVoiceFrames += voice.getIMBEFrames().size();
             mConcealedFrames += voice.getConcealed();
+            return;
+        }
+
+        if(message instanceof ProVoiceHeaderMessage header)
+        {
+            headerTalkgroup(header.getTalkgroup());
             return;
         }
 
@@ -191,6 +202,40 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
     }
 
     /**
+     * AP-fork (edacs-17): voice channel - checks the talkgroup in the header of a ProVoice transmission against the
+     * talkgroup the control channel assigned the call to.  Measurement only: a transmission for another talkgroup is
+     * logged, and played and labelled as before.
+     */
+    private void headerTalkgroup(int talkgroup)
+    {
+        if(mChannelType != ChannelType.TRAFFIC)
+        {
+            return;
+        }
+
+        List<Identifier> to = getIdentifierCollection().getIdentifiers(Role.TO);
+
+        if(to.isEmpty() || !(to.get(0) instanceof TalkgroupIdentifier assigned))
+        {
+            return;
+        }
+
+        mHeaders++;
+
+        if(assigned.getValue() == talkgroup)
+        {
+            mHeadersConfirmed++;
+        }
+        else if(mOtherTalkgroups.add(talkgroup))
+        {
+            long frequency = mFrequency != 0 ? mFrequency : getCurrentFrequency();
+            LOGGER.warn("EDACS call TO:" + first(Role.TO) + " on " + format(frequency) + " - the voice channel " +
+                "is carrying a transmission for talkgroup " + talkgroup + " (from its header); it is played and " +
+                "labelled as TO:" + first(Role.TO));
+        }
+    }
+
+    /**
      * Voice channel: keeps the call open while the channel runs, up to the call time limit.
      */
     private void heartbeat()
@@ -234,6 +279,9 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
             mAudioSamples = 0;
             mVoiceFrames = 0;
             mConcealedFrames = 0;
+            mHeaders = 0;
+            mHeadersConfirmed = 0;
+            mOtherTalkgroups.clear();
             broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
         }
     }
@@ -256,6 +304,8 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
                 (mClock.getAsLong() - mTrafficStart) / 1000.0, mAudioSamples / AUDIO_SAMPLE_RATE,
                 (mVoiceFrames > 0 ? String.format(", damaged frames %d of %d (%.1f%%)", mConcealedFrames,
                     mVoiceFrames, 100.0 * mConcealedFrames / mVoiceFrames) : "") +
+                (mHeaders > 0 ? ", talkgroup in " + mHeadersConfirmed + " of " + mHeaders + " headers" +
+                    (mOtherTalkgroups.isEmpty() ? "" : " (others: " + mOtherTalkgroups + ")") : "") +
                 (mTrafficEnded ? " - stopped at the call limit" : "")));
         }
     }
@@ -334,6 +384,14 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
             {
             }
         }
+    }
+
+    /**
+     * Voice channel: headers read in this call, and how many of them were for the call's talkgroup.  For testing.
+     */
+    int[] getHeaderCounts()
+    {
+        return new int[]{mHeaders, mHeadersConfirmed, mOtherTalkgroups.size()};
     }
 
     public long getGrantCount()

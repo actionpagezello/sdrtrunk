@@ -198,6 +198,35 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
             frameErrors[x] = voiceFrames[x].errors();
         }
 
+        //AP-fork (edacs-17): a header that can be read is a header wherever it is, and gives the talkgroup
+        int talkgroup = ProVoiceHeader.talkgroup(mFrame);
+
+        if(talkgroup != ProVoiceHeader.NO_HEADER)
+        {
+            if(mTransmissionFrames > 0 || mSignedOff)
+            {
+                //Voice was played already: this is the next transmission, started before the gap that normally
+                //separates two (MBTA 2026-11-12 15:17: 0.23 s after the one before)
+                logTransmission();
+                mLastGood = null;
+                mRepeats = 0;
+                mSignedOff = false;
+                mBackToBackCount++;
+            }
+
+            mHeaderDetector.header(mFrame);
+            mHeaderCount++;
+            mTransmissionHeaders++;
+
+            if(talkgroup != mTransmissionTalkgroup)
+            {
+                mTransmissionTalkgroup = talkgroup;
+                getMessageListener().receive(new ProVoiceHeaderMessage(talkgroup, mTimestamp));
+            }
+
+            return;
+        }
+
         if(mHeaderDetector.isHeader(mFrame, frameErrors))
         {
             mHeaderCount++;
@@ -253,6 +282,8 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     private long mTransmissionSignOff;
     private long mSignOffCount;
     private boolean mSignedOff;
+    private int mTransmissionTalkgroup = ProVoiceHeader.NO_HEADER;
+    private long mBackToBackCount;
 
     /** Alternating bits (dotting) that mark the end of a transmission.  The longest run in 1,874 voice frames of the
      * MBTA recording of 2026-11-09 that were not the last of their transmission was 15. */
@@ -366,11 +397,13 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
         if(mTransmissionFrames > 0 && LOGGER.isDebugEnabled())
         {
             LOGGER.debug(String.format("ProVoice transmission: %.1f s, %.2f bit errors per voice frame, %d of %d " +
-                    "voice frames damaged (%.1f%%), sync %s, header %.2f s and sign-off %.2f s not played",
+                    "voice frames damaged (%.1f%%), sync %s, header %.2f s and sign-off %.2f s not played%s",
                 mTransmissionFrames * 0.08,
                 mTransmissionErrors / (4.0 * mTransmissionFrames), mTransmissionConcealed, 4 * mTransmissionFrames,
                 100.0 * mTransmissionConcealed / (4.0 * mTransmissionFrames), mInverted ? "inverted" : "normal",
-                mTransmissionHeaders * 0.08, mTransmissionSignOff * 0.02));
+                mTransmissionHeaders * 0.08, mTransmissionSignOff * 0.02,
+                mTransmissionTalkgroup != ProVoiceHeader.NO_HEADER ? ", header talkgroup " + mTransmissionTalkgroup :
+                    ", header not read"));
             LOGGER.debug(mDamagePosition.describe());
         }
         else if(mTransmissionHeaders > 0 && LOGGER.isDebugEnabled())
@@ -381,6 +414,7 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
 
         mTransmissionHeaders = 0;
         mTransmissionSignOff = 0;
+        mTransmissionTalkgroup = ProVoiceHeader.NO_HEADER;
 
         mTransmissionFrames = 0;
         mTransmissionErrors = 0;
@@ -439,6 +473,14 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     public long getHeaderCount()
     {
         return mHeaderCount;
+    }
+
+    /**
+     * Transmissions that started less than a quarter of a second after the one before, told apart by their header
+     */
+    public long getBackToBackCount()
+    {
+        return mBackToBackCount;
     }
 
     public long getErrorCount()
