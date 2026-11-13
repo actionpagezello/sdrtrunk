@@ -61,7 +61,7 @@ public class NowPlayingPanel extends JPanel
         mDecodeEventPanel = new DecodeEventPanel(iconModel, userPreferences, playlistManager.getAliasModel());
         mMessageActivityPanel = new MessageActivityPanel(userPreferences);
         mChannelMetadataPanel = new ChannelMetadataPanel(playlistManager, iconModel, userPreferences, tunerManager);
-        mChannelSpectrumSquelchPanel = new ChannelSpectrumPanel(playlistManager, settingsManager);
+        mChannelSpectrumSquelchPanel = new ChannelSpectrumPanel(playlistManager);
         mDetailTabsVisible = detailTabsVisible;
 
         init();
