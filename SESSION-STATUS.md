@@ -3,7 +3,23 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-12 20:15: `edacs` build 17 (ProVoice header read; talkgroup check)
+## Current state 2026-11-12 21:30: `edacs` build 18 (ProVoice Hamming correction fixed)
+
+- **Builds:** 18 = Hamming (15,11) correction by table (CHANGELOG build 18). Build 17 pushed as `c9c88631` (tree
+  `a3a91076`), running on Cambridge and Summit 800 since 20:07 on 11-12 and confirmed there: every readable header
+  (1,255) named the call's talkgroup.
+- **Run 18 on Cambridge and Summit 800.** Nothing new in the log; the gain is in weak-signal voice at Summit 800.
+- **Muffled call (280 from 1407) closed:** same tone through JMBE and mbelib-neo; the dullest of 37 calls at the
+  source.
+- **Next:** Daly recovery test when its RSP1B drops; caller ID (six header bits and the frames after the header
+  not decoded); mbelib-neo has soft-decision entry points for 7100x4400 (`mbe_processImbe7100x4400SoftFramef`) -
+  the soft-decision test of build 17 was run with the Hamming fault in place and could be repeated.
+- **Tools (workspace, not in the repo):** `/home/claude/dsd` - mbelib-neo built (`inst/`, pffft cloned by git
+  because the archive download is refused), `cmp.c` (our parameter bits against mbelib-neo's, and its audio),
+  `RunJmbe.java` + `jcls/` (JMBE codec compiled from DSheirer/jmbe); `/home/claude/pv/Dump7100.java`, `ham.py`
+  (paired-site score of the correction).
+
+## Previous state 2026-11-12 20:15: `edacs` build 17 (ProVoice header read; talkgroup check)
 
 - **Builds:** 17 = header word read (BCH checked), talkgroup compared with the call (log only), a readable header
   starts a new transmission wherever it is (CHANGELOG build 17 has the measurements). Build 16 pushed as `941c2bd4`

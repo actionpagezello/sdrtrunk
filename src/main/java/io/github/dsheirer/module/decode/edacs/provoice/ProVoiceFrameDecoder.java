@@ -63,9 +63,19 @@ public class ProVoiceFrameDecoder
         0x49f, 0x475};
     private static final int[] HAMMING_GENERATOR = {0x7ac8, 0x3d64, 0x1eb2, 0x7591};
     private static final int[] GOLAY_CORRECTION = new int[2048];
+    /** Hamming (15,11): the bit to flip for each syndrome */
+    private static final int[] HAMMING_CORRECTION = new int[16];
 
     static
     {
+        //AP-fork (edacs-18): each single wrong bit gives its own syndrome; the table maps the syndrome back to the bit.
+        //The code this was ported from (mbelib) flipped bit (syndrome - 1), which is the wrong bit for 11 of the 15
+        //positions: it left the wrong bit in place and damaged a second one.  mbelib-neo corrects with a table too.
+        for(int bit = 0; bit < 15; bit++)
+        {
+            HAMMING_CORRECTION[hammingSyndrome(1 << bit)] = 1 << bit;
+        }
+
         //Golay (23,12) is a perfect code: each of the 2048 syndromes belongs to exactly one error pattern of weight 3 or
         //less.  mbelib ships this as a table (golayMatrix); here it is generated.
         List<Integer> patterns = new ArrayList<>();
@@ -245,10 +255,22 @@ public class ProVoiceFrameDecoder
         return errors;
     }
 
+    private static int hammingSyndrome(int block)
+    {
+        int syndrome = 0;
+
+        for(int i = 0; i < 4; i++)
+        {
+            syndrome = (syndrome << 1) | (Integer.bitCount(block & HAMMING_GENERATOR[i]) & 1);
+        }
+
+        return syndrome;
+    }
+
     /**
-     * mbe_7100x4400hamming1511
+     * mbe_7100x4400hamming1511, with the correction by table (see HAMMING_CORRECTION)
      */
-    private static int hamming(int[] in, int[] out)
+    static int hamming(int[] in, int[] out)
     {
         int block = 0;
 
@@ -257,19 +279,13 @@ public class ProVoiceFrameDecoder
             block = (block << 1) | in[i];
         }
 
-        int syndrome = 0;
-
-        for(int i = 0; i < 4; i++)
-        {
-            syndrome = (syndrome << 1) | (Integer.bitCount(block & HAMMING_GENERATOR[i]) & 1);
-        }
-
+        int syndrome = hammingSyndrome(block);
         int errors = 0;
 
         if(syndrome > 0)
         {
             errors = 1;
-            block ^= 1 << (syndrome - 1);
+            block ^= HAMMING_CORRECTION[syndrome];
         }
 
         for(int i = 14; i >= 0; i--)

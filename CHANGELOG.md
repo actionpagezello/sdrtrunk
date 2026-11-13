@@ -35,6 +35,37 @@ and can only be told apart by the "Build Timestamp" log line.
 | 15 | edacs-15 | ProVoice: the header at the start of each transmission is no longer played as voice |
 | 16 | edacs-16 | ProVoice: the sign-off at the end of a transmission is not played; flag bit not counted as an error |
 | 17 | edacs-17 | ProVoice: the header is read - talkgroup checked against the call; back-to-back transmissions told apart |
+| 18 | edacs-18 | ProVoice: fix - a single bit error in two of a voice frame's code words was corrected at the wrong bit |
+
+### Build 18 - ProVoice: the Hamming correction flipped the wrong bit
+- **Build 17 confirmed on the machines** (2026-11-12, 20:07-20:55, pushed as `c9c88631`): header read on 620 of 657
+  Cambridge calls and 606 of 632 at Summit 800; 635 of 635 and 620 of 620 headers named the call's
+  talkgroup; no transmission for another talkgroup. Damaged voice frames 1.28% and 1.43%.
+- **Found while comparing with mbelib-neo** (the voice library dsd-neo uses), on the call rated "mostly clear but
+  muffled" (280 from 1407, Summit 800 15:18:20). Given the same voice frames, mbelib-neo and this decoder produced
+  the same 88 voice parameter bits for every frame with no bit errors, and different ones for every frame with an
+  error in the fourth or fifth code word (11 of 272).
+- **The fault.** Those two code words are Hamming (15,11): one wrong bit can be corrected. The correction, ported
+  from the original mbelib, flipped bit "syndrome - 1" - the right bit for 4 of the 15 positions and the wrong one
+  for 11. So a single bit error there left the wrong bit wrong, damaged a second bit, and was counted as corrected.
+  mbelib-neo corrects by table. **Change:** the bit to flip is looked up from the syndrome of each position; after
+  it the 272 frames are bit-for-bit what mbelib-neo gives.
+- **What it is worth, measured on the 33 calls recorded at both sites** (Cambridge's error-free copy as the truth,
+  3,007 voice frames): of 144 Summit 800 voice frames that needed a correction, exactly right 53 -> 76; wrong
+  parameter bits in played voice 312 -> 230. The rest are errors in the last code word, which has no protection,
+  and words with two errors. It affects weak-signal reception only; a frame received without errors was and is
+  decoded the same. Which frames are concealed does not change (the error counts are the same).
+- **Part of the build 17 soft-decision result was this fault:** about a fifth of the frames counted there as
+  "accepted but wrong" (23 of 119 on this test's count). That test was run with the fault in place.
+- **The muffled call itself is the transmission, not the decoder.** Played through JMBE (both of its IMBE
+  synthesizers) and through mbelib-neo, the call has the same tone balance to within 1 dB per band. Of 37 calls
+  recorded 2026-11-12 with enough clean voice, it has the least energy above 2 kHz of all: 25 dB below the rest of
+  the band, against a median of 11 dB (range 5 to 25). The same call recorded at both sites gives the same figure.
+  A dull radio or microphone; nothing to fix here.
+- **Checked before delivery:** full suite - 360 tests in 91 classes, 359 pass; the one failure needs a display.
+  On the 72 recordings the concealed count is unchanged (605 of 19,051). New `ProVoiceHammingTest` (2): every single wrong bit of a code word is
+  corrected, and one wrong bit anywhere in a real voice frame changes at most one (unprotected) parameter bit.
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
 
 ### Build 17 - ProVoice: the header is read, and its talkgroup checked against the call
 - **Build 16 confirmed on the machines** (2026-11-12, 17:52-18:42): damaged voice frames in the last 0.48 s 3.4% at
