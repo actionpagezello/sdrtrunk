@@ -3,7 +3,35 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-12 21:30: `edacs` build 18 (ProVoice Hamming correction fixed)
+## Current state 2026-11-13 20:30: `edacs` build 19 (ProVoice suspect voice frames not played)
+
+- **Builds:** 19 = a voice frame with 2+ corrected errors beside one that failed is concealed (CHANGELOG build 19,
+  with the analysis of the 21 calls rated on Cambridge 11-13). Build 18 pushed as `6530f233` (tree `d81875b0`),
+  on Cambridge and Summit 800 since 11-12 21:23.
+- **Plan agreed 2026-11-13:** settle EDACS first, then one alignment pass with upstream. Upstream released
+  `v1.0.0` (`73d32386`, 11-13; master `9641d2ef` three commits later): Java 27, Gradle 9.9, version from the git
+  tag, its own ThinLine Radio upload type (`audio/broadcast/thinline`; the fork has `thinlineradio`). 64 commits
+  and 486 files from the fork's merge base. The alignment starts with an inventory in three piles (take
+  upstream's / keep the fork's / fork only); Armen decides the piles; **his CTCSS stays** (different, and he
+  thinks better); playlists must keep working. Two upstream fixes the fork also needs come with it: `74dc3253`
+  (P25 HDU Golay word start 278 -> 378, `HDUMessage.java`) and `7fcf0353` (`Golay24.checkAndCorrect` wrong for
+  words not at bit 0: P25 TDULC words 2-12, DMR voice superframe words at 24 and 48).
+- **EDACS is settled when:** builds 17-19 have run clean for a few days on both sites; Armen has listened to 19;
+  his call on Summit 800's reception (signal level, not code).
+- **Soft-decision decoding closed:** repeated with the Hamming fix (`/home/claude/pv/soft18.py`): the fix alone
+  took accepted-but-wrong from 126 to 80 (about 79 -> 33 real); soft on top fixes 1, recovers 2 of 34, breaks 16.
+- **References looked at:** Trunk Recorder Pro (Rust, GPL-3): ProVoice tested on synthesized signals only; has
+  the same Hamming correction by table as build 18 - a second independent confirmation. Original mbelib 1.3.0
+  (szechyjs, last change 2019) still has the fault.
+- **Candidates, not built:** mute the fixed start-up voice frames; no audio file for a transmission that is all
+  silence; caller ID in the voice channel.
+- **Logs folder:** `C:\Users\Admin\projects\logs\reference` holds the 11-12 two-site MBTA recordings, the six
+  Monson recordings and `EDACSConv`. Keep.
+- **Tools (workspace):** `/home/claude/dsd/RunFull19.java` (whole decoder + JMBE to audio and per-message
+  counts), `/home/claude/pv/match.py` (audio file -> baseband by correlation), `an13.py`, `chop.py`, `rule.py`
+  (paired-site score of a concealment rule).
+
+## Previous state 2026-11-12 21:30: `edacs` build 18 (ProVoice Hamming correction fixed)
 
 - **Builds:** 18 = Hamming (15,11) correction by table (CHANGELOG build 18). Build 17 pushed as `c9c88631` (tree
   `a3a91076`), running on Cambridge and Summit 800 since 20:07 on 11-12 and confirmed there: every readable header

@@ -55,6 +55,19 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     /** mbelib's threshold: more corrected errors than this and the frame is not trusted */
     public static final int MAX_ERRORS = 5;
     public static final int MAX_REPEATS = 3;
+    /**
+     * AP-fork (edacs-19): corrected bit errors from which a voice frame is not trusted when another voice frame of the
+     * same 80 ms frame failed the error check.
+     *
+     * The error check is weak against data that is not voice: the three Golay words "correct" any 23 bits to some
+     * code word, so a voice frame's worth of noise passes with 5 errors or fewer about once in a hundred.  The four
+     * voice frames of a frame are sent interleaved in pairs, so damage rarely hits one and spares its neighbours:
+     * when one fails, one that passes with errors is nearly always wrong too.  Measured on the 33 calls recorded at
+     * Cambridge and Summit 800 on 2026-11-12, with Cambridge's error-free copy as the truth: of 75 such voice frames
+     * at Summit 800, 74 were wrong and 1 right.  Played, they are the short digital noises in a damaged call and in
+     * what follows the end of some transmissions (MBTA 2026-11-13 19:00:28, 853.9250: seven in a row).
+     */
+    public static final int SUSPECT_ERRORS = 2;
     /** Bits without a frame after which the next frame starts a new transmission (about 0.25 s) */
     private static final long NEW_TRANSMISSION_BITS = 2400;
 
@@ -240,6 +253,13 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
         List<byte[]> imbeFrames = new ArrayList<>(4);
         int errors = 0;
         long concealedBefore = mConcealedCount;
+        boolean damaged = false;
+
+        for(int x = 0; x < frameErrors.length; x++)
+        {
+            //A voice frame that fails because it is the sign-off says nothing about the ones before it
+            damaged |= !signOff[x] && frameErrors[x] > MAX_ERRORS;
+        }
 
         for(int x = 0; x < voiceFrames.length; x++)
         {
@@ -251,7 +271,16 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
             }
 
             ProVoiceFrameDecoder.VoiceFrame voiceFrame = voiceFrames[x];
-            imbeFrames.add(conceal(IMBEFrameEncoder.encode(voiceFrame.parameters()), voiceFrame.errors()));
+            int voiceErrors = voiceFrame.errors();
+
+            if(damaged && voiceErrors >= SUSPECT_ERRORS && voiceErrors <= MAX_ERRORS)
+            {
+                //AP-fork (edacs-19): passed the check beside one that failed - not trusted, concealed like it
+                voiceErrors = MAX_ERRORS + 1;
+                mSuspectCount++;
+            }
+
+            imbeFrames.add(conceal(IMBEFrameEncoder.encode(voiceFrame.parameters()), voiceErrors));
             errors += voiceFrame.errors();
         }
 
@@ -284,6 +313,7 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
     private boolean mSignedOff;
     private int mTransmissionTalkgroup = ProVoiceHeader.NO_HEADER;
     private long mBackToBackCount;
+    private long mSuspectCount;
 
     /** Alternating bits (dotting) that mark the end of a transmission.  The longest run in 1,874 voice frames of the
      * MBTA recording of 2026-11-09 that were not the last of their transmission was 15. */
@@ -452,6 +482,15 @@ public class ProVoiceDecoder extends Decoder implements IComplexSamplesListener,
 
         mLastGood = null;
         return null;
+    }
+
+    /**
+     * Voice frames (20 ms) that passed the error check but were concealed because another voice frame of the same
+     * frame failed it
+     */
+    public long getSuspectCount()
+    {
+        return mSuspectCount;
     }
 
     /**

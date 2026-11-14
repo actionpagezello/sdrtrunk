@@ -36,6 +36,50 @@ and can only be told apart by the "Build Timestamp" log line.
 | 16 | edacs-16 | ProVoice: the sign-off at the end of a transmission is not played; flag bit not counted as an error |
 | 17 | edacs-17 | ProVoice: the header is read - talkgroup checked against the call; back-to-back transmissions told apart |
 | 18 | edacs-18 | ProVoice: fix - a single bit error in two of a voice frame's code words was corrected at the wrong bit |
+| 19 | edacs-19 | ProVoice: a voice frame with corrected errors is not played when its neighbour failed the error check |
+
+### Build 19 - ProVoice: voice frames that pass the error check by chance are not played
+- **Build 18 pushed as `6530f233`**, on Cambridge and Summit 800 since 2026-11-12 21:23.
+- **From 21 calls Armen rated on Cambridge, 2026-11-13 18:58-19:03** (audio files matched to the baseband
+  recordings by correlating the audio; all 110 recordings of the window decoded):
+  - Reception was strong and steady on every one of them (level 61-70 dB, envelope ripple 2-5%). None of the
+    complaints is reception.
+  - **"Data at the end", "digital sounds", "not understandable"** (533 from 11457 at 19:00:28; 536 from 3531 at
+    18:58:49): frames that are not voice - what follows the end of a transmission when it does not end in dotting,
+    and a radio whose transmission broke up - in which one of the four voice frames passes the error check with 4
+    or 5 "corrected" errors and was played: 20 ms of noise each, seven in a row at 19:00:28. **This is the change.**
+  - **"Choppy"** (533 from 11457, three calls): every voice frame received without a single bit error; the gaps are
+    in the speech as encoded, and JMBE and mbelib-neo produce the same envelope. That radio.
+  - **"Can't understand", "muffled", "background noise"** (273 from 3928, 530 from 11856, 536 from 104): also free
+    of bit errors. Source, as on 11-12.
+  - **"No audio"** (530 from 11856, 19:02:38): 94 error-free voice frames of silence. The radio was keyed and
+    nothing was said.
+  - **"Background noise sounds digital", "slight digital sound"** (531 from 11424, 305 from 2606): single bit
+    errors scattered through the whole call at full signal strength - they are in the transmission (the radio's
+    path to the site). Build 18 already corrects these better; errors in the unprotected bits cannot be corrected.
+  - **"Beginning hard to understand"** (four calls): not explained. Found on the way: every transmission from a
+    field radio starts with the same five voice frames (`d8000...`, `d8000...`, `d840240120090000000048`,
+    `183e92321e4000240b0052`, `18406fcfe1ff009ffedff2` as 88 parameter bits, 14 of 14), and from a dispatch console
+    with the same two (`047284888844f0080002..`, `040c7f7f7fbff3fffffdf.`, 6 of 6) - the encoder starting up, 0.1 s,
+    not speech. They are played as they are; muting them is a candidate, not done here.
+- **The change.** The error check is weak against data that is not voice: Golay "corrects" any 23 bits to some code
+  word, so noise passes with 5 errors or fewer about once in a hundred voice frames. When one of a frame's four
+  voice frames fails the check, one beside it that passes with 2 or more corrected errors is now concealed like the
+  failed one (`ProVoiceDecoder.SUSPECT_ERRORS`). A voice frame that fails because it is the sign-off does not count
+  as a failure for this.
+- **Measured before building, on the 33 calls recorded at both sites on 11-12** (Cambridge's error-free copy as the
+  truth): of 75 such voice frames at Summit 800, 74 were wrong and 1 right. (3 or more errors: 66 wrong, 0 right.)
+  The rules tried for build 17 lost as much good voice as they removed bad; this one does not, because it looks at
+  the neighbours and not at the frame alone.
+- **Effect:** Cambridge 11-13, 110 recordings: 98 of 19,303 played voice frames (0.5%) no longer played; concealed
+  219 -> 317 (1.1% -> 1.6%). The 72 recordings of 11-12: concealed 605 -> 704 of 19,051 (3.18% -> 3.70%). The
+  damaged-frame percentage in the log goes UP by about half a point - those frames were counted as good before.
+- **Also in this period:** MBTA moved its control channel from 853.7250 to 853.9000 at 11:40 on 11-13 (it had left
+  853.7250 for 50 minutes at about the same time on 11-12). Cambridge's MBTA channel had the one frequency and
+  lost the system until it was given the full list at 18:32; both sites now hunt.
+- **Checked before delivery:** full suite - 363 tests in 92 classes, 362 pass; the one failure needs a display.
+  New: `ProVoiceSuspectTest` (3).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
 
 ### Build 18 - ProVoice: the Hamming correction flipped the wrong bit
 - **Build 17 confirmed on the machines** (2026-11-12, 20:07-20:55, pushed as `c9c88631`): header read on 620 of 657
