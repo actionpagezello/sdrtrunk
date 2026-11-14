@@ -36,7 +36,34 @@ and can only be told apart by the "Build Timestamp" log line.
 | 16 | edacs-16 | ProVoice: the sign-off at the end of a transmission is not played; flag bit not counted as an error |
 | 17 | edacs-17 | ProVoice: the header is read - talkgroup checked against the call; back-to-back transmissions told apart |
 | 18 | edacs-18 | ProVoice: fix - a single bit error in two of a voice frame's code words was corrected at the wrong bit |
-| 19 | edacs-19 | ProVoice: a voice frame with corrected errors is not played when its neighbour failed the error check |
+| 19 | edacs-19 | ProVoice: a voice frame with corrected errors is not played when its neighbour failed the error check (never applied alone - it is the first commit of `edacs-20.patch`) |
+| 20 | edacs-20 | Type II: a calling radio is not put on a call when a control word was lost between the two words of the grant |
+
+### Build 20 - Type II: the calling radio is not taken across a lost control word
+- **Build 19 was never applied by itself** (Armen heard little difference in the before/after clips, 2026-11-13).
+  `edacs-20.patch` holds both commits, build 19 first; `edacs-19.patch` is superseded.
+- **Measured (Summit 800, MSP Metro Boston, log of 2026-11-12, 763 minutes):** a grant is two control words in a
+  row - the calling radio, then talkgroup and channel. The decoder paired the channel word with the previous
+  DECODED word, so when a word was lost in between (14-27% are lost at Summit) the radio of one call was put on
+  another. 604 of 21,270 grant lines named a radio that no other line of that call named, in 579 of 5,069 calls;
+  89 of 4,524 calls with three or more grant lines STARTED with such a radio, i.e. went out with the wrong FROM.
+  Monson (clean reception, 297 grant lines, 68 calls): none.
+- **Fix:** the framer marks an OSW that does not come exactly one frame (84 bits) after the previous decoded OSW
+  (`SmartNetOSW.followsPrevious()`); the decoder state uses the calling radio only when it does. The call is still
+  followed; it starts with no radio and learns it from the next complete grant (median 0.10 s later), as a
+  late-joined call already did.
+- **Cost:** none found. A call whose only complete grant is never received shows no radio instead of a wrong one.
+- **Log:** the DEBUG "OSW commands last minute" line ends with "calling radios not used so far: N"; the activity
+  summary has the same count.
+- **MSP analog or digital (question from the decode brief board, 2026-11-14):** command 321 (digital grant) does
+  not appear once in the per-minute command lists of 1.7 million OSWs at Summit 800 or 270,000 at Monson; every
+  grant is 308. Both sites are analog. (The lists show the 12 most frequent commands per minute, and single
+  occurrences do show up in them.)
+- **Decode brief board (Whiteboard artifact, 2026-11-14) checked against the fork:** its EDACS and ProVoice items
+  are done or measured. Its ProVoice header layout ("64 + 16 + 64, radio ID in the middle 16") is NOT what MBTA
+  sends: in the 20 rated clips those 16 bits are `0x6969` in every frame of every call.
+- Tests: `SmartNetControlChannelTest.testFollowsPrevious`, `SmartNetCallFollowingTest
+  .testRadioNotTakenAcrossALostWord`.
 
 ### Build 19 - ProVoice: voice frames that pass the error check by chance are not played
 - **Build 18 pushed as `6530f233`**, on Cambridge and Summit 800 since 2026-11-12 21:23.
@@ -57,7 +84,7 @@ and can only be told apart by the "Build Timestamp" log line.
   - **"Background noise sounds digital", "slight digital sound"** (531 from 11424, 305 from 2606): single bit
     errors scattered through the whole call at full signal strength - they are in the transmission (the radio's
     path to the site). Build 18 already corrects these better; errors in the unprotected bits cannot be corrected.
-  - **"Beginning hard to understand"** (four calls): not explained. Found on the way: every transmission from a
+  - **"Beginning hard to understand"** (three calls: 534 from 102, 305 from 2937, 531 from 103): not explained. Found on the way: every transmission from a
     field radio starts with the same five voice frames (`d8000...`, `d8000...`, `d840240120090000000048`,
     `183e92321e4000240b0052`, `18406fcfe1ff009ffedff2` as 88 parameter bits, 14 of 14), and from a dispatch console
     with the same two (`047284888844f0080002..`, `040c7f7f7fbff3fffffdf.`, 6 of 6) - the encoder starting up, 0.1 s,

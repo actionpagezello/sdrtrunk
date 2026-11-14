@@ -3,7 +3,22 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-13 20:30: `edacs` build 19 (ProVoice suspect voice frames not played)
+## Current state 2026-11-14 10:00: `edacs` build 20 (Type II calling radio; includes build 19)
+
+- **Build 20** = build 19 (never applied alone) + Type II: the calling radio is used only when the channel word
+  comes straight after it (CHANGELOG build 20). `edacs-20.patch` has two commits and applies on `6530f233`.
+  Meant for Summit 800 (MBTA EDACS + MSP Type II on one Airspy); nothing else in SDRTrunk is changed or removed.
+- **To read in the next Summit 800 log:** "calling radios not used so far: N" on the per-minute DEBUG line;
+  grant lines naming a one-off radio should be gone (604 of 21,270 on 11-12).
+- **Verified against the standards 2026-11-13/14:** ProVoice decode matches TIA/EIA/IS-69.5 (code words, PN
+  sequence, bit order, 7100 -> 7200 conversion); the IMBE tables are the same as TIA-102.BABA, so JMBE's P25
+  synthesizer is right for EDACS. Passing error counts to JMBE (smoothing/repeat): 86 of 92 calls unchanged -
+  not built. Prototype kept at `/home/claude/pv/prototype-errors-to-jmbe.diff`.
+- **Closed by Armen:** more document searching; DSDPlus comparison (too complicated to set up).
+- **Still wanted:** a hardware ProVoice scanner recording beside Cambridge; 5 minutes of MSP control channel
+  baseband from Summit 800; which JMBE jar is selected on Cambridge and Summit 800.
+
+## Previous state 2026-11-13 20:30: `edacs` build 19 (ProVoice suspect voice frames not played)
 
 - **Builds:** 19 = a voice frame with 2+ corrected errors beside one that failed is concealed (CHANGELOG build 19,
   with the analysis of the 21 calls rated on Cambridge 11-13). Build 18 pushed as `6530f233` (tree `d81875b0`),

@@ -44,6 +44,7 @@ public class SmartNetOSW implements IMessage
     private final boolean mGroup;
     private final int mCommand;
     private final long mTimestamp;
+    private boolean mFollowsPrevious = true;
 
     public SmartNetOSW(int address, boolean group, int command, long timestamp)
     {
@@ -66,6 +67,24 @@ public class SmartNetOSW implements IMessage
     public int getCommand()
     {
         return mCommand;
+    }
+
+    /**
+     * True when this OSW came straight after the previous decoded OSW, with no control word lost in between.  A grant
+     * is two OSWs in a row (calling radio, then talkgroup and channel), so the calling radio in the previous OSW
+     * belongs to this one only when this is true.
+     */
+    public boolean followsPrevious()
+    {
+        return mFollowsPrevious;
+    }
+
+    /**
+     * Set by the framer, which knows how many bits lie between two decoded OSWs.
+     */
+    public void setFollowsPrevious(boolean followsPrevious)
+    {
+        mFollowsPrevious = followsPrevious;
     }
 
     public long getTimestamp()

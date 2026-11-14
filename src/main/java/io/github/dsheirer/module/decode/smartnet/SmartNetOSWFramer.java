@@ -45,6 +45,7 @@ public class SmartNetOSWFramer
     private int mHistoryIndex;
     private long mBitCount;
     private long mSuppressUntil;
+    private long mLastValidBit;
 
     //Statistics
     private long mFrameCount, mValidCount, mInvalidCount;
@@ -92,6 +93,9 @@ public class SmartNetOSWFramer
             if(osw != null)
             {
                 mValidCount++;
+                //One frame after the last decoded OSW = nothing was lost in between
+                osw.setFollowsPrevious(mLastValidBit > 0 && mBitCount - mLastValidBit == FRAME_LENGTH);
+                mLastValidBit = mBitCount;
                 mListener.accept(osw);
                 mSuppressUntil = mBitCount + FRAME_LENGTH - 8; //trailing sync starts the next frame
             }

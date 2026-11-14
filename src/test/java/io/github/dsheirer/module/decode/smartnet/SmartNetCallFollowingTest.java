@@ -376,4 +376,31 @@ public class SmartNetCallFollowingTest
         p25.join(5000);
         assertTrue(done, "event for another channel waited on the manager's lock");
     }
+
+    /**
+     * Test: a calling radio is not used when a control word was lost between it and the channel OSW.  The radio OSW
+     * of one call followed by the channel OSW of another call must not put that radio on the other call; the call
+     * starts without a radio and learns it from the next complete grant.
+     */
+    @Test
+    void testRadioNotTakenAcrossALostWord()
+    {
+        setup(4);
+        osw(0x2F8, true, SmartNetOSW.CMD_IDLE);
+        osw(RADIO + 1, false, SmartNetOSW.CMD_UNIT_ID);     //another call's radio; its channel OSW is lost
+        SmartNetOSW update = new SmartNetOSW(TALKGROUP, true, CHANNEL, mNow[0]);
+        update.setFollowsPrevious(false);
+        mState.receive(update);
+
+        assertEquals(1, mStarts.size(), "the call is still followed");
+        assertNull(get(mEvents.get(mEvents.size() - 1).getIdentifierCollection(), Role.FROM), "no radio taken");
+        assertEquals(1, mState.getSplitGrantCount());
+        assertEquals(0, mState.getGrantCount());
+
+        advance(100);
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(1, mStarts.size(), "same call");
+        assertEquals(RADIO, get(mEvents.get(mEvents.size() - 1).getIdentifierCollection(), Role.FROM).getValue(),
+            "radio learned from the complete grant");
+    }
 }

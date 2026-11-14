@@ -153,6 +153,40 @@ public class SmartNetControlChannelTest
     }
 
     /**
+     * Test: the framer marks an OSW that does not come straight after the previous decoded OSW.  Frame 6 is damaged
+     * beyond repair, so OSW 7 follows OSW 5 with a lost control word in between.
+     */
+    @Test
+    void testFollowsPrevious()
+    {
+        List<SmartNetOSW> osws = new ArrayList<>();
+        SmartNetOSWFramer framer = new SmartNetOSWFramer(osws::add);
+        List<Boolean> bits = stream(12);
+
+        for(int x = 20; x < 40; x++)
+        {
+            int index = 6 * SmartNetOSWFramer.FRAME_LENGTH + x;
+            bits.set(index, !bits.get(index));
+        }
+
+        for(boolean b : bits)
+        {
+            framer.process(b, 0);
+        }
+
+        assertEquals(10, osws.size(), "12 frames, one damaged, the last without a trailing sync");
+        assertEquals(1, framer.getInvalidCount());
+        assertFalse(osws.get(0).followsPrevious(), "nothing is known about what came before the first OSW");
+
+        for(int x = 1; x < osws.size(); x++)
+        {
+            assertEquals(x != 6, osws.get(x).followsPrevious(), "OSW " + x);
+        }
+
+        assertEquals(0x8190 + (7 << 4), osws.get(6).getAddress(), "the OSW after the lost one is frame 7");
+    }
+
+    /**
      * Test: demodulator at 50 kHz with a clock offset and noise.
      */
     @Test

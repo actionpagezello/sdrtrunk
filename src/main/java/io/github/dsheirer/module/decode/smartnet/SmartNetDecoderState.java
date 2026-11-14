@@ -79,6 +79,7 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
     //Activity summary
     private long mOSWCount;
     private long mGrantCount;
+    private long mSplitGrantCount;
     private final Map<Integer,Integer> mTalkgroupGrants = new TreeMap<>();
     private final Map<Integer,Integer> mChannelGrants = new TreeMap<>();
 
@@ -140,7 +141,16 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                 return; //announcements of the control channel itself
             }
 
+            //The calling radio is in the OSW sent straight before this one.  When a control word was lost in between,
+            //the previous decoded OSW belongs to another call and its radio must not be used (Summit 800, 2026-11-12:
+            //604 of 21,270 grant lines named a radio that no other line of the call named).
             boolean grant = previous != null && previous.getCommand() == SmartNetOSW.CMD_UNIT_ID;
+
+            if(grant && !osw.followsPrevious())
+            {
+                grant = false;
+                mSplitGrantCount++;
+            }
             MutableIdentifierCollection ic = new MutableIdentifierCollection(getIdentifierCollection().getIdentifiers());
             ic.remove(IdentifierClass.USER);
             DecodeEventType type;
@@ -294,7 +304,8 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                 StringBuilder sb = new StringBuilder();
                 mMinuteCommands.entrySet().stream().sorted((x, y) -> y.getValue() - x.getValue()).limit(12)
                     .forEach(e -> sb.append(String.format(" %03X:%d", e.getKey(), e.getValue())));
-                LOGGER.debug("Motorola Type II OSW commands last minute (hex:count):" + sb);
+                LOGGER.debug("Motorola Type II OSW commands last minute (hex:count):" + sb + " - calling radios " +
+                    "not used so far: " + mSplitGrantCount);
             }
 
             mMinuteCommands.clear();
@@ -346,6 +357,14 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         }
     }
 
+    /**
+     * Number of times a calling radio was not used because a control word was lost between it and the channel OSW.
+     */
+    public long getSplitGrantCount()
+    {
+        return mSplitGrantCount;
+    }
+
     public long getGrantCount()
     {
         return mGrantCount;
@@ -360,6 +379,8 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         sb.append("Band plan: ").append(mBandPlan).append("\n");
         sb.append("OSWs decoded: ").append(mOSWCount).append("\n");
         sb.append("Channel grants: ").append(mGrantCount).append("\n");
+        sb.append("Calling radios not used (control word lost before the channel word): ").append(mSplitGrantCount)
+            .append("\n");
         sb.append(DIVIDER2).append("Grants by channel:\n");
         mChannelGrants.forEach((channel, count) -> sb.append(String.format("  %4d  %.4f MHz  %d%n", channel,
             mBandPlan.getFrequency(channel) / 1e6, count)));
