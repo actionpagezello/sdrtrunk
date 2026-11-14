@@ -31,6 +31,7 @@ public enum PreferenceType
     DIRECTORY,
     DUPLICATE_CALL_DETECTION,
     JMBE_LIBRARY,
+    MAP,
     MP3,
     MULTI_FREQUENCY,
     PLAYLIST,

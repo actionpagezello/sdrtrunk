@@ -209,7 +209,7 @@ public class FrequencyEditor extends VBox
 
         if(item != null)
         {
-            mFrequency = (long)(item.getDownlink() * 1E6);
+            mFrequency = item.getDownlinkHz();
             getAlphaTagTextField().setText(item.getAlphaTag());
             getFrequencyTextField().setText(FREQUENCY_FORMATTER.format(item.getDownlink()));
             getToneTextField().setText(item.getTone());
@@ -418,64 +418,27 @@ public class FrequencyEditor extends VBox
      */
     private Channel createChannel(ModeDecoderType modeDecoderType, long frequency, String system, String site, String name)
     {
-        if(modeDecoderType.hasDecoderType())
+        Channel channel = RadioReferenceChannelFactory.conventional(modeDecoderType, frequency, system, site, name);
+
+        //AP-fork: set the tone (CTCSS/DCS) or NAC filter from the frequency's Radio Reference tone field
+        if(channel != null)
         {
-            Channel channel = new Channel();
-            channel.setSystem(system);
-            channel.setSite(site);
-            channel.setName(name);
-            SourceConfigTuner sourceConfigTuner = new SourceConfigTuner();
-            sourceConfigTuner.setFrequency(frequency);
-            channel.setSourceConfiguration(sourceConfigTuner);
-            DecodeConfiguration decodeConfiguration = DecoderFactory.getDecodeConfiguration(modeDecoderType.getDecoderType());
+            String tone = getToneTextField().getText();
 
-            if(decodeConfiguration instanceof DecodeConfigNBFM nbfmConfig)
+            if(tone != null && !tone.trim().isEmpty())
             {
-                if(modeDecoderType == ModeDecoderType.FM)
-                {
-                    nbfmConfig.setBandwidth(DecodeConfigNBFM.Bandwidth.BW_25_0);
-                }
-
-                // === NEW: Auto-configure CTCSS/DCS from Radio Reference tone field ===
-                String tone = getToneTextField().getText();
-                if(tone != null && !tone.trim().isEmpty())
+                if(channel.getDecodeConfiguration() instanceof DecodeConfigNBFM nbfmConfig)
                 {
                     configureToneFilter(nbfmConfig, tone.trim());
                 }
-            }
-            else if(decodeConfiguration instanceof DecodeConfigP25Phase1 p25Config)
-            {
-                p25Config.setModulation(Modulation.C4FM);
-
-                // === NEW: Auto-configure NAC from Radio Reference tone field ===
-                String tone = getToneTextField().getText();
-                if(tone != null && !tone.trim().isEmpty())
+                else if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p25Config)
                 {
                     configureNacFilter(p25Config, tone.trim());
                 }
             }
-            else if(decodeConfiguration instanceof DecodeConfigNXDN nxdn)
-            {
-                //Upstream #2446: NXDN repeater channel configurations from non-trunked county entries
-                if(modeDecoderType == ModeDecoderType.NXDN48)
-                {
-                    nxdn.setTransmissionMode(TransmissionMode.M4800);
-                }
-                else if(modeDecoderType == ModeDecoderType.NXDN96)
-                {
-                    nxdn.setTransmissionMode(TransmissionMode.M9600);
-                }
-            }
-
-            channel.setDecodeConfiguration(decodeConfiguration);
-            return channel;
-        }
-        else
-        {
-            mLog.warn("Can't create channel configuration for [" + modeDecoderType.name() + "] no supported decoder type");
         }
 
-        return null;
+        return channel;
     }
 
     private TextField getSystemTextField()
