@@ -44,6 +44,16 @@ and can only be told apart by the "Build Timestamp" log line.
 | 24 | edacs-24 | P25: the Details tab lists the calls by talkgroup with the alias name |
 | 25 | edacs-25 | EDACS and Type II: a voice channel is no longer shut down as it starts (2.7% of MBTA calls were lost); calls by talkgroup in the Details tab for every kind of channel; two upstream fixes (P25 HDU, Golay 24) |
 
+### After build 25 (2026-11-15, documents only)
+- Builds 24 and 25 applied together and pushed: `edacs` = `ce2915e0`.
+- Daly's log of 11-15 stopping at 04:44:05 was a short power loss (Armen); the machine is running.
+- EDACS locks about 18 s after the program starts where P25 locks at once: the MBTA channel starts on the first
+  frequency of its list (851.1750), waits the standard 15 s for a control channel, then hunts and finds 853.9000
+  within a second. Remembering the last control frequency was offered and declined as not needed.
+- Cambridge has four Nooelec sticks and an RSP1B. Its 136 "tuner unavailable" calls of the night of 11-14 came
+  from the four sticks alone covering 851.06-859.99 MHz while the RSP1B was limited to 700-799 MHz and idle. New
+  frequency limits per device are in SESSION-STATUS.md; result not yet seen in a log.
+
 ### Build 25 - voice channels shut down at start; Details list for all channels; two upstream fixes
 - **CORRECTION of build 23's "EDACS calls with no audio - verified not lost": WRONG for the 336 calls whose voice
   channel was open under a second.** They were classed as "assigned and released at once" without checking how

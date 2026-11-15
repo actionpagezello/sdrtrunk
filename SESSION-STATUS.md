@@ -3,7 +3,55 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-15 13:10: `edacs` build 25 (voice channels shut down at start - 2.7% of MBTA calls lost)
+## Current state 2026-11-15 14:30: `edacs` = build 25, pushed as `ce2915e0`; documents brought up to date
+
+**Branches on GitHub (actionpagezello/sdrtrunk):** `edacs` `ce2915e0` (build 25, version
+`0.6.2-ap-16.1-edacs-25`), `master` `18b0ae4e` (ap-16.1, unchanged), `smartnet` `6fc43fa9` (older Type II work,
+superseded by `edacs`).
+
+**What the `edacs` branch adds to ap-16.1 (builds 1-25, details in CHANGELOG.md):**
+- EDACS Extended Addressing control channel, call following, ProVoice digital voice (checked against
+  TIA/EIA/IS-69.5), Radio Reference site import, header talkgroup check, silent transmissions not saved.
+- Motorola Type II / SmartZone control channel, analog call following, digital calls (grant 0x321) decoded as
+  P25 Phase 1 voice, site number, calling radio only from a complete grant, true reception figure.
+- "Ignore Unaliased Talkgroups" for EDACS and Type II. Calls by talkgroup with alias names in the Details tab for
+  every kind of channel (and CTCSS/DCS tones with alias names on NBFM).
+- Build 25: a voice channel is no longer shut down as it starts (EDACS 2.7% of calls at Cambridge).
+- Two upstream fixes taken early: `74dc3253` (P25 HDU Golay word start), `7fcf0353` (Golay 24 word not at the
+  start of its message).
+
+**Where it runs (2026-11-15):** Cambridge build 23 with the new tuner limits and CoMIRS since 09:55 (build 25 to
+follow), Summit 800 build 23, Paxton and Monson build 22, Daly build 14.
+
+**Waiting for (nothing to build):**
+- A Cambridge log on build 25: no "voice channel open 0.0 s", no ConcurrentModificationException; TUNER
+  UNAVAILABLE with the tuner limits below; CoMIRS decoding; how often "was silence throughout" appears.
+- A look at the Details tab on a P25 channel and on a DMR or NBFM channel (not seen on a screen yet), and at the
+  two channel-editor controls of build 21 (the switch is confirmed visible; the Site box not yet mentioned).
+- A few clean days, then the alignment with upstream SDRTrunk 1.0 (`v1.0.0` = `73d32386`; upstream master
+  `5bce5416` on 2026-11-14, 65 commits the fork does not have, Java 27; the fork's CTCSS stays; playlists must keep
+  loading). It starts with an inventory: take upstream's / keep the fork's / fork only.
+
+**Cambridge tuner layout set by Armen 2026-11-15 (frequency limits decide which device takes a channel):**
+Nooelec 850.0-853.0 (MBTA lower ten channels), Nooelec 853.0-856.0 (MBTA upper three + control 853.9000, MSP
+Boston control 854.3625), RSP1B 856.0-861.0 at 7 MHz (MSP Boston voice and other controls, two P25 channels),
+Nooelec 768.0-772.0 and Nooelec 772.0-776.0 (CoMIRS Metro Boston Overlay, P25 Phase 2).
+
+**Decided by Armen, not to be reopened:**
+- Summit 800 Airspy sample loss and its gain: his to handle; the machine will take nearer sites.
+- Zello "kicked" on C-PTL-1 / C-PTL-3: the account is logged in on several computers. Not a bug.
+- Paxton's many Type II site channels were a test.
+- Starting a multi-frequency channel on its last control frequency (EDACS takes about 18 s to lock at start
+  because it begins on the first frequency of its list): "trivial and not needed". Putting 853.9000 first in the
+  list does it by hand.
+- No more document searching; no DSDPlus comparison; no TSB-69.3 purchase (caller ID from the voice channel).
+- Daly's 11-15 log stopping at 04:44:05: a short power loss. Daly's two spontaneous RSP1B drops (unit 5260, 11-11
+  and 11-12) have not recurred on build 14.
+
+**Still unexplained (no work planned):** the beginning of three rated MBTA calls being hard to understand; Monson
+hearing sites 7 and 14 on 856.0625 in the same minute.
+
+## Previous state 2026-11-15 13:10: `edacs` build 25 (voice channels shut down at start - 2.7% of MBTA calls lost)
 
 - **Build 25** (CHANGELOG build 25): `edacs-25.patch` = three commits on build 24 (two upstream cherry-picks, then
   the build). Build 24 not applied yet either: Armen applies 24 and 25 together.
@@ -22,7 +70,7 @@
 
 - **Build 23** (CHANGELOG build 23): `edacs-23.patch`, one commit on `13e270fd` (build 22).
 - **Build 22 confirmed by ear** (Armen, six Paxton recordings of 59152 / 59184). EDACS no-audio calls verified as
-  key-ups without speech - none lost.
+  key-ups without speech - none lost. (WRONG for the calls open under a second - see build 25: 2.7% were lost.)
 - **Armen's decisions 11-15:** Summit 800 Airspy loss not a concern; Zello "kicked" is the same account logged in on
   several computers - not a bug; the Paxton multi-site channels were a test, no more work on them; Cambridge gets
   more Nooelec sticks later (7 in all for the 800 band plus CoMIRS Metro Boston Overlay 769-775 MHz) - not soon.
