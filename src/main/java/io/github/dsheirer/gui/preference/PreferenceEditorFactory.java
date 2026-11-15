@@ -24,6 +24,7 @@ import io.github.dsheirer.gui.preference.application.ApplicationPreferenceEditor
 import io.github.dsheirer.gui.preference.calibration.VectorCalibrationPreferenceEditor;
 import io.github.dsheirer.gui.preference.call.CallManagementPreferenceEditor;
 import io.github.dsheirer.gui.preference.decoder.JmbeLibraryPreferenceEditor;
+import io.github.dsheirer.gui.preference.diagnostics.DiagnosticsPreferenceEditor;
 import io.github.dsheirer.gui.preference.directory.DirectoryPreferenceEditor;
 import io.github.dsheirer.gui.preference.mp3.MP3PreferenceEditor;
 import io.github.dsheirer.gui.preference.playback.PlaybackPreferenceEditor;
@@ -55,6 +56,8 @@ public class PreferenceEditorFactory
                 return new RecordPreferenceEditor(userPreferences);
             case CHANNEL_EVENT:
                 return new DecodeEventViewPreferenceEditor(userPreferences);
+            case DIAGNOSTICS:
+                return new DiagnosticsPreferenceEditor(userPreferences);
             case DIRECTORY:
                 return new DirectoryPreferenceEditor(userPreferences);
             case JMBE_LIBRARY:

@@ -23,6 +23,8 @@ import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.preference.application.ApplicationPreference;
 import io.github.dsheirer.preference.calibration.VectorCalibrationPreference;
 import io.github.dsheirer.preference.decoder.JmbeLibraryPreference;
+import io.github.dsheirer.preference.diagnostics.DiagnosticsPreference;
+import io.github.dsheirer.preference.diagnostics.LogLevelController;
 import io.github.dsheirer.preference.directory.DirectoryPreference;
 import io.github.dsheirer.preference.duplicate.CallManagementPreference;
 import io.github.dsheirer.preference.event.DecodeEventPreference;
@@ -59,6 +61,7 @@ public class UserPreferences implements Listener<PreferenceType>
     private ApplicationPreference mApplicationPreference;
     private ChannelMultiFrequencyPreference mChannelMultiFrequencyPreference;
     private DecodeEventPreference mDecodeEventPreference;
+    private DiagnosticsPreference mDiagnosticsPreference;
     private DirectoryPreference mDirectoryPreference;
     private CallManagementPreference mCallManagementPreference;
     private JmbeLibraryPreference mJmbeLibraryPreference;
@@ -114,6 +117,14 @@ public class UserPreferences implements Listener<PreferenceType>
     public DecodeEventPreference getDecodeEventPreference()
     {
         return mDecodeEventPreference;
+    }
+
+    /**
+     * Diagnostics preferences (runtime per-category DEBUG toggles). ap-14.6.
+     */
+    public DiagnosticsPreference getDiagnosticsPreference()
+    {
+        return mDiagnosticsPreference;
     }
 
     /**
@@ -221,6 +232,9 @@ public class UserPreferences implements Listener<PreferenceType>
         mApplicationPreference = new ApplicationPreference(this::receive);
         mChannelMultiFrequencyPreference = new ChannelMultiFrequencyPreference(this::receive);
         mDecodeEventPreference = new DecodeEventPreference(this::receive);
+        mDiagnosticsPreference = new DiagnosticsPreference(this::receive);
+        //Apply persisted diagnostics log levels to the running Logback context (ap-14.6)
+        LogLevelController.applyAll(mDiagnosticsPreference);
         mDirectoryPreference = new DirectoryPreference(this::receive);
         mCallManagementPreference = new CallManagementPreference(this::receive);
         mJmbeLibraryPreference = new JmbeLibraryPreference(this::receive);

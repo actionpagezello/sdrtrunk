@@ -200,7 +200,14 @@ def jvmArgsWindows =
          '--enable-preview', //Project Panama Vector API is still in incubator
          '--enable-native-access=ALL-UNNAMED', //Suppress unsafe warnings for FFM API Foreign Memory calls
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
-         '--sun-misc-unsafe-memory-access=allow'] //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
+         '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
+         '-XX:+UseCompactObjectHeaders',   //AP-fork: compact object headers, as in every fork build since JDK 25
+         '-Xmx4g',                         //AP-fork: 4GB ceiling.  Fleet steady state peaks at ~1GB
+                                           //(Somerville, the busiest box, 1005MB).  10GB was runway rather than
+                                           //protection: the 2026-09-05 Paxton event froze for 6.5 minutes filling it.
+                                           //4GB leaves 4x headroom for a busy system and still fails fast.
+         '-Dprism.order=d3d,sw',           //AP-fork: JavaFX tries D3D first, falls back to software rendering
+         '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //AP-fork: SDRplay API path, as in every fork build
 
 /**
  * JVM Arguments for running the application on Linux.
@@ -211,7 +218,9 @@ def jvmArgsLinux =
          '--enable-preview', //Project Panama Vector & Foreign Function APIs remain in incubator
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
-         '--enable-native-access=ALL-UNNAMED'] //Suppress warnings for FFM API native calls (tuner libraries)
+         '--enable-native-access=ALL-UNNAMED', //Suppress warnings for FFM API native calls (tuner libraries)
+         '-XX:+UseCompactObjectHeaders',   //AP-fork: compact object headers
+         '-Xmx4g']                         //AP-fork: 4GB ceiling - see the Windows args above
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"
@@ -439,6 +448,11 @@ tasks.named('runtime') {rt ->
  * Usage: ./gradlew runtimeZipCurrent   (linux - using gradlew)
  */
 tasks.register('runtimeZipCurrent', RuntimeZipTask) {rt ->
+    //AP-fork: only configure platforms when this task is actually being run, otherwise the beryx runtime plugin
+    //accumulates platforms from every runtimeZip* task into the shared jre task and produces zips you didn't ask for.
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipCurrent') }) {
+        return
+    }
     def arch = System.properties.getProperty("os.arch")
     def javaHome = Jvm.current().getJavaHome().toString()
 
@@ -484,11 +498,12 @@ tasks.register('runtimeZipCurrent', RuntimeZipTask) {rt ->
  * Usage: ./gradlew runtimeZipWindows   (linux - using gradlew)
  */
 tasks.register('runtimeZipWindows', RuntimeZipTask) {rt ->
-    //Windows aarch64
-    rt.extension.targetPlatform(targetWindowsAarch64) {
-        jdkHome = jdkDownload(jdk_download_windows_aarch64)
+    //AP-fork: only configure platforms when this task is actually being run, otherwise the beryx runtime plugin
+    //accumulates platforms from every runtimeZip* task into the shared jre task and produces zips you didn't ask for.
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipWindows') }) {
+        return
     }
-    //Windows x86-64
+    //AP-fork: Windows x86-64 only.  aarch64 intentionally omitted to keep builds lean.
     rt.extension.targetPlatform(targetWindowsX86_64) {
         jdkHome = jdkDownload(jdk_download_windows_x86_64)
     }
@@ -506,6 +521,11 @@ tasks.register('runtimeZipWindows', RuntimeZipTask) {rt ->
  * Usage: ./gradlew runtimeZipOthers   (linux - using gradlew)
  */
 tasks.register('runtimeZipOthers', RuntimeZipTask) {rt ->
+    //AP-fork: only configure platforms when this task is actually being run, otherwise the beryx runtime plugin
+    //accumulates platforms from every runtimeZip* task into the shared jre task and produces zips you didn't ask for.
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipOthers') }) {
+        return
+    }
     //Linux aarch64
     rt.extension.targetPlatform(targetLinuxAarch64) {
         jdkHome = jdkDownload(jdk_download_linux_aarch64)
@@ -524,4 +544,45 @@ tasks.register('runtimeZipOthers', RuntimeZipTask) {rt ->
     }
 
     configure(rt, jvmArgsLinux)
+}
+
+/**
+ * AP-fork: archives built runtime zips to the sibling sdrtrunk-ap-versions folder.
+ *
+ * After any runtimeZip* task completes, this task copies every .zip produced under build/image/ to
+ * ../sdrtrunk-ap-versions/v<version>/ so a clean build does not wipe prior deliverables.  The destination can be
+ * overridden with -PversionsDir=<path>.
+ *
+ * Usage (runs automatically as a finalizer): gradlew runtimeZipWindows
+ * Usage (manual):                            gradlew archiveVersion
+ */
+tasks.register('archiveVersion', Copy) {
+    description = 'AP-fork: copies built runtime zips into sdrtrunk-ap-versions/v<version>'
+    group = 'ap-fork'
+
+    def versionsDir = project.hasProperty('versionsDir') ? file(project.versionsDir) : file("${rootDir}/../sdrtrunk-ap-versions")
+    def projectVersion = version
+
+    from(layout.buildDirectory.dir('image')) {
+        include '*.zip'
+    }
+    into(new File(versionsDir, "v${projectVersion}"))
+
+    doFirst {
+        versionsDir.mkdirs()
+        logger.lifecycle("AP-fork: archiving v${projectVersion} zips -> ${destinationDir}")
+    }
+    doLast {
+        def copied = destinationDir.listFiles()?.findAll { it.name.endsWith('.zip') } ?: []
+        if(copied.isEmpty()) {
+            logger.lifecycle("AP-fork: no zips found in build/image (did runtimeZip* run?)")
+        } else {
+            copied.each { logger.lifecycle("AP-fork: archived ${it.name}") }
+        }
+    }
+}
+
+//Hook the archive task onto every runtimeZip* task as a finalizer so it runs automatically after each build.
+['runtimeZipCurrent', 'runtimeZipWindows', 'runtimeZipOthers'].each { name ->
+    tasks.named(name) { finalizedBy('archiveVersion') }
 }

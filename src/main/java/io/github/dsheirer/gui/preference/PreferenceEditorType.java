@@ -27,6 +27,7 @@ public enum PreferenceEditorType
     APPLICATION("General"),
     APPEARANCE("Appearance"),
     CHANNEL_EVENT("Channel Events"),
+    DIAGNOSTICS("Diagnostics (Logging)"),
     DIRECTORY("Directories"),
     JMBE_LIBRARY("JMBE Audio Library"),
     AUDIO_MP3("MP3"),
