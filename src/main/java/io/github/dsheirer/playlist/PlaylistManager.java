@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.playlist;
 
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -26,6 +27,7 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.broadcast.BroadcastModel;
+import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
 import io.github.dsheirer.controller.channel.ChannelEvent;
 import io.github.dsheirer.controller.channel.ChannelModel;
@@ -35,6 +37,7 @@ import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.playlist.IAliasListRefreshListener;
 import io.github.dsheirer.icon.IconModel;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.log.EventLogManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.playlist.PlaylistPreference;
@@ -48,6 +51,11 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
@@ -79,6 +87,22 @@ public class PlaylistManager implements Listener<ChannelEvent>
     private AtomicBoolean mPlaylistSavePending = new AtomicBoolean();
     private ScheduledFuture<?> mPlaylistSaveFuture;
     private boolean mPlaylistLoading = false;
+
+    /**
+     * AP-fork: playlist protection.  When the playlist on disk could not be read, saving is blocked for the rest of
+     * the session so the empty in-memory playlist can never be written over it.  Upstream (and this fork until
+     * ap-15.9.25) replaced an unreadable playlist with an empty one and saved it: Somerville 2026-10-22, the upstream
+     * release and nightly each wiped the fork playlist that way (Zello/ThinLine stream types it does not know).
+     */
+    private volatile boolean mSaveBlocked = false;
+
+    //AP-fork (ap-15.9.33): when the pending playlist save was requested, for the save log line
+    private volatile long mSaveRequestedMs = 0;
+    private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final String HISTORY_FOLDER = "history";
+    private static final int HISTORY_KEEP = 20;
+    private static final long HISTORY_INTERVAL_MS = 60 * 60 * 1000;
+    private long mLastHistoryCopyMs = 0;
     private List<IAliasListRefreshListener> mAliasListRefreshListeners = new ArrayList<>();
 
     /**
@@ -113,6 +137,13 @@ public class PlaylistManager implements Listener<ChannelEvent>
         MyEventBus.getGlobalEventBus().register(mChannelProcessingManager);
 
         mChannelModel.addListener(mChannelProcessingManager);
+
+        //AP-fork (edacs-14): RSP recovery restarts the channels that the removal of an RSP tuner stopped
+        if(mTunerManager != null)
+        {
+            mTunerManager.setRspRecoveryChannels(mChannelProcessingManager,
+                channel -> mChannelModel.getChannels().contains(channel));
+        }
         mChannelProcessingManager.addChannelEventListener(mChannelModel);
 
         //Register for alias, channel and channel map events so that we can
@@ -407,11 +438,69 @@ public class PlaylistManager implements Listener<ChannelEvent>
 
             mChannelMapModel.addChannelMaps(playlist.getChannelMaps());
 
+            boolean migrated = migrateJmbeComfortNoiseGain(playlist.getChannels());
+
             //Channel model has to be loaded last since it will auto-start channels that are enabled
             mChannelModel.addChannels(playlist.getChannels());
 
             mPlaylistLoading = false;
+
+            if(migrated)
+            {
+                schedulePlaylistSave();
+            }
         }
+    }
+
+    /**
+     * AP-fork (ap-15.10.10): the fork wrote JMBE comfort noise gain 1.0 (upstream's original default) to every digital
+     * channel before it applied the per-channel JMBE settings.  JMBE's own default, and upstream's since #2530, is 0.05.
+     * Once per playlist on each machine, a stored 1.0 becomes the default; values set after that are kept.
+     * @return true if any channel was changed
+     */
+    private boolean migrateJmbeComfortNoiseGain(List<Channel> channels)
+    {
+        Path path = mUserPreferences.getPlaylistPreference().getPlaylist();
+        String key = "apJmbeNoiseMigrated." + (path != null ? Integer.toHexString(path.toAbsolutePath().toString()
+                .toLowerCase().hashCode()) : "default");
+        int count = migrateJmbeComfortNoiseGain(channels,
+                java.util.prefs.Preferences.userNodeForPackage(PlaylistManager.class), key);
+
+        if(count >= 0)
+        {
+            mLog.info("JMBE comfort noise gain: " + count + " channel(s) changed from " +
+                    DecodeConfigJMBE.LEGACY_FORK_COMFORT_NOISE_GAIN + " to the default " +
+                    DecodeConfigJMBE.DEFAULT_COMFORT_NOISE_GAIN + " (one time for this playlist)");
+        }
+
+        return count > 0;
+    }
+
+    /**
+     * Changes a stored comfort noise gain of 1.0 to the default, unless the preference key shows it was done before.
+     * @return number of channels changed, or -1 if the migration was already done
+     */
+    static int migrateJmbeComfortNoiseGain(List<Channel> channels, java.util.prefs.Preferences preferences, String key)
+    {
+        if(channels == null || preferences.getBoolean(key, false))
+        {
+            return -1;
+        }
+
+        int count = 0;
+
+        for(Channel channel: channels)
+        {
+            if(channel.getDecodeConfiguration() instanceof DecodeConfigJMBE jmbe &&
+               jmbe.getComfortNoiseGain() == DecodeConfigJMBE.LEGACY_FORK_COMFORT_NOISE_GAIN)
+            {
+                jmbe.setComfortNoiseGain(DecodeConfigJMBE.DEFAULT_COMFORT_NOISE_GAIN);
+                count++;
+            }
+        }
+
+        preferences.putBoolean(key, true);
+        return count;
     }
 
     /**
@@ -441,6 +530,20 @@ public class PlaylistManager implements Listener<ChannelEvent>
     private void save()
     {
         PlaylistPreference playlistPreference = mUserPreferences.getPlaylistPreference();
+        long saveStartMs = System.currentTimeMillis();
+
+        if(mSaveBlocked)
+        {
+            mLog.warn("Playlist NOT saved - the playlist file [" + playlistPreference.getPlaylist() + "] could not be " +
+                "read at startup, so saving is blocked to protect it.  Fix or restore the file, then restart.");
+            return;
+        }
+
+        if(System.currentTimeMillis() - mLastHistoryCopyMs >= HISTORY_INTERVAL_MS)
+        {
+            copyToHistory(playlistPreference.getPlaylist(), true);
+            copyToHistory(PlaylistCompatibility.getCompanion(playlistPreference.getPlaylist()), true);
+        }
 
         PlaylistV2 playlist = new PlaylistV2();
 
@@ -479,20 +582,36 @@ public class PlaylistManager implements Listener<ChannelEvent>
             }
         }
 
-        try(OutputStream out = Files.newOutputStream(playlistPreference.getPlaylist()))
+        //AP-fork: write to a temporary file and move it into place, so the playlist is never left half-written.
+        //AP-fork (ap-15.9.26): two files - the complete playlist goes to the companion, and the playlist file gets
+        //everything except the element types upstream SDRTrunk cannot read.  See PlaylistCompatibility.
+        try
         {
             JacksonXmlModule xmlModule = new JacksonXmlModule();
             xmlModule.setDefaultUseWrapper(false);
             ObjectMapper objectMapper = new XmlMapper(xmlModule);
             objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
-            objectMapper.writeValue(out, playlist);
-            out.flush();
+            String complete = objectMapper.writeValueAsString(playlist);
+            PlaylistCompatibility.SaveFiles files = PlaylistCompatibility.prepareSave(complete,
+                LocalDateTime.now().format(STAMP) + "-" + System.nanoTime());
+
+            Path companion = PlaylistCompatibility.getCompanion(playlistPreference.getPlaylist());
+            writeAtomically(companion, files.companion());
+            writeAtomically(playlistPreference.getPlaylist(), files.playlist());
 
             //Remove the playlist lock file to indicate that we successfully saved the file
             if(Files.exists(playlistPreference.getPlaylistLock()))
             {
                 Files.delete(playlistPreference.getPlaylistLock());
             }
+
+            //AP-fork (ap-15.9.33): one line per save, so an edit that seems not to stick can be checked against it
+            long now = System.currentTimeMillis();
+            long requestedMs = mSaveRequestedMs;
+            mLog.info("Playlist saved - {} channel(s), {} alias(es), {} stream(s) - written in {} ms, {} ms after the " +
+                    "change that requested it", playlist.getChannels().size(), playlist.getAliases().size(),
+                playlist.getBroadcastConfigurations().size(), now - saveStartMs,
+                requestedMs > 0 ? now - requestedMs : -1);
         }
         catch(IOException ioe)
         {
@@ -512,6 +631,8 @@ public class PlaylistManager implements Listener<ChannelEvent>
         PlaylistPreference files = mUserPreferences.getPlaylistPreference();
 
         PlaylistV2 playlist = null;
+        boolean readFailed = false;
+        mSaveBlocked = false;
 
         //Check for a lock file that indicates the previous save attempt was incomplete or had an error
         if(Files.exists(files.getPlaylistLock()))
@@ -520,13 +641,24 @@ public class PlaylistManager implements Listener<ChannelEvent>
 
             try
             {
-                //Remove the previous playlist
-                Files.delete(files.getPlaylist());
-
-                //Copy the backup file to restore the previous playlist
-                if(Files.exists(files.getPlaylistBackup()))
+                //AP-fork: the backup replaces the playlist only when the playlist itself cannot be read, and the file it
+                //replaces is kept as a dated copy.  Previously the playlist was deleted and replaced with whatever the
+                //backup held, even when the playlist was intact - and after another program's failed load the backup
+                //can be an empty playlist.  This fork writes the playlist atomically, so a readable playlist with a
+                //lock file means the last save completed.
+                if(Files.exists(files.getPlaylist()) && isPlaylist(files.getPlaylist()))
                 {
-                    Files.copy(files.getPlaylistBackup(), files.getPlaylist());
+                    mLog.info("Playlist is readable - keeping it rather than restoring the backup");
+                }
+                else if(Files.exists(files.getPlaylistBackup()) && isPlaylist(files.getPlaylistBackup()))
+                {
+                    copyToHistory(files.getPlaylist(), true);
+                    Files.copy(files.getPlaylistBackup(), files.getPlaylist(), StandardCopyOption.REPLACE_EXISTING);
+                    mLog.info("Playlist was unreadable - restored from the backup");
+                }
+                else
+                {
+                    mLog.warn("Neither the playlist nor its backup is readable - leaving both untouched");
                 }
 
                 //Remove the lock file
@@ -548,18 +680,20 @@ public class PlaylistManager implements Listener<ChannelEvent>
             ObjectMapper objectMapper = new XmlMapper(xmlModule)
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
-            try(InputStream in = Files.newInputStream(files.getPlaylist()))
+            //AP-fork (ap-15.9.26): the playlist is merged with its companion (see PlaylistCompatibility) before it is read
+            try
             {
-                playlist = objectMapper.readValue(in, PlaylistV2.class);
+                playlist = readPlaylist(files.getPlaylist(), objectMapper);
 
                 if(PlaylistUpdater.update(playlist))
                 {
                     schedulePlaylistSave();
                 }
             }
-            catch(IOException ioe)
+            catch(Exception ioe)
             {
-                mLog.error("IO error while reading playlist file", ioe);
+                readFailed = true;
+                blockSaving(files.getPlaylist(), ioe);
             }
         }
         else if(Files.exists(files.getLegacyPlaylist()))
@@ -584,7 +718,8 @@ public class PlaylistManager implements Listener<ChannelEvent>
             }
             catch(IOException ioe)
             {
-                mLog.error("IO error while reading playlist file", ioe);
+                readFailed = true;
+                blockSaving(files.getLegacyPlaylist(), ioe);
             }
         }
         else
@@ -595,10 +730,166 @@ public class PlaylistManager implements Listener<ChannelEvent>
         if(playlist == null)
         {
             playlist = new PlaylistV2();
-            schedulePlaylistSave();
+
+            //AP-fork: only a missing playlist is replaced with a new empty one on disk - never an unreadable one
+            if(!readFailed)
+            {
+                schedulePlaylistSave();
+            }
         }
 
         return playlist;
+    }
+
+    /**
+     * AP-fork (ap-15.9.26): reads the playlist merged with its companion.  If the companion exists but cannot be used,
+     * the playlist is read on its own and saving is blocked, so the companion - which may hold the only copy of the
+     * Zello and ThinLine streams - is never overwritten by a playlist that lacks them.
+     */
+    private PlaylistV2 readPlaylist(Path path, ObjectMapper objectMapper) throws Exception
+    {
+        String playlistXml = Files.readString(path);
+        Path companionPath = PlaylistCompatibility.getCompanion(path);
+        PlaylistCompatibility.LoadResult result;
+
+        try
+        {
+            String companionXml = Files.exists(companionPath) ? Files.readString(companionPath) : null;
+            result = PlaylistCompatibility.prepareLoad(playlistXml, companionXml);
+        }
+        catch(Exception companionError)
+        {
+            result = PlaylistCompatibility.prepareLoad(playlistXml, null);
+            mSaveBlocked = true;
+            mLog.error("PLAYLIST COMPANION COULD NOT BE READ [" + companionPath + "] - loaded the playlist without its " +
+                "Zello/ThinLine streams and fork-only settings, and blocked saving so the companion is not " +
+                "overwritten.  Fix or restore it (playlist\\history holds dated copies), then restart.  Cause: " +
+                companionError.getMessage());
+        }
+
+        PlaylistV2 playlist;
+
+        try
+        {
+            playlist = objectMapper.readValue(result.xml(), PlaylistV2.class);
+        }
+        catch(Exception mergeError)
+        {
+            //AP-fork (ap-15.9.30): safety net - if the merged playlist cannot be read but the file itself can, run on
+            //the file as it is (without the companion's Zello/ThinLine streams and fork-only settings) rather than
+            //on an empty playlist, and block saving so neither file is changed.  The original error is rethrown
+            //when the file itself is unreadable too.
+            playlist = objectMapper.readValue(playlistXml, PlaylistV2.class);
+            mSaveBlocked = true;
+            mLog.error("PLAYLIST MERGE FAILED - loaded [" + path + "] WITHOUT its companion (no Zello/ThinLine " +
+                "streams or fork-only settings) and blocked saving so neither file is changed.  Please report this " +
+                "with the log.  Cause: " + mergeError.getMessage(), mergeError);
+            return playlist;
+        }
+
+        int adopted = 0;
+
+        for(io.github.dsheirer.controller.channel.Channel channel : playlist.getChannels())
+        {
+            if(channel.getDecodeConfiguration() instanceof DecodeConfigNBFM nbfm && nbfm.adoptUpstreamSquelchDecoders())
+            {
+                adopted++;
+            }
+        }
+
+        mLog.info("Playlist read - last saved by " + (result.foreignWriter() ? "ANOTHER PROGRAM (or an older version)" :
+            "this fork") + "; from the companion: " + result.restoredStreams() + " stream(s), " +
+            result.restoredChannels() + " Type II/EDACS channel(s), " +
+            result.restoredAliasIds() + " alias identifier(s), fork settings for " + result.restoredSettings() +
+            " channel(s)/alias(es); CTCSS/DCS taken from upstream squelch settings on " + adopted + " channel(s)");
+
+        return playlist;
+    }
+
+    private static void writeAtomically(Path path, String content) throws IOException
+    {
+        Path temporary = Path.of(path.toAbsolutePath() + ".tmp");
+        Files.writeString(temporary, content);
+
+        try
+        {
+            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        }
+        catch(IOException atomicNotSupported)
+        {
+            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /**
+     * AP-fork: a playlist file exists but could not be read.  Keeps a dated copy of it, logs why, and blocks saving
+     * for this session so the empty playlist the application falls back to is never written over it.
+     */
+    private void blockSaving(Path playlist, Exception cause)
+    {
+        mSaveBlocked = true;
+        Path copy = Path.of(playlist.toAbsolutePath() + ".unreadable-" + LocalDateTime.now().format(STAMP));
+
+        try
+        {
+            Files.copy(playlist, copy, StandardCopyOption.REPLACE_EXISTING);
+        }
+        catch(Exception e)
+        {
+            copy = null;
+        }
+
+        mLog.error("PLAYLIST COULD NOT BE READ [" + playlist + "] - starting with an empty playlist IN MEMORY ONLY.  " +
+            "The file is left untouched and saving is blocked until restart" +
+            (copy != null ? "; a copy was kept as [" + copy + "]" : "") + ".  Cause: " + cause.getMessage(), cause);
+    }
+
+    /**
+     * AP-fork: keeps dated copies of the playlist in a history folder beside it, at most one an hour (or whenever
+     * forced) and the newest HISTORY_KEEP, so a playlist damaged by any program - this one, upstream, or a manual
+     * edit - can be recovered.
+     *
+     * @param playlist file to copy
+     * @param force true to copy regardless of when the last copy was taken
+     */
+    private void copyToHistory(Path playlist, boolean force)
+    {
+        long now = System.currentTimeMillis();
+
+        if(playlist == null || !Files.exists(playlist) || (!force && now - mLastHistoryCopyMs < HISTORY_INTERVAL_MS))
+        {
+            return;
+        }
+
+        try
+        {
+            Path folder = playlist.toAbsolutePath().getParent().resolve(HISTORY_FOLDER);
+            Files.createDirectories(folder);
+            String name = playlist.getFileName().toString();
+            String base = name.endsWith(".xml") ? name.substring(0, name.length() - 4) : name;
+            Files.copy(playlist, folder.resolve(base + "-" + LocalDateTime.now().format(STAMP) + ".xml"),
+                StandardCopyOption.REPLACE_EXISTING);
+            mLastHistoryCopyMs = now;
+
+            List<Path> copies;
+
+            try(Stream<Path> files = Files.list(folder))
+            {
+                copies = files.filter(p -> p.getFileName().toString().startsWith(base + "-") &&
+                        p.getFileName().toString().endsWith(".xml"))
+                    .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
+                    .collect(Collectors.toList());
+            }
+
+            for(int x = HISTORY_KEEP; x < copies.size(); x++)
+            {
+                Files.deleteIfExists(copies.get(x));
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.error("Unable to keep a history copy of the playlist [" + playlist + "]", e);
+        }
     }
 
     /**
@@ -611,6 +902,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
         {
             if(mPlaylistSavePending.compareAndSet(false, true))
             {
+                mSaveRequestedMs = System.currentTimeMillis();
                 mPlaylistSaveFuture = ThreadPool.SCHEDULED.schedule(new PlaylistSaveTask(), 2, TimeUnit.SECONDS);
             }
         }

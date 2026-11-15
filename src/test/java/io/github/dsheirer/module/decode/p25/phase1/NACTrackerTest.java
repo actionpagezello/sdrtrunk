@@ -45,18 +45,18 @@ public class NACTrackerTest
     }
 
     /**
-     * Test: when a fourth NAC is observed, the least recently observed NAC is evicted, independent of the system clock.
-     * All of the observations occur within the same millisecond, as they do when a recording decodes faster than real
-     * time.
+     * Test: when the tracker is full, the NAC with the fewest observations is evicted (oldest observation breaks a
+     * tie), so a burst of corrupted NAC values can't evict the dominant NAC.  All of the observations occur within
+     * the same millisecond, as they do when a recording decodes faster than real time.
      */
     @Test
-    void testLeastRecentlyObservedEvicted()
+    void testWeakestNACEvicted()
     {
         for(int repeat = 0; repeat < 100; repeat++)
         {
             NACTracker tracker = new NACTracker();
 
-            //0x293 is the most observed, but the least recently observed when 0x444 arrives
+            //0x293 is the most observed, but the least recently observed when the noise NACs arrive
             for(int x = 0; x < 5; x++)
             {
                 tracker.track(0x293);
@@ -67,9 +67,21 @@ public class NACTrackerTest
                 tracker.track(0x111);
             }
 
-            tracker.track(0x222);
-            tracker.track(0x444);
-            assertEquals(0x111, tracker.getTrackedNAC(), "Least recently observed NAC evicted, repeat " + repeat);
+            //More single-observation noise NACs than the tracker holds
+            for(int nac = 0x400; nac < 0x410; nac++)
+            {
+                tracker.track(nac);
+            }
+
+            assertEquals(0x293, tracker.getTrackedNAC(), "Dominant NAC survives noise NACs, repeat " + repeat);
+
+            //0x111 also survives: the single-observation NACs are evicted first
+            for(int x = 0; x < 2; x++)
+            {
+                tracker.track(0x111);
+            }
+
+            assertEquals(0x111, tracker.getTrackedNAC(), "Second NAC kept its count, repeat " + repeat);
         }
     }
 }

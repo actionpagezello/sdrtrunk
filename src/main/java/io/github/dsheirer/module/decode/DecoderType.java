@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2025 Dennis Sheirer
+ * Copyright (C) 2014-2023 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,27 +28,29 @@ public enum DecoderType
 {
     //Primary Decoders
     AM("AM", "AM", Protocol.UNKNOWN),
-    DMR("DMR", "DMR", Protocol.DMR),
+    DMR("DMR","DMR", Protocol.DMR),
     LTR("LTR", "LTR", Protocol.LTR),
     LTR_NET("LTR-Net", "LTR-Net", Protocol.LTR_NET),
     MPT1327("MPT1327", "MPT1327", Protocol.MPT1327),
     NBFM("NBFM", "NBFM", Protocol.NBFM),
     NXDN("NXDN", "NXDN", Protocol.NXDN),
     PASSPORT("Passport", "Passport", Protocol.PASSPORT),
+    SMARTNET("Motorola Type II", "Motorola Type II", Protocol.SMARTNET), //AP-fork
+    EDACS("EDACS Extended Addressing", "EDACS", Protocol.EDACS), //AP-fork
     P25_PHASE1("P25 Phase 1", "P25-1", Protocol.APCO25),
     P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2),
 
     //Auxiliary Decoders
-    DCS("Digital Coded Squelch (DCS)", "DCS", Protocol.DCS),
     CTCSS("Continuous Tone-Coded Squelch (CTCSS)", "CTCSS", Protocol.CTCSS),
+    DCS("Digital Coded Squelch (DCS)", "DCS", Protocol.DCS),
     FLEETSYNC2("Fleetsync II", "Fleetsync2", Protocol.FLEETSYNC),
     LJ_1200("LJ1200 173.075", "LJ1200", Protocol.LOJACK),
     MDC1200("MDC1200", "MDC1200", Protocol.MDC1200),
     TAIT_1200("Tait 1200", "Tait 1200", Protocol.TAIT1200);
 
-    private final String mDisplayString;
-    private final String mShortDisplayString;
-    private final Protocol mProtocol;
+    private String mDisplayString;
+    private String mShortDisplayString;
+    private Protocol mProtocol;
 
     DecoderType(String displayString, String shortDisplayString, Protocol protocol)
     {
@@ -60,8 +62,19 @@ public enum DecoderType
     /**
      * Primary decoders that operate on I/Q sample streams
      */
-    public static final EnumSet<DecoderType> PRIMARY_DECODERS = EnumSet.of(AM, DMR, LTR, LTR_NET, MPT1327, NBFM, NXDN,
-            P25_PHASE1, P25_PHASE2, PASSPORT);
+    public static EnumSet<DecoderType> PRIMARY_DECODERS =
+        EnumSet.of(DecoderType.AM,
+        DecoderType.DMR,
+        DecoderType.LTR,
+        DecoderType.LTR_NET,
+        DecoderType.MPT1327,
+        DecoderType.NBFM,
+        DecoderType.NXDN,
+        DecoderType.P25_PHASE1,
+        DecoderType.P25_PHASE2,
+        DecoderType.PASSPORT,
+        DecoderType.SMARTNET,
+        DecoderType.EDACS);
 
     /**
      * Auxiliary decoders that operate on in-band signalling in the decoded audio channel
@@ -71,12 +84,14 @@ public enum DecoderType
     /**
      * Decoders that produce a (recordable) bitstream
      */
-    public static final EnumSet<DecoderType> BITSTREAM_DECODERS = EnumSet.of(DMR, MPT1327, NXDN, P25_PHASE1, P25_PHASE2);
+    public static final EnumSet<DecoderType> BITSTREAM_DECODERS = EnumSet.of(DecoderType.DMR,
+        DecoderType.MPT1327, DecoderType.NXDN, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
 
     /**
      * Decoders that produce (recordable) MBE audio codec frames
      */
-    public static final EnumSet<DecoderType> MBE_AUDIO_CODEC_DECODERS = EnumSet.of(DMR, NXDN, P25_PHASE1, P25_PHASE2);
+    public static final EnumSet<DecoderType> MBE_AUDIO_CODEC_DECODERS =
+        EnumSet.of(DecoderType.DMR, DecoderType.NXDN, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
 
     public Protocol getProtocol()
     {

@@ -17,12 +17,35 @@
  ******************************************************************************/
 package io.github.dsheirer.controller.config;
 
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @JacksonXmlRootElement(localName = "configuration")
 public abstract class Configuration
 {
+    /**
+     * AP-fork (ap-15.9.26): playlist settings this version does not recognise - written by upstream SDRTrunk or a newer
+     * fork - kept as read and written back on save, so opening another program's playlist here never drops its
+     * settings.
+     */
+    private final Map<String,Object> mUnrecognisedSettings = new LinkedHashMap<>();
+
     public Configuration()
     {
+    }
+
+    @JsonAnySetter
+    public void setUnrecognisedSetting(String name, Object value)
+    {
+        mUnrecognisedSettings.put(name, value);
+    }
+
+    @JsonAnyGetter
+    public Map<String,Object> getUnrecognisedSettings()
+    {
+        return mUnrecognisedSettings;
     }
 }

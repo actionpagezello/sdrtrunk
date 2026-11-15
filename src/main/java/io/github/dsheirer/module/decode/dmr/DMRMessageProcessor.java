@@ -18,6 +18,8 @@
  */
 package io.github.dsheirer.module.decode.dmr;
 
+import io.github.dsheirer.module.decode.dmr.channel.DMRAbsoluteChannel;
+import io.github.dsheirer.module.decode.dmr.message.data.csbk.standard.announcement.AnnounceChannelFrequency;
 import io.github.dsheirer.edac.CRCDMR;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.message.IMessage;
@@ -27,6 +29,7 @@ import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
 import io.github.dsheirer.module.decode.dmr.identifier.DMRTalkgroup;
 import io.github.dsheirer.module.decode.dmr.message.CACH;
 import io.github.dsheirer.module.decode.dmr.message.DMRBurst;
+import io.github.dsheirer.module.decode.dmr.message.data.DataMessage;
 import io.github.dsheirer.module.decode.dmr.message.data.DataMessageWithLinkControl;
 import io.github.dsheirer.module.decode.dmr.message.data.IDLEMessage;
 import io.github.dsheirer.module.decode.dmr.message.data.block.DataBlock;
@@ -47,6 +50,7 @@ import io.github.dsheirer.module.decode.dmr.message.data.mbc.MBCAssembler;
 import io.github.dsheirer.module.decode.dmr.message.data.mbc.MBCContinuationBlock;
 import io.github.dsheirer.module.decode.dmr.message.data.packet.PacketSequenceAssembler;
 import io.github.dsheirer.module.decode.dmr.message.data.terminator.Terminator;
+import io.github.dsheirer.module.decode.dmr.message.voice.VoiceAMessage;
 import io.github.dsheirer.module.decode.dmr.message.voice.VoiceEMBMessage;
 import io.github.dsheirer.module.decode.dmr.message.voice.VoiceMessage;
 import io.github.dsheirer.module.decode.dmr.message.voice.VoiceSuperFrameProcessor;
@@ -109,11 +113,151 @@ public class DMRMessageProcessor implements Listener<IMessage>
         return mCrcMaskManager.isIgnoreCRCChecksums() || message.isValid();
     }
 
+    //Color code filter: once 3 consecutive valid data bursts carry the same color code, valid data bursts with a
+    //different color code are discarded until 5 consecutive valid data bursts establish a new one.  A repeater uses
+    //one color code for both timeslots, and bursts framed from noise often have no timeslot yet (0), so the color code
+    //is tracked per channel.
+    private static final int COLOR_CODE_ESTABLISH_COUNT = 3;
+    private static final int COLOR_CODE_CHANGE_COUNT = 5;
+    private boolean mColorCodeFilterEnabled = false;
+    private int mEstablishedColorCode = -1;
+    private int mCandidateColorCode = -1;
+    private int mCandidateColorCodeCount = 0;
+
+    /**
+     * Enables the color code filter for conventional and control channels.  The new DMR decoder (upstream #2517) uses
+     * lower sync thresholds, so it frames more bursts from noise and about 1 per minute of those passes its CRC by
+     * chance (Salem State Police, Audubon: 18 - 23 versus 0 - 3 with 15.10.3 in 12 - 19 minute replays).  Each carries
+     * a random color code and produced garbage SMS and data packets, a false emergency group call and false channel
+     * grants.  Not used on traffic channels, which follow calls across frequencies.
+     * @param enabled true to filter
+     */
+    public void setColorCodeFilterEnabled(boolean enabled)
+    {
+        mColorCodeFilterEnabled = enabled;
+    }
+
+    /**
+     * Applies the color code filter to data bursts.  Only valid data bursts establish the color code.  Once it's
+     * established, invalid data bursts with a different color code are discarded too: the packet assembler doesn't
+     * check header validity, so CRC-failed headers framed from noise produced a "valid" data packet (Salem State
+     * Police, Audubon, 15.10.6 first run: CC 10 headers with CRC errors became a valid defined short data packet).
+     * @param message to check
+     * @return true if the message should be discarded
+     */
+    private boolean isColorCodeMismatch(IMessage message)
+    {
+        if(!mColorCodeFilterEnabled || mCrcMaskManager.isIgnoreCRCChecksums() ||
+           !(message instanceof DataMessage dataMessage) || !dataMessage.getSlotType().isValid())
+        {
+            return false;
+        }
+
+        int colorCode = dataMessage.getSlotType().getColorCode();
+
+        if(!dataMessage.isValid())
+        {
+            return mEstablishedColorCode >= 0 && colorCode != mEstablishedColorCode;
+        }
+
+        if(colorCode == mEstablishedColorCode)
+        {
+            mCandidateColorCode = -1;
+            mCandidateColorCodeCount = 0;
+            return false;
+        }
+
+        if(colorCode == mCandidateColorCode)
+        {
+            mCandidateColorCodeCount++;
+        }
+        else
+        {
+            mCandidateColorCode = colorCode;
+            mCandidateColorCodeCount = 1;
+        }
+
+        int required = mEstablishedColorCode < 0 ? COLOR_CODE_ESTABLISH_COUNT : COLOR_CODE_CHANGE_COUNT;
+
+        if(mCandidateColorCodeCount >= required)
+        {
+            mEstablishedColorCode = colorCode;
+            mCandidateColorCode = -1;
+            mCandidateColorCodeCount = 0;
+            return false;
+        }
+
+        return mEstablishedColorCode >= 0;
+    }
+
+    /**
+     * Holds a voice frame A (the first burst of a voice super frame) per timeslot until the next burst on that timeslot
+     * confirms it with a voice frame B.  Voice frame A is the only voice burst with a sync pattern and it carries no
+     * error detection, so a false sync detection in noise produces a voice frame A that is otherwise indistinguishable
+     * from a real one.  Each one started a call with no radio ID (about 2 per minute on Salem State Police, Audubon).
+     * A voice frame A that isn't followed by a voice frame B on the same timeslot is discarded.  Indexed by timeslot:
+     * 0 (not yet known), 1 and 2.
+     */
+    private final VoiceAMessage[] mPendingVoiceA = new VoiceAMessage[3];
+
     /**
      * Primary message processing
      */
     @Override
     public void receive(IMessage message)
+    {
+        if(message == null)
+        {
+            return;
+        }
+
+        if(isColorCodeMismatch(message))
+        {
+            return;
+        }
+
+        if(message instanceof SyncLossMessage)
+        {
+            mPendingVoiceA[0] = null;
+            mPendingVoiceA[1] = null;
+            mPendingVoiceA[2] = null;
+        }
+        else if(message instanceof DMRBurst burst && burst.getTimeslot() >= 0 && burst.getTimeslot() <= 2)
+        {
+            int index = burst.getTimeslot();
+            VoiceAMessage pending = mPendingVoiceA[index];
+            mPendingVoiceA[index] = null;
+
+            //A voice frame A with an unknown timeslot (0) is confirmed by the next burst on either timeslot, since that
+            //burst's CACH may establish the timeslot.
+            VoiceAMessage pendingUnknown = null;
+
+            if(index != 0)
+            {
+                pendingUnknown = mPendingVoiceA[0];
+                mPendingVoiceA[0] = null;
+            }
+
+            if(message instanceof VoiceEMBMessage)
+            {
+                process(pendingUnknown);
+                process(pending);
+            }
+
+            if(message instanceof VoiceAMessage voiceA)
+            {
+                mPendingVoiceA[index] = voiceA;
+                return;
+            }
+        }
+
+        process(message);
+    }
+
+    /**
+     * Processes the message
+     */
+    private void process(IMessage message)
     {
         if(message == null)
         {
@@ -177,6 +321,12 @@ public class DMRMessageProcessor implements Listener<IMessage>
 
         //Enrich messages that carry DMR Logical Channel Numbers with LCN to frequency mappings
         enrich(message);
+
+        //If this is an AnnounceChannelFrequency MBC CSBK, capture the OTA LCN-to-frequency mapping
+        if(message instanceof AnnounceChannelFrequency acf && acf.isValid() && acf.hasAbsoluteChannelParameters())
+        {
+            updateTimeslotFrequency(acf.getAbsoluteChannelParameters().getChannel());
+        }
 
         //Now that the message has been (potentially) enriched, dispatch it to the modules
         dispatch(message);
@@ -354,5 +504,32 @@ public class DMRMessageProcessor implements Listener<IMessage>
     {
         mMessageListener = null;
         mPacketSequenceAssembler.setMessageListener(null);
+    }
+
+    /**
+     * Dynamically adds or updates a timeslot frequency mapping discovered over the air (e.g. from an
+     * AnnounceChannelFrequency MBC CSBK).  Only adds entries that do not already exist so that user-configured
+     * playlist values take precedence over OTA-discovered values.
+     *
+     * @param channel DMRAbsoluteChannel carrying a known downlink frequency and LCN
+     */
+    public void updateTimeslotFrequency(DMRAbsoluteChannel channel)
+    {
+        if(channel == null || channel.getDownlinkFrequency() <= 0)
+        {
+            return;
+        }
+
+        int lcn = channel.getChannelNumber();
+
+        if(!mTimeslotFrequencyMap.containsKey(lcn))
+        {
+            TimeslotFrequency tf = new TimeslotFrequency();
+            tf.setNumber(lcn);
+            tf.setDownlinkFrequency(channel.getDownlinkFrequency());
+            tf.setUplinkFrequency(channel.getUplinkFrequency());
+            mTimeslotFrequencyMap.put(lcn, tf);
+            mLog.debug("OTA LCN-to-frequency discovered: LCN={} downlink={}Hz", lcn, channel.getDownlinkFrequency());
+        }
     }
 }

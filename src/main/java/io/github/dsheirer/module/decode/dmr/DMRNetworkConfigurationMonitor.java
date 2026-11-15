@@ -240,6 +240,11 @@ public class DMRNetworkConfigurationMonitor
                 {
                     mTier3NeighborSites.put(neighbor.getNeighborSystemIdentityCode().getSite().getValue(), neighbor);
                 }
+                else if(csbk instanceof io.github.dsheirer.module.decode.dmr.message.data.csbk.standard.announcement.AnnounceChannelFrequency acf
+                        && acf.hasAbsoluteChannelParameters())
+                {
+                    addDmrChannel(acf.getAbsoluteChannelParameters().getChannel());
+                }
                 break;
             case HYTERA_08_ANNOUNCEMENT:
             case HYTERA_68_ANNOUNCEMENT:

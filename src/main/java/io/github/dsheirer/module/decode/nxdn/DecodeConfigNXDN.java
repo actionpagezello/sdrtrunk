@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.module.decode.nxdn;
 
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;

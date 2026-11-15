@@ -119,8 +119,11 @@ public class P25AliasTest
         //Identifier transmitted over the air that we want to alias
         APCO25FullyQualifiedTalkgroupIdentifier p25FQTG1 = APCO25FullyQualifiedTalkgroupIdentifier.createTo(aliasGroup, wacn, system, originalGroup);
 
+        //ap-fork: fully qualified identifiers fall through to match local talkgroup aliases
+        //when no exact fully-qualified alias exists. See AliasList.TalkgroupAliasList.getAlias(...).
         List<Alias> aliases = aliasList.getAliases(p25FQTG1);
-        assertEquals(0, aliases.size(), "Expected 0 matching alias");
+        assertEquals(1, aliases.size(), "Expected 1 matching alias");
+        assertEquals(correctAliasName, aliases.getFirst().getName(), "Unexpected alias name");
     }
 
     /**
@@ -146,8 +149,11 @@ public class P25AliasTest
         //Identifier transmitted over the air that we want to alias
         APCO25FullyQualifiedTalkgroupIdentifier p25FQTG1 = APCO25FullyQualifiedTalkgroupIdentifier.createTo(aliasGroup, wacn, system, originalGroup);
 
+        //ap-fork: fully qualified identifiers fall through to match local talkgroup range aliases
+        //when no exact fully-qualified alias exists.
         List<Alias> aliases = aliasList.getAliases(p25FQTG1);
-        assertEquals(0, aliases.size(), "Expected 0 matching aliases");
+        assertEquals(1, aliases.size(), "Expected 1 matching alias");
+        assertEquals(correctAliasName, aliases.getFirst().getName(), "Unexpected alias name");
     }
 
     @Test
@@ -230,8 +236,11 @@ public class P25AliasTest
         //Identifier transmitted over the air that we want to alias
         APCO25FullyQualifiedRadioIdentifier p25FQTG1 = APCO25FullyQualifiedRadioIdentifier.createFrom(aliasRadio, wacn, system, originalRadio);
 
+        //ap-fork: fully qualified radio identifiers fall through to match local radio aliases
+        //when no exact fully-qualified alias exists. See AliasList.RadioAliasList.getAlias(...).
         List<Alias> aliases = aliasList.getAliases(p25FQTG1);
-        assertEquals(0, aliases.size(), "Expected 0 matching aliases");
+        assertEquals(1, aliases.size(), "Expected 1 matching alias");
+        assertEquals(correctAliasName, aliases.getFirst().getName(), "Unexpected alias name");
     }
 
     /**
@@ -257,7 +266,10 @@ public class P25AliasTest
         //Identifier transmitted over the air that we want to alias
         APCO25FullyQualifiedRadioIdentifier p25FQTG1 = APCO25FullyQualifiedRadioIdentifier.createFrom(aliasRadio, wacn, system, originalRadio);
 
+        //ap-fork: fully qualified radio identifiers fall through to match local radio range aliases
+        //when no exact fully-qualified alias exists.
         List<Alias> aliases = aliasList.getAliases(p25FQTG1);
-        assertEquals(0, aliases.size(), "Expected 0 matching aliases");
+        assertEquals(1, aliases.size(), "Expected 1 matching alias");
+        assertEquals(correctAliasName, aliases.getFirst().getName(), "Unexpected alias name");
     }
 }

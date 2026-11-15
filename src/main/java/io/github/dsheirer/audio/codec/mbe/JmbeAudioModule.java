@@ -66,6 +66,15 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
     }
 
     /**
+     * AP-fork: true when the loaded JMBE library is version 2.0 or later, which applies its own gain control.  The
+     * audio modules skip their legacy fixed gain then - applied on top of the library's it clipped (upstream #2489).
+     */
+    protected boolean hasLibraryGainControl()
+    {
+        return mAudioCodec instanceof IAudioCodecV2;
+    }
+
+    /**
      * List of features supported by the JMBE audio library.  Note: features are only supported in Version 2.0+
      * @return list of features or an empty list if the current library version doesn't support features.
      */

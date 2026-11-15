@@ -87,6 +87,8 @@ public class RTL2832TunerController extends TunerController
     private int mUsbSerialNumberIndex = 0;
     private SampleRate mSampleRate = DEFAULT_SAMPLE_RATE;
     private int[] mTunerGains = new int[0];
+    private long mMinimumTunableFrequency;
+    private long mMaximumTunableFrequency;
     private boolean mBiasTEnabled = false;
     private boolean mStreaming = false;
 
@@ -202,10 +204,30 @@ public class RTL2832TunerController extends TunerController
      */
     private void configureTunerLimits(long minimum, long maximum, int dcSpikeHalfBandwidth, double usableBandwidth)
     {
+        mMinimumTunableFrequency = minimum;
+        mMaximumTunableFrequency = maximum;
         setMinimumFrequency(minimum);
         setMaximumFrequency(maximum);
         setMiddleUnusableHalfBandwidth(dcSpikeHalfBandwidth);
         setUsableBandwidthPercentage(usableBandwidth);
+    }
+
+    /**
+     * AP-fork (ap-16.1): lowest frequency the embedded tuner can tune.  getMinimumFrequency() is the user's frequency
+     * range once a configuration is applied, so the tuner editor uses this to validate a new range - with the range
+     * as the limit, a range could only be narrowed (Baker 2026-11-08: 450-459.9 MHz could not be moved to 154 MHz).
+     */
+    public long getMinimumTunableFrequency()
+    {
+        return mMinimumTunableFrequency > 0 ? mMinimumTunableFrequency : getMinimumFrequency();
+    }
+
+    /**
+     * AP-fork (ap-16.1): highest frequency the embedded tuner can tune.  See getMinimumTunableFrequency().
+     */
+    public long getMaximumTunableFrequency()
+    {
+        return mMaximumTunableFrequency > 0 ? mMaximumTunableFrequency : getMaximumFrequency();
     }
 
     /**
@@ -217,14 +239,24 @@ public class RTL2832TunerController extends TunerController
     {
         if(device != null)
         {
+            //ap-fork: the bias-T is turned off while the stream is still running.  No control transfer is sent between
+            //stopping the stream and closing the device - see removeBufferListener().
             try
             {
-                device.stopRx();
                 device.setBiasTee(false);
             }
             catch(RtlSdrException | RuntimeException e)
             {
                 mLog.error("Error turning off RTL-2832 bias-T", e);
+            }
+
+            try
+            {
+                device.stopRx();
+            }
+            catch(RuntimeException e)
+            {
+                mLog.error("Error stopping RTL-2832 sample stream", e);
             }
 
             try
@@ -460,6 +492,14 @@ public class RTL2832TunerController extends TunerController
     {
         try
         {
+            //ap-fork: the stream keeps running while the tuner has no channels (see removeBufferListener), so the
+            //samples are dropped here, before they are copied.  The broadcaster's listener list is thread safe and is
+            //checked without the controller lock, which a thread that is stopping this stream can be holding.
+            if(!mNativeBufferBroadcaster.hasListeners())
+            {
+                return true;
+            }
+
             //The buffer factory copies the samples from native memory
             broadcast(mNativeBufferFactory.getBuffer(buffer.samples().asByteBuffer(), System.currentTimeMillis()));
         }
@@ -480,18 +520,6 @@ public class RTL2832TunerController extends TunerController
         {
             execute(device -> device.startRx(this::receive, USB_TRANSFER_BUFFER_COUNT, USB_TRANSFER_BUFFER_SIZE));
             mStreaming = mDevice != null;
-        }
-    }
-
-    /**
-     * Stops the sample stream if it's started.
-     */
-    private void stopStreaming() throws SourceException
-    {
-        if(mStreaming)
-        {
-            mStreaming = false;
-            execute(RtlSdrDevice::stopRx);
         }
     }
 
@@ -522,7 +550,24 @@ public class RTL2832TunerController extends TunerController
     }
 
     /**
-     * Removes the IQ buffer listener and stops streaming if there are no more listeners.
+     * Removes the IQ buffer listener.
+     *
+     * ap-fork (edacs-10): the sample stream is NOT stopped when the last listener is removed.  It runs from the first
+     * channel until the tuner is stopped.  On 2026-11-10 Monson stopped 23 times without a shutdown.  All 13 crash
+     * reports seen were EXCEPTION_ACCESS_VIOLATION in ntdll.dll, reached from libusb-1.0.dll and rtlsdr.dll, and the
+     * two read in full both came from ChannelRotationMonitor rotating a multi-frequency channel to its next frequency:
+     * one faulted in the buffer reset inside startRx (so the stream had been stopped) and the other in set frequency.
+     * The working theory, NOT proven, is that a control transfer sent after the stream has been stopped can fault
+     * inside libusb.  Keeping the stream running removes the stop/start cycle, so control
+     * transfers are only ever sent to a streaming device, which is what every shared tuner already does.  The cost is
+     * that an RTL tuner with no channels keeps its USB stream open; its samples are dropped in receive() before they
+     * are copied.
+     *
+     * edacs-13: upstream found the cause (jRTL issue #4, fixed in jRTL 1.4.0.3, which this build uses).  When a stream
+     * ended, librtlsdr freed its USB transfers before libusb had handed all of them back, and a control transfer on
+     * another thread then processed the completion of a freed transfer.  That confirms the theory above for the
+     * stop-then-retune path, and the driver fix also covers a transfer that fails in the middle of a stream, which this
+     * change does not.  This change is kept as a second layer until Monson has run the driver fix without it.
      */
     @Override
     public void removeBufferListener(Listener<INativeBuffer> listener)
@@ -532,15 +577,6 @@ public class RTL2832TunerController extends TunerController
         try
         {
             super.removeBufferListener(listener);
-
-            if(!hasBufferListeners())
-            {
-                stopStreaming();
-            }
-        }
-        catch(SourceException se)
-        {
-            mLog.error("Error stopping streaming on RTL-2832 tuner", se);
         }
         finally
         {

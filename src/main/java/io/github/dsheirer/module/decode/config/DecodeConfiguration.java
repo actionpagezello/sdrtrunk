@@ -35,6 +35,8 @@ import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.decode.nxdn.DecodeConfigNXDN;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
 import io.github.dsheirer.module.decode.passport.DecodeConfigPassport;
+import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -48,48 +50,25 @@ import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
     @JsonSubTypes.Type(value = DecodeConfigNBFM.class, name = "decodeConfigNBFM"),
     @JsonSubTypes.Type(value = DecodeConfigNXDN.class, name = "decodeConfigNXDN"),
     @JsonSubTypes.Type(value = DecodeConfigP25.class, name = "decodeConfigP25"),
-    @JsonSubTypes.Type(value = DecodeConfigPassport.class, name = "decodeConfigPassport")
+    @JsonSubTypes.Type(value = DecodeConfigPassport.class, name = "decodeConfigPassport"),
+    @JsonSubTypes.Type(value = DecodeConfigSmartNet.class, name = "decodeConfigSmartNet"),
+    @JsonSubTypes.Type(value = DecodeConfigEDACS.class, name = "decodeConfigEDACS")
 })
 @JacksonXmlRootElement(localName = "decode_configuration")
 public abstract class DecodeConfiguration extends Configuration
 {
+    public static final int DEFAULT_CALL_TIMEOUT_DELAY_SECONDS = 45;
+    public static final int CALL_TIMEOUT_MINIMUM = 1;
+    public static final int CALL_TIMEOUT_MAXIMUM = 180;
+    public static final int TRAFFIC_CHANNEL_LIMIT_DEFAULT = 20;
     public static final int DEFAULT_AUDIO_HANGTIME_MS = 0;
     public static final int AUDIO_HANGTIME_MINIMUM = 0;
     public static final int AUDIO_HANGTIME_MAXIMUM = 2000;
 
     private int mAudioHangtimeMs = DEFAULT_AUDIO_HANGTIME_MS;
 
-    public static final int DEFAULT_CALL_TIMEOUT_DELAY_SECONDS = 45;
-    public static final int CALL_TIMEOUT_MINIMUM = 1;
-    public static final int CALL_TIMEOUT_MAXIMUM = 180;
-    public static final int TRAFFIC_CHANNEL_LIMIT_DEFAULT = 20;
-
     public DecodeConfiguration()
     {
-    }
-
-    @JsonIgnore
-    public abstract DecoderType getDecoderType();
-
-    @JsonIgnore
-    public abstract ChannelSpecification getChannelSpecification();
-
-    @JsonIgnore
-    public int getTimeslotCount()
-    {
-        return 1;
-    }
-
-    @JsonIgnore
-    public int[] getTimeslots()
-    {
-        return new int[0];
-    }
-
-    @JsonIgnore
-    public int getBitRate()
-    {
-        return getDecoderType().getProtocol().getBitRate();
     }
 
     /**
@@ -115,5 +94,29 @@ public abstract class DecodeConfiguration extends Configuration
     {
         mAudioHangtimeMs = Math.max(AUDIO_HANGTIME_MINIMUM,
             Math.min(AUDIO_HANGTIME_MAXIMUM, hangtimeMs));
+    }
+
+    @JsonIgnore
+    public abstract DecoderType getDecoderType();
+
+    @JsonIgnore
+    public abstract ChannelSpecification getChannelSpecification();
+
+    @JsonIgnore
+    public int getTimeslotCount()
+    {
+        return 1;
+    }
+
+    @JsonIgnore
+    public int[] getTimeslots()
+    {
+        return new int[0];
+    }
+
+    @JsonIgnore
+    public int getBitRate()
+    {
+        return getDecoderType().getProtocol().getBitRate();
     }
 }

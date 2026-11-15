@@ -21,6 +21,7 @@ package io.github.dsheirer.module.decode.p25.audio;
 
 import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.AmbeAudioModule;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.bits.BinaryMessage;
@@ -63,10 +64,32 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
     private boolean mEncryptedCallStateEstablished = false;
     private boolean mEncryptedCall = false;
     private Listener<IMessage> mMessageListener;
+    private volatile GraphicEqualizer mGraphicEQ;
 
     public P25P2AudioModule(UserPreferences userPreferences, int timeslot, AliasList aliasList)
     {
         super(userPreferences, aliasList, timeslot);
+    }
+
+    /**
+     * Configures the 10-band graphic equalizer for this audio module.
+     *
+     * @param enabled true to enable the EQ
+     * @param bandGains array of 10 gain values in dB (-12 to +12)
+     */
+    public void setGraphicEQ(boolean enabled, double[] bandGains)
+    {
+        // AMBE audio is decoded at 8 kHz
+        mGraphicEQ = new GraphicEqualizer(8000.0);
+        mGraphicEQ.setEnabled(enabled);
+
+        if(bandGains != null)
+        {
+            mGraphicEQ.setBandGains(bandGains);
+        }
+
+        mLog.debug("P25P2AudioModule graphic EQ configured: enabled={} gains={}",
+            enabled, bandGains != null ? java.util.Arrays.toString(bandGains) : "null");
     }
 
     @Override
@@ -188,7 +211,15 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                 try
                 {
                     IAudioWithMetadata audioWithMetadata = getAudioCodec().getAudioWithMetadata(voiceFrameBytes);
-                    addAudio(audioWithMetadata.getAudio());
+                    float[] audio = audioWithMetadata.getAudio();
+
+                    GraphicEqualizer eq = mGraphicEQ;
+                    if(eq != null && eq.isEnabled())
+                    {
+                        eq.process(audio);
+                    }
+
+                    addAudio(audio);
                     processMetadata(audioWithMetadata, timestamp);
                 }
                 catch(Exception e)

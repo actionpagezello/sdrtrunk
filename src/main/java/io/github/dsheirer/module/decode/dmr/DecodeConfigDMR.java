@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.module.decode.dmr;
 
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.module.decode.DecoderType;
@@ -39,6 +40,7 @@ public class DecodeConfigDMR extends DecodeConfigJMBE
     public static final int CHANNEL_ROTATION_DELAY_MAXIMUM_MS = 2000;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mIgnoreDataCalls = true;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
     private boolean mIgnoreCRCChecksums = false;
     private boolean mUseCompressedTalkgroups = false;
     private List<TimeslotFrequency> mTimeslotMap = new ArrayList<>();
@@ -90,6 +92,23 @@ public class DecodeConfigDMR extends DecodeConfigJMBE
     public void setIgnoreDataCalls(boolean ignore)
     {
         mIgnoreDataCalls = ignore;
+    }
+
+    /**
+     * Indicates if talkgroups without an alias entry should be ignored (no traffic channel allocated).
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "ignore_unaliased_talkgroups")
+    public boolean getIgnoreUnaliasedTalkgroups()
+    {
+        return mIgnoreUnaliasedTalkgroups;
+    }
+
+    /**
+     * Sets whether talkgroups without an alias entry should be ignored.
+     */
+    public void setIgnoreUnaliasedTalkgroups(boolean ignore)
+    {
+        mIgnoreUnaliasedTalkgroups = ignore;
     }
 
     /**
@@ -162,7 +181,7 @@ public class DecodeConfigDMR extends DecodeConfigJMBE
     @Override
     public ChannelSpecification getChannelSpecification()
     {
-        return new ChannelSpecification(24000.0, 12500, 6500.0, 7200.0);
+        return new ChannelSpecification(50000.0, 12500, 6500.0, 7200.0);
     }
 
     /**

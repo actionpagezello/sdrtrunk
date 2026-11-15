@@ -28,9 +28,12 @@ import io.github.dsheirer.module.decode.event.MessageActivityPanel;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.settings.SettingsManager;
+import io.github.dsheirer.source.tuner.manager.TunerManager;
+import java.awt.Color;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JPanel;
+import javax.swing.event.ChangeListener;
 
 /**
  * Swing panel for Now Playing channels table and channel details tab set.
@@ -45,22 +48,34 @@ public class NowPlayingPanel extends JPanel
     private JideTabbedPane mTabbedPane;
     private JideSplitPane mSplitPane;
     private boolean mDetailTabsVisible;
+    private ChangeListener mTabbedPaneChangeListener;
 
     /**
      * GUI panel that combines the currently decoding channels metadata table and viewers for channel details,
      * messages, events, and spectral view.
      */
     public NowPlayingPanel(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences,
-                           SettingsManager settingsManager, boolean detailTabsVisible)
+                           SettingsManager settingsManager, TunerManager tunerManager, boolean detailTabsVisible)
     {
         mChannelDetailPanel = new ChannelDetailPanel(playlistManager.getChannelProcessingManager());
         mDecodeEventPanel = new DecodeEventPanel(iconModel, userPreferences, playlistManager.getAliasModel());
         mMessageActivityPanel = new MessageActivityPanel(userPreferences);
-        mChannelMetadataPanel = new ChannelMetadataPanel(playlistManager, iconModel, userPreferences);
+        mChannelMetadataPanel = new ChannelMetadataPanel(playlistManager, iconModel, userPreferences, tunerManager);
         mChannelSpectrumSquelchPanel = new ChannelSpectrumPanel(playlistManager, settingsManager);
         mDetailTabsVisible = detailTabsVisible;
 
         init();
+    }
+
+    /**
+     * Dispose method to clean up listeners
+     */
+    public void dispose()
+    {
+        if(mTabbedPane != null && mTabbedPaneChangeListener != null)
+        {
+            mTabbedPane.removeChangeListener(mTabbedPaneChangeListener);
+        }
     }
 
     /**
@@ -98,8 +113,9 @@ public class NowPlayingPanel extends JPanel
             mTabbedPane.addTab("Channel", mChannelSpectrumSquelchPanel);
             mTabbedPane.setFont(this.getFont());
             //Register state change listener to toggle visibility state for channel tab to turn-on/off FFT processing
-            mTabbedPane.addChangeListener(e -> mChannelSpectrumSquelchPanel.setPanelVisible(getTabbedPane().getSelectedIndex() == getTabbedPane()
-                    .indexOfComponent(mChannelSpectrumSquelchPanel)));
+            mTabbedPaneChangeListener = e -> mChannelSpectrumSquelchPanel.setPanelVisible(getTabbedPane().getSelectedIndex() == getTabbedPane()
+                    .indexOfComponent(mChannelSpectrumSquelchPanel));
+            mTabbedPane.addChangeListener(mTabbedPaneChangeListener);
         }
 
         return mTabbedPane;

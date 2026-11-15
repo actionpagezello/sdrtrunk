@@ -33,6 +33,7 @@ import io.github.dsheirer.source.tuner.TunerController;
 import io.github.dsheirer.source.tuner.TunerType;
 import io.github.dsheirer.source.tuner.configuration.TunerConfiguration;
 import io.github.dsheirer.source.tuner.manager.UsbDeviceLookup;
+import io.github.dsheirer.source.tuner.wideband.WidebandStreamMonitor;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -81,6 +82,8 @@ public class AirspyTunerController extends TunerController
     private int mSampleRate = 0;
     private volatile float mSamplesPerMillisecond = 0.0f;
     private boolean mStreaming = false;
+    //ap-fork (edacs-12): counts and logs dropped samples - logging only, see WidebandStreamMonitor
+    private final WidebandStreamMonitor mStreamMonitor;
 
     /**
      * Constructs an instance
@@ -93,6 +96,7 @@ public class AirspyTunerController extends TunerController
         super(tunerErrorListener);
         mBus = bus;
         mPortAddress = portAddress;
+        mStreamMonitor = new WidebandStreamMonitor("Airspy", bus, portAddress);
         setMinimumFrequency(MINIMUM_TUNABLE_FREQUENCY_HZ);
         setMaximumFrequency(MAXIMUM_TUNABLE_FREQUENCY_HZ);
         setMiddleUnusableHalfBandwidth(0);
@@ -127,6 +131,8 @@ public class AirspyTunerController extends TunerController
             mDevice.setSampleType(SampleType.FLOAT32_IQ);
             mDeviceInfo = new AirspyDeviceInformation(mDevice.boardName(), mDevice.firmwareVersion(),
                     mDevice.partIdSerialNumber());
+            mStreamMonitor.debug("device opened: " + mDeviceInfo.getBoardName() + ", firmware " +
+                mDeviceInfo.getVersion() + ", serial " + mDeviceInfo.getSerialNumber());
             mSampleRates.clear();
 
             for(long rate : mDevice.sampleRates())
@@ -174,6 +180,7 @@ public class AirspyTunerController extends TunerController
 
         mNativeBufferBroadcaster.clear();
         closeDevice(device);
+        mStreamMonitor.streamStopped();
     }
 
     /**
@@ -269,6 +276,8 @@ public class AirspyTunerController extends TunerController
     {
         try
         {
+            //libairspy reports the samples it dropped between the previous buffer and this one
+            mStreamMonitor.received(buffer.sampleCount(), buffer.droppedSamples());
             float[] samples = buffer.copyFloats();
 
             for(int x = 0; x < samples.length; x++)
@@ -293,8 +302,20 @@ public class AirspyTunerController extends TunerController
     {
         if(!mStreaming)
         {
-            execute(device -> device.startRx(this::receive));
-            mStreaming = mDevice != null;
+            mStreamMonitor.streamStarted(mSampleRate);
+
+            try
+            {
+                execute(device -> device.startRx(this::receive));
+                mStreaming = mDevice != null;
+            }
+            finally
+            {
+                if(!mStreaming)
+                {
+                    mStreamMonitor.streamStopped();
+                }
+            }
         }
     }
 
@@ -306,7 +327,15 @@ public class AirspyTunerController extends TunerController
         if(mStreaming)
         {
             mStreaming = false;
-            execute(AirspyDevice::stopRx);
+
+            try
+            {
+                execute(AirspyDevice::stopRx);
+            }
+            finally
+            {
+                mStreamMonitor.streamStopped();
+            }
         }
     }
 
@@ -389,6 +418,16 @@ public class AirspyTunerController extends TunerController
                 //Set the gain mode last, so custom values are already set, and linearity and sensitivity modes will
                 //automatically override the custom values.
                 setGain(config.getGain());
+
+                if(mStreamMonitor.isDebugEnabled())
+                {
+                    mStreamMonitor.debug("settings applied: sample rate " + mSampleRate + " Hz, frequency " +
+                        config.getFrequency() + " Hz, correction " + config.getFrequencyCorrection() + " ppm, gain mode " +
+                        config.getGain() + ", LNA " + config.getLNAGain() + ", mixer " + config.getMixerGain() + ", IF " +
+                        config.getIFGain() + ", LNA AGC " + config.isLNAAGC() + ", mixer AGC " + config.isMixerAGC() +
+                        ", bias-T " + config.isBiasT() + " (linearity and sensitivity gain modes override the LNA, " +
+                        "mixer and IF values)");
+                }
             }
             catch(Exception e)
             {
@@ -413,6 +452,7 @@ public class AirspyTunerController extends TunerController
         if(MINIMUM_TUNABLE_FREQUENCY_HZ <= frequency && frequency <= MAXIMUM_TUNABLE_FREQUENCY_HZ)
         {
             execute(device -> device.setFrequency(frequency));
+            mStreamMonitor.debug("retuned to " + frequency + " Hz");
         }
         else
         {

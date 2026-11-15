@@ -222,14 +222,16 @@ public class BPTC_128_77SoftTest
                 }
 
                 EMB emb = new EMB(received, softBits);
-                assertEquals(validWord, received.getInt(0, 15), "Trial " + trial + " errors " + errorCount);
 
                 if(errorCount == 1)
                 {
+                    assertEquals(validWord, received.getInt(0, 15), "Trial " + trial + " errors " + errorCount);
                     assertTrue(emb.isValid());
                 }
                 else
                 {
+                    //ap fork: the soft bits don't override the closest valid word, so 4 bit errors (beyond the hard
+                    //decision correction capability) are not recovered, but the word must not be marked valid.
                     assertFalse(emb.isValid());
                 }
             }

@@ -19,6 +19,8 @@
 
 package io.github.dsheirer.source.tuner.manager;
 
+import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.gui.preference.tuner.RspDuoSelectionMode;
 import io.github.dsheirer.libusb.LibUsb;
 import io.github.dsheirer.libusb.UsbContext;
@@ -53,10 +55,13 @@ import io.github.dsheirer.source.tuner.sdrplay.rspDuo.DiscoveredRspDuoTuner1;
 import io.github.dsheirer.source.tuner.ui.DiscoveredTunerModel;
 import io.github.dsheirer.util.ThreadPool;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,6 +83,12 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     private final HotplugEventSupport mHotplugEventSupport = new HotplugEventSupport();
     private boolean mLibUsbAvailable = false;
     private SDRplay mSDRplay;
+    //AP-fork (edacs-14): re-attaches an RSP that the SDRplay API reported as removed and restarts its channels
+    private final RspRecoveryMonitor<Channel> mRspRecoveryMonitor;
+    //Guards the discovery session, which RSP recovery uses from its own thread
+    private final Object mSDRplayLock = new Object();
+    private volatile ChannelProcessingManager mChannelProcessingManager;
+    private volatile Predicate<Channel> mChannelInPlaylist = channel -> true;
 
     /**
      * Constructs an instance
@@ -88,6 +99,26 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         mUserPreferences = userPreferences;
         mTunerConfigurationManager = new TunerConfigurationManager(userPreferences);
         mDiscoveredTunerModel = new DiscoveredTunerModel(mTunerConfigurationManager);
+        mRspRecoveryMonitor = new RspRecoveryMonitor<>(new RspRecoveryHost(), new RspRecoveryScheduler());
+        mDiscoveredTunerModel.setRspRemovalListener(tuner ->
+            mRspRecoveryMonitor.removing(tuner.getDeviceInfo().serialNumber(), tuner.getId())::complete);
+    }
+
+    /**
+     * AP-fork (edacs-14): gives RSP recovery the channels - which playlist channels are running, and how to start
+     * the ones that an RSP removal stopped.
+     * @param channelProcessingManager that starts and stops channels
+     * @param channelInPlaylist tests that a channel is still in the playlist (it may have been deleted meanwhile)
+     */
+    public void setRspRecoveryChannels(ChannelProcessingManager channelProcessingManager,
+                                       Predicate<Channel> channelInPlaylist)
+    {
+        mChannelProcessingManager = channelProcessingManager;
+
+        if(channelInPlaylist != null)
+        {
+            mChannelInPlaylist = channelInPlaylist;
+        }
     }
 
     /**
@@ -146,6 +177,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     {
         //Stop hotplug detection first so that no tuner is added or removed while the tuners are released
         mHotplugEventSupport.stop();
+        mRspRecoveryMonitor.stop();
 
         //Stop all tuners
         mDiscoveredTunerModel.releaseDiscoveredTuners();
@@ -391,22 +423,208 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     }
 
     /**
+     * AP-fork (edacs-14): the RSP devices the SDRplay API lists now, for RSP recovery.  The API
+     * lists only devices that no program has selected, so an RSP that SDRTrunk is using is not in the list.
+     */
+    private List<DeviceInfo> getAvailableRspDevices() throws SDRplayException
+    {
+        synchronized(mSDRplayLock)
+        {
+            if(mSDRplay == null)
+            {
+                mSDRplay = SDRplay.open();
+            }
+
+            return mSDRplay.devices();
+        }
+    }
+
+    /**
+     * AP-fork (edacs-14): adds and starts the tuner(s) for an RSP that the SDRplay API lists again after it was
+     * removed, the same way as at startup.  A tuner that doesn't start is taken out again so that the next check
+     * can retry - left in the model it would sit there in an error state and block the retry.
+     * @return true if a tuner for the device is started
+     */
+    private boolean attachRsp(String serialNumber) throws SDRplayException
+    {
+        ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
+        RspDuoSelectionMode duoSelectionMode = mUserPreferences.getTunerPreference().getRspDuoTunerMode();
+        boolean started = false;
+
+        for(DeviceInfo deviceInfo: getAvailableRspDevices())
+        {
+            if(!deviceInfo.serialNumber().equals(serialNumber))
+            {
+                continue;
+            }
+
+            for(DiscoveredRspTuner tuner: TunerFactory.getRspTuners(deviceInfo, channelizerType, duoSelectionMode))
+            {
+                DiscoveredTuner existing = mDiscoveredTunerModel.getDiscoveredTuner(tuner.getId());
+
+                if(existing != null)
+                {
+                    started |= existing.hasTuner();
+                    continue;
+                }
+
+                startAndConfigureTuner(tuner);
+
+                if(tuner.hasTuner())
+                {
+                    started = true;
+                }
+                else if(tuner.isEnabled())
+                {
+                    mLog.warn("RSP recovery: [" + tuner.getId() + "] did not start - " + tuner.getErrorMessage());
+                    mDiscoveredTunerModel.removeDiscoveredTuner(tuner);
+                    tuner.removeTunerStatusListener(this);
+                }
+            }
+        }
+
+        return started;
+    }
+
+    /**
+     * AP-fork (edacs-14): what RSP recovery needs from the application.
+     */
+    private class RspRecoveryHost implements RspRecoveryMonitor.Host<Channel>
+    {
+        @Override
+        public List<String> getAvailableSerialNumbers()
+        {
+            List<String> serialNumbers = new ArrayList<>();
+
+            try
+            {
+                for(DeviceInfo deviceInfo: getAvailableRspDevices())
+                {
+                    serialNumbers.add(deviceInfo.serialNumber());
+                }
+            }
+            catch(SDRplayException | RuntimeException e)
+            {
+                mLog.warn("RSP recovery: the SDRplay API did not give a device list - " + e.getMessage());
+            }
+
+            return serialNumbers;
+        }
+
+        @Override
+        public boolean attach(String serialNumber)
+        {
+            try
+            {
+                return attachRsp(serialNumber);
+            }
+            catch(SDRplayException e)
+            {
+                mLog.warn("RSP recovery: the SDRplay API did not give a device list - " + e.getMessage());
+                return false;
+            }
+        }
+
+        @Override
+        public Collection<Channel> getRunningChannels()
+        {
+            List<Channel> running = new ArrayList<>();
+            ChannelProcessingManager manager = mChannelProcessingManager;
+
+            if(manager != null)
+            {
+                for(Channel channel: manager.getProcessingChains().keySet())
+                {
+                    if(channel.isStandardChannel())
+                    {
+                        running.add(channel);
+                    }
+                }
+            }
+
+            return running;
+        }
+
+        @Override
+        public boolean start(Channel channel) throws Exception
+        {
+            ChannelProcessingManager manager = mChannelProcessingManager;
+
+            if(manager == null || manager.getProcessingChains().containsKey(channel) || !mChannelInPlaylist.test(channel))
+            {
+                return false;
+            }
+
+            manager.start(channel);
+            return true;
+        }
+
+        @Override
+        public String getName(Channel channel)
+        {
+            return channel.getName();
+        }
+    }
+
+    /**
+     * AP-fork (edacs-14): runs the RSP recovery checks on the shared scheduled thread pool.
+     */
+    private static class RspRecoveryScheduler implements RspRecoveryMonitor.Scheduler
+    {
+        @Override
+        public ScheduledFuture<?> repeat(Runnable task, long firstDelaySeconds, long intervalSeconds)
+        {
+            return ThreadPool.SCHEDULED.scheduleWithFixedDelay(() ->
+            {
+                try
+                {
+                    task.run();
+                }
+                catch(Throwable t)
+                {
+                    //An exception would end the repeating task without a trace
+                    mLog.error("RSP recovery: error during check", t);
+                }
+            }, firstDelaySeconds, intervalSeconds, TimeUnit.SECONDS);
+        }
+
+        @Override
+        public void later(Runnable task, long delaySeconds)
+        {
+            ThreadPool.SCHEDULED.schedule(() ->
+            {
+                try
+                {
+                    task.run();
+                }
+                catch(Throwable t)
+                {
+                    mLog.error("RSP recovery: error starting channels", t);
+                }
+            }, delaySeconds, TimeUnit.SECONDS);
+        }
+    }
+
+    /**
      * Closes the SDRplay API discovery session.
      */
     private void closeSDRplay()
     {
-        if(mSDRplay != null)
+        synchronized(mSDRplayLock)
         {
-            try
+            if(mSDRplay != null)
             {
-                mSDRplay.close();
-            }
-            catch(SDRplayException se)
-            {
-                mLog.warn("Error closing SDRplay API - " + se.getMessage());
-            }
+                try
+                {
+                    mSDRplay.close();
+                }
+                catch(SDRplayException se)
+                {
+                    mLog.warn("Error closing SDRplay API - " + se.getMessage());
+                }
 
-            mSDRplay = null;
+                mSDRplay = null;
+            }
         }
     }
 

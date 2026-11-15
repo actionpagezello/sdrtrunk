@@ -25,9 +25,13 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.eventbus.MyEventBus;
+import io.github.dsheirer.filter.Filter;
+import io.github.dsheirer.filter.IFilter;
+import io.github.dsheirer.filter.FilterElement;
 import io.github.dsheirer.filter.FilterSet;
 import io.github.dsheirer.gui.theme.ThemeManager;
 import io.github.dsheirer.icon.IconModel;
+import io.github.dsheirer.preference.NowPlayingPreference;
 import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
@@ -60,24 +64,24 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
 
-/**
- * Decode event table view
- */
 public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain>
 {
     private static final long serialVersionUID = 1L;
     private final static Logger mLog = LoggerFactory.getLogger(DecodeEventPanel.class);
     private static final String TABLE_PREFERENCE_KEY = "decode.event.panel";
 
-    private final JTable mTable;
-    private final DecodeEventModel mEventModel = new DecodeEventModel();
+    private JTable mTable;
+    private JTableColumnWidthMonitor mTableColumnWidthMonitor;
+    private DecodeEventModel mEventModel = new DecodeEventModel();
     private DecodeEventHistory mCurrentEventHistory;
-    private final IconModel mIconModel;
-    private final AliasModel mAliasModel;
-    private final UserPreferences mUserPreferences;
-    private final TimestampCellRenderer mTimestampCellRenderer;
-    private final FilterSet<IDecodeEvent> mFilterSet = new DecodeEventFilterSet();
-    private final HistoryManagementPanel<IDecodeEvent> mHistoryManagementPanel;
+    private JScrollPane mEmptyScroller;
+    private IconModel mIconModel;
+    private AliasModel mAliasModel;
+    private UserPreferences mUserPreferences;
+    private TimestampCellRenderer mTimestampCellRenderer;
+    private FilterSet<IDecodeEvent> mFilterSet = new DecodeEventFilterSet();
+    private TableRowSorter<TableModel> mTableRowSorter;
+    private HistoryManagementPanel<IDecodeEvent> mHistoryManagementPanel;
 
 
     /**
@@ -94,19 +98,60 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
         mUserPreferences = userPreferences;
         mTimestampCellRenderer = new TimestampCellRenderer();
         mTable = new JTable(mEventModel);
-        TableRowSorter<TableModel> tableRowSorter = new TableRowSorter<>(mEventModel);
-        tableRowSorter.setRowFilter(new EventRowFilter());
-        mTable.setRowSorter(tableRowSorter);
-        JTableColumnWidthMonitor tableColumnWidthMonitor = new JTableColumnWidthMonitor(mUserPreferences, mTable, TABLE_PREFERENCE_KEY);
+        mTableRowSorter = new TableRowSorter<>(mEventModel);
+        mTableRowSorter.setRowFilter(new EventRowFilter());
+        mTable.setRowSorter(mTableRowSorter);
+        mTableColumnWidthMonitor = new JTableColumnWidthMonitor(mUserPreferences, mTable, TABLE_PREFERENCE_KEY);
         updateCellRenderers();
-        mHistoryManagementPanel = new HistoryManagementPanel<>(mEventModel, "Event Filter Editor");
+        NowPlayingPreference nowPlayingPreference = mUserPreferences.getNowPlayingPreference();
+        restoreFilterStates(nowPlayingPreference);
+
+        mHistoryManagementPanel = new HistoryManagementPanel<>(
+                mEventModel,
+                "Event Filter Editor",
+                nowPlayingPreference.getEventHistorySize(),
+                nowPlayingPreference::setEventHistorySize);
+
         mHistoryManagementPanel.updateFilterSet(mFilterSet);
         add(mHistoryManagementPanel, "span,growx");
-        JScrollPane emptyScroller = new JScrollPane(mTable);
-        add(emptyScroller);
+        mEmptyScroller = new JScrollPane(mTable);
+        add(mEmptyScroller);
 
-        //Register filter change listener to refresh the table any time the event filters are changed.
-        mFilterSet.register(mEventModel::fireTableDataChanged);
+        mFilterSet.register(() -> {
+            saveFilterStates(nowPlayingPreference);
+            mEventModel.fireTableDataChanged();
+        });
+    }
+
+
+    private void restoreFilterStates(NowPlayingPreference prefs)
+    {
+        for(IFilter<IDecodeEvent> ifilter : mFilterSet.getFilters())
+        {
+            if(ifilter instanceof Filter<?,?> filter)
+            {
+                for(FilterElement<?> element : filter.getFilterElements())
+                {
+                    String key = filter.getName() + "." + element.getName();
+                    element.setEnabled(prefs.isFilterEnabled(key));
+                }
+            }
+        }
+    }
+
+    private void saveFilterStates(NowPlayingPreference prefs)
+    {
+        for(IFilter<IDecodeEvent> ifilter : mFilterSet.getFilters())
+        {
+            if(ifilter instanceof Filter<?,?> filter)
+            {
+                for(FilterElement<?> element : filter.getFilterElements())
+                {
+                    String key = filter.getName() + "." + element.getName();
+                    prefs.setFilterEnabled(key, element.isEnabled());
+                }
+            }
+        }
     }
 
     public void dispose()
@@ -123,7 +168,7 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
     {
         if(preferenceType == PreferenceType.DECODE_EVENT || preferenceType == PreferenceType.TALKGROUP_FORMAT)
         {
-            EventQueue.invokeLater(mTimestampCellRenderer::updatePreferences);
+            EventQueue.invokeLater(() -> mTimestampCellRenderer.updatePreferences());
         }
     }
 
@@ -216,7 +261,7 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
 
             for(Identifier identifier: identifiers)
             {
-                if(!sb.isEmpty())
+                if(sb.length() > 0)
                 {
                     sb.append(",");
                 }
@@ -263,8 +308,9 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
             ImageIcon icon = null;
             String text = null;
 
-            if(value instanceof IdentifierCollection identifierCollection)
+            if(value instanceof IdentifierCollection)
             {
+                IdentifierCollection identifierCollection = (IdentifierCollection)value;
                 List<Identifier> identifiers = identifierCollection.getIdentifiers(mRole);
 
                 if(identifiers != null && !identifiers.isEmpty())
@@ -281,7 +327,7 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
 
                             if(!aliases.isEmpty())
                             {
-                                if(!sb.isEmpty())
+                                if(sb.length() > 0)
                                 {
                                     sb.append(",");
                                 }
@@ -338,9 +384,9 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
         }
     }
 
-    public static class DurationCellRenderer extends DefaultTableCellRenderer
+    public class DurationCellRenderer extends DefaultTableCellRenderer
     {
-        private final DecimalFormat mDecimalFormat = new DecimalFormat("0.0");
+        private DecimalFormat mDecimalFormat = new DecimalFormat("0.0");
 
         public DurationCellRenderer()
         {
@@ -373,9 +419,9 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
     /**
      * Frequency value cell renderer
      */
-    public static class FrequencyCellRenderer extends DefaultTableCellRenderer
+    public class FrequencyCellRenderer extends DefaultTableCellRenderer
     {
-        private final DecimalFormat mFrequencyFormatter = new DecimalFormat("0.00000");
+        private DecimalFormat mFrequencyFormatter = new DecimalFormat("0.00000");
 
         public FrequencyCellRenderer()
         {
@@ -389,8 +435,10 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
 
             String formatted = null;
 
-            if(value instanceof IChannelDescriptor channelDescriptor)
+            if(value instanceof IChannelDescriptor)
             {
+                IChannelDescriptor channelDescriptor = (IChannelDescriptor)value;
+
                 long frequency = channelDescriptor.getDownlinkFrequency();
 
                 if(frequency > 0)
@@ -408,7 +456,7 @@ public class DecodeEventPanel extends JPanel implements Listener<ProcessingChain
     /**
      * Channel descriptor value cell renderer
      */
-    public static class ChannelDescriptorCellRenderer extends DefaultTableCellRenderer
+    public class ChannelDescriptorCellRenderer extends DefaultTableCellRenderer
     {
         public ChannelDescriptorCellRenderer()
         {

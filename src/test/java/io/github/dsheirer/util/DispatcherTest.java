@@ -82,10 +82,11 @@ public class DispatcherTest
     }
 
     /**
-     * Test: elements received while a bounded queue is full are dropped and the queued elements stay in order.
+     * Test: AP-fork - receive() on a full bounded queue discards the oldest queued elements (ap-15.8), so a consumer
+     * that falls behind resumes with the latest data, and the queued elements stay in order.
      */
     @Test
-    void boundedQueueDropsNewestElementsWhenFull() throws Exception
+    void boundedQueueDropsOldestElementsWhenFull() throws Exception
     {
         Dispatcher<Integer> dispatcher = new Dispatcher<>("test", 1, MAXIMUM_QUEUE_SIZE);
         List<Integer> received = dispatchWhileBlocked(dispatcher, MAXIMUM_QUEUE_SIZE + 10);
@@ -93,7 +94,56 @@ public class DispatcherTest
         Thread.sleep(50);
         dispatcher.stop();
 
+        assertEquals(List.of(0, 11, 12, 13, 14), received);
+    }
+
+    /**
+     * Test: offer() on a full bounded queue refuses the new element and keeps the queued elements (upstream #2534 -
+     * the polyphase channelizer drops whole batches this way).
+     */
+    @Test
+    void offerRefusesNewestElementsWhenFull() throws Exception
+    {
+        Dispatcher<Integer> dispatcher = new Dispatcher<>("test", 1, MAXIMUM_QUEUE_SIZE);
+        List<Integer> received = new CopyOnWriteArrayList<>();
+        CountDownLatch blocked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        dispatcher.setListener(element -> {
+            received.add(element);
+            blocked.countDown();
+
+            try
+            {
+                release.await();
+            }
+            catch(InterruptedException ie)
+            {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        dispatcher.start();
+        assertTrue(dispatcher.offer(0));
+        assertTrue(blocked.await(5, TimeUnit.SECONDS), "Listener did not receive the first element");
+
+        int accepted = 0;
+
+        for(int x = 1; x <= MAXIMUM_QUEUE_SIZE + 10; x++)
+        {
+            if(dispatcher.offer(x))
+            {
+                accepted++;
+            }
+        }
+
+        assertEquals(MAXIMUM_QUEUE_SIZE, accepted, "Offers beyond the bound are refused");
+        release.countDown();
+        awaitSize(received, MAXIMUM_QUEUE_SIZE + 1);
+        Thread.sleep(50);
+        dispatcher.stop();
+
         assertEquals(List.of(0, 1, 2, 3, 4), received);
+        assertTrue(!dispatcher.offer(99), "A stopped dispatcher refuses offers");
     }
 
     /**

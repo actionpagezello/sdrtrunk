@@ -23,6 +23,9 @@ import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.source.config.SourceConfigTuner;
+import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
+import io.github.dsheirer.source.config.SourceConfiguration;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.JButton;
@@ -34,6 +37,8 @@ import javax.swing.text.DefaultCaret;
 import java.awt.EventQueue;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.text.DecimalFormat;
+import java.util.List;
 
 public class ChannelDetailPanel extends JPanel implements Listener<ProcessingChain>
 {
@@ -92,6 +97,8 @@ public class ChannelDetailPanel extends JPanel implements Listener<ProcessingCha
         add(new JScrollPane(mDetailTextPane));
     }
 
+    private static final DecimalFormat FREQUENCY_FORMAT = new DecimalFormat("#.00000");
+
     @Override
     public void receive(ProcessingChain processingChain)
     {
@@ -110,9 +117,69 @@ public class ChannelDetailPanel extends JPanel implements Listener<ProcessingCha
         {
             StringBuilder sb = new StringBuilder();
 
+            //Add channel configuration header with useful context
+            if(channel != null)
+            {
+                sb.append("Channel Configuration\n");
+
+                if(channel.getDecodeConfiguration() != null)
+                {
+                    sb.append("  Decoder: ").append(channel.getDecodeConfiguration().getDecoderType()).append("\n");
+                }
+
+                SourceConfiguration sourceConfig = channel.getSourceConfiguration();
+                if(sourceConfig instanceof SourceConfigTuner)
+                {
+                    long freq = ((SourceConfigTuner)sourceConfig).getFrequency();
+                    if(freq > 0)
+                    {
+                        sb.append("  Frequency: ").append(FREQUENCY_FORMAT.format(freq / 1e6d)).append(" MHz\n");
+                    }
+                }
+                else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+                {
+                    List<Long> frequencies = ((SourceConfigTunerMultipleFrequency)sourceConfig).getFrequencies();
+                    if(frequencies != null && !frequencies.isEmpty())
+                    {
+                        sb.append("  Frequencies: ");
+                        for(int i = 0; i < frequencies.size(); i++)
+                        {
+                            if(i > 0) sb.append(", ");
+                            sb.append(FREQUENCY_FORMAT.format(frequencies.get(i) / 1e6d));
+                        }
+                        sb.append(" MHz\n");
+                    }
+                }
+
+                String aliasList = channel.getAliasListName();
+                if(aliasList != null && !aliasList.isEmpty())
+                {
+                    sb.append("  Alias List: ").append(aliasList).append("\n");
+                }
+
+                sb.append("\n");
+            }
+
+            boolean listed = false;
+
             for(DecoderState decoderState : processingChain.getDecoderStates())
             {
                 sb.append(decoderState.getActivitySummary());
+                listed |= decoderState.hasOwnCallSummary();
+            }
+
+            //AP-fork (edacs-25): calls by talkgroup with alias names for every kind of channel.  EDACS, Motorola
+            //Type II and P25 list them in their own summary.
+            if(!listed)
+            {
+                io.github.dsheirer.alias.AliasList aliasList = null;
+
+                if(channel != null && processingChain.getAliasModel() != null && channel.getAliasListName() != null)
+                {
+                    aliasList = processingChain.getAliasModel().getAliasList(channel.getAliasListName());
+                }
+
+                sb.append("\n").append(processingChain.getCallSummary().format(aliasList));
             }
 
             details = sb.toString();

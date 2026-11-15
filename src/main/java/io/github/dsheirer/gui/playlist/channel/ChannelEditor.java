@@ -407,6 +407,34 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
         mChannelFilteredList.setPredicate(mChannelListFilter);
     }
 
+    /**
+     * AP-fork (ap-15.9.33): keeps the edited channel selected after a save.  The save clears and restores the filter
+     * and briefly renames the channel to force a table refresh; with the table sorted, the row that was selected can
+     * then hold a different channel.  Selection is checked now and again once JavaFX has processed the table update.
+     */
+    @Override
+    public void reselect(Channel channel)
+    {
+        if(channel == null)
+        {
+            return;
+        }
+
+        reselectNow(channel);
+        Platform.runLater(() -> reselectNow(channel));
+    }
+
+    private void reselectNow(Channel channel)
+    {
+        TableView<Channel> table = getChannelTableView();
+
+        if(table.getSelectionModel().getSelectedItem() != channel && table.getItems().contains(channel))
+        {
+            table.getSelectionModel().select(channel);
+            table.scrollTo(channel);
+        }
+    }
+
     private TableView<Channel> getChannelTableView()
     {
         if(mChannelTableView == null)
@@ -415,6 +443,7 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             mChannelTableView.setAccessibleText("Channels");
 
             TableColumn<Channel,Boolean> playingColumn = new TableColumn("Playing");
+            playingColumn.setId("channelTable.playing");
             playingColumn.setPrefWidth(75);
             playingColumn.setCellValueFactory(new PropertyValueFactory<>("processing"));
             playingColumn.setCellFactory(param -> {
@@ -445,6 +474,7 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             });
 
             TableColumn<Channel,Boolean> autoStartColumn = new TableColumn<>("Auto-Start");
+            autoStartColumn.setId("channelTable.autoStart");
             autoStartColumn.setCellValueFactory(new PropertyValueFactory<>("autoStart"));
             autoStartColumn.setPrefWidth(85);
             autoStartColumn.setCellFactory(param -> {
@@ -475,22 +505,27 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             });
 
             TableColumn systemColumn = new TableColumn("System");
+            systemColumn.setId("channelTable.system");
             systemColumn.setCellValueFactory(new PropertyValueFactory<>("system"));
             systemColumn.setPrefWidth(175);
 
             TableColumn siteColumn = new TableColumn("Site");
+            siteColumn.setId("channelTable.site");
             siteColumn.setCellValueFactory(new PropertyValueFactory<>("site"));
             siteColumn.setPrefWidth(175);
 
             TableColumn nameColumn = new TableColumn("Name");
+            nameColumn.setId("channelTable.name");
             nameColumn.setCellValueFactory(new PropertyValueFactory<>("name"));
             nameColumn.setPrefWidth(175);
 
             TableColumn frequencyColumn = new TableColumn("Frequency");
+            frequencyColumn.setId("channelTable.frequency");
             frequencyColumn.setCellValueFactory(new FrequencyCellValueFactory());
             frequencyColumn.setPrefWidth(100);
 
             TableColumn protocolColumn = new TableColumn("Protocol");
+            protocolColumn.setId("channelTable.protocol");
             protocolColumn.setCellValueFactory(new ProtocolCellValueFactory());
             protocolColumn.setPrefWidth(100);
 
@@ -507,6 +542,9 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             SortedList<Channel> sortedList = new SortedList<>(mChannelFilteredList);
             sortedList.comparatorProperty().bind(mChannelTableView.comparatorProperty());
             mChannelTableView.setItems(sortedList);
+
+            //Persist column widths, order, and sort across sessions (ap-14.6)
+            new io.github.dsheirer.preference.javafx.FxTableColumnMonitor(mUserPreferences, mChannelTableView, "channelTable");
             mChannelTableView.getSelectionModel().selectedItemProperty()
                 .addListener((observable, oldValue, newValue) -> setChannel(newValue));
             mChannelTableView.setOnMouseClicked(event -> {

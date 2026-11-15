@@ -70,6 +70,28 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
     private static final int POLYPHASE_CHANNELIZER_TAPS_PER_CHANNEL = 9;
     private static final int MAXIMUM_QUEUED_NATIVE_BUFFERS = 500;
 
+    /**
+     * Backlog of tuner sample buffers, in seconds, that the buffer dispatcher will queue before discarding the
+     * oldest.  Sized to absorb a normal garbage collection pause without dropping samples, while bounding heap growth
+     * when the consumer stalls for longer than that.
+     */
+    private static final double BUFFER_QUEUE_DURATION_SECONDS = 2.0;
+
+    /**
+     * Absolute bounds on the buffer dispatcher queue size, in elements.  The upper bound exists so that a tuner
+     * reporting an implausible buffer rate cannot size the queue into an out-of-memory condition: at the RSP1B's
+     * 128-sample buffers this ceiling is roughly 100 MB.
+     */
+    private static final int MINIMUM_BUFFER_QUEUE_SIZE = 32;
+    private static final int MAXIMUM_BUFFER_QUEUE_SIZE = 200_000;
+
+    /**
+     * Provisional bound used before the tuner reports a sample rate.  Deliberately generous: an under-sized bound
+     * discards samples, while an over-sized one only costs memory for the short window before the real rate arrives.
+     * Sized for the fastest tuner currently supported (an RSP at 10 MSPS with 128-sample buffers, 78,125/second).
+     */
+    private static final int UNKNOWN_RATE_BUFFER_QUEUE_SIZE = 160_000;
+
     private Broadcaster<SourceEvent> mSourceEventBroadcaster = new Broadcaster<>();
     private TunerController mTunerController;
     private List<PolyphaseChannelSource> mChannelSources = new CopyOnWriteArrayList<>();
@@ -99,8 +121,66 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
 
         mChannelCalculator = new ChannelCalculator(tunerController.getSampleRate(), channelCount,
                 tunerController.getFrequency(), CHANNEL_OVERSAMPLING);
-        mBufferDispatcher = new Dispatcher("sdrtrunk polyphase buffer processor", 10, MAXIMUM_QUEUED_NATIVE_BUFFERS);
+        //Bound the queue to BUFFER_QUEUE_DURATION_SECONDS of tuner buffers, derived from the tuner's own buffer rate
+        //so that it scales correctly across tuner types.
+        //
+        //Name the dispatcher after the tuner so that queue overflow warnings identify which device is affected -
+        //every tuner previously shared the name "sdrtrunk polyphase buffer processor".
+        mBufferDispatcher = new Dispatcher("sdrtrunk polyphase buffer processor [" +
+                tunerController.getClass().getSimpleName() + "]", 10, UNKNOWN_RATE_BUFFER_QUEUE_SIZE);
         mBufferDispatcher.setListener(mNativeBufferReceiver);
+
+        //Note: the tuner's sample rate is usually NOT known here.  PolyphaseChannelSourceManager constructs this
+        //manager at tuner-discovery time, before the tuner is started and applies a rate, so getSampleRate() returns
+        //zero.  Any bound derived from that collapses to the floor - which is what shipped in ap-15.8.1 and ap-15.9 and
+        //starved high-rate tuners: an RSP1B at 10 MSPS delivers 78,125 buffers/second, so a 32-element bound is 0.4 ms
+        //of queue and discards essentially the entire sample stream.  The real bound is applied by
+        //updateBufferQueueBound() when NOTIFICATION_SAMPLE_RATE_CHANGE arrives; until then the dispatcher runs with a
+        //deliberately generous provisional bound rather than a tight one.
+        updateBufferQueueBound(tunerController.getSampleRate());
+    }
+
+    /**
+     * Derives and applies the buffer dispatcher's queue bound from the tuner's sample rate.
+     *
+     * The bound is BUFFER_QUEUE_DURATION_SECONDS worth of tuner buffers, computed from the buffer rate in floating
+     * point.  Do not route this through TunerController.getBufferDuration(): it returns a long and truncates to zero
+     * for any tuner delivering buffers faster than 1 kHz.
+     *
+     * @param sampleRate reported by the tuner, in Hz.  Zero or negative means "not yet known" - the provisional bound
+     * is left in place rather than collapsing to the floor.
+     */
+    private void updateBufferQueueBound(double sampleRate)
+    {
+        int bufferSampleCount = Math.max(1, mTunerController.getBufferSampleCount());
+
+        if(sampleRate <= 0)
+        {
+            mLog.info("Polyphase buffer dispatcher for [{}] - tuner has not reported a sample rate yet - holding " +
+                    "provisional queue bound of [{}] elements until it does",
+                    mTunerController.getClass().getSimpleName(), UNKNOWN_RATE_BUFFER_QUEUE_SIZE);
+            return;
+        }
+
+        double buffersPerSecond = sampleRate / bufferSampleCount;
+        int maxQueueSize = (int)Math.max(MINIMUM_BUFFER_QUEUE_SIZE, Math.min(MAXIMUM_BUFFER_QUEUE_SIZE,
+                buffersPerSecond * BUFFER_QUEUE_DURATION_SECONDS));
+
+        mBufferDispatcher.setMaxQueueSize(maxQueueSize);
+
+        mLog.info("Polyphase buffer dispatcher for [{}] at [{}] MSPS - [{}] buffers/second ([{}] samples each) - " +
+                "queue bounded at [{}] elements ({} seconds)", mTunerController.getClass().getSimpleName(),
+                FREQUENCY_FORMAT.format(sampleRate / 1E6d), (long)buffersPerSecond, bufferSampleCount, maxQueueSize,
+                String.format("%.2f", maxQueueSize / buffersPerSecond));
+
+        if(maxQueueSize <= MINIMUM_BUFFER_QUEUE_SIZE)
+        {
+            mLog.warn("Polyphase buffer dispatcher for [{}] is pinned to its MINIMUM bound of [{}] elements at [{}] " +
+                    "buffers/second - that is only {} ms of queue and this tuner will discard samples. This indicates " +
+                    "a sizing defect, not an overload condition.", mTunerController.getClass().getSimpleName(),
+                    maxQueueSize, (long)buffersPerSecond,
+                    String.format("%.2f", maxQueueSize / buffersPerSecond * 1000.0));
+        }
     }
 
     /**
@@ -278,6 +358,10 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
                 double sampleRate = sourceEvent.getValue().doubleValue();
                 int channelCount = ComplexPolyphaseChannelizerM2.getChannelCount(sampleRate);
                 mChannelCalculator.setRates(sampleRate, channelCount);
+
+                //The buffer dispatcher's queue bound depends on this rate and cannot be derived correctly at
+                //construction time - see the note in the constructor.
+                updateBufferQueueBound(sampleRate);
                 break;
             case NOTIFICATION_FREQUENCY_AND_SAMPLE_RATE_LOCKED:
             case NOTIFICATION_FREQUENCY_AND_SAMPLE_RATE_UNLOCKED:

@@ -23,6 +23,13 @@ public abstract class DecodeConfigJMBE extends DecodeConfiguration
     {
         mLegacyToneLevels = enabled;
     }
+    /**
+     * AP-fork (ap-15.10.10): comfort noise gain the fork wrote to every playlist before the setting was applied
+     * (fleet setting 1.0, from upstream's original default).  PlaylistManager migrates it to the default once per
+     * machine.
+     */
+    public static float LEGACY_FORK_COMFORT_NOISE_GAIN = 1.0f;
+
     private float mToneGain = DEFAULT_TONE_GAIN;
     private float mComfortNoiseGain = DEFAULT_COMFORT_NOISE_GAIN;
 

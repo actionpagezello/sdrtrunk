@@ -21,12 +21,14 @@ package io.github.dsheirer.gui.playlist.channel;
 
 import io.github.dsheirer.gui.control.AccessibilityUtil;
 import io.github.dsheirer.gui.control.AccessibleToggleSwitch;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.gui.playlist.eventlog.EventLogConfigurationEditor;
 import io.github.dsheirer.gui.playlist.record.RecordConfigurationEditor;
 import io.github.dsheirer.gui.playlist.source.FrequencyEditor;
 import io.github.dsheirer.gui.playlist.source.SourceConfigurationEditor;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
 import io.github.dsheirer.module.decode.p25.phase1.Modulation;
@@ -48,6 +50,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleButton;
@@ -73,6 +76,10 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private ToggleSwitch mIgnoreDataCallsButton;
+    private ToggleSwitch mIgnoreUnaliasedTalkgroupsButton;
+    private ToggleSwitch mNacFilterButton;
+    private javafx.scene.control.TextField mNacTextField;
+    private javafx.scene.control.TextField mTalkgroupTextField;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
     private SegmentedButton mModulationSegmentedButton;
     private ToggleButton mC4FMToggleButton;
@@ -81,6 +88,10 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private Slider mJmbeToneGainSlider;
     private ToggleSwitch mLegacyToneLevelsButton;
     private Slider mJmbeNoiseGainSlider;
+    private TitledPane mGraphicEQPane;
+    private ToggleSwitch mGraphicEQEnabledSwitch;
+    private Slider[] mEQBandSliders = new Slider[GraphicEqualizer.BAND_COUNT];
+    private TextField[] mEQBandFields = new TextField[GraphicEqualizer.BAND_COUNT];
 
     /**
      * Constructs an instance
@@ -94,6 +105,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         super(playlistManager, tunerManager, userPreferences, filterProcessor);
         getTitledPanesBox().getChildren().add(getSourcePane());
         getTitledPanesBox().getChildren().add(getDecoderPane());
+        getTitledPanesBox().getChildren().add(getGraphicEQPane());
         getTitledPanesBox().getChildren().add(getEventLogPane());
         getTitledPanesBox().getChildren().add(getRecordPane());
     }
@@ -165,6 +177,35 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
 
             row++;
 
+            //AP-fork: NAC filter, talkgroup override and ignore-unaliased row, above upstream's audio controls
+            GridPane.setConstraints(getNacFilterButton(), 0, row);
+            gridPane.getChildren().add(getNacFilterButton());
+
+            Label nacLabel = new Label("NAC Filter (hex):");
+            javafx.scene.layout.HBox nacBox = new javafx.scene.layout.HBox(5, nacLabel, getNacTextField());
+            nacBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+            GridPane.setConstraints(nacBox, 1, row);
+            gridPane.getChildren().add(nacBox);
+
+            //Talkgroup Override - same row as NAC
+            Label tgLabel = new Label("Talkgroup To Assign:");
+            GridPane.setHalignment(tgLabel, HPos.RIGHT);
+            GridPane.setConstraints(tgLabel, 2, row);
+            gridPane.getChildren().add(tgLabel);
+
+            GridPane.setConstraints(getTalkgroupTextField(), 3, row);
+            gridPane.getChildren().add(getTalkgroupTextField());
+
+            GridPane.setConstraints(getIgnoreUnaliasedTalkgroupsButton(), 4, row);
+            gridPane.getChildren().add(getIgnoreUnaliasedTalkgroupsButton());
+
+            Label ignoreUnaliasedLabel = new Label("Ignore Unaliased TGs");
+            GridPane.setHalignment(ignoreUnaliasedLabel, HPos.LEFT);
+            GridPane.setConstraints(ignoreUnaliasedLabel, 5, row);
+            gridPane.getChildren().add(ignoreUnaliasedLabel);
+
+            row++;
+
             addAudioControls(gridPane, row, "AMBE/IMBE Audio", getJmbeNoiseGainSlider(), getJmbeAGCButton(),
                 getJmbeToneGainSlider(), getLegacyToneLevelsButton());
 
@@ -203,6 +244,97 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         }
 
         return mRecordPane;
+    }
+
+    private TitledPane getGraphicEQPane()
+    {
+        if(mGraphicEQPane == null)
+        {
+            mGraphicEQPane = new TitledPane();
+            mGraphicEQPane.setText("10-Band Graphic Equalizer (200 Hz - 3.5 kHz)");
+            mGraphicEQPane.setExpanded(false);
+
+            VBox content = new VBox(10);
+            content.setPadding(new Insets(10, 10, 10, 10));
+
+            mGraphicEQEnabledSwitch = new ToggleSwitch("Enable Graphic Equalizer");
+            mGraphicEQEnabledSwitch.setTooltip(new Tooltip("Apply a 10-band graphic EQ to decoded P25 audio"));
+            mGraphicEQEnabledSwitch.selectedProperty().addListener((obs, old, val) -> {
+                modifiedProperty().set(true);
+                for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+                {
+                    mEQBandSliders[i].setDisable(!val);
+                    mEQBandFields[i].setDisable(!val);
+                }
+            });
+            content.getChildren().add(mGraphicEQEnabledSwitch);
+
+            GridPane gridPane = new GridPane();
+            gridPane.setHgap(10);
+            gridPane.setVgap(8);
+
+            for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+            {
+                final int band = i;
+
+                Label bandLabel = new Label(GraphicEqualizer.BAND_LABELS[i]);
+                GridPane.setHalignment(bandLabel, HPos.RIGHT);
+                GridPane.setConstraints(bandLabel, 0, i);
+                gridPane.getChildren().add(bandLabel);
+
+                mEQBandSliders[i] = new Slider(-12, 12, 0);
+                mEQBandSliders[i].setMajorTickUnit(6);
+                mEQBandSliders[i].setMinorTickCount(5);
+                mEQBandSliders[i].setShowTickMarks(true);
+                mEQBandSliders[i].setShowTickLabels(true);
+                mEQBandSliders[i].setPrefWidth(250);
+                mEQBandSliders[i].setDisable(true);
+                mEQBandSliders[i].setTooltip(new Tooltip(GraphicEqualizer.BAND_LABELS[i] +
+                    " band gain (-12 to +12 dB)"));
+                mEQBandSliders[i].valueProperty().addListener((obs, old, val) -> {
+                    mEQBandFields[band].setText(String.format("%+.1f dB", val.doubleValue()));
+                    modifiedProperty().set(true);
+                });
+                GridPane.setConstraints(mEQBandSliders[i], 1, i);
+                gridPane.getChildren().add(mEQBandSliders[i]);
+
+                mEQBandFields[i] = new TextField("+0.0 dB");
+                mEQBandFields[i].setPrefWidth(80);
+                mEQBandFields[i].setMaxWidth(80);
+                mEQBandFields[i].setDisable(true);
+                mEQBandFields[i].setOnAction(event -> commitEQBandField(band));
+                mEQBandFields[i].focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                    if(!isFocused) commitEQBandField(band);
+                });
+                GridPane.setConstraints(mEQBandFields[i], 2, i);
+                gridPane.getChildren().add(mEQBandFields[i]);
+            }
+
+            content.getChildren().add(gridPane);
+            mGraphicEQPane.setContent(content);
+        }
+
+        return mGraphicEQPane;
+    }
+
+    /**
+     * Commits the text field value to the corresponding EQ band slider.
+     */
+    private void commitEQBandField(int band)
+    {
+        try
+        {
+            String text = mEQBandFields[band].getText().trim()
+                .replace("dB", "").replace("+", "").trim();
+            double value = Double.parseDouble(text);
+            value = Math.max(-12, Math.min(12, value));
+            mEQBandSliders[band].setValue(value);
+            mEQBandFields[band].setText(String.format("%+.1f dB", value));
+        }
+        catch(NumberFormatException e)
+        {
+            mEQBandFields[band].setText(String.format("%+.1f dB", mEQBandSliders[band].getValue()));
+        }
     }
 
     private SourceConfigurationEditor getSourceConfigurationEditor()
@@ -356,6 +488,64 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         return mIgnoreDataCallsButton;
     }
 
+    private ToggleSwitch getIgnoreUnaliasedTalkgroupsButton()
+    {
+        if(mIgnoreUnaliasedTalkgroupsButton == null)
+        {
+            mIgnoreUnaliasedTalkgroupsButton = new ToggleSwitch();
+            mIgnoreUnaliasedTalkgroupsButton.setDisable(true);
+            mIgnoreUnaliasedTalkgroupsButton.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreUnaliasedTalkgroupsButton;
+    }
+
+    private ToggleSwitch getNacFilterButton()
+    {
+        if(mNacFilterButton == null)
+        {
+            mNacFilterButton = new ToggleSwitch();
+            mNacFilterButton.setDisable(true);
+            mNacFilterButton.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mNacFilterButton;
+    }
+
+    private javafx.scene.control.TextField getNacTextField()
+    {
+        if(mNacTextField == null)
+        {
+            mNacTextField = new javafx.scene.control.TextField();
+            mNacTextField.setDisable(true);
+            mNacTextField.setPrefWidth(120);
+            mNacTextField.setPromptText("e.g. 263, D12");
+            mNacTextField.setTooltip(new Tooltip("Enter NAC values in hex (as shown on Radio Reference), separated by commas"));
+            mNacTextField.textProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mNacTextField;
+    }
+
+    private javafx.scene.control.TextField getTalkgroupTextField()
+    {
+        if(mTalkgroupTextField == null)
+        {
+            mTalkgroupTextField = new javafx.scene.control.TextField();
+            mTalkgroupTextField.setDisable(true);
+            mTalkgroupTextField.setPrefWidth(80);
+            mTalkgroupTextField.setPromptText("e.g. 1001");
+            mTalkgroupTextField.setTooltip(new Tooltip("Talkgroup ID override (1-65535, blank = use decoded)"));
+            mTalkgroupTextField.textProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mTalkgroupTextField;
+    }
+
     private Spinner<Integer> getTrafficChannelPoolSizeSpinner()
     {
         if(mTrafficChannelPoolSizeSpinner == null)
@@ -398,12 +588,30 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
         getIgnoreDataCallsButton().setDisable(config == null);
+        getIgnoreUnaliasedTalkgroupsButton().setDisable(config == null);
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
+        getNacFilterButton().setDisable(config == null);
+        getNacTextField().setDisable(config == null);
+        getTalkgroupTextField().setDisable(config == null);
 
         if(config instanceof DecodeConfigP25Phase1 decodeConfig)
         {
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(decodeConfig.getIgnoreUnaliasedTalkgroups());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
+            getNacFilterButton().setSelected(decodeConfig.isNacFilterEnabled());
+            int tg = decodeConfig.getTalkgroup();
+            getTalkgroupTextField().setText(tg > 0 ? String.valueOf(tg) : "");
+
+            //Format NAC list for display
+            StringBuilder sb = new StringBuilder();
+            for(Integer nac : decodeConfig.getAllowedNACs())
+            {
+                if(sb.length() > 0) sb.append(", ");
+                sb.append(String.format("%X", nac));
+            }
+            getNacTextField().setText(sb.toString());
+
             if(decodeConfig.getModulation() == Modulation.C4FM)
             {
                 getC4FMToggleButton().setSelected(true);
@@ -423,10 +631,23 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getJmbeToneGainSlider().setValue(decodeConfig.getToneGain());
             getLegacyToneLevelsButton().setSelected(decodeConfig.isLegacyToneLevels());
 
+
+            // Load graphic EQ settings
+            mGraphicEQEnabledSwitch.setSelected(decodeConfig.isGraphicEQEnabled());
+            double[] gains = decodeConfig.getGraphicEQBandGains();
+            for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+            {
+                double gain = (gains != null && i < gains.length) ? gains[i] : 0.0;
+                mEQBandSliders[i].setValue(gain);
+                mEQBandFields[i].setText(String.format("%+.1f dB", gain));
+                mEQBandSliders[i].setDisable(!decodeConfig.isGraphicEQEnabled());
+                mEQBandFields[i].setDisable(!decodeConfig.isGraphicEQEnabled());
+            }
         }
         else
         {
             getIgnoreDataCallsButton().setSelected(false);
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
             getJmbeAGCButton().setDisable(true);
             getJmbeNoiseGainSlider().setDisable(true);
@@ -436,6 +657,19 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getJmbeNoiseGainSlider().setValue(0);
             getJmbeToneGainSlider().setValue(0);
             getLegacyToneLevelsButton().setSelected(false);
+            getNacFilterButton().setSelected(false);
+            getNacTextField().setText("");
+            getTalkgroupTextField().setText("");
+
+            // Disable EQ
+            mGraphicEQEnabledSwitch.setSelected(false);
+            for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+            {
+                mEQBandSliders[i].setValue(0);
+                mEQBandFields[i].setText("+0.0 dB");
+                mEQBandSliders[i].setDisable(true);
+                mEQBandFields[i].setDisable(true);
+            }
         }
     }
 
@@ -454,12 +688,82 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         }
 
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
+        config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroupsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setModulation(getC4FMToggleButton().isSelected() ? Modulation.C4FM : Modulation.CQPSK);
         config.setAGC(getJmbeAGCButton().selectedProperty().getValue());
         config.setComfortNoiseGain((float)getJmbeNoiseGainSlider().getValue());
         config.setToneGain((float)getJmbeToneGainSlider().getValue());
         config.setLegacyToneLevels(getLegacyToneLevelsButton().isSelected());
+        config.setNacFilterEnabled(getNacFilterButton().isSelected());
+
+        //Parse talkgroup text field
+        String tgText = getTalkgroupTextField().getText();
+        if(tgText != null && !tgText.trim().isEmpty())
+        {
+            try
+            {
+                int tg = Integer.parseInt(tgText.trim());
+                if(tg >= 1 && tg <= 65535)
+                {
+                    config.setTalkgroup(tg);
+                }
+                else
+                {
+                    config.setTalkgroup(0);
+                }
+            }
+            catch(NumberFormatException e)
+            {
+                config.setTalkgroup(0);
+            }
+        }
+        else
+        {
+            config.setTalkgroup(0);
+        }
+
+        //Parse NAC text field
+        config.getAllowedNACs().clear();
+        String nacText = getNacTextField().getText();
+        if(nacText != null && !nacText.trim().isEmpty())
+        {
+            for(String token : nacText.split(","))
+            {
+                token = token.trim();
+                try
+                {
+                    int nac;
+                    if(token.startsWith("0x") || token.startsWith("0X"))
+                    {
+                        nac = Integer.parseInt(token.substring(2), 16);
+                    }
+                    else if(token.startsWith("x") || token.startsWith("X"))
+                    {
+                        nac = Integer.parseInt(token.substring(1), 16);
+                    }
+                    else
+                    {
+                        nac = Integer.parseInt(token, 16);
+                    }
+                    config.addAllowedNAC(nac);
+                }
+                catch(NumberFormatException e)
+                {
+                    //Skip invalid entries
+                }
+            }
+        }
+
+        // Save graphic EQ settings
+        config.setGraphicEQEnabled(mGraphicEQEnabledSwitch.isSelected());
+        double[] gains = new double[GraphicEqualizer.BAND_COUNT];
+        for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
+        {
+            gains[i] = mEQBandSliders[i].getValue();
+        }
+        config.setGraphicEQBandGains(gains);
+
         getItem().setDecodeConfiguration(config);
     }
 

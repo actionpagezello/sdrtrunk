@@ -171,7 +171,7 @@ public class Icon implements Comparable<Icon>
     @JsonIgnore
     public ImageIcon getIcon()
     {
-        if(mImageIcon == null && mPath != null)
+        if(mImageIcon == null && getPath() != null && !getPath().isEmpty())
         {
             try
             {

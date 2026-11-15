@@ -203,6 +203,9 @@ public class CSBKMessageFactory
                 case STANDARD_DUPLEX_PRIVATE_VOICE_CHANNEL_GRANT:
                     csbk = new DuplexPrivateVoiceChannelGrant(pattern, message, cach, slotType, timestamp, timeslot);
                     break;
+                case STANDARD_PRIVATE_DATA_CHANNEL_GRANT_MULTI_ITEM:
+                    csbk = new PrivateDataChannelGrant(pattern, message, cach, slotType, timestamp, timeslot);
+                    break;
                 case STANDARD_PRIVATE_DATA_CHANNEL_GRANT_SINGLE_ITEM:
                     csbk = new PrivateDataChannelGrant(pattern, message, cach, slotType, timestamp, timeslot);
                     break;
@@ -211,6 +214,9 @@ public class CSBKMessageFactory
                     break;
                 case STANDARD_PROTECT:
                     csbk = new Protect(pattern, message, cach, slotType, timestamp, timeslot);
+                    break;
+                case STANDARD_TALKGROUP_DATA_CHANNEL_GRANT_MULTI_ITEM:
+                    csbk = new TalkgroupDataChannelGrant(pattern, message, cach, slotType, timestamp, timeslot);
                     break;
                 case STANDARD_TALKGROUP_DATA_CHANNEL_GRANT_SINGLE_ITEM:
                     csbk = new TalkgroupDataChannelGrant(pattern, message, cach, slotType, timestamp, timeslot);
@@ -401,12 +407,20 @@ public class CSBKMessageFactory
                 csbk = new MoveTSCC(header.getSyncPattern(), header.getMessage(), header.getCACH(), header.getSlotType(),
                     header.getTimestamp(), header.getTimeslot(), getBlock1(continuationBlocks));
                 break;
+            case STANDARD_PRIVATE_DATA_CHANNEL_GRANT_MULTI_ITEM:
+                csbk = new PrivateDataChannelGrant(header.getSyncPattern(), header.getMessage(), header.getCACH(),
+                    header.getSlotType(), header.getTimestamp(), header.getTimeslot(), getBlock1(continuationBlocks));
+                break;
             case STANDARD_PRIVATE_DATA_CHANNEL_GRANT_SINGLE_ITEM:
                 csbk = new PrivateDataChannelGrant(header.getSyncPattern(), header.getMessage(), header.getCACH(),
                     header.getSlotType(), header.getTimestamp(), header.getTimeslot(), getBlock1(continuationBlocks));
                 break;
             case STANDARD_PRIVATE_VOICE_CHANNEL_GRANT:
                 csbk = new PrivateVoiceChannelGrant(header.getSyncPattern(), header.getMessage(), header.getCACH(),
+                    header.getSlotType(), header.getTimestamp(), header.getTimeslot(), getBlock1(continuationBlocks));
+                break;
+            case STANDARD_TALKGROUP_DATA_CHANNEL_GRANT_MULTI_ITEM:
+                csbk = new TalkgroupDataChannelGrant(header.getSyncPattern(), header.getMessage(), header.getCACH(),
                     header.getSlotType(), header.getTimestamp(), header.getTimeslot(), getBlock1(continuationBlocks));
                 break;
             case STANDARD_TALKGROUP_DATA_CHANNEL_GRANT_SINGLE_ITEM:

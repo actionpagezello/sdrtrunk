@@ -65,6 +65,12 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
     protected TunerFrequencyErrorManager mTunerFrequencyErrorManager;
 
     /**
+     * AP-fork: the Tuner that owns this controller, registered by {@link Tuner}'s constructor so that log
+     * lines emitted from controller level can name the physical device. Null until then.
+     */
+    private Tuner mTuner;
+
+    /**
      * Abstract tuner controller class.  The tuner controller manages frequency bandwidth and currently tuned channels
      * that are being fed samples from the tuner.
      * @param tunerErrorListener to monitor errors produced from this tuner controller
@@ -75,6 +81,55 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         mFrequencyController = new FrequencyController(this);
         mSourceEventListener = new SourceEventListenerToProcessorAdapter(this);
         mTunerFrequencyErrorManager = new TunerFrequencyErrorManager(this);
+    }
+
+    /**
+     * AP-fork: registers the owning Tuner. Called by {@link Tuner}'s constructor.
+     *
+     * @param tuner that owns this controller
+     */
+    void setTuner(Tuner tuner)
+    {
+        mTuner = tuner;
+    }
+
+    /**
+     * AP-fork: a label identifying this tuner in log lines, preferring the device name - which carries the
+     * serial number, e.g. "RSP1B SER#24050F5260" - over the controller class name.
+     *
+     * <p>The class name alone is not an identity: a machine with four RTL-2832 dongles produced four
+     * streams of frequency-error reports all labelled "RTL2832TunerController", so a fleet-wide PPM audit
+     * could not tell which physical dongle was off. A Daly dongle running at 10 PPM (about 4.8 kHz at
+     * 483 MHz) was found by hand for exactly this reason.
+     *
+     * <p>Resolved lazily rather than cached at construction: this controller is built before the Tuner
+     * that wraps it, and {@code getPreferredName()} is abstract, so it is not safe to call until the
+     * subclass is fully constructed. Falls back to the class name whenever the name is not yet available.
+     *
+     * @return device name with serial where available, otherwise the controller class name
+     */
+    public String getTunerLabel()
+    {
+        Tuner tuner = mTuner;
+
+        if(tuner != null)
+        {
+            try
+            {
+                String name = tuner.getPreferredName();
+
+                if(name != null && !name.isEmpty())
+                {
+                    return name;
+                }
+            }
+            catch(Exception e)
+            {
+                //Fall through to the class name - the tuner is not yet able to name itself.
+            }
+        }
+
+        return getClass().getSimpleName();
     }
 
     /**
@@ -200,37 +255,118 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
     }
 
     /**
-     * Applies the settings in the tuner configuration
+     * Applies the settings in the tuner configuration.
+     *
+     * AP-fork (ap-15.11.5): the frequency range is applied first and a saved centre frequency outside it is moved
+     * inside before tuning, and no step here throws, so a subclass that calls super.apply() still applies its sample
+     * rate and gain.  Baker 2026-11-04: two RTL-2832s had a range set while running (Port 6.2 150-170 MHz while tuned
+     * to 483.5125 MHz; Port 6.1.1 from 150 MHz while tuned to 101.1 MHz).  On the next start the frequency correction
+     * step re-tuned the saved frequency against the new range, threw, and the tuners ran without their gain settings.
      */
     public void apply(TunerConfiguration config) throws SourceException
     {
+        String tuner = getTunerType() + " " + config.getUniqueID();
+        long minimum = config.getMinimumFrequency();
+        long maximum = config.getMaximumFrequency();
+
+        if(minimum > 0 && maximum > 0 && minimum >= maximum)
+        {
+            mLog.warn("Tuner [" + tuner + "] frequency range minimum [" + minimum + "] is not below the " +
+                    "maximum [" + maximum + "] - range ignored");
+        }
+        else
+        {
+            if(minimum > 0)
+            {
+                setMinimumFrequency(minimum);
+            }
+            if(maximum > 0)
+            {
+                setMaximumFrequency(maximum);
+            }
+        }
+
+        long saved = config.getFrequency();
+        long frequency = moveIntoRange(saved, getMinimumFrequency(), getMaximumFrequency(), getUsableHalfBandwidth());
+
+        if(frequency != saved)
+        {
+            mLog.warn("Tuner [" + tuner + "] saved frequency [" + saved + "] is outside its frequency " +
+                    "range [" + getMinimumFrequency() + "-" + getMaximumFrequency() + "] - moved to [" + frequency + "]");
+            config.setFrequency(frequency);
+        }
+
         //Set the frequency from the config.  If the config frequency generates an error, try setting the default
         //frequency before we give up on the tuner as having an error.
         try
         {
-            setFrequency(config.getFrequency());
+            setFrequency(frequency);
         }
         catch(Exception e)
         {
-            mLog.warn("Unable to restore previous frequency [" + config.getFrequency() + "] trying default frequency");
-            if(config.getFrequency() != TunerConfiguration.DEFAULT_FREQUENCY)
+            mLog.warn("Unable to restore previous frequency [" + frequency + "] trying default frequency");
+
+            if(frequency != TunerConfiguration.DEFAULT_FREQUENCY && canTune(TunerConfiguration.DEFAULT_FREQUENCY))
             {
-                setFrequency(TunerConfiguration.DEFAULT_FREQUENCY);
-                //If we're successful to here, update the config with the default frequency.
-                config.setFrequency(TunerConfiguration.DEFAULT_FREQUENCY);
+                try
+                {
+                    setFrequency(TunerConfiguration.DEFAULT_FREQUENCY);
+                    //If we're successful to here, update the config with the default frequency.
+                    config.setFrequency(TunerConfiguration.DEFAULT_FREQUENCY);
+                }
+                catch(Exception e2)
+                {
+                    mLog.error("Tuner [" + tuner + "] unable to set the default frequency [" +
+                            TunerConfiguration.DEFAULT_FREQUENCY + "] - continuing with the other settings", e2);
+                }
+            }
+            else
+            {
+                mLog.error("Tuner [" + tuner + "] unable to set frequency [" + frequency + "] - continuing " +
+                        "with the other settings", e);
             }
         }
 
-        if(config.getMinimumFrequency() > 0)
+        try
         {
-            setMinimumFrequency(config.getMinimumFrequency());
+            setFrequencyCorrection(config.getFrequencyCorrection());
         }
-        if(config.getMaximumFrequency() > 0)
+        catch(Exception e)
         {
-            setMaximumFrequency(config.getMaximumFrequency());
+            mLog.error("Tuner [" + tuner + "] unable to apply frequency correction [" +
+                    config.getFrequencyCorrection() + "] - continuing with the other settings", e);
         }
-        setFrequencyCorrection(config.getFrequencyCorrection());
+
         getTunerFrequencyErrorManager().setEnabled(config.getAutoPPMCorrectionEnabled());
+    }
+
+    /**
+     * AP-fork (ap-15.11.5): moves a centre frequency inside a frequency range.  A frequency below the range moves to
+     * minimum + half bandwidth and one above it to maximum - half bandwidth, so the usable band sits inside the range;
+     * when the bandwidth is unknown or the range is narrower than the bandwidth it moves to the middle of the range.
+     * @param frequency to check
+     * @param minimum of the range
+     * @param maximum of the range
+     * @param halfBandwidth usable half bandwidth (0 or less when unknown)
+     * @return frequency unchanged when it is inside the range, otherwise the moved frequency
+     */
+    static long moveIntoRange(long frequency, long minimum, long maximum, long halfBandwidth)
+    {
+        if(minimum >= maximum || (minimum <= frequency && frequency <= maximum))
+        {
+            return frequency;
+        }
+
+        long half = Math.max(0, halfBandwidth);
+
+        //AP-fork (ap-16.0): an RSP applies its sample rate after this, so its bandwidth is still unknown here - use
+        //the middle of the range rather than an edge (Baker 2026-11-07: RSP1B moved to exactly 160 MHz)
+        if(half == 0 || maximum - minimum < 2 * half)
+        {
+            return minimum + (maximum - minimum) / 2;
+        }
+
+        return frequency < minimum ? minimum + half : maximum - half;
     }
 
     /**

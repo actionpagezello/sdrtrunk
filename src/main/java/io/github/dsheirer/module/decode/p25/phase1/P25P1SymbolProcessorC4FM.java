@@ -34,6 +34,9 @@ public class P25P1SymbolProcessorC4FM extends C4FMSymbolProcessor
     private final int mPlusSymbolCount;
     private final int mMinusSymbolCount;
 
+    //AP-fork (ap-15.10): label used to attribute log lines to a channel
+    private String mLogLabel = "P25 Phase 1 channel";
+
     /**
      * Constructs an instance
      *
@@ -325,4 +328,29 @@ public class P25P1SymbolProcessorC4FM extends C4FMSymbolProcessor
     }
 
 
+
+    /**
+     * AP-fork (ap-15.10): label used to attribute log lines to a channel.
+     */
+    public void setLogLabel(String label)
+    {
+        if(label != null && !label.isBlank())
+        {
+            mLogLabel = label;
+        }
+    }
+
+    /**
+     * AP-fork (ap-15.10): describes the sync activity since the previous call and clears the counters.  The balance
+     * is the equalizer's frequency correction: PI/2 is +/-1200 Hz at the 4800 symbol rate.
+     */
+    public String getSyncHealth()
+    {
+        double gain = mSampleEqualizer.gain() != 0 ? mSampleEqualizer.gain() : 1.0;
+        long balanceHz = Math.round(mSampleEqualizer.balanceOptimized() / gain * SYMBOL_RATE / (2.0 * Math.PI));
+        return "syncs applied=" + mHealthSyncsApplied.getAndSet(0) + " rejected by sync waveform check=" +
+            mHealthWaveformRejected.getAndSet(0) + " sync losses=" + mHealthSyncLosses.getAndSet(0) +
+            " equalizer recalibrations=" + mHealthRecalibrations.getAndSet(0) + "; now: synchronized=" +
+            mSynchronized + ", equalizer balance " + balanceHz + " Hz, gain " + mSampleEqualizer.gain();
+    }
 }

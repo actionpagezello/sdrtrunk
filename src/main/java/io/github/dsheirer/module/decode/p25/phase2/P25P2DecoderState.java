@@ -1835,6 +1835,12 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
     }
 
     @Override
+    public boolean hasOwnCallSummary()
+    {
+        return true;
+    }
+
+    @Override
     public String getActivitySummary()
     {
         StringBuilder sb = new StringBuilder();
@@ -1843,6 +1849,8 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
         sb.append(mPatchGroupManager.getPatchGroupSummary());
         sb.append("\n");
         sb.append(mTrafficChannelManager.getTalkerAliasManager().getAliasSummary());
+        sb.append("\n");
+        sb.append(mTrafficChannelManager.getTalkgroupSummary());
         return sb.toString();
     }
 

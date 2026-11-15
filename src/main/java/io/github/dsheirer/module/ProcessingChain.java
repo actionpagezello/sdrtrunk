@@ -110,6 +110,26 @@ public class ProcessingChain implements Listener<ChannelEvent>
     private Broadcaster<ByteBuffer> mDemodulatedBitstreamBufferBroadcaster = new Broadcaster();
     private Broadcaster<AudioSegment> mAudioSegmentBroadcaster = new AudioSegmentBroadcaster<>();
     private Broadcaster<IDecodeEvent> mDecodeEventBroadcaster = new Broadcaster<>();
+    //AP-fork (edacs-25): calls by talkgroup for the Details tab
+    private final io.github.dsheirer.module.decode.event.CallSummary mCallSummary =
+        new io.github.dsheirer.module.decode.event.CallSummary();
+    private final AliasModel mAliasModel;
+
+    /**
+     * Calls by talkgroup seen by this processing chain
+     */
+    public io.github.dsheirer.module.decode.event.CallSummary getCallSummary()
+    {
+        return mCallSummary;
+    }
+
+    /**
+     * Alias model, for the alias names in the Details tab.  Can be null.
+     */
+    public AliasModel getAliasModel()
+    {
+        return mAliasModel;
+    }
     private Broadcaster<ChannelEvent> mChannelEventBroadcaster = new Broadcaster<>();
     private Broadcaster<DecoderStateEvent> mDecoderStateEventBroadcaster = new Broadcaster<>();
     private Broadcaster<Heartbeat> mHeartbeatBroadcaster = new Broadcaster<>();
@@ -136,6 +156,8 @@ public class ProcessingChain implements Listener<ChannelEvent>
      */
     public ProcessingChain(Channel channel, AliasModel aliasModel)
     {
+        mAliasModel = aliasModel;
+        mDecodeEventBroadcaster.addListener(mCallSummary);
         mEventBus = new EventBus("Processing Chain Event Bus - Channel: " + channel.getName());
 
         if(channel.getDecodeConfiguration().getTimeslotCount() == 1)

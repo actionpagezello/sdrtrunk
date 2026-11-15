@@ -30,6 +30,7 @@ import java.nio.ByteBuffer;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.math3.stat.descriptive.moment.Mean;
 import org.apache.commons.math3.stat.descriptive.moment.StandardDeviation;
 
@@ -96,6 +97,12 @@ public abstract class C4FMSymbolProcessor
     private int mSyncWorkspaceLength;
     private int mBufferReloadLength;
     protected boolean mSynchronized = false;
+
+    //AP-fork (ap-15.10): sync health counters, read and cleared by subclasses for the 10-minute health line
+    protected final AtomicInteger mHealthSyncsApplied = new AtomicInteger();
+    protected final AtomicInteger mHealthWaveformRejected = new AtomicInteger();
+    protected final AtomicInteger mHealthSyncLosses = new AtomicInteger();
+    protected final AtomicInteger mHealthRecalibrations = new AtomicInteger();
     private boolean mDelayedSyncNotificationPending = false;
 
     private final boolean mDebugVisualizeSync = false;
@@ -410,6 +417,7 @@ public abstract class C4FMSymbolProcessor
                     if(mSynchronized && symbolsSinceLastSync > getMaxMessageDibitLength())
                     {
                         mSynchronized = false;
+                        mHealthSyncLosses.incrementAndGet();
                         mSymbolEqualizer.syncLost();
                         mConsecutiveSyncPeriods = 0;
                     }
@@ -522,6 +530,7 @@ public abstract class C4FMSymbolProcessor
                             System.out.println("DETECT - Primary [" + DEBUG_DF.format(scorePrimary) + "] Lag [" + DEBUG_DF.format(scoreLag) + "] Optimized [" + correctionCandidate.mOptimizationScore + "] at samples [" + mDebugSampleCounter + "] symbols [" + mDebugSymbolCounter + "]");
                         }
 
+                        mHealthSyncsApplied.incrementAndGet();
                         mSampleEqualizer.apply(correctionCandidate);
                         syncDetected(mActiveSyncDetector);
 
@@ -628,6 +637,15 @@ public abstract class C4FMSymbolProcessor
         for(int x = referenceSyncWaveform.samples().length - 1; x >= 0; x--)
         {
             index = integral + x;
+
+            //AP-fork (ap-15.10.1): a lagging detection just after a buffer reload, or a large positive timing correction
+            //near the end of the buffer, can place part of the reference waveform outside the buffer.  Those samples
+            //contribute nothing to the correlation.
+            if(index < 0 || index + 1 >= mBuffer.length)
+            {
+                continue;
+            }
+
             float sample = interpolate(mBuffer[index], mBuffer[index + 1], mu);
             sample *= gain;
             sample += balance;
@@ -644,6 +662,7 @@ public abstract class C4FMSymbolProcessor
             return candidate;
         }
 
+        mHealthWaveformRejected.incrementAndGet();
         return INVALID_SYNC_DETECTION;
     }
 
@@ -842,6 +861,7 @@ public abstract class C4FMSymbolProcessor
         int start = (int)Math.floor(offset - ((mSyncDetector.getDibitLength() - 1) * mSamplesPerSymbol));
         int end = (int)Math.ceil(offset);
         end = Math.min(end, mBuffer.length - 1);
+        start = Math.max(start, 0); //AP-fork (1.0.0-ap-1): see getBalance()
 
         for(int i = start; i < end; i++)
         {
@@ -1146,6 +1166,7 @@ public abstract class C4FMSymbolProcessor
             //Re-initialize the equalizer any time the balance correction value exceeds the threshold.
             if(mSynchronized && Math.abs(balanceCorrection) > EQUALIZER_RECALIBRATE_THRESHOLD)
             {
+                mHealthRecalibrations.incrementAndGet();
                 reset();
             }
 
@@ -1313,6 +1334,9 @@ public abstract class C4FMSymbolProcessor
 
         for(int x = 0; x < patternSymbols.length; x++)
         {
+            //AP-fork (ap-15.10.1): the optimizer probes up to 3/4 of a symbol before a lagging detection, which can
+            //reach before the start of the buffer when the detection falls just after a buffer reload.  Score those
+            //samples as zero, the same as samples past the end of the buffer.
             if(bufferPointer >= 0 && bufferPointer < maxPointer)
             {
                 softSymbol = interpolate(mBuffer[bufferPointer], mBuffer[bufferPointer + 1], fractional) * gain + balance;
@@ -1374,6 +1398,17 @@ public abstract class C4FMSymbolProcessor
         Mean mean = new Mean();
         int start = (int)Math.floor(offset - ((mSyncDetector.getDibitLength() - 1) * mSamplesPerSymbol));
         int end = (int)Math.ceil(offset);
+
+        //AP-fork (1.0.0-ap-1): keep the range inside the buffer.  An optimized offset close to the start of the
+        //buffer put the start at -1 (Monson 2026-11-15, DMR channel: ArrayIndexOutOfBoundsException index -1, caught
+        //by the caller and the buffer lost).  The mean is taken over the samples that are in the buffer.
+        start = Math.max(start, 0);
+        end = Math.min(end, mBuffer.length - 1);
+
+        if(end < start)
+        {
+            return 0.0f;
+        }
 
         for(int i = start; i <= end; i++)
         {

@@ -48,7 +48,13 @@ public class ComplexSamplesWaveRecorder extends Module implements IComplexSample
 {
     private final static Logger mLog = LoggerFactory.getLogger(ComplexSamplesWaveRecorder.class);
 
-    private Dispatcher<ComplexSamples> mBufferProcessor = new Dispatcher<>("sdrtrunk complex baseband recorder", 250);
+    /**
+     * Generous queue bound for recorders.  Disk writes can stall for far longer than a DSP consumer, and
+     * discarding recorded samples is worse than a brief backlog, so this is sized well above the DSP paths.
+     */
+    private static final int RECORDER_MAX_QUEUE_SIZE = 2000;
+
+    private Dispatcher<ComplexSamples> mBufferProcessor = new Dispatcher<>("sdrtrunk complex baseband recorder", 250, RECORDER_MAX_QUEUE_SIZE);
     private AtomicBoolean mRunning = new AtomicBoolean();
     private final Object mWriterLock = new Object();
     private final BasebandRecordFormat mRecordFormat;

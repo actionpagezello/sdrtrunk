@@ -26,6 +26,7 @@ import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
 import io.github.dsheirer.alias.id.ctcss.Ctcss;
 import io.github.dsheirer.alias.id.dcs.Dcs;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.esn.Esn;
 import io.github.dsheirer.alias.id.legacy.mobileID.Min;
 import io.github.dsheirer.alias.id.legacy.siteID.SiteID;
@@ -89,6 +90,11 @@ public class AliasFactory
                 Min copyMin = new Min();
                 copyMin.setMin(originalMin.getMin());
                 return copyMin;
+            case NAC:
+                Nac originalNac = (Nac)id;
+                Nac copyNac = new Nac();
+                copyNac.setNacValue(originalNac.getNacValue());
+                return copyNac;
             case NXDN_TYPE_D_RADIO_ID:
                 NXDNTypeDRadio originalTypeDRadio = (NXDNTypeDRadio)id;
                 NXDNTypeDRadio copyTypeDRadio = new NXDNTypeDRadio(originalTypeDRadio.getHomeRepeater(),
@@ -180,6 +186,7 @@ public class AliasFactory
 
             //Legacy identifiers ... not supported
             case FLEETSYNC:
+            case INVERT:
             case LEGACY_TALKGROUP:
             case LTR_NET_UID:
             case MDC1200:
@@ -234,6 +241,7 @@ public class AliasFactory
         copy.setColor(original.getColor());
         copy.setIconName(original.getIconName());
         copy.setRecordable(original.isRecordable());
+        copy.setAudioOutputDevice(original.getAudioOutputDevice());
         return copy;
     }
 

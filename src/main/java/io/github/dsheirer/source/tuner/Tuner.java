@@ -52,6 +52,9 @@ public abstract class Tuner implements ISourceEventProcessor, ITunerErrorListene
         mTunerErrorListener = tunerErrorListener;
         //Register to receive frequency and sample rate change notifications
         mTunerController.addListener(this);
+        //AP-fork: let the controller name this device in its own log lines. Resolved lazily by
+        //getTunerLabel(), so getPreferredName() is not called until after this subclass is constructed.
+        mTunerController.setTuner(this);
     }
 
     /**

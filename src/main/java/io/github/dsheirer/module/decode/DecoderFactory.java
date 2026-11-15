@@ -94,6 +94,7 @@ import io.github.dsheirer.module.decode.nxdn.layer3.filter.NXDNMessageFilterSet;
 import io.github.dsheirer.module.decode.p25.P25TrafficChannelManager;
 import io.github.dsheirer.module.decode.p25.audio.P25P1AudioModule;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
+import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FM;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderLSM;
@@ -104,6 +105,19 @@ import io.github.dsheirer.module.decode.p25.phase2.P25P2DecoderHDQPSK;
 import io.github.dsheirer.module.decode.p25.phase2.P25P2DecoderState;
 import io.github.dsheirer.module.decode.p25.phase2.message.P25P2Message;
 import io.github.dsheirer.module.decode.p25.phase2.message.filter.P25P2MessageFilterSet;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
+import io.github.dsheirer.dsp.squelch.NoiseSquelch;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
+import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
+import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.edacs.EDACSTrafficChannelManager;
+import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceAudioModule;
+import io.github.dsheirer.module.decode.edacs.provoice.ProVoiceDecoder;
+import io.github.dsheirer.module.decode.smartnet.DecodeConfigSmartNet;
+import io.github.dsheirer.module.decode.smartnet.LowSpeedDataFilter;
+import io.github.dsheirer.module.decode.smartnet.SmartNetDecoder;
+import io.github.dsheirer.module.decode.smartnet.SmartNetDecoderState;
+import io.github.dsheirer.module.decode.smartnet.SmartNetTrafficChannelManager;
 import io.github.dsheirer.module.decode.passport.DecodeConfigPassport;
 import io.github.dsheirer.module.decode.passport.PassportDecoder;
 import io.github.dsheirer.module.decode.passport.PassportDecoderState;
@@ -201,6 +215,14 @@ public class DecoderFactory
             case PASSPORT:
                 processPassport(channel, modules, aliasList, decodeConfig);
                 break;
+            case SMARTNET: //AP-fork
+                processSmartNet(channel, modules, aliasList, channelType, (DecodeConfigSmartNet)decodeConfig,
+                    userPreferences);
+                break;
+            case EDACS: //AP-fork
+                processEDACS(channel, modules, aliasList, channelType, (DecodeConfigEDACS)decodeConfig,
+                    userPreferences);
+                break;
             case P25_PHASE1:
                 processP25Phase1(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
                 break;
@@ -234,7 +256,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
         else if(trafficChannelManager instanceof P25TrafficChannelManager p25)
         {
@@ -242,7 +264,7 @@ public class DecoderFactory
         }
         else
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
 
         //Only add traffic channel manager to the modules if this is the control channel
@@ -267,6 +289,11 @@ public class DecoderFactory
             P25P2AudioModule audioModule2 = new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList);
             configureJMBEAudioModule(audioModule1, configP25P2);
             configureJMBEAudioModule(audioModule2, configP25P2);
+            //AP-fork: audio hangtime and the per-channel graphic equalizer
+            audioModule1.setAudioHangtimeMs(configP25P2.getAudioHangtimeMs());
+            audioModule2.setAudioHangtimeMs(configP25P2.getAudioHangtimeMs());
+            audioModule1.setGraphicEQ(configP25P2.isGraphicEQEnabled(), configP25P2.getGraphicEQBandGains());
+            audioModule2.setGraphicEQ(configP25P2.isGraphicEQEnabled(), configP25P2.getGraphicEQBandGains());
             modules.add(audioModule1);
             modules.add(audioModule2);
         }
@@ -297,7 +324,9 @@ public class DecoderFactory
             switch(configP25P1.getModulation())
             {
                 case C4FM:
-                    modules.add(new P25P1DecoderC4FM());
+                    P25P1DecoderC4FM decoderC4FM = new P25P1DecoderC4FM();
+                    decoderC4FM.setLogLabel(channel.getName()); //AP-fork (ap-15.9.32): attributes its log lines
+                    modules.add(decoderC4FM);
                     break;
                 case CQPSK:
                     modules.add(new P25P1DecoderLSM());
@@ -308,7 +337,7 @@ public class DecoderFactory
 
             if(channel.getChannelType() == ChannelType.STANDARD)
             {
-                P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
+                P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel, aliasList);
                 modules.add(primaryTCM);
                 modules.add(new P25P1DecoderState(channel, primaryTCM));
             }
@@ -325,6 +354,9 @@ public class DecoderFactory
 
             P25P1AudioModule audioModule = new P25P1AudioModule(userPreferences, aliasList);
             configureJMBEAudioModule(audioModule, configP25P1);
+            //AP-fork: audio hangtime and the per-channel graphic equalizer
+            audioModule.setAudioHangtimeMs(configP25P1.getAudioHangtimeMs());
+            audioModule.setGraphicEQ(configP25P1.isGraphicEQEnabled(), configP25P1.getGraphicEQBandGains());
             modules.add(audioModule);
 
             //Add a channel rotation monitor when we have multiple control channel frequencies specified
@@ -355,6 +387,152 @@ public class DecoderFactory
         {
             modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
         }
+    }
+
+    /**
+     * AP-fork (SmartNet): Motorola Type II.  The control channel decodes the outbound signalling and starts a voice
+     * (traffic) channel for each call; a voice channel is plain analog FM audio carrying the call's identifiers.
+     */
+    private static void processSmartNet(Channel channel, List<Module> modules, AliasList aliasList,
+                                        ChannelType channelType, DecodeConfigSmartNet config,
+                                        UserPreferences userPreferences)
+    {
+        if(channelType == ChannelType.STANDARD)
+        {
+            modules.add(new SmartNetDecoder());
+            SmartNetTrafficChannelManager trafficChannelManager = new SmartNetTrafficChannelManager(channel);
+            modules.add(trafficChannelManager);
+            SmartNetDecoderState smartNetState = new SmartNetDecoderState(channelType, trafficChannelManager, config);
+            smartNetState.setAliasList(aliasList);
+            modules.add(smartNetState);
+
+            //Several control channel frequencies (Radio Reference import lists every 'c' frequency): move to the
+            //next one while no control channel is decoded
+            if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                sctmf.hasMultipleFrequencies())
+            {
+                List<State> activeStates = new ArrayList<>();
+                activeStates.add(State.CONTROL);
+                modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
+            }
+        }
+        else if(config.isDigital())
+        {
+            //AP-fork (edacs-22): voice channel of a call granted as digital (OSW 0x321) - P25 Phase 1 voice.  The P25
+            //decoder and audio module do the voice; the talkgroup and radio stay those of the control channel (the
+            //link control inside the voice frames of MSP Central MA does not carry usable ones).
+            P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+            decoder.setLogLabel(channel.getName());
+            modules.add(decoder);
+            P25P1AudioModule p25AudioModule = new P25P1AudioModule(userPreferences, aliasList);
+            p25AudioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            modules.add(p25AudioModule);
+            modules.add(new SmartNetDecoderState(channelType, null, config));
+        }
+        else
+        {
+            long maxAudioSegmentLengthMillis = config.getCallTimeoutSeconds() * 1000L + 5000;
+            AudioModule audioModule = new AudioModule(aliasList, AbstractAudioModule.DEFAULT_TIMESLOT,
+                maxAudioSegmentLengthMillis, highPassFilter());
+            audioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            modules.add(audioModule);
+
+            SourceType sourceType = channel.getSourceConfiguration().getSourceType();
+
+            if(sourceType == SourceType.TUNER || sourceType == SourceType.TUNER_MULTIPLE_FREQUENCIES)
+            {
+                //Noise squelch: the voice channel stays open until the control channel stops announcing the call,
+                //a few seconds after the transmitter drops - this keeps that static out of the audio
+                FMDemodulatorModule demodulator = new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, new NoiseSquelch(
+                    NoiseSquelch.DEFAULT_NOISE_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_NOISE_CLOSE_THRESHOLD,
+                    NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD));
+
+                //Trunked voice channel: mute as soon as the carrier drops, and remove the sub-audible low-speed data
+                demodulator.setCarrierSquelch(true);
+                demodulator.setOutputFilter(LowSpeedDataFilter.create());
+
+                if(config.isGraphicEQEnabled())
+                {
+                    GraphicEqualizer equalizer = new GraphicEqualizer(8000.0);
+                    equalizer.setBandGains(config.getGraphicEQBandGains());
+                    equalizer.setEnabled(true);
+                    demodulator.setGraphicEqualizer(equalizer);
+                }
+
+                modules.add(demodulator);
+            }
+
+            modules.add(new SmartNetDecoderState(channelType, null, config));
+        }
+    }
+
+    /**
+     * AP-fork (EDACS): EDACS Extended Addressing.  The control channel decodes the outbound control channel and starts
+     * a voice (traffic) channel for each call: ProVoice voice decoded through the JMBE IMBE codec, or analog FM.
+     */
+    private static void processEDACS(Channel channel, List<Module> modules, AliasList aliasList,
+                                     ChannelType channelType, DecodeConfigEDACS config, UserPreferences userPreferences)
+    {
+        if(channelType == ChannelType.STANDARD)
+        {
+            modules.add(new EDACSDecoder());
+            EDACSTrafficChannelManager trafficChannelManager = new EDACSTrafficChannelManager(channel);
+            modules.add(trafficChannelManager);
+            EDACSDecoderState edacsState = new EDACSDecoderState(channelType, trafficChannelManager, config);
+            edacsState.setAliasList(aliasList);
+            modules.add(edacsState);
+
+            if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                sctmf.hasMultipleFrequencies())
+            {
+                List<State> activeStates = new ArrayList<>();
+                activeStates.add(State.CONTROL);
+                modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
+            }
+        }
+        else if(config.getVoiceMode() == DecodeConfigEDACS.VoiceMode.ANALOG)
+        {
+            AudioModule audioModule = new AudioModule(aliasList, AbstractAudioModule.DEFAULT_TIMESLOT,
+                config.getCallTimeoutSeconds() * 1000L + 5000, highPassFilter());
+            audioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            modules.add(audioModule);
+
+            SourceType sourceType = channel.getSourceConfiguration().getSourceType();
+
+            if(sourceType == SourceType.TUNER || sourceType == SourceType.TUNER_MULTIPLE_FREQUENCIES)
+            {
+                FMDemodulatorModule demodulator = new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH, new NoiseSquelch(
+                    NoiseSquelch.DEFAULT_NOISE_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_NOISE_CLOSE_THRESHOLD,
+                    NoiseSquelch.DEFAULT_HYSTERESIS_OPEN_THRESHOLD, NoiseSquelch.DEFAULT_HYSTERESIS_CLOSE_THRESHOLD));
+                demodulator.setCarrierSquelch(true);
+                demodulator.setGraphicEqualizer(edacsEqualizer(config));
+                modules.add(demodulator);
+            }
+
+            modules.add(new EDACSDecoderState(channelType, null, config));
+        }
+        else
+        {
+            modules.add(new ProVoiceDecoder());
+            ProVoiceAudioModule audioModule = new ProVoiceAudioModule(userPreferences, aliasList);
+            audioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            audioModule.setGraphicEqualizer(edacsEqualizer(config));
+            modules.add(audioModule);
+            modules.add(new EDACSDecoderState(channelType, null, config));
+        }
+    }
+
+    private static GraphicEqualizer edacsEqualizer(DecodeConfigEDACS config)
+    {
+        if(!config.isGraphicEQEnabled())
+        {
+            return null;
+        }
+
+        GraphicEqualizer equalizer = new GraphicEqualizer(8000.0);
+        equalizer.setBandGains(config.getGraphicEQBandGains());
+        equalizer.setEnabled(true);
+        return equalizer;
     }
 
     /**
@@ -617,7 +795,7 @@ public class DecoderFactory
         }
         else
         {
-            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel);
+            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel, aliasList);
         }
 
         //Only register the traffic channel manager as a module if this is the parent control channel.
@@ -851,6 +1029,10 @@ public class DecoderFactory
                 return new DecodeConfigNXDN();
             case PASSPORT:
                 return new DecodeConfigPassport();
+            case SMARTNET:
+                return new DecodeConfigSmartNet();
+            case EDACS:
+                return new DecodeConfigEDACS();
             case P25_PHASE1:
                 return new DecodeConfigP25Phase1();
             case P25_PHASE2:
@@ -939,6 +1121,18 @@ public class DecoderFactory
                     return copyP25P2;
                 case PASSPORT:
                     return new DecodeConfigPassport();
+                case SMARTNET:
+                    DecodeConfigSmartNet originalSmartNet = (DecodeConfigSmartNet)config;
+                    DecodeConfigSmartNet copySmartNet = new DecodeConfigSmartNet();
+                    copySmartNet.setBandPlan(originalSmartNet.getBandPlan());
+                    copySmartNet.setCallTimeoutSeconds(originalSmartNet.getCallTimeoutSeconds());
+                    copySmartNet.setTrafficChannelPoolSize(originalSmartNet.getTrafficChannelPoolSize());
+                    copySmartNet.setAudioHangtimeMs(originalSmartNet.getAudioHangtimeMs());
+                    copySmartNet.setGraphicEQEnabled(originalSmartNet.isGraphicEQEnabled());
+                    copySmartNet.setGraphicEQBandGains(originalSmartNet.getGraphicEQBandGains());
+                    return copySmartNet;
+                case EDACS:
+                    return ((DecodeConfigEDACS)config).copy();
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
             }
@@ -959,5 +1153,15 @@ public class DecoderFactory
         to.setComfortNoiseGain(from.getComfortNoiseGain());
         to.setToneGain(from.getToneGain());
         to.setLegacyToneLevels(from.isLegacyToneLevels());
+    }
+
+    /**
+     * AP-fork: the default audio filtering (high-pass) as an audio module filter list, for the fork's decoders.
+     */
+    private static List<AbstractAudioFilter> highPassFilter()
+    {
+        List<AbstractAudioFilter> filters = new ArrayList<>();
+        filters.add(new HighPassAudioFilter());
+        return filters;
     }
 }

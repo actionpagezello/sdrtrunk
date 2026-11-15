@@ -18,6 +18,8 @@
  */
 package io.github.dsheirer.module.decode.p25;
 
+import io.github.dsheirer.module.decode.DecoderFactory;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
@@ -113,8 +115,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     private List<Channel> mManagedPhase1TrafficChannels;
     private List<Channel> mManagedPhase2TrafficChannels;
     private Map<Long,Channel> mAllocatedTrafficChannelMap = new HashMap<>();
-    private Map<Long, P25ChannelEventTracker> mTS1ChannelGrantEventMap = new HashMap<>();
-    private Map<Long, P25ChannelEventTracker> mTS2ChannelGrantEventMap = new HashMap<>();
+    private Map<Long,P25ChannelEventTracker> mTS1ChannelGrantEventMap = new HashMap<>();
+    private Map<Long,P25ChannelEventTracker> mTS2ChannelGrantEventMap = new HashMap<>();
     private ReentrantLock mLock = new ReentrantLock();
     private Map<Integer, IFrequencyBand> mFrequencyBandMap = new ConcurrentHashMap<>();
     private Listener<ChannelEvent> mChannelEventListener;
@@ -124,6 +126,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     private ScrambleParameters mPhase2ScrambleParameters;
     private Listener<IMessage> mMessageListener;
     private boolean mIgnoreDataCalls;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
+    private AliasList mAliasList;
     //Used only for data calls
     private final DecodeEventDuplicateDetector mDuplicateDetector = new DecodeEventDuplicateDetector();
     private final TalkerAliasManager mTalkerAliasManager = new TalkerAliasManager();
@@ -134,22 +138,43 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
      */
     public P25TrafficChannelManager(Channel parentChannel)
     {
+        this(parentChannel, null);
+    }
+
+    /**
+     * Constructs an instance with an alias model for talkgroup filtering.
+     * @param parentChannel (ie control channel) that owns this traffic channel manager
+     * @param aliasModel to use for alias lookups (may be null to disable filtering)
+     */
+    public P25TrafficChannelManager(Channel parentChannel, AliasList aliasList)
+    {
         mParentChannel = parentChannel;
+        mAliasList = aliasList;
 
         if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 phase1)
         {
             mIgnoreDataCalls = phase1.getIgnoreDataCalls();
+            mIgnoreUnaliasedTalkgroups = phase1.getIgnoreUnaliasedTalkgroups();
             createPhase1TrafficChannels(phase1.getTrafficChannelPoolSize(), phase1);
-            DecodeConfigP25Phase2 phase2 = new DecodeConfigP25Phase2();
-            DecoderFactory.transferJMBESettings(phase1, phase2);
-            createPhase2TrafficChannels(phase1.getTrafficChannelPoolSize(), phase2);
+
+            // Copy EQ settings from Phase 1 parent to Phase 2 traffic channels
+            DecodeConfigP25Phase2 p2Config = new DecodeConfigP25Phase2();
+            p2Config.setGraphicEQEnabled(phase1.isGraphicEQEnabled());
+            p2Config.setGraphicEQBandGains(phase1.getGraphicEQBandGains());
+            DecoderFactory.transferJMBESettings(phase1, p2Config);
+            createPhase2TrafficChannels(phase1.getTrafficChannelPoolSize(), p2Config);
         }
         else if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase2 phase2)
         {
             mIgnoreDataCalls = phase2.getIgnoreDataCalls();
-            DecodeConfigP25Phase1 phase1 = new DecodeConfigP25Phase1();
-            DecoderFactory.transferJMBESettings(phase2, phase1);
-            createPhase1TrafficChannels(phase2.getTrafficChannelPoolSize(), phase1);
+            mIgnoreUnaliasedTalkgroups = phase2.getIgnoreUnaliasedTalkgroups();
+
+            // Copy EQ settings from Phase 2 parent to Phase 1 traffic channels
+            DecodeConfigP25Phase1 p1Config = new DecodeConfigP25Phase1();
+            p1Config.setGraphicEQEnabled(phase2.isGraphicEQEnabled());
+            p1Config.setGraphicEQBandGains(phase2.getGraphicEQBandGains());
+            DecoderFactory.transferJMBESettings(phase2, p1Config);
+            createPhase1TrafficChannels(phase2.getTrafficChannelPoolSize(), p1Config);
             createPhase2TrafficChannels(phase2.getTrafficChannelPoolSize(), phase2);
         }
     }
@@ -161,6 +186,112 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     public TalkerAliasManager getTalkerAliasManager()
     {
         return mTalkerAliasManager;
+    }
+
+    //AP-fork (edacs-24): calls by talkgroup for the activity summary (Details tab)
+    private final Map<String,Integer> mCallCounts = new java.util.HashMap<>();
+    private final Map<String,Identifier> mCallIdentifiers = new java.util.HashMap<>();
+    private static final int CALL_COUNT_LIMIT = 2000;
+
+    /**
+     * Counts a new call against the talkgroup (or patch group, or radio for a unit-to-unit call) it is to.
+     */
+    void countCall(IdentifierCollection identifiers)
+    {
+        Identifier to = identifiers != null ? identifiers.getToIdentifier() : null;
+
+        if(to != null)
+        {
+            String key = to.toString();
+
+            synchronized(mCallCounts)
+            {
+                if(mCallCounts.containsKey(key) || mCallCounts.size() < CALL_COUNT_LIMIT)
+                {
+                    mCallCounts.merge(key, 1, Integer::sum);
+                    mCallIdentifiers.putIfAbsent(key, to);
+                }
+            }
+        }
+    }
+
+    /**
+     * Calls by talkgroup with the alias name from the channel's alias list, for the activity summary.  Talkgroups in
+     * numeric order, anything else (patch groups) after them.
+     */
+    public String getTalkgroupSummary()
+    {
+        java.util.List<String> keys;
+        Map<String,Integer> counts;
+        Map<String,Identifier> identifiers;
+
+        synchronized(mCallCounts)
+        {
+            counts = new java.util.HashMap<>(mCallCounts);
+            identifiers = new java.util.HashMap<>(mCallIdentifiers);
+        }
+
+        keys = new java.util.ArrayList<>(counts.keySet());
+        keys.sort(java.util.Comparator.comparingLong((String key) -> {
+            try
+            {
+                return Long.parseLong(key);
+            }
+            catch(NumberFormatException e)
+            {
+                return Long.MAX_VALUE;
+            }
+        }).thenComparing(java.util.Comparator.naturalOrder()));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Calls by talkgroup (talkgroup, alias, calls):\n");
+
+        if(keys.isEmpty())
+        {
+            sb.append("  none yet\n");
+        }
+
+        for(String key : keys)
+        {
+            String name = "";
+
+            if(mAliasList != null)
+            {
+                java.util.List<io.github.dsheirer.alias.Alias> aliases = mAliasList.getAliases(identifiers.get(key));
+
+                if(aliases != null && !aliases.isEmpty())
+                {
+                    name = aliases.get(0).getName();
+                }
+            }
+
+            sb.append(String.format("  %8s  %-32s %d%n", key, name, counts.get(key)));
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Returns true if the identifier collection's TO talkgroup has at least one alias in the parent
+     * channel's alias list, or if alias-based filtering is not enabled.
+     * @param ic identifier collection to check
+     * @return true if the call should be processed, false if it should be ignored
+     */
+    private boolean hasAlias(IdentifierCollection ic)
+    {
+        if(!mIgnoreUnaliasedTalkgroups || mAliasList == null)
+        {
+            return true;
+        }
+
+        Identifier to = ic.getToIdentifier();
+
+        if(to == null)
+        {
+            return true; // No talkgroup to check — let it through
+        }
+
+        return !mAliasList.getAliases(to).isEmpty();
     }
 
     /**
@@ -670,11 +801,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
      * @param serviceOptions for the call
      * @param ic for the call
      * @param timestamp for the message that is being processed
-     * @return channel descriptor
+     * @return
      */
     public IChannelDescriptor processP2TrafficCurrentUser(long frequency, int timeslot, IChannelDescriptor channelDescriptor,
-                                                              ServiceOptions serviceOptions, MacOpcode macOpcode,
-                                                              IdentifierCollection ic, long timestamp, String additionalDetails, String context)
+                                                          ServiceOptions serviceOptions, MacOpcode macOpcode,
+                                                          IdentifierCollection ic, long timestamp, String additionalDetails, String context)
     {
         mLock.lock();
 
@@ -709,6 +840,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                             (serviceOptions != null ? serviceOptions : ""))
                     .identifiers(ic)
                     .build();
+            countCall(callEvent.getIdentifierCollection());
 
             tracker = new P25ChannelEventTracker(callEvent);
             addTracker(tracker, frequency, timeslot);
@@ -855,6 +987,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                         .details("PHASE 1 CALL " + (serviceOptions != null ? serviceOptions : ""))
                         .identifiers(mic)
                         .build();
+                countCall(callEvent.getIdentifierCollection());
 
                 tracker = new P25ChannelEventTracker(callEvent);
                 addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
@@ -1001,6 +1134,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                             .details("PHASE 1 CALL " + (eki.isEncrypted() ? eki.toString() : ""))
                             .identifiers(mic)
                             .build();
+                    countCall(callEvent.getIdentifierCollection());
 
                     tracker = new P25ChannelEventTracker(callEvent);
                     addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
@@ -1060,6 +1194,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                             (serviceOptions != null ? serviceOptions : ""))
                     .identifiers(ic)
                     .build();
+            countCall(callEvent.getIdentifierCollection());
 
             tracker = new P25ChannelEventTracker(callEvent);
             addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
@@ -1220,6 +1355,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     {
         long frequency = apco25Channel.getDownlinkFrequency();
 
+        if(!hasAlias(ic))
+        {
+            return;
+        }
+
         P25ChannelEventTracker tracker = getTrackerRemoveIfStale(frequency, P25P1Message.TIMESLOT_1, timestamp);
 
         if(tracker != null && tracker.isSameCallCheckingToOnly(ic, timestamp))
@@ -1301,6 +1441,10 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             .details(details)
             .identifiers(ic)
             .build();
+        if(!isDataChannelGrant)
+        {
+            countCall(event.getIdentifierCollection());
+        }
         tracker = new P25ChannelEventTracker(event);
         addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
 
@@ -1346,6 +1490,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         int timeslot = apco25Channel.getTimeslot();
         long frequency = apco25Channel.getDownlinkFrequency();
         ic.setTimeslot(timeslot);
+
+        if(!hasAlias(ic))
+        {
+            return;
+        }
 
         P25ChannelEventTracker tracker = getTrackerRemoveIfStale(apco25Channel, timestamp);
 
@@ -1415,6 +1564,10 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             .identifiers(ic)
             .timeslot(apco25Channel.getTimeslot())
             .build();
+        if(!isDataChannelGrant)
+        {
+            countCall(event.getIdentifierCollection());
+        }
 
         tracker = new P25ChannelEventTracker(event);
         addTracker(tracker, frequency, timeslot);
@@ -1835,3 +1988,4 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         }
     }
 }
+        

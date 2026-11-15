@@ -73,7 +73,7 @@ public class HDUMessage extends P25P1Message
     private static final int[] RS_HEX_14 = {612, 613, 614, 615, 616, 617};
     private static final int[] RS_HEX_15 = {630, 631, 632, 633, 634, 635};
 
-    private static final ReedSolomon_63_47_17_P25 reedSolomon_63_47_17 = new ReedSolomon_63_47_17_P25();
+    private static final ReedSolomon_63_47_17_P25 reedSolomon_63_47_17 = new ReedSolomon_63_47_17_P25(36);
 
     private HeaderData mHeaderData;
 

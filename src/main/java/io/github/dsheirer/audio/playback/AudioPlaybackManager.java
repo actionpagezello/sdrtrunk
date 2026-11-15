@@ -58,6 +58,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     private final LinkedTransferQueue<AudioSegment> mNewAudioSegmentQueue = new LinkedTransferQueue<>();
     private final ReentrantLock mAudioChannelsLock = new ReentrantLock();
     private final UserPreferences mUserPreferences;
+    private final AudioSegmentRouter mAudioRouter = new AudioSegmentRouter();
     private AudioPlaybackDeviceDescriptor mAudioPlaybackDevice;
     private AudioOutput mAudioOutput;
     private ScheduledFuture<?> mProcessingTask;
@@ -105,6 +106,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     public void receive(AudioSegment audioSegment)
     {
         mNewAudioSegmentQueue.add(audioSegment);
+        mAudioRouter.route(audioSegment);
     }
 
     /**
@@ -190,35 +192,32 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
                 }
                 else if(audioSegment.isLinked())
                 {
-                    if(mAudioOutput != null)
+                    mAudioChannelsLock.lock();
+
+                    try
                     {
-                        mAudioChannelsLock.lock();
-
-                        try
+                        for(AudioChannel audioOutput: mAudioOutput.getAudioProvider().getAudioChannels())
                         {
-                            for(AudioChannel audioOutput: mAudioOutput.getAudioProvider().getAudioChannels())
+                            if(audioOutput.isLinkedTo(audioSegment))
                             {
-                                if(audioOutput.isLinkedTo(audioSegment))
+                                it.remove();
+
+                                //Linked audio continues the current call, so it goes ahead of anything queued
+                                AudioSegment queued = audioOutput.pollQueuedAudioSegment();
+
+                                while(queued != null)
                                 {
-                                    it.remove();
-
-                                    //Linked audio continues the current call, so it goes ahead of anything queued
-                                    AudioSegment queued = audioOutput.pollQueuedAudioSegment();
-
-                                    while(queued != null)
-                                    {
-                                        displaced.add(queued);
-                                        queued = audioOutput.pollQueuedAudioSegment();
-                                    }
-
-                                    audioOutput.play(audioSegment);
+                                    displaced.add(queued);
+                                    queued = audioOutput.pollQueuedAudioSegment();
                                 }
+
+                                audioOutput.play(audioSegment);
                             }
                         }
-                        finally
-                        {
-                            mAudioChannelsLock.unlock();
-                        }
+                    }
+                    finally
+                    {
+                        mAudioChannelsLock.unlock();
                     }
                 }
             }
@@ -226,7 +225,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
             mAudioSegments.addAll(displaced);
 
             //Sort audio segments by playback priority and assign to empty audio outputs
-            if(!mAudioSegments.isEmpty() && mAudioOutput != null)
+            if(!mAudioSegments.isEmpty())
             {
                 mAudioSegments.sort(mAudioSegmentPrioritySorter);
                 mAudioChannelsLock.lock();
@@ -315,6 +314,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
 
         mNewAudioSegmentQueue.clear();
         mAudioSegments.clear();
+        mAudioRouter.dispose();
     }
 
     /**

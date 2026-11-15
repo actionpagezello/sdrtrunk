@@ -835,6 +835,7 @@ public class SpectralDisplayPanel extends JPanel
 
         private long mFrequency;
         private double mWindowOffset;
+        private ChangeListener mChangeListener;
 
         public ZoomItem(long frequency, double windowOffset)
         {
@@ -859,13 +860,14 @@ public class SpectralDisplayPanel extends JPanel
             setPaintTicks(true);
             setPaintLabels(true);
 
-            this.addChangeListener(new ChangeListener()
+            mChangeListener = new ChangeListener()
             {
                 @Override public void stateChanged(ChangeEvent e)
                 {
                     setZoom(getValue(), mFrequency, mWindowOffset);
                 }
-            });
+            };
+            this.addChangeListener(mChangeListener);
         }
     }
 

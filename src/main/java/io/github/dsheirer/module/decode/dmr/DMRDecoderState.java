@@ -829,6 +829,14 @@ public class DMRDecoderState extends TimeslotDecoderState
             case HYTERA_08_ANNOUNCEMENT:
             case HYTERA_68_ANNOUNCEMENT:
             case HYTERA_68_XPT_SITE_STATE:
+            case HYTERA_68_ALOHA:
+            case HYTERA_68_ACKNOWLEDGE:
+            case HYTERA_08_ACKNOWLEDGE:
+            case HYTERA_08_CSBKO_44:
+            case HYTERA_68_XPT_ADJACENT_SITE:
+            case HYTERA_68_XPT_PREAMBLE:
+            case HYTERA_68_CSBKO_62:
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL, getTimeslot()));
                 break;
             case HYTERA_08_TRAFFIC_CHANNEL_TALKER_STATUS:
                 if(csbk instanceof HyteraTrafficChannelTalkerStatus status)
@@ -885,11 +893,23 @@ public class DMRDecoderState extends TimeslotDecoderState
                 }
                 break;
             case MOTOROLA_CONPLUS_NEIGHBOR_REPORT:
+            case MOTOROLA_CONPLUS_TERMINATE_CHANNEL_GRANT:
+            case MOTOROLA_CONPLUS_CSBKO_10:
+            case MOTOROLA_CONPLUS_CSBKO_16:
+            case MOTOROLA_CONPLUS_DATA_WINDOW_ANNOUNCEMENT:
+            case MOTOROLA_CONPLUS_DATA_WINDOW_GRANT:
+            case MOTOROLA_CAPPLUS_CALL_ALERT:
+            case MOTOROLA_CAPPLUS_CALL_ALERT_ACK:
+            case MOTOROLA_CAPPLUS_DATA_WINDOW_ANNOUNCEMENT:
+            case MOTOROLA_CAPPLUS_DATA_WINDOW_GRANT:
+            case MOTOROLA_CAPPLUS_CSBKO_60:
+            case MOTOROLA_CAPPLUS_PREAMBLE:
                 broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL, getTimeslot()));
                 break;
             case STANDARD_BROADCAST_TALKGROUP_VOICE_CHANNEL_GRANT:
             case STANDARD_DUPLEX_PRIVATE_DATA_CHANNEL_GRANT:
             case STANDARD_DUPLEX_PRIVATE_VOICE_CHANNEL_GRANT:
+            case STANDARD_PRIVATE_DATA_CHANNEL_GRANT_MULTI_ITEM:
             case STANDARD_PRIVATE_DATA_CHANNEL_GRANT_SINGLE_ITEM:
             case STANDARD_PRIVATE_VOICE_CHANNEL_GRANT:
             case STANDARD_TALKGROUP_DATA_CHANNEL_GRANT_MULTI_ITEM:

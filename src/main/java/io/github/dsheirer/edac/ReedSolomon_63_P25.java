@@ -31,6 +31,8 @@ public class ReedSolomon_63_P25 extends BerlekempMassey
      */
     public static final int[] P25_GENERATOR_POLYNOMIAL = { 1, 1, 0, 0, 0, 0, 1 };
 
+    private final int mShortenedLength;
+
     /**
      * Constructs an instance
      *
@@ -39,6 +41,49 @@ public class ReedSolomon_63_P25 extends BerlekempMassey
      */
     public ReedSolomon_63_P25(int n, int k)
     {
+        this(n, k, n);
+    }
+
+    /**
+     * AP-fork (ap-15.10.1): constructs an instance for a code shortened to the specified number of symbols.  The
+     * caller places the shortened codeword in the first shortenedLength symbols and leaves the rest zero.
+     *
+     * @param n total symbols of the full-length code
+     * @param k message symbols of the full-length code
+     * @param shortenedLength symbols actually transmitted
+     */
+    public ReedSolomon_63_P25(int n, int k, int shortenedLength)
+    {
         super(6, n, k, P25_GENERATOR_POLYNOMIAL);
+        mShortenedLength = shortenedLength;
+    }
+
+    /**
+     * AP-fork (ap-15.10.1): decodes as the full-length code, then rejects a correction that changed any of the
+     * zero padding symbols beyond the shortened length.  Those symbols are known to be zero, so a correction there
+     * means the received word is beyond the code's correction capability and the decoder found a different codeword.
+     * Without this check a heavily corrupted RS(24,16,9) encryption sync word in an LDU2 is reported as corrected
+     * about 3% of the time, almost always with corrections in the padding, carrying a random algorithm ID that mutes
+     * a clear call.
+     *
+     * @return true if the errors are irrecoverable
+     */
+    @Override
+    public boolean decode(final int[] input, int[] output)
+    {
+        boolean irrecoverable = super.decode(input, output);
+
+        if(!irrecoverable)
+        {
+            for(int x = mShortenedLength; x < output.length; x++)
+            {
+                if(output[x] != 0)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return irrecoverable;
     }
 }

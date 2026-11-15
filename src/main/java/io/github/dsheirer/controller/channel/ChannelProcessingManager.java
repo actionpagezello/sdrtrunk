@@ -53,6 +53,7 @@ import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.util.ThreadPool;
 import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +86,9 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
     private List<Listener<IDecodeEvent>> mDecodeEventListeners = new CopyOnWriteArrayList<>();
     private Broadcaster<ChannelEvent> mChannelEventBroadcaster = new Broadcaster();
 
+    private Map<ProcessingChain, Listener<IDecodeEvent>> mParentDecodeEventHistoryListeners = new ConcurrentHashMap<>();
+    private Map<ProcessingChain, Listener<IDecodeEvent>> mChildDecodeEventHistoryListeners = new ConcurrentHashMap<>();
+
     private ChannelMapModel mChannelMapModel;
     private ChannelMetadataModel mChannelMetadataModel;
     private EventLogManager mEventLogManager;
@@ -112,6 +116,7 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
         mAliasModel = aliasModel;
         mUserPreferences = userPreferences;
         mChannelMetadataModel = new ChannelMetadataModel();
+
     }
 
     /**
@@ -160,6 +165,22 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
     public ProcessingChain getProcessingChain(Channel channel)
     {
         return mProcessingChainsMap.get(channel);
+    }
+
+    /**
+     * Returns an unmodifiable view of the currently active channel to processing chain mappings.
+     *
+     * Intended for callers that have to act on every processing chain matching some property of its
+     * channel - applying a mute to a trunked channel and all of its traffic channels, for example -
+     * rather than on one channel known in advance.  The backing map is concurrent, so the returned
+     * view is safe to iterate while channels start and stop, but it is a live view and not a
+     * snapshot.
+     *
+     * @return unmodifiable view of the active channel to processing chain mappings
+     */
+    public Map<Channel,ProcessingChain> getProcessingChains()
+    {
+        return Collections.unmodifiableMap(mProcessingChainsMap);
     }
 
     /**
@@ -431,11 +452,15 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
         //the traffic channel event history.
         if(request.hasParentDecodeEventHistory())
         {
-            processingChain.getDecodeEventHistory().addListener(request.getParentDecodeEventHistory());
+            Listener<IDecodeEvent> parentListener = request.getParentDecodeEventHistory();
+            processingChain.getDecodeEventHistory().addListener(parentListener);
+            mParentDecodeEventHistoryListeners.put(processingChain, parentListener);
         }
         else if(request.hasChildDecodeEventHistory())
         {
-            request.getChildDecodeEventHistory().addListener(processingChain.getDecodeEventHistory());
+            Listener<IDecodeEvent> childListener = processingChain.getDecodeEventHistory();
+            request.getChildDecodeEventHistory().addListener(childListener);
+            mChildDecodeEventHistoryListeners.put(processingChain, childListener);
         }
 
         //Register to receive event bus requests/notifications
@@ -689,6 +714,19 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
                 //the owning parent channel's traffic channel manager can cleanup it's accounting.
                 mChannelEventBroadcaster.broadcast(new ChannelEvent(channel, ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
                 mChannelEventBroadcaster.removeListener(processingChain);
+
+                //Remove decode event history listeners
+                Listener<IDecodeEvent> parentListener = mParentDecodeEventHistoryListeners.remove(processingChain);
+                if(parentListener != null)
+                {
+                    processingChain.getDecodeEventHistory().removeListener(parentListener);
+                }
+
+                Listener<IDecodeEvent> childListener = mChildDecodeEventHistoryListeners.remove(processingChain);
+                if(childListener != null)
+                {
+                    processingChain.getDecodeEventHistory().removeListener(childListener);
+                }
 
                 //Unregister for event bus requests and notifications
                 processingChain.getEventBus().unregister(ChannelProcessingManager.this);

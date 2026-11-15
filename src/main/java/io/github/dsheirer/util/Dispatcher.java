@@ -23,14 +23,14 @@ import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.source.heartbeat.HeartbeatManager;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,12 +39,34 @@ import org.slf4j.LoggerFactory;
  * registered listener on this consumer/dispatcher thread.  Internally uses a single-thread thread pool to effect a
  * timer-based interval for processing to avoid excessive context switching inherent in a blocking queue.  Sizes the
  * thread pool to a single thread to ensure Garbage Collector can efficiently clean objects created on the thread.
+ *
+ * The queue is bounded.  When the consumer cannot keep pace with the producer, the oldest queued elements are discarded
+ * so that the queue cannot grow without limit.  This matters because producers here are USB transfer callback threads
+ * that never block: without a bound, a consumer stall converts directly into unbounded heap growth, and because queued
+ * elements are strongly reachable they are live objects that the garbage collector cannot reclaim.  Dropping the oldest
+ * elements is the correct policy for real-time DSP, where the newest samples are the useful ones.
  */
 public class Dispatcher<E> implements Listener<E>
 {
     private final static Logger mLog = LoggerFactory.getLogger(Dispatcher.class);
-    private static final long OVERFLOW_LOG_INTERVAL_MILLISECONDS = 10000;
-    private final BlockingQueue<E> mQueue;
+
+    /**
+     * Default maximum queue size, used by constructors that do not specify one.  Callers that know their element size
+     * or production rate should specify a bound derived from those values instead of relying on this.
+     */
+    public static final int DEFAULT_MAX_QUEUE_SIZE = 500;
+
+    /**
+     * Minimum interval between queue overflow log messages, so that a sustained overflow does not itself flood the log.
+     */
+    private static final long DROP_LOG_INTERVAL_MS = 10_000;
+
+    /**
+     * Queue occupancy, as a fraction of capacity, below which an overflow episode is considered recovered.
+     */
+    private static final double RECOVERY_THRESHOLD = 0.25;
+
+    private final LinkedTransferQueue<E> mQueue = new LinkedTransferQueue<>();
     private Listener<E> mListener;
     private final AtomicBoolean mRunning = new AtomicBoolean();
     private String mThreadName;
@@ -52,8 +74,36 @@ public class Dispatcher<E> implements Listener<E>
     private ScheduledFuture<?> mScheduledFuture;
     private final long mInterval;
     private HeartbeatManager mHeartbeatManager;
-    private long mDroppedCount = 0;
-    private long mLastOverflowLogTimestamp = 0;
+
+    /**
+     * Maximum number of elements the queue may hold before the oldest are discarded.
+     *
+     * Not final: a tuner's sample rate - and therefore its buffer rate - is often not known when the owning component
+     * is constructed, so the bound has to be re-derived once the rate arrives.  See setMaxQueueSize().
+     */
+    private volatile int mMaxQueueSize;
+
+    /**
+     * Running count of queued elements.  Maintained separately because LinkedTransferQueue.size() is O(n) and would
+     * itself become a hotspot under exactly the backlog conditions this bound exists to handle.
+     */
+    private final AtomicInteger mQueueSize = new AtomicInteger();
+
+    /**
+     * Cumulative count of elements discarded due to queue overflow.
+     */
+    private final AtomicLong mDropCount = new AtomicLong();
+
+    /**
+     * Reused drain target.  Accessed only from the processor thread.  Reused rather than reallocated so that a
+     * backlogged queue is not copied into a freshly allocated list on every processing interval.
+     */
+    private final List<E> mDrainList;
+
+    //Overflow reporting state.  Accessed only from the processor thread.
+    private long mLastDropLogTimestamp;
+    private long mDropCountAtLastLog;
+    private boolean mDropEpisodeActive;
 
     /**
      * Constructs an instance of a Dispatcher with integrated heartbeat support.
@@ -63,46 +113,112 @@ public class Dispatcher<E> implements Listener<E>
      */
     public Dispatcher(String threadName, long interval, HeartbeatManager heartbeatManager)
     {
-        this(threadName, interval);
-        mHeartbeatManager = heartbeatManager;
+        this(threadName, interval, DEFAULT_MAX_QUEUE_SIZE, heartbeatManager);
     }
 
     /**
-     * Constructs an instance of a bounded Dispatcher with integrated heartbeat support.
+     * Constructs an instance of a Dispatcher with integrated heartbeat support and an explicit queue bound.
      * @param threadName to name the dispatcher thread
      * @param interval for processing each batch in milliseconds.
+     * @param maxQueueSize maximum queued elements before the oldest are discarded.
      * @param heartbeatManager to receive a heartbeat command at each processing interval.
-     * @param maximumQueueSize for queued elements.  Elements received while the queue is full are dropped.
      */
-    public Dispatcher(String threadName, long interval, HeartbeatManager heartbeatManager, int maximumQueueSize)
+    public Dispatcher(String threadName, long interval, int maxQueueSize, HeartbeatManager heartbeatManager)
     {
-        this(threadName, interval, maximumQueueSize);
+        this(threadName, interval, maxQueueSize);
         mHeartbeatManager = heartbeatManager;
     }
 
     /**
-     * Constructs an instance with an unbounded queue.
+     * Constructs an instance with upstream SDRTrunk's argument order (#2534).
+     * @param threadName to name the dispatcher thread
+     * @param interval for processing each batch in milliseconds
+     * @param heartbeatManager to receive heartbeats
+     * @param maxQueueSize maximum queued elements
+     */
+    public Dispatcher(String threadName, long interval, HeartbeatManager heartbeatManager, int maxQueueSize)
+    {
+        this(threadName, interval, maxQueueSize, heartbeatManager);
+    }
+
+    /**
+     * Constructs an instance
      * @param threadName to name the dispatcher thread
      * @param interval for processing each batch in milliseconds.
      */
     public Dispatcher(String threadName, long interval)
     {
-        mThreadName = threadName;
-        mInterval = interval;
-        mQueue = new LinkedTransferQueue<>();
+        this(threadName, interval, DEFAULT_MAX_QUEUE_SIZE);
     }
 
     /**
-     * Constructs a bounded instance.
+     * Constructs an instance with an explicit queue bound.
      * @param threadName to name the dispatcher thread
      * @param interval for processing each batch in milliseconds.
-     * @param maximumQueueSize for queued elements.  Elements received while the queue is full are dropped.
+     * @param maxQueueSize maximum queued elements before the oldest are discarded.  Must be greater than zero.
      */
-    public Dispatcher(String threadName, long interval, int maximumQueueSize)
+    public Dispatcher(String threadName, long interval, int maxQueueSize)
     {
+        if(maxQueueSize < 1)
+        {
+            throw new IllegalArgumentException("Max queue size must be greater than zero");
+        }
+
         mThreadName = threadName;
         mInterval = interval;
-        mQueue = new LinkedBlockingQueue<>(maximumQueueSize);
+        mMaxQueueSize = maxQueueSize;
+        mDrainList = new ArrayList<>(Math.min(maxQueueSize, 1024));
+    }
+
+    /**
+     * Current number of elements awaiting processing.
+     */
+    public int getQueueSize()
+    {
+        return mQueueSize.get();
+    }
+
+    /**
+     * Maximum number of elements this dispatcher will queue before discarding the oldest.
+     */
+    public int getMaxQueueSize()
+    {
+        return mMaxQueueSize;
+    }
+
+    /**
+     * Updates the maximum queue size.  Safe to call while running.
+     *
+     * This exists because the correct bound usually depends on the producer's data rate, and that rate is frequently
+     * unknown at construction time - a TunerController reports a sample rate of zero until the tuner is started and
+     * applies one.  A bound derived at construction from a zero rate collapses to the floor, which starves the
+     * consumer; callers must re-derive and set the bound once the real rate is known.
+     *
+     * @param maxQueueSize new bound, must be greater than zero.
+     */
+    public void setMaxQueueSize(int maxQueueSize)
+    {
+        if(maxQueueSize < 1)
+        {
+            throw new IllegalArgumentException("Max queue size must be greater than zero");
+        }
+
+        int previous = mMaxQueueSize;
+        mMaxQueueSize = maxQueueSize;
+
+        if(previous != maxQueueSize)
+        {
+            mLog.info("Dispatcher [{}] queue bound changed from [{}] to [{}] elements", mThreadName, previous,
+                    maxQueueSize);
+        }
+    }
+
+    /**
+     * Cumulative count of elements discarded due to queue overflow since this dispatcher was constructed.
+     */
+    public long getDropCount()
+    {
+        return mDropCount.get();
     }
 
     /**
@@ -124,23 +240,11 @@ public class Dispatcher<E> implements Listener<E>
     }
 
     /**
-     * Primary input method for adding buffers to this processor.  Note: incoming buffers will be ignored if this
-     * processor is in a stopped state.  You must invoke start() to allow incoming buffers and initiate buffer
-     * processing.  If this processor has a bounded queue and the queue is full, the incoming buffer is dropped.
-     *
-     * @param e to enqueue for distribution to a registered listener
-     */
-    public void receive(E e)
-    {
-        offer(e);
-    }
-
-    /**
-     * Adds the element to this processor's queue, for when the caller has to take action on an element that isn't
-     * accepted.
-     *
-     * @param e to enqueue for distribution to a registered listener
-     * @return true if the element was queued, or false if this processor is stopped or a bounded queue is full.
+     * Queues the element only if there is room, without discarding older elements (upstream #2534).  Callers that
+     * must drop whole groups of elements - the polyphase channelizer drops a full batch to keep its two-channel
+     * synthesis block parity - use this instead of receive(), which discards the oldest elements.
+     * @param e element to queue
+     * @return true if the element was queued, or false if this dispatcher is stopped or its queue is full.
      */
     public boolean offer(E e)
     {
@@ -149,23 +253,55 @@ public class Dispatcher<E> implements Listener<E>
             return false;
         }
 
-        boolean queued = mQueue.offer(e);
-
-        if(!queued)
+        if(mQueueSize.get() >= mMaxQueueSize)
         {
-            mDroppedCount++;
-            long now = System.currentTimeMillis();
-
-            if(now - mLastOverflowLogTimestamp >= OVERFLOW_LOG_INTERVAL_MILLISECONDS)
-            {
-                mLog.warn("Dispatcher [" + mThreadName + "] queue is full, consumer is not keeping up - dropped [" +
-                    mDroppedCount + "] elements");
-                mLastOverflowLogTimestamp = now;
-                mDroppedCount = 0;
-            }
+            mDropCount.incrementAndGet();
+            return false;
         }
 
-        return queued;
+        mQueue.add(e);
+        mQueueSize.incrementAndGet();
+        return true;
+    }
+
+    /**
+     * Primary input method for adding buffers to this processor.  Note: incoming buffers will be ignored if this
+     * processor is in a stopped state.  You must invoke start() to allow incoming buffers and initiate buffer
+     * processing.
+     *
+     * @param e to enqueue for distribution to a registered listener
+     */
+    public void receive(E e)
+    {
+        if(mRunning.get())
+        {
+            mQueue.add(e);
+
+            if(mQueueSize.incrementAndGet() > mMaxQueueSize)
+            {
+                int dropped = 0;
+
+                //Discard oldest elements until back within the bound.  Note: the processor thread drains concurrently,
+                //so poll() can legitimately return null here - stop if it does.
+                while(mQueueSize.get() > mMaxQueueSize)
+                {
+                    if(mQueue.poll() != null)
+                    {
+                        mQueueSize.decrementAndGet();
+                        dropped++;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                if(dropped > 0)
+                {
+                    mDropCount.addAndGet(dropped);
+                }
+            }
+        }
     }
 
     /**
@@ -189,6 +325,7 @@ public class Dispatcher<E> implements Listener<E>
             }
 
             mQueue.clear();
+            mQueueSize.set(0);
             mExecutorService = Executors.newSingleThreadScheduledExecutor(new NamingThreadFactory(mThreadName));
 
             Runnable r = (mHeartbeatManager != null ? new ProcessorWithHeartbeat() : new Processor());
@@ -210,6 +347,7 @@ public class Dispatcher<E> implements Listener<E>
                 mScheduledFuture.cancel(false);
                 mScheduledFuture = null;
                 mQueue.clear();
+                mQueueSize.set(0);
             }
 
             if(mExecutorService != null)
@@ -241,9 +379,14 @@ public class Dispatcher<E> implements Listener<E>
                 mExecutorService = null;
             }
 
-            List<E> elements = new ArrayList<>();
+            List<E> elements = new ArrayList<>(Math.min(mMaxQueueSize, 1024));
 
-            mQueue.drainTo(elements);
+            int drained = mQueue.drainTo(elements, mMaxQueueSize);
+
+            if(drained > 0)
+            {
+                mQueueSize.addAndGet(-drained);
+            }
 
             for(E element: elements)
             {
@@ -260,6 +403,10 @@ public class Dispatcher<E> implements Listener<E>
                     }
                 }
             }
+
+            //Anything beyond the bound is discarded rather than flushed - this is a shutdown path.
+            mQueue.clear();
+            mQueueSize.set(0);
         }
     }
 
@@ -276,12 +423,19 @@ public class Dispatcher<E> implements Listener<E>
      */
     private void process()
     {
-        List<E> elements = new ArrayList<>();
+        mDrainList.clear();
 
-        mQueue.drainTo(elements);
+        int drained = mQueue.drainTo(mDrainList, mMaxQueueSize);
 
-        for(E element: elements)
+        if(drained > 0)
         {
+            mQueueSize.addAndGet(-drained);
+        }
+
+        for(int x = 0; x < mDrainList.size(); x++)
+        {
+            E element = mDrainList.get(x);
+
             if(mRunning.get() && mListener != null)
             {
                 try
@@ -294,6 +448,40 @@ public class Dispatcher<E> implements Listener<E>
                             mListener.getClass() + "]", t);
                 }
             }
+        }
+
+        //Release references to the dispatched batch so it can be collected before the next interval.
+        mDrainList.clear();
+
+        reportOverflow();
+    }
+
+    /**
+     * Reports queue overflow, rate limited so that a sustained overflow does not flood the log.  Invoked from the
+     * processor thread only.
+     */
+    private void reportOverflow()
+    {
+        long drops = mDropCount.get();
+
+        if(drops > mDropCountAtLastLog)
+        {
+            long now = System.currentTimeMillis();
+
+            if(!mDropEpisodeActive || (now - mLastDropLogTimestamp) >= DROP_LOG_INTERVAL_MS)
+            {
+                mLog.warn("Dispatcher [{}] queue overflow - discarded [{}] oldest elements ([{}] total) - consumer is " +
+                        "not keeping pace with producer - queue bound is [{}] elements", mThreadName,
+                        (drops - mDropCountAtLastLog), drops, mMaxQueueSize);
+                mLastDropLogTimestamp = now;
+                mDropCountAtLastLog = drops;
+                mDropEpisodeActive = true;
+            }
+        }
+        else if(mDropEpisodeActive && mQueueSize.get() < (mMaxQueueSize * RECOVERY_THRESHOLD))
+        {
+            mLog.info("Dispatcher [{}] queue recovered - [{}] elements discarded in total", mThreadName, drops);
+            mDropEpisodeActive = false;
         }
     }
 

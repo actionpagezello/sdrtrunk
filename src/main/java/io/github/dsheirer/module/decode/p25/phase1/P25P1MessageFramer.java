@@ -55,6 +55,7 @@ public class P25P1MessageFramer extends C4FMMessageFramer
     private static final IntField NAC_FIELD = IntField.length12(0);
     private static final IntField DUID_FIELD = IntField.length4(12);
     private final NACTracker mNACTracker = new NACTracker();
+    private java.util.Set<Integer> mAllowedNACs = null;
     private Dibit[] mNIDBuffer = new Dibit[DIBIT_LENGTH_NID];
     //Soft symbols (radians) for the NID dibits, or NaN when the soft symbol wasn't provided
     private float[] mNIDSoftBuffer = new float[DIBIT_LENGTH_NID];
@@ -76,6 +77,7 @@ public class P25P1MessageFramer extends C4FMMessageFramer
     private boolean mSyncDetected = false;
     //Indicates the NID under capture follows a sync detected while a message was still assembling
     private boolean mPreemptiveNIDCheck = false;
+    private float mSoftSyncScore = 0;
 
     //Indicates soft symbols are phase wrapped to +/- PI (ie P25 LSM) for soft decision decoding
     private boolean mPhaseWrappedSoftSymbols = false;
@@ -103,6 +105,16 @@ public class P25P1MessageFramer extends C4FMMessageFramer
     }
 
     /**
+     * Sets the allowed NACs for filtering. When non-null and non-empty, only frames with a
+     * matching NAC will be processed. Null means accept all NACs (default).
+     * @param allowedNACs set of allowed NAC values, or null to accept all
+     */
+    public void setAllowedNACs(java.util.Set<Integer> allowedNACs)
+    {
+        mAllowedNACs = allowedNACs;
+    }
+
+    /**
      * Sets the soft symbol domain for soft decision decoding.
      * @param phaseWrapped true when the soft symbols are phase wrapped to +/- PI (ie differentially demodulated P25 LSM)
      * or false (default) for C4FM soft symbols that are not phase wrapped.
@@ -121,13 +133,23 @@ public class P25P1MessageFramer extends C4FMMessageFramer
     public boolean processWithSoftSyncDetect(float softSymbol, Dibit symbol)
     {
         boolean validNIDDetected = process(symbol, softSymbol);
+        mSoftSyncScore = mSoftSyncDetector.process(softSymbol);
 
-        if(mSoftSyncDetector.process(softSymbol) > SYNC_DETECTION_THRESHOLD)
+        if(mSoftSyncScore > SYNC_DETECTION_THRESHOLD)
         {
             syncDetected();
         }
 
         return validNIDDetected;
+    }
+
+    /**
+     * Sync pattern correlation score calculated for the most recent soft symbol processed via
+     * processWithSoftSyncDetect().  Allows the demodulator to compare against phase-rotated sync pattern scores.
+     */
+    public float getSoftSyncScore()
+    {
+        return mSoftSyncScore;
     }
 
     /**
@@ -210,13 +232,17 @@ public class P25P1MessageFramer extends C4FMMessageFramer
 
         if(mSyncDetected)
         {
-            mNIDSoftBuffer[mNIDPointer] = softSymbol;
-            mNIDBuffer[mNIDPointer++] = symbol;
+            if(mNIDPointer < DIBIT_LENGTH_NID)
+            {
+                mNIDSoftBuffer[mNIDPointer] = softSymbol;
+                mNIDBuffer[mNIDPointer++] = symbol;
+            }
 
             if(mNIDPointer >= DIBIT_LENGTH_NID)
             {
                 validNIDDetected = checkNID();
                 mSyncDetected = false;
+                mNIDPointer = 0;
             }
         }
 
@@ -947,6 +973,21 @@ public class P25P1MessageFramer extends C4FMMessageFramer
         //flag it as invalid NID when this happens.  The NAC tracker will give us a value of 0 until it has enough
         //observations of a valid NID value.
         mNACTracker.track(nac);
+
+        //Upstream PR #2478: reject an over-corrected NID whose NAC is not the tracked NAC.  The NAC tracker reports 0
+        //until it has enough observations of a valid NID value.
+        if(trackedNAC > 0 && trackedNAC != nac)
+        {
+            return false;
+        }
+
+        //NAC filtering: reject frames with non-matching NAC
+        if(mAllowedNACs != null && !mAllowedNACs.isEmpty() && !mAllowedNACs.contains(nac))
+        {
+            dispatchSyncLoss(112);
+            return false;
+        }
+
 //        System.out.println("\t\t" + mDebugSymbolCount + " VALID NID - NAC:" + nac + " DUID:" + duid);
         nidDetected(nac, duid, nid.getCorrectedBitCount());
         return true;

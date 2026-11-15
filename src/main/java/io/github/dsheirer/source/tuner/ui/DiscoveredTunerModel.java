@@ -26,6 +26,7 @@ import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.DiscoveredUSBTuner;
 import io.github.dsheirer.source.tuner.manager.IDiscoveredTunerStatusListener;
 import io.github.dsheirer.source.tuner.manager.TunerStatus;
+import io.github.dsheirer.source.tuner.sdrplay.DiscoveredRspTuner;
 import io.github.dsheirer.source.tuner.sdrplay.rspDuo.DiscoveredRspDuoTuner1;
 import io.github.dsheirer.source.tuner.sdrplay.rspDuo.DiscoveredRspDuoTuner2;
 import java.awt.EventQueue;
@@ -64,6 +65,29 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
     private DecimalFormat mFrequencyFormat = new DecimalFormat("0.00000");
     private Lock mLock = new ReentrantLock();
     private TunerConfigurationManager mTunerConfigurationManager;
+
+    /**
+     * AP-fork (edacs-14): told when an RSP tuner that the SDRplay API reported as removed is about to be stopped and
+     * taken out of this model.
+     */
+    public interface RspRemovalListener
+    {
+        /**
+         * @param tuner that is about to be removed
+         * @return task to run once the tuner has been removed, or null
+         */
+        Runnable removing(DiscoveredRspTuner tuner);
+    }
+
+    private volatile RspRemovalListener mRspRemovalListener;
+
+    /**
+     * AP-fork (edacs-14): sets the listener for RSP removals.
+     */
+    public void setRspRemovalListener(RspRemovalListener listener)
+    {
+        mRspRemovalListener = listener;
+    }
 
     /**
      * Constructs an instance
@@ -381,6 +405,67 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
         {
             mLog.info("Tuner removal detected - stopping and removing: " + discoveredTuner);
 
+            //AP-fork: a device that disappears from the bus takes every channel it was carrying with it, and
+            //until this WARN the only trace was the INFO line above plus a burst of 'Stopping traffic channel'.
+            //Daly 2026-09-21 08:05:21: the RSP1B dropped out carrying 13 channels and eleven Zello feeds went
+            //silent for just under two hours, with nothing at WARN or ERROR anywhere in the log.
+            int removedChannelCount = -1;
+
+            try
+            {
+                if(discoveredTuner.hasTuner() && discoveredTuner.getTuner().getChannelSourceManager() != null)
+                {
+                    removedChannelCount = discoveredTuner.getTuner().getChannelSourceManager().getTunerChannelCount();
+                }
+            }
+            catch(Exception e)
+            {
+                //Counting channels is best-effort - never let it suppress the warning below
+            }
+
+            //AP-fork (edacs-14): an RSP is looked for again and its channels restarted - see RspRecoveryMonitor.
+            //The listener is told before the tuner is removed, while the channels it will stop are still running.
+            Runnable rspRemoved = null;
+
+            if(discoveredTuner instanceof DiscoveredRspTuner rspTuner && mRspRemovalListener != null)
+            {
+                try
+                {
+                    rspRemoved = mRspRemovalListener.removing(rspTuner);
+                }
+                catch(Exception e)
+                {
+                    mLog.error("Error registering the removed RSP tuner for recovery", e);
+                }
+            }
+
+            if(rspRemoved != null)
+            {
+                mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] while carrying [" +
+                    Math.max(removedChannelCount, 0) + "] channel(s) - those channels have STOPPED. Reported by the " +
+                    "SDRplay API - not necessarily a physical disconnect. RSP recovery will look for the device " +
+                    "and restart its channels when it is listed again (lines starting \"RSP recovery:\").");
+            }
+            else if(removedChannelCount > 0)
+            {
+                //AP-fork: the previous text said the channels would restart "when the device returns". They do not:
+                //RSP tuners are discovered once, at startup (TunerManager.discoverSdrPlayTuners()), and nothing looks
+                //for them again, so a returning RSP is never re-attached. Daly 2026-10-10: the RSP1B dropped at 15:57
+                //carrying 16 channels and they stayed down 29 hours, until SDRTrunk was restarted. Windows logged no
+                //USB or PnP event at all - the removal was reported by the SDRplay API, not by the operating system.
+                mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] while carrying [" + removedChannelCount +
+                    "] channel(s) - those channels have STOPPED and will not restart on their own, even if the device comes " +
+                    "back: restart SDRTrunk to recover them (RSP tuners are only discovered at startup. From ap-16.1 a " +
+                    "USB dongle that is plugged back in is detected and added again, but its channels are not " +
+                    "restarted). Reported by the device driver/API - not necessarily a physical disconnect.");
+            }
+            else
+            {
+                mLog.warn("TUNER REMOVED FROM SYSTEM [" + discoveredTuner + "] - it was carrying no channels at the " +
+                    "time. It will not be re-attached on its own, even if the device comes back - restart SDRTrunk to use it " +
+                    "again. Reported by the device driver/API - not necessarily a physical disconnect.");
+            }
+
             //Note: RSPduo only gets device removal indication if the device is streaming.  There may be situation where
             //master only is streaming, or slave only is streaming.  Ensure we remove both devices when detected.
 
@@ -415,6 +500,18 @@ public class DiscoveredTunerModel extends AbstractTableModel implements Listener
             else
             {
                 removeDiscoveredTuner(discoveredTuner);
+            }
+
+            if(rspRemoved != null)
+            {
+                try
+                {
+                    rspRemoved.run();
+                }
+                catch(Exception e)
+                {
+                    mLog.error("Error starting recovery of the removed RSP tuner", e);
+                }
             }
         }
     }

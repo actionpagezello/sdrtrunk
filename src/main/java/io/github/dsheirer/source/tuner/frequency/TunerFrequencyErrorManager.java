@@ -45,6 +45,34 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
     private static final long MINIMUM_CORRECTION_THRESHOLD_HZ = 50;
     private static final long TIMER_INTERVAL_SECONDS = 5;
     private static final DecimalFormat DF = new DecimalFormat("0.00000");
+
+    //AP-fork: sanity clamp to reject wild PPM swings (e.g. PLL locks onto wrong signal)
+    private static final double SANITY_CLAMP_PPM = 10.0;
+
+    /**
+     * AP-fork: number of consecutive rejected PPM measurements after which the baseline is re-acquired.
+     *
+     * The clamp exists to reject transient wild measurements, but the baseline is only updated when a measurement is
+     * accepted.  Without this, a tuner whose true frequency error drifts further than SANITY_CLAMP_PPM from the
+     * baseline - or whose very first measurement was taken while the tuner was still settling - has every subsequent
+     * correction rejected forever, with no way for the baseline to catch up.  After this many consecutive rejections
+     * we assume the baseline is wrong rather than the measurements, and re-acquire from the next measurement.
+     */
+    private static final int BASELINE_REACQUIRE_AFTER_REJECTIONS = 12;
+
+    /**
+     * AP-fork: how many timer intervals between measured-frequency-error reports at INFO.  At
+     * TIMER_INTERVAL_SECONDS = 5 this is one line every 5 minutes per tuner, which is cheap enough to leave on
+     * permanently and is the only way a wrong PPM becomes visible outside the GUI.
+     */
+    private static final int REPORT_INTERVAL_COUNT = 60;
+
+    /**
+     * AP-fork: how many consecutive intervals with no frequency error measurement before warning that auto-PPM
+     * cannot correct this tuner.  5 minutes at TIMER_INTERVAL_SECONDS = 5.
+     */
+    private static final int NO_MEASUREMENT_WARN_INTERVALS = 60;
+
     private final List<ChannelFrequencyErrorManager> mChannelManagers = new ArrayList<>();
     private final TunerController mTunerController;
     private ScheduledFuture<?> mScheduledFuture;
@@ -52,6 +80,17 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
     private boolean mShutdown = false;
     private double mTunerPPM;
     private long mTunerCorrection;
+
+    //AP-fork: baseline PPM tracking with EMA for sanity checks
+    private double mBaselinePPM = Double.NaN;
+
+    //AP-fork: periodic measured-error reporting and the no-measurement warning.  See the constants above.
+    private int mReportIntervalCounter = 0;
+    private int mNoMeasurementIntervals = 0;
+    private boolean mNoMeasurementWarned = false;
+
+    //AP-fork: consecutive rejections against the current baseline - see BASELINE_REACQUIRE_AFTER_REJECTIONS
+    private int mConsecutiveRejections = 0;
 
     /**
      * Constructs an instance
@@ -109,9 +148,28 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
     }
 
     /**
-     * Processes channel frequency error values and updates the tuner to apply a correction.
+     * Scheduled entry point for frequency error correction.  Guards the scheduled task against any throwable.
      */
     private void process()
+    {
+        //Note: this runs on a scheduleAtFixedRate() task.  An uncaught throwable there cancels all future executions
+        //silently - the exception is captured in the Future and never surfaces - which would disable frequency error
+        //correction for this tuner for the rest of the session with nothing logged.  Catch everything.
+        try
+        {
+            processFrequencyError();
+        }
+        catch(Throwable t)
+        {
+            LOG.error("Error processing tuner frequency error correction for tuner [" +
+                    mTunerController.getTunerLabel() + "] - correction continues on the next interval", t);
+        }
+    }
+
+    /**
+     * Processes channel frequency error values and updates the tuner to apply a correction.
+     */
+    private void processFrequencyError()
     {
         mTunerController.getLock().lock();
 
@@ -132,15 +190,54 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                     }
                 }
 
-                //Skip the update when no channel has reported a measurement since the last update.  A divide by zero
-                //exception would cancel all subsequent executions of this scheduled task.
+                //Channel managers can exist while none has reported a measurement during this interval - the
+                //isEmpty() check above does not guarantee count > 0.  Dividing by zero here throws and, on a
+                //scheduled task, permanently cancels frequency error correction for this tuner.
                 if(count == 0)
                 {
+                    //AP-fork: no channel on this tuner reported a frequency error this interval.  That is normal for
+                    //an idle tuner, but it is PERMANENT for a tuner carrying only NBFM channels: frequency error is
+                    //measured by decoders that track a carrier (P25, DMR), and NBFMDecoder has no such measurement
+                    //because FM has no reference carrier phase to lock to.  Such a tuner's PPM can only be set by
+                    //hand, and nothing previously said so at any log level - which is how a Daly RTL-2832 ran at
+                    //10 PPM (~4.8 kHz at 483 MHz, roughly twice the peak deviation of a narrowband channel) long
+                    //enough to break the CTCSS tone gate on Methuen Fire, Andover Fire and Lawrence Fire.  Warn once.
+                    if(++mNoMeasurementIntervals >= NO_MEASUREMENT_WARN_INTERVALS && !mNoMeasurementWarned)
+                    {
+                        mNoMeasurementWarned = true;
+                        LOG.warn("Tuner [{}] has received NO frequency error measurement in {} minutes at PPM {} - " +
+                                        "auto-PPM cannot correct this tuner.  Only carrier-tracking decoders (P25, " +
+                                        "DMR) measure frequency error; NBFM channels never do.  If this tuner " +
+                                        "carries only NBFM channels its PPM must be set manually, and an incorrect " +
+                                        "value silently degrades every channel on it.",
+                                mTunerController.getTunerLabel(),
+                                (NO_MEASUREMENT_WARN_INTERVALS * TIMER_INTERVAL_SECONDS) / 60,
+                                DF.format(mTunerController.getFrequencyCorrection()));
+                    }
+
                     return;
                 }
 
+                mNoMeasurementIntervals = 0;
+
                 requestedChangeHz /= count;
                 mTunerController.setMeasuredFrequencyError((int)requestedChangeHz);
+
+                //AP-fork: report the measured error periodically at INFO.  This value was already computed and handed
+                //to the tuner controller but never logged, so a tuner sitting at a wrong PPM was invisible outside the
+                //GUI - see the note above.  Logging it makes a fleet-wide PPM audit a log analysis rather than a visit
+                //to ten machines, and makes slow drift visible instead of silent.
+                if(++mReportIntervalCounter >= REPORT_INTERVAL_COUNT)
+                {
+                    mReportIntervalCounter = 0;
+                    double impliedPPM = requestedChangeHz / (mTunerController.getFrequency() * PPM_DIVISOR);
+                    LOG.info("Tuner [{}] frequency error {} Hz at {} Hz over {} channel(s) - implies {} PPM of " +
+                                    "residual error against the configured {} PPM (auto-PPM {})",
+                            mTunerController.getTunerLabel(), requestedChangeHz,
+                            mTunerController.getFrequency(), count, DF.format(impliedPPM),
+                            DF.format(mTunerController.getFrequencyCorrection()),
+                            mEnabled ? "enabled" : "DISABLED");
+                }
 
                 if(Math.abs(requestedChangeHz) > MINIMUM_CORRECTION_THRESHOLD_HZ)
                 {
@@ -149,14 +246,51 @@ public class TunerFrequencyErrorManager implements ISourceEventProcessor
                     if(mEnabled)
                     {
                         double adjustment = requestedChangeHz / (mTunerController.getFrequency() * PPM_DIVISOR);
+                        double proposedPPM = mTunerController.getFrequencyCorrection() + adjustment;
 
-                        try
+                        //AP-fork: reject PPM measurements that deviate too far from baseline
+                        if(!Double.isNaN(mBaselinePPM) && Math.abs(proposedPPM - mBaselinePPM) > SANITY_CLAMP_PPM)
                         {
-                            mTunerController.setFrequencyCorrection(mTunerController.getFrequencyCorrection() + adjustment);
+                            mConsecutiveRejections++;
+
+                            if(mConsecutiveRejections >= BASELINE_REACQUIRE_AFTER_REJECTIONS)
+                            {
+                                //Consistent rejection means the baseline is wrong, not the measurements.  Discard it
+                                //and re-acquire, otherwise correction for this tuner is disabled permanently.
+                                LOG.warn("Tuner [{}] PPM baseline {} rejected {} consecutive measurements (latest {}) " +
+                                                "- discarding baseline and re-acquiring",
+                                        mTunerController.getTunerLabel(), DF.format(mBaselinePPM),
+                                        mConsecutiveRejections, DF.format(proposedPPM));
+                                mBaselinePPM = Double.NaN;
+                                mConsecutiveRejections = 0;
+                            }
+                            else
+                            {
+                                LOG.debug("Rejecting PPM adjustment {}, too far from baseline {} ({} consecutive)",
+                                        DF.format(proposedPPM), DF.format(mBaselinePPM), mConsecutiveRejections);
+                            }
                         }
-                        catch(SourceException e)
+                        else
                         {
-                            LOG.error("Error while adjusting PPM value", e);
+                            try
+                            {
+                                mTunerController.setFrequencyCorrection(proposedPPM);
+                                mConsecutiveRejections = 0;
+
+                                //AP-fork: update baseline EMA (0.8 old / 0.2 new weighting)
+                                if(Double.isNaN(mBaselinePPM))
+                                {
+                                    mBaselinePPM = proposedPPM;
+                                }
+                                else
+                                {
+                                    mBaselinePPM = mBaselinePPM * 0.8 + proposedPPM * 0.2;
+                                }
+                            }
+                            catch(SourceException e)
+                            {
+                                LOG.error("Error while adjusting PPM value", e);
+                            }
                         }
                     }
                 }
