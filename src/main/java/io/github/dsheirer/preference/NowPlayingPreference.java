@@ -18,7 +18,7 @@
  */
 package io.github.dsheirer.preference;
 
-import io.github.dsheirer.module.decode.event.ClearableHistoryModel;
+import io.github.dsheirer.gui.nowplaying.HistoryControls;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +58,7 @@ public class NowPlayingPreference
      */
     public int getEventHistorySize()
     {
-        return PREFS.getInt(KEY_EVENT_HISTORY_SIZE, ClearableHistoryModel.DEFAULT_HISTORY_SIZE);
+        return PREFS.getInt(KEY_EVENT_HISTORY_SIZE, HistoryControls.DEFAULT_HISTORY_SIZE);
     }
 
     /**
@@ -75,7 +75,7 @@ public class NowPlayingPreference
      */
     public int getMessageHistorySize()
     {
-        return PREFS.getInt(KEY_MESSAGE_HISTORY_SIZE, ClearableHistoryModel.DEFAULT_HISTORY_SIZE);
+        return PREFS.getInt(KEY_MESSAGE_HISTORY_SIZE, HistoryControls.DEFAULT_HISTORY_SIZE);
     }
 
     /**
