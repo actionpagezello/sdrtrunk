@@ -505,8 +505,17 @@ tasks.register('runtimeZipWindows', RuntimeZipTask) {rt ->
         return
     }
     //AP-fork: Windows x86-64 only.  aarch64 intentionally omitted to keep builds lean.
-    rt.extension.targetPlatform(targetWindowsX86_64) {
-        jdkHome = jdkDownload(jdk_download_windows_x86_64)
+    //AP-fork (1.0.0-ap-1): on a Windows x86-64 build machine the package is made from the same JDK that compiles the
+    //program.  jlink refuses a target JDK whose build differs from its own, and the downloaded JDK is pinned to one
+    //build (27+36) while the installed one moves on (27.0.1.0.3+5 on 2026-11-15: "jlink build ... does not match
+    //target java.base build").  -PuseToolchainJdk forces this on any machine; other machines download as before.
+    if((os.isWindows() && System.properties.getProperty("os.arch") == "amd64") || project.hasProperty('useToolchainJdk')) {
+        rt.extension.targetPlatform(targetWindowsX86_64, jdepsHome.get().absolutePath)
+    }
+    else {
+        rt.extension.targetPlatform(targetWindowsX86_64) {
+            jdkHome = jdkDownload(jdk_download_windows_x86_64)
+        }
     }
 
     configure(rt, jvmArgsWindows)
