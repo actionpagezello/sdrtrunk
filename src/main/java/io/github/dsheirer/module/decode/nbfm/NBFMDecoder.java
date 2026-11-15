@@ -23,7 +23,6 @@ import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.IDecoderStateEventProvider;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.dsp.audio.HumAnalyzer;
-import io.github.dsheirer.dsp.filter.ChannelFilterDesigner;
 import io.github.dsheirer.dsp.filter.FilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.DecimationFilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
@@ -1600,18 +1599,45 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             throw new IllegalStateException(getDecoderType().name() + " demodulator with channel bandwidth [" + mChannelBandwidth + "] requires a channel sample rate of [" + (2.0 * mChannelBandwidth + "] - sample rate of [" + decimatedSampleRate + "] is not supported"));
         }
 
+        mNoiseSquelch.setSampleRate(decimatedSampleRate);
         mDemodulatedSampleRate = decimatedSampleRate;
 
-        //AP-fork (1.0.0-ap-1): upstream's channel filter and noise measurement, in place of the filter kept in ap-15.11.
-        //The old remez design was not checked after it was designed and, measured 2026-11-15 for a 7.5 kHz channel, had
-        //a response peak at the edge of the channel instead of a stop band (+8.6 dB at 25000 Hz sample rate, +33 dB at
-        //25098, +104 dB at 50000; correct only at 24000).  ChannelFilterDesigner checks the response and falls back to
-        //a windowed design when the check fails.  The noise squelch is given the same coefficients so that a
-        //noise-only narrow channel still measures above the close threshold (upstream #2556).  The two go together:
-        //ap-15.11 tried the filter without the noise correction and the squelch moved (Brookline Fire replay).
-        float[] coefficients = ChannelFilterDesigner.design(decimatedSampleRate, mChannelBandwidth);
+        //AP-fork (ap-15.11, confirmed 1.0.0-ap-1): kept this channel filter and the uncorrected noise measurement
+        //rather than upstream #2556's ChannelFilterDesigner + NoiseSquelch.setSampleRate(rate, coefficients).
+        //Measured 2026-11-15 on Somerville baseband recordings (7.5 kHz channels, 50 kHz in, 25 kHz here), counting the
+        //seconds in which the channel's CTCSS tone is present that reached a call:
+        //  Somerville Police (24.2 s of tone): this filter 8.5 s in 6 calls; upstream's with its noise correction 4.0 s
+        //  in 1 call; upstream's filter without the correction 18.8 s in 10 calls plus 11.5 s of call without tone.
+        //  Everett Police (33.5 s of tone): 12.2 s / 6.5 s / 31.2 s, the last with the squelch open for the whole
+        //  recording (noise-only variance 0.12 is under the 0.19 close threshold).
+        //  Boston EMS 1 (strong signal): identical on all three.
+        //The fleet's thresholds are set against this filter.  Upstream's filter is the cleaner design (this one has a
+        //response peak at the channel edge at some sample rates), but taking it means re-setting every NBFM channel's
+        //thresholds, so it is a build of its own with a threshold conversion, not part of the move to 1.0.0.
+        //ap-15.11 note: for a 12.5 kHz channel at 50 kHz ChannelFilterDesigner falls back to a different 135-tap filter
+        //(this design is 87 taps); Brookline Fire replay: 64 call events became 58.
+        int passBandStop = (int) (mChannelBandwidth * .8);
+        int stopBandStart = (int) mChannelBandwidth;
 
-        mNoiseSquelch.setSampleRate(decimatedSampleRate, coefficients);
+        float[] coefficients = null;
+
+        FIRFilterSpecification specification = FIRFilterSpecification.lowPassBuilder().sampleRate(decimatedSampleRate * 2).gridDensity(16).oddLength(true).passBandCutoff(passBandStop).passBandAmplitude(1.0).passBandRipple(0.01).stopBandStart(stopBandStart).stopBandAmplitude(0.0).stopBandRipple(0.005) //Approximately 90 dB attenuation
+                .build();
+
+        try
+        {
+            coefficients = FilterFactory.getTaps(specification);
+        }
+        catch(FilterDesignException fde)
+        {
+            mLog.error("Couldn't design demodulator remez filter for sample rate [" + sampleRate + "] pass frequency [" + passBandStop + "] and stop frequency [" + stopBandStart + "] - will proceed using sinc (low-pass) filter");
+        }
+
+        if(coefficients == null)
+        {
+            mLog.info("Unable to use remez filter designer for sample rate [" + decimatedSampleRate + "] pass band stop [" + passBandStop + "] and stop band start [" + stopBandStart + "] - will proceed using simple low pass filter design");
+            coefficients = FilterFactory.getLowPass(decimatedSampleRate, passBandStop, stopBandStart, 60, WindowType.HAMMING, true);
+        }
 
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
