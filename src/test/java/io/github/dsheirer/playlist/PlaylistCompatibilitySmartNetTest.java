@@ -213,4 +213,37 @@ public class PlaylistCompatibilitySmartNetTest
             .findFirst().orElseThrow();
         assertEquals(2, restoredAlias.getAliasIdentifiers().size());
     }
+
+    /**
+     * Test (edacs-21): the site number and "ignore unaliased talkgroups" settings are saved and loaded, and a channel
+     * saved before they existed loads with both off.
+     */
+    @Test
+    void testSiteAndIgnoreUnaliasedSettings() throws Exception
+    {
+        DecodeConfigSmartNet smartNet = new DecodeConfigSmartNet();
+        smartNet.setSite(14);
+        smartNet.setIgnoreUnaliasedTalkgroups(true);
+        String xml = mapper().writeValueAsString(smartNet);
+        DecodeConfigSmartNet loaded = mapper().readValue(xml, DecodeConfigSmartNet.class);
+        org.junit.jupiter.api.Assertions.assertEquals(14, loaded.getSite());
+        org.junit.jupiter.api.Assertions.assertTrue(loaded.getIgnoreUnaliasedTalkgroups());
+        org.junit.jupiter.api.Assertions.assertEquals(14, loaded.copyForTrafficChannel().getSite());
+
+        String old = xml.replaceAll(" site=\"14\"", "").replaceAll(" ignore_unaliased_talkgroups=\"true\"", "");
+        org.junit.jupiter.api.Assertions.assertFalse(old.contains("site="), old);
+        DecodeConfigSmartNet before = mapper().readValue(old, DecodeConfigSmartNet.class);
+        org.junit.jupiter.api.Assertions.assertEquals(DecodeConfigSmartNet.SITE_ANY, before.getSite());
+        org.junit.jupiter.api.Assertions.assertFalse(before.getIgnoreUnaliasedTalkgroups());
+
+        io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS edacs =
+            new io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS();
+        edacs.setIgnoreUnaliasedTalkgroups(true);
+        String edacsXml = mapper().writeValueAsString(edacs);
+        org.junit.jupiter.api.Assertions.assertTrue(mapper().readValue(edacsXml,
+            io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS.class).getIgnoreUnaliasedTalkgroups());
+        org.junit.jupiter.api.Assertions.assertFalse(mapper().readValue(
+            edacsXml.replaceAll(" ignore_unaliased_talkgroups=\"true\"", ""),
+            io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS.class).getIgnoreUnaliasedTalkgroups());
+    }
 }

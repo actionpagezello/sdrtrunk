@@ -53,6 +53,7 @@ public class DecodeConfigEDACS extends DecodeConfiguration implements WithCallTi
     private int mCallTimeoutSeconds = CALL_TIMEOUT_DEFAULT_SECONDS;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private VoiceMode mVoiceMode = VoiceMode.CONTROL;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
     private boolean mGraphicEQEnabled = false;
     private double[] mGraphicEQBandGains = new double[GraphicEqualizer.BAND_COUNT];
 
@@ -112,6 +113,20 @@ public class DecodeConfigEDACS extends DecodeConfiguration implements WithCallTi
         {
             mCallTimeoutSeconds = CALL_TIMEOUT_DEFAULT_SECONDS;
         }
+    }
+
+    /**
+     * When true, a call to a talkgroup that has no alias in the channel's alias list is listed but not followed.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "ignore_unaliased_talkgroups")
+    public boolean getIgnoreUnaliasedTalkgroups()
+    {
+        return mIgnoreUnaliasedTalkgroups;
+    }
+
+    public void setIgnoreUnaliasedTalkgroups(boolean ignore)
+    {
+        mIgnoreUnaliasedTalkgroups = ignore;
     }
 
     @JacksonXmlProperty(isAttribute = true, localName = "traffic_channel_pool_size")
@@ -192,6 +207,7 @@ public class DecodeConfigEDACS extends DecodeConfiguration implements WithCallTi
         copy.setLcnFrequencies(getLcnFrequencies());
         copy.setCallTimeoutSeconds(getCallTimeoutSeconds());
         copy.setTrafficChannelPoolSize(getTrafficChannelPoolSize());
+        copy.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroups());
         copy.setAudioHangtimeMs(getAudioHangtimeMs());
         copy.setGraphicEQEnabled(isGraphicEQEnabled());
         copy.setGraphicEQBandGains(getGraphicEQBandGains());

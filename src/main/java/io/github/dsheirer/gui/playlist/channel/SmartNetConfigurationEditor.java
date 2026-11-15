@@ -153,6 +153,22 @@ public class SmartNetConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(getCallTimeoutSpinner(), 3, 1);
             gridPane.getChildren().add(getCallTimeoutSpinner());
 
+            Label ignoreLabel = new Label("Ignore Unaliased Talkgroups");
+            GridPane.setHalignment(ignoreLabel, HPos.RIGHT);
+            GridPane.setConstraints(ignoreLabel, 0, 2);
+            gridPane.getChildren().add(ignoreLabel);
+
+            GridPane.setConstraints(getIgnoreUnaliasedSwitch(), 1, 2);
+            gridPane.getChildren().add(getIgnoreUnaliasedSwitch());
+
+            Label siteLabel = new Label("Site (0 = any)");
+            GridPane.setHalignment(siteLabel, HPos.RIGHT);
+            GridPane.setConstraints(siteLabel, 2, 2);
+            gridPane.getChildren().add(siteLabel);
+
+            GridPane.setConstraints(getSiteSpinner(), 3, 2);
+            gridPane.getChildren().add(getSiteSpinner());
+
             mDecoderPane.setContent(gridPane);
         }
 
@@ -387,6 +403,44 @@ public class SmartNetConfigurationEditor extends ChannelConfigurationEditor
         return mTrafficChannelPoolSizeSpinner;
     }
 
+    private ToggleSwitch mIgnoreUnaliasedSwitch;
+
+    private ToggleSwitch getIgnoreUnaliasedSwitch()
+    {
+        if(mIgnoreUnaliasedSwitch == null)
+        {
+            mIgnoreUnaliasedSwitch = new ToggleSwitch();
+            mIgnoreUnaliasedSwitch.setDisable(true);
+            mIgnoreUnaliasedSwitch.setTooltip(new Tooltip("Calls to a talkgroup with no alias in this channel's alias " +
+                "list are listed but not followed - no voice channel, no audio"));
+            mIgnoreUnaliasedSwitch.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreUnaliasedSwitch;
+    }
+
+    private Spinner<Integer> mSiteSpinner;
+
+    private Spinner<Integer> getSiteSpinner()
+    {
+        if(mSiteSpinner == null)
+        {
+            mSiteSpinner = new Spinner<>();
+            mSiteSpinner.setDisable(true);
+            mSiteSpinner.setTooltip(new Tooltip("SmartZone site number (decimal, as Radio Reference lists it).  When " +
+                "set, calls are followed only while the control channel announces this site; a control channel of " +
+                "another site on the same frequency is left for the next control frequency.  0 = any site."));
+            mSiteSpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_HORIZONTAL);
+            mSiteSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(
+                DecodeConfigSmartNet.SITE_ANY, DecodeConfigSmartNet.SITE_MAXIMUM));
+            mSiteSpinner.getValueFactory().valueProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mSiteSpinner;
+    }
+
     private Spinner<Integer> getCallTimeoutSpinner()
     {
         if(mCallTimeoutSpinner == null)
@@ -411,12 +465,16 @@ public class SmartNetConfigurationEditor extends ChannelConfigurationEditor
         getBandPlanComboBox().setDisable(config == null);
         getCallTimeoutSpinner().setDisable(config == null);
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
+        getIgnoreUnaliasedSwitch().setDisable(config == null);
+        getSiteSpinner().setDisable(config == null);
 
         if(config instanceof DecodeConfigSmartNet smartNet)
         {
             getBandPlanComboBox().getSelectionModel().select(smartNet.getBandPlan());
             getCallTimeoutSpinner().getValueFactory().setValue(smartNet.getCallTimeoutSeconds());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(smartNet.getTrafficChannelPoolSize());
+            getIgnoreUnaliasedSwitch().setSelected(smartNet.getIgnoreUnaliasedTalkgroups());
+            getSiteSpinner().getValueFactory().setValue(smartNet.getSite());
             setGraphicEQ(smartNet.isGraphicEQEnabled(), smartNet.getGraphicEQBandGains());
         }
         else if(config != null)
@@ -424,6 +482,8 @@ public class SmartNetConfigurationEditor extends ChannelConfigurationEditor
             getBandPlanComboBox().getSelectionModel().select(SmartNetBandPlan.BAND_800_REBANDED);
             getCallTimeoutSpinner().getValueFactory().setValue(DecodeConfigSmartNet.CALL_TIMEOUT_DEFAULT_SECONDS);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(DecodeConfigSmartNet.TRAFFIC_CHANNEL_LIMIT_DEFAULT);
+            getIgnoreUnaliasedSwitch().setSelected(false);
+            getSiteSpinner().getValueFactory().setValue(DecodeConfigSmartNet.SITE_ANY);
             setGraphicEQ(false, null);
         }
         else
@@ -449,6 +509,8 @@ public class SmartNetConfigurationEditor extends ChannelConfigurationEditor
         config.setBandPlan(getBandPlanComboBox().getSelectionModel().getSelectedItem());
         config.setCallTimeoutSeconds(getCallTimeoutSpinner().getValue());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
+        config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedSwitch().isSelected());
+        config.setSite(getSiteSpinner().getValue());
 
         config.setGraphicEQEnabled(mGraphicEQEnabledSwitch.isSelected());
         double[] gains = new double[GraphicEqualizer.BAND_COUNT];

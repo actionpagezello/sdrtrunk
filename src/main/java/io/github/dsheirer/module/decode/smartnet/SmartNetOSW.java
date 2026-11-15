@@ -39,6 +39,8 @@ public class SmartNetOSW implements IMessage
     public static final int CMD_UNIT_ID = 0x308;        //first OSW of a two-OSW grant: calling unit / system ID
     public static final int CMD_IDLE = 0x2F8;
     public static final int CMD_GROUP_BUSY = 0x300;
+    public static final int CMD_SITE_FIRST = 0x360;     //SmartZone site announcement: command - 0x360 + 1 = site number
+    public static final int CMD_SITE_LAST = 0x39F;
 
     private final int mAddress;
     private final boolean mGroup;
@@ -90,6 +92,23 @@ public class SmartNetOSW implements IMessage
     public long getTimestamp()
     {
         return mTimestamp;
+    }
+
+    /**
+     * True for a SmartZone site announcement.  Checked against Radio Reference's site numbers for Massachusetts State
+     * Police: 0x360 Boston (1), 0x364 Metro Boston (5), 0x367 Central MA (8), 0x36D Monson (14).
+     */
+    public boolean isSiteAnnouncement()
+    {
+        return CMD_SITE_FIRST <= mCommand && mCommand <= CMD_SITE_LAST;
+    }
+
+    /**
+     * Site number of a site announcement, 1-64
+     */
+    public int getSite()
+    {
+        return mCommand - CMD_SITE_FIRST + 1;
     }
 
     /**

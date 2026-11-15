@@ -19,10 +19,14 @@
 
 package io.github.dsheirer.module.decode.nbfm;
 
+import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.Role;
+import io.github.dsheirer.identifier.ctcss.CTCSSIdentifier;
+import io.github.dsheirer.identifier.dcs.DCSIdentifier;
 import io.github.dsheirer.identifier.string.SimpleStringIdentifier;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.analog.AnalogDecoderState;
@@ -108,6 +112,7 @@ public class NBFMDecoderState extends AnalogDecoderState
     {
         if(code != null)
         {
+            mToneIdentifiers.putIfAbsent(code.getDisplayString(), new CTCSSIdentifier(code));
             mToneStatus = "CTCSS: " + code.getDisplayString() + " [ALLOWED]";
             incrementCount(code.getDisplayString(), true);
         }
@@ -120,6 +125,7 @@ public class NBFMDecoderState extends AnalogDecoderState
     {
         if(code != null)
         {
+            mToneIdentifiers.putIfAbsent("DCS " + code.toString(), new DCSIdentifier(code));
             mToneStatus = "DCS: " + code.toString() + " [ALLOWED]";
             incrementCount("DCS " + code.toString(), true);
         }
@@ -132,6 +138,7 @@ public class NBFMDecoderState extends AnalogDecoderState
     {
         if(code != null)
         {
+            mToneIdentifiers.putIfAbsent(code.getDisplayString(), new CTCSSIdentifier(code));
             mToneStatus = "CTCSS: " + code.getDisplayString() + " [REJECTED]";
             incrementCount(code.getDisplayString(), false);
         }
@@ -144,6 +151,7 @@ public class NBFMDecoderState extends AnalogDecoderState
     {
         if(code != null)
         {
+            mToneIdentifiers.putIfAbsent("DCS " + code.toString(), new DCSIdentifier(code));
             mToneStatus = "DCS: " + code.toString() + " [REJECTED]";
             incrementCount("DCS " + code.toString(), false);
         }
@@ -155,6 +163,36 @@ public class NBFMDecoderState extends AnalogDecoderState
     public void setToneLost()
     {
         mToneStatus = "No tone detected";
+    }
+
+    //Alias names for the detected tones in the activity summary
+    private final Map<String,Identifier> mToneIdentifiers = new java.util.concurrent.ConcurrentHashMap<>();
+    private AliasList mAliasList;
+
+    /**
+     * Alias list of the channel, for the alias names in the activity summary
+     */
+    public void setAliasList(AliasList aliasList)
+    {
+        mAliasList = aliasList;
+    }
+
+    private String aliasName(String toneLabel)
+    {
+        AliasList aliasList = mAliasList;
+        Identifier identifier = mToneIdentifiers.get(toneLabel);
+
+        if(aliasList != null && identifier != null)
+        {
+            List<Alias> aliases = aliasList.getAliases(identifier);
+
+            if(aliases != null && !aliases.isEmpty())
+            {
+                return aliases.get(0).getName();
+            }
+        }
+
+        return null;
     }
 
     private void incrementCount(String toneLabel, boolean accepted)
@@ -219,7 +257,9 @@ public class NBFMDecoderState extends AnalogDecoderState
                     {
                         status = "ALLOWED (" + accepted + ") REJECTED (" + rejected + ")";
                     }
-                    sb.append("\t").append(entry.getKey()).append(" - ").append(status).append("\n");
+                    String alias = aliasName(entry.getKey());
+                    sb.append("\t").append(entry.getKey()).append(alias != null ? "  " + alias : "").append(" - ")
+                        .append(status).append("\n");
                 }
             }
         }

@@ -19,6 +19,8 @@
 
 package io.github.dsheirer.module.decode.smartnet;
 
+import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.channel.state.DecoderState;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
@@ -80,6 +82,16 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
     private long mOSWCount;
     private long mGrantCount;
     private long mSplitGrantCount;
+    private long mUnaliasedCount;
+    private long mOtherSiteGrantCount;
+    private final Map<Integer,Integer> mSiteAnnouncements = new TreeMap<>();
+
+    //Ignore unaliased talkgroups / site number
+    private final boolean mIgnoreUnaliasedTalkgroups;
+    private final int mConfiguredSite;
+    private AliasList mAliasList;
+    private int mSite;              //site the control channel announces, 0 = not announced yet
+    private int mSiteCandidate;     //a different site announced once - taken when it is announced again
     private final Map<Integer,Integer> mTalkgroupGrants = new TreeMap<>();
     private final Map<Integer,Integer> mChannelGrants = new TreeMap<>();
 
@@ -95,6 +107,92 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         mTrafficChannelManager = trafficChannelManager;
         mBandPlan = config.getBandPlan();
         mCallLimitMs = config.getCallTimeoutSeconds() * 1000L;
+        mIgnoreUnaliasedTalkgroups = config.getIgnoreUnaliasedTalkgroups();
+        mConfiguredSite = config.getSite();
+    }
+
+    /**
+     * Alias list of the channel: names for the activity summary and the "ignore unaliased talkgroups" check.
+     */
+    public void setAliasList(AliasList aliasList)
+    {
+        mAliasList = aliasList;
+    }
+
+    /**
+     * Site the control channel announces, 0 when it has not announced one yet
+     */
+    public int getSite()
+    {
+        return mSite;
+    }
+
+    /**
+     * True when a site is set for this channel and the control channel announces another one.
+     */
+    public boolean isOtherSite()
+    {
+        return mConfiguredSite != DecodeConfigSmartNet.SITE_ANY && mSite != 0 && mSite != mConfiguredSite;
+    }
+
+    /**
+     * A site announcement.  The first one is taken as it is, unless a site is set for the channel and this is another
+     * one; from then on a different site has to be announced twice in a row, so that a single misread control word
+     * does not stop the calls.
+     */
+    private void siteAnnounced(int site)
+    {
+        mSiteAnnouncements.merge(site, 1, Integer::sum);
+
+        if(site == mSite)
+        {
+            mSiteCandidate = 0;
+            return;
+        }
+
+        boolean first = mSite == 0 && (mConfiguredSite == DecodeConfigSmartNet.SITE_ANY || site == mConfiguredSite);
+
+        if(first || site == mSiteCandidate)
+        {
+            mSite = site;
+            mSiteCandidate = 0;
+            String where = "Motorola Type II control channel on " + format(mFrequency) + " announces site " + site;
+
+            if(mConfiguredSite == DecodeConfigSmartNet.SITE_ANY)
+            {
+                LOGGER.info(where);
+            }
+            else if(site == mConfiguredSite)
+            {
+                LOGGER.info(where + " - the site set for this channel");
+            }
+            else
+            {
+                LOGGER.info(where + " - NOT the site set for this channel (" + mConfiguredSite + "): its calls are " +
+                    "not followed and the channel goes on to its next control frequency");
+            }
+        }
+        else
+        {
+            mSiteCandidate = site;
+        }
+    }
+
+    private String aliasName(Identifier identifier)
+    {
+        AliasList aliasList = mAliasList;
+
+        if(aliasList != null && identifier != null)
+        {
+            List<Alias> aliases = aliasList.getAliases(identifier);
+
+            if(aliases != null && !aliases.isEmpty())
+            {
+                return aliases.get(0).getName();
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -125,9 +223,20 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                 LOGGER.info("Motorola Type II control channel decoding on " + format(mFrequency));
             }
 
+            if(mChannelType != ChannelType.TRAFFIC && osw.isSiteAnnouncement())
+            {
+                siteAnnounced(osw.getSite());
+            }
+
             SmartNetOSW previous = mPrevious;
             mPrevious = osw;
-            broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+
+            //A control channel of another site does not count as this channel's control channel: without these events
+            //a channel with several control frequencies goes on to the next one.
+            if(!isOtherSite())
+            {
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+            }
 
             if(mTrafficChannelManager == null || !mBandPlan.isChannel(osw.getCommand()))
             {
@@ -144,6 +253,13 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             //The calling radio is in the OSW sent straight before this one.  When a control word was lost in between,
             //the previous decoded OSW belongs to another call and its radio must not be used (Summit 800, 2026-11-12:
             //604 of 21,270 grant lines named a radio that no other line of the call named).
+            //With a site set, calls are followed only while the control channel is known to be that site's
+            if(mConfiguredSite != DecodeConfigSmartNet.SITE_ANY && mSite != mConfiguredSite)
+            {
+                mOtherSiteGrantCount++;
+                return;
+            }
+
             boolean grant = previous != null && previous.getCommand() == SmartNetOSW.CMD_UNIT_ID;
 
             if(grant && !osw.followsPrevious())
@@ -175,6 +291,15 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                 else
                 {
                     type = DecodeEventType.CALL_GROUP;
+                }
+
+                if(follow && mIgnoreUnaliasedTalkgroups && mAliasList != null &&
+                    aliasName(SmartNetTalkgroup.createTo(osw.getTalkgroup())) == null)
+                {
+                    type = DecodeEventType.CALL_GROUP;
+                    details = "NO ALIAS - NOT FOLLOWED";
+                    follow = false;
+                    mUnaliasedCount++;
                 }
 
                 if(osw.isEmergency())
@@ -349,6 +474,12 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             }
             case NOTIFICATION_SOURCE_FREQUENCY ->
             {
+                if(event.getFrequency() != mFrequency)
+                {
+                    mSite = 0;          //another control frequency - its site is not known until it announces it
+                    mSiteCandidate = 0;
+                }
+
                 mFrequency = event.getFrequency();
             }
             default ->
@@ -377,6 +508,9 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         sb.append("Activity Summary - Decoder: Motorola Type II\n");
         sb.append(DIVIDER1);
         sb.append("Band plan: ").append(mBandPlan).append("\n");
+        sb.append("Site announced by the control channel: ").append(mSite == 0 ? "none yet" : String.valueOf(mSite));
+        sb.append(mConfiguredSite == DecodeConfigSmartNet.SITE_ANY ? "" : "   (site set for this channel: " +
+            mConfiguredSite + (isOtherSite() ? " - NOT THIS ONE, calls are not followed)" : ")")).append("\n");
         sb.append("OSWs decoded: ").append(mOSWCount).append("\n");
         sb.append("Channel grants: ").append(mGrantCount).append("\n");
         sb.append("Calling radios not used (control word lost before the channel word): ").append(mSplitGrantCount)
@@ -385,7 +519,29 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         mChannelGrants.forEach((channel, count) -> sb.append(String.format("  %4d  %.4f MHz  %d%n", channel,
             mBandPlan.getFrequency(channel) / 1e6, count)));
         sb.append(DIVIDER2).append("Grants by talkgroup:\n");
-        mTalkgroupGrants.forEach((talkgroup, count) -> sb.append(String.format("  %5d  %d%n", talkgroup, count)));
+        mTalkgroupGrants.forEach((talkgroup, count) -> {
+            String name = aliasName(SmartNetTalkgroup.createTo(talkgroup));
+            sb.append(String.format("  %5d  %-32s %d%n", talkgroup, name != null ? name : "", count));
+        });
+
+        if(mIgnoreUnaliasedTalkgroups)
+        {
+            sb.append(DIVIDER2).append("Ignore unaliased talkgroups is ON - call announcements not followed: ")
+                .append(mUnaliasedCount).append("\n");
+        }
+
+        if(mConfiguredSite != DecodeConfigSmartNet.SITE_ANY)
+        {
+            sb.append(DIVIDER2).append("Call announcements not followed because the site was another one or not yet " +
+                "known: ").append(mOtherSiteGrantCount).append("\n");
+        }
+
+        if(mSiteAnnouncements.size() > 1)
+        {
+            sb.append(DIVIDER2).append("Site announcements (site: count):");
+            mSiteAnnouncements.forEach((site, count) -> sb.append("  ").append(site).append(": ").append(count));
+            sb.append("\n");
+        }
         return sb.toString();
     }
 }

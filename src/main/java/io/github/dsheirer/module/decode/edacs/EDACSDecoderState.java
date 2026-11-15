@@ -24,6 +24,8 @@ import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
+import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
@@ -99,6 +101,42 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
         mTrafficChannelManager = trafficChannelManager;
         mConfig = config;
         mCallLimitMs = config.getCallTimeoutSeconds() * 1000L;
+    }
+
+    private AliasList mAliasList;
+    private long mUnaliasedCount;
+
+    /**
+     * Alias list of the channel: names for the activity summary and the "ignore unaliased talkgroups" check.
+     */
+    public void setAliasList(AliasList aliasList)
+    {
+        mAliasList = aliasList;
+    }
+
+    /**
+     * Number of call announcements not followed because the talkgroup has no alias
+     */
+    public long getUnaliasedCount()
+    {
+        return mUnaliasedCount;
+    }
+
+    private String aliasName(Identifier identifier)
+    {
+        AliasList aliasList = mAliasList;
+
+        if(aliasList != null && identifier != null)
+        {
+            List<Alias> aliases = aliasList.getAliases(identifier);
+
+            if(aliases != null && !aliases.isEmpty())
+            {
+                return aliases.get(0).getName();
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -195,8 +233,18 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
                 mTalkgroupGrants.merge(edacs.getGroup(), 1, Integer::sum);
             }
 
+            boolean follow = true;
+
+            if(mConfig.getIgnoreUnaliasedTalkgroups() && mAliasList != null &&
+                aliasName(EDACSTalkgroup.createTo(edacs.getGroup())) == null)
+            {
+                details = details + " NO ALIAS - NOT FOLLOWED";
+                follow = false;
+                mUnaliasedCount++;
+            }
+
             mTrafficChannelManager.processGrant(new EDACSChannel(lcn, frequency), ic, DecodeEventType.CALL_GROUP,
-                details, true, edacs.isDigital() ? DecodeConfigEDACS.VoiceMode.PROVOICE :
+                details, follow, edacs.isDigital() ? DecodeConfigEDACS.VoiceMode.PROVOICE :
                     DecodeConfigEDACS.VoiceMode.ANALOG, edacs.getTimestamp());
         }
     }
@@ -413,7 +461,16 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
             mConfig.getFrequency(lcn) > 0 ? String.format("%.4f MHz", mConfig.getFrequency(lcn) / 1e6) :
                 "NOT IN LCN LIST", count)));
         sb.append(DIVIDER2).append("Assignments by group:\n");
-        mTalkgroupGrants.forEach((group, count) -> sb.append(String.format("  %5d  %d%n", group, count)));
+        mTalkgroupGrants.forEach((group, count) -> {
+            String name = aliasName(EDACSTalkgroup.createTo(group));
+            sb.append(String.format("  %5d  %-32s %d%n", group, name != null ? name : "", count));
+        });
+
+        if(mConfig.getIgnoreUnaliasedTalkgroups())
+        {
+            sb.append(DIVIDER2).append("Ignore unaliased talkgroups is ON - call announcements not followed: ")
+                .append(mUnaliasedCount).append("\n");
+        }
         return sb.toString();
     }
 }

@@ -155,6 +155,14 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(getCallTimeoutSpinner(), 3, 1);
             gridPane.getChildren().add(getCallTimeoutSpinner());
 
+            Label ignoreLabel = new Label("Ignore Unaliased Talkgroups");
+            GridPane.setHalignment(ignoreLabel, HPos.RIGHT);
+            GridPane.setConstraints(ignoreLabel, 0, 2);
+            gridPane.getChildren().add(ignoreLabel);
+
+            GridPane.setConstraints(getIgnoreUnaliasedSwitch(), 1, 2);
+            gridPane.getChildren().add(getIgnoreUnaliasedSwitch());
+
             mDecoderPane.setContent(gridPane);
         }
 
@@ -434,6 +442,23 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         return mTrafficChannelPoolSizeSpinner;
     }
 
+    private ToggleSwitch mIgnoreUnaliasedSwitch;
+
+    private ToggleSwitch getIgnoreUnaliasedSwitch()
+    {
+        if(mIgnoreUnaliasedSwitch == null)
+        {
+            mIgnoreUnaliasedSwitch = new ToggleSwitch();
+            mIgnoreUnaliasedSwitch.setDisable(true);
+            mIgnoreUnaliasedSwitch.setTooltip(new Tooltip("Calls to a talkgroup with no alias in this channel's alias " +
+                "list are listed but not followed - no voice channel, no audio"));
+            mIgnoreUnaliasedSwitch.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreUnaliasedSwitch;
+    }
+
     private Spinner<Integer> getCallTimeoutSpinner()
     {
         if(mCallTimeoutSpinner == null)
@@ -458,12 +483,14 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         getLcnTextArea().setDisable(config == null);
         getCallTimeoutSpinner().setDisable(config == null);
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
+        getIgnoreUnaliasedSwitch().setDisable(config == null);
 
         if(config instanceof DecodeConfigEDACS edacs)
         {
             getLcnTextArea().setText(formatFrequencies(edacs.getLcnFrequencies()));
             getCallTimeoutSpinner().getValueFactory().setValue(edacs.getCallTimeoutSeconds());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(edacs.getTrafficChannelPoolSize());
+            getIgnoreUnaliasedSwitch().setSelected(edacs.getIgnoreUnaliasedTalkgroups());
             setGraphicEQ(edacs.isGraphicEQEnabled(), edacs.getGraphicEQBandGains());
         }
         else if(config != null)
@@ -471,6 +498,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             getLcnTextArea().setText("");
             getCallTimeoutSpinner().getValueFactory().setValue(DecodeConfigEDACS.CALL_TIMEOUT_DEFAULT_SECONDS);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT);
+            getIgnoreUnaliasedSwitch().setSelected(false);
             setGraphicEQ(false, null);
         }
         else
@@ -496,6 +524,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         config.setLcnFrequencies(parseFrequencies(getLcnTextArea().getText()));
         config.setCallTimeoutSeconds(getCallTimeoutSpinner().getValue());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
+        config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedSwitch().isSelected());
 
         config.setGraphicEQEnabled(mGraphicEQEnabledSwitch.isSelected());
         double[] gains = new double[GraphicEqualizer.BAND_COUNT];

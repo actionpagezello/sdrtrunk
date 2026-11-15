@@ -38,6 +38,37 @@ and can only be told apart by the "Build Timestamp" log line.
 | 18 | edacs-18 | ProVoice: fix - a single bit error in two of a voice frame's code words was corrected at the wrong bit |
 | 19 | edacs-19 | ProVoice: a voice frame with corrected errors is not played when its neighbour failed the error check (never applied alone - it is the first commit of `edacs-20.patch`) |
 | 20 | edacs-20 | Type II: a calling radio is not put on a call when a control word was lost between the two words of the grant |
+| 21 | edacs-21 | Alias names in the Details tab; "Ignore Unaliased Talkgroups" for EDACS and Type II; SmartZone site number |
+
+### Build 21 - alias names in Details, ignore unaliased talkgroups, SmartZone site number
+Three requests from Armen, 2026-11-14. Nothing changes for an existing playlist: both new settings are off by default.
+- **Build 20 pushed as `b146ec4c`**; on Summit 800 (7.1 h) and Cambridge (10.1 h) without errors. Calling radios
+  not used at Summit 800: Control 54, Central 541, Boston 293; one-off radios in grant lines 20 of 17,357 (604 of
+  21,270 before).
+- **Details tab (Now Playing):** the talkgroup list of an EDACS or Motorola Type II channel shows the alias name
+  beside each talkgroup and its count; an NBFM channel shows the alias name beside each detected CTCSS tone or DCS
+  code. Names come from the channel's alias list; no alias, no name.
+- **"Ignore Unaliased Talkgroups"** switch in the EDACS and Motorola Type II channel editors (the same idea as
+  the P25 switch). On: a call to a talkgroup with no alias in the channel's alias list is still listed in the
+  events ("NO ALIAS - NOT FOLLOWED") but gets no voice channel - no audio, no tuner used. The Details tab counts
+  them. Saved as `ignore_unaliased_talkgroups`.
+- **SmartZone site number.** Each site announces its number about every 3 s (command 0x360 + site - 1; checked
+  against Radio Reference for MSP: Boston 1, Metro Boston 5, Central MA 8, Monson 14). It is logged when first
+  heard ("announces site N") and shown in the Details tab. New "Site (0 = any)" box in the Motorola Type II
+  channel editor (decimal, as Radio Reference lists it), saved as `site`. When set: calls are followed only while
+  the control channel is known to be that site (so nothing is followed for the first seconds on a frequency,
+  until the site announces itself); when the control channel announces ANOTHER site twice in a row its calls are
+  not followed and it no longer counts as this channel's control channel, so a channel with several control
+  frequencies goes on to the next one after the usual 15 s. One stray announcement (a misread) changes nothing.
+  For sites that share a control frequency (MSP: 854.3625 Boston / Upper Cape / Shelburne, 854.5625 Metro Boston /
+  Greylock, 855.9125 and 859.2875 Bristol-Plymouth / Brimfield, and others).
+- **What it cannot do:** two sites on one frequency at similar strength arrive mixed and neither decodes well;
+  that is an antenna matter.
+- **Not in this build:** the digital (P25) calls on Central MA - measured 2026-11-14 (grant word 0x321, P25
+  Phase 1 voice, unencrypted, decodes with the fork's P25 decoder), not built yet; they still come out as noise.
+- Tests: `SmartNetCallFollowingTest` (testIgnoreUnaliasedTalkgroups, testUnaliasedFollowedByDefault, testSite,
+  testNoSiteSet), `EDACSCallFollowingTest` (testIgnoreUnaliasedTalkgroups, testUnaliasedFollowedByDefault),
+  `PlaylistCompatibilitySmartNetTest.testSiteAndIgnoreUnaliasedSettings`.
 
 ### Build 20 - Type II: the calling radio is not taken across a lost control word
 - **Build 19 was never applied by itself** (Armen heard little difference in the before/after clips, 2026-11-13).
@@ -57,7 +88,8 @@ and can only be told apart by the "Build Timestamp" log line.
   summary has the same count.
 - **MSP analog or digital (question from the decode brief board, 2026-11-14):** command 321 (digital grant) does
   not appear once in the per-minute command lists of 1.7 million OSWs at Summit 800 or 270,000 at Monson; every
-  grant is 308. Both sites are analog. (The lists show the 12 most frequent commands per minute, and single
+  grant is 308. Both sites are analog. (CORRECTED in build 21: that was the Metro Boston site; Central MA does
+  carry 321 digital calls.) (The lists show the 12 most frequent commands per minute, and single
   occurrences do show up in them.)
 - **Decode brief board (Whiteboard artifact, 2026-11-14) checked against the fork:** its EDACS and ProVoice items
   are done or measured. Its ProVoice header layout ("64 + 16 + 64, radio ID in the middle 16") is NOT what MBTA

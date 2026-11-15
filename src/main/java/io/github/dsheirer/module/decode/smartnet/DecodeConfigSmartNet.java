@@ -41,10 +41,14 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     public static final int CHANNEL_ROTATION_DELAY_DEFAULT_MS = 1000;
     public static final int CHANNEL_ROTATION_DELAY_MAXIMUM_MS = 5000;
 
+    public static final int SITE_ANY = 0;
+    public static final int SITE_MAXIMUM = 64;
     private SmartNetBandPlan mBandPlan = SmartNetBandPlan.BAND_800_REBANDED;
     private int mCallTimeoutSeconds = CALL_TIMEOUT_DEFAULT_SECONDS;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mTrafficChannel = false;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
+    private int mSite = SITE_ANY;
     private boolean mGraphicEQEnabled = false;
     private double[] mGraphicEQBandGains = new double[GraphicEqualizer.BAND_COUNT];
 
@@ -89,6 +93,35 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
         {
             mCallTimeoutSeconds = CALL_TIMEOUT_DEFAULT_SECONDS;
         }
+    }
+
+    /**
+     * When true, a call to a talkgroup that has no alias in the channel's alias list is listed but not followed.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "ignore_unaliased_talkgroups")
+    public boolean getIgnoreUnaliasedTalkgroups()
+    {
+        return mIgnoreUnaliasedTalkgroups;
+    }
+
+    public void setIgnoreUnaliasedTalkgroups(boolean ignore)
+    {
+        mIgnoreUnaliasedTalkgroups = ignore;
+    }
+
+    /**
+     * SmartZone site number (1-64) this channel is for, or SITE_ANY (0).  When set, calls are followed only while the
+     * control channel announces this site, and a control channel of another site on the same frequency is left.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "site")
+    public int getSite()
+    {
+        return mSite;
+    }
+
+    public void setSite(int site)
+    {
+        mSite = (SITE_ANY <= site && site <= SITE_MAXIMUM) ? site : SITE_ANY;
     }
 
     @JacksonXmlProperty(isAttribute = true, localName = "traffic_channel_pool_size")
@@ -158,6 +191,8 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
         copy.setAudioHangtimeMs(getAudioHangtimeMs());
         copy.setGraphicEQEnabled(isGraphicEQEnabled());
         copy.setGraphicEQBandGains(getGraphicEQBandGains());
+        copy.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroups());
+        copy.setSite(getSite());
         copy.mTrafficChannel = true;
         return copy;
     }

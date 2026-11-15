@@ -62,13 +62,20 @@ public class SmartNetCallFollowingTest
     private final List<ChannelStartProcessingRequest> mStarts = new ArrayList<>();
     private final List<ChannelEvent> mChannelEvents = new ArrayList<>();
     private final List<IDecodeEvent> mEvents = new ArrayList<>();
+    private final List<DecoderStateEvent> mStateEvents = new ArrayList<>();
     private SmartNetTrafficChannelManager mManager;
     private SmartNetDecoderState mState;
 
     private void setup(int poolSize)
     {
+        setup(poolSize, config -> {});
+    }
+
+    private void setup(int poolSize, java.util.function.Consumer<DecodeConfigSmartNet> settings)
+    {
         DecodeConfigSmartNet config = new DecodeConfigSmartNet();
         config.setTrafficChannelPoolSize(poolSize);
+        settings.accept(config);
         Channel control = new Channel("MSP", Channel.ChannelType.STANDARD);
         control.setDecodeConfiguration(config);
 
@@ -88,6 +95,7 @@ public class SmartNetCallFollowingTest
         mManager.addDecodeEventListener(mEvents::add);
 
         mState = new SmartNetDecoderState(Channel.ChannelType.STANDARD, mManager, config);
+        mState.setDecoderStateListener(mStateEvents::add);
         mState.receiveDecoderStateEvent(new DecoderStateEvent(this, DecoderStateEvent.Event.NOTIFICATION_SOURCE_FREQUENCY,
             State.CONTROL, CONTROL));
     }
@@ -402,5 +410,103 @@ public class SmartNetCallFollowingTest
         assertEquals(1, mStarts.size(), "same call");
         assertEquals(RADIO, get(mEvents.get(mEvents.size() - 1).getIdentifierCollection(), Role.FROM).getValue(),
             "radio learned from the complete grant");
+    }
+
+    /**
+     * Test: "ignore unaliased talkgroups" - a call to a talkgroup with no alias is listed but no voice channel is
+     * started; a talkgroup with an alias is followed; the activity summary shows the alias name.
+     */
+    @Test
+    void testIgnoreUnaliasedTalkgroups()
+    {
+        setup(4, config -> config.setIgnoreUnaliasedTalkgroups(true));
+        io.github.dsheirer.alias.AliasList aliasList = new io.github.dsheirer.alias.AliasList("test");
+        io.github.dsheirer.alias.Alias alias = new io.github.dsheirer.alias.Alias("Troop A North");
+        alias.addAliasID(new io.github.dsheirer.alias.id.talkgroup.Talkgroup(Protocol.SMARTNET, TALKGROUP));
+        aliasList.addAlias(alias);
+        mState.setAliasList(aliasList);
+
+        grant(RADIO, TALKGROUP + 16, CHANNEL + 10);
+        assertEquals(0, mStarts.size(), "no alias - not followed");
+        assertEquals(1, mEvents.size(), "but listed");
+        assertEquals("NO ALIAS - NOT FOLLOWED", mEvents.get(0).getDetails());
+
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(1, mStarts.size(), "aliased talkgroup is followed");
+        assertTrue(mState.getActivitySummary().contains("Troop A North"), mState.getActivitySummary());
+    }
+
+    /**
+     * Test: with the switch off (the default, and every existing playlist) an alias list changes nothing.
+     */
+    @Test
+    void testUnaliasedFollowedByDefault()
+    {
+        setup(4);
+        mState.setAliasList(new io.github.dsheirer.alias.AliasList("test"));
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(1, mStarts.size());
+    }
+
+    private long controlEvents()
+    {
+        return mStateEvents.stream().filter(e -> e.getState() == State.CONTROL &&
+            e.getEvent() == DecoderStateEvent.Event.CONTINUATION).count();
+    }
+
+    /**
+     * Test: site number.  With site 5 set, nothing is followed until the control channel announces site 5; another
+     * site announced twice stops the calls and the control-channel events (so the channel goes on to its next
+     * frequency); a single stray announcement does not; a new frequency starts from "not known" again.
+     */
+    @Test
+    void testSite()
+    {
+        setup(4, config -> config.setSite(5));
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(0, mStarts.size(), "site not announced yet");
+        assertTrue(controlEvents() > 0, "still a control channel while the site is not known");
+
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 4);      //site 5
+        assertEquals(5, mState.getSite());
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(1, mStarts.size(), "site 5 - followed");
+
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 6);      //site 7 once: a misread
+        assertEquals(5, mState.getSite());
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 4);
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 6);
+        assertEquals(5, mState.getSite(), "not twice in a row");
+
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 6);      //site 7 twice in a row
+        assertEquals(7, mState.getSite());
+        assertTrue(mState.isOtherSite());
+        long before = controlEvents();
+        grant(RADIO, TALKGROUP + 16, CHANNEL + 10);
+        assertEquals(1, mStarts.size(), "other site - not followed");
+        assertEquals(before, controlEvents(), "no control-channel events from another site");
+
+        mState.receiveDecoderStateEvent(new DecoderStateEvent(this, DecoderStateEvent.Event.NOTIFICATION_SOURCE_FREQUENCY,
+            State.CONTROL, CONTROL + 25_000));
+        assertEquals(0, mState.getSite(), "new frequency - site not known");
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 6);
+        assertEquals(0, mState.getSite(), "a first announcement of another site is not taken at once");
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 4);
+        assertEquals(5, mState.getSite());
+    }
+
+    /**
+     * Test: with no site set (the default) the announced site is noted and every call is followed.
+     */
+    @Test
+    void testNoSiteSet()
+    {
+        setup(4);
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(1, mStarts.size());
+        osw(0x1234, true, SmartNetOSW.CMD_SITE_FIRST + 13);
+        assertEquals(14, mState.getSite());
+        assertTrue(!mState.isOtherSite());
+        assertTrue(mState.getActivitySummary().contains("Site announced by the control channel: 14"));
     }
 }

@@ -3,7 +3,18 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-14 10:00: `edacs` build 20 (Type II calling radio; includes build 19)
+## Current state 2026-11-14 21:15: `edacs` build 21 (alias names in Details, ignore unaliased, site number)
+
+- **Build 21** = three requests (CHANGELOG build 21). `edacs-21.patch`, one commit on `b146ec4c`.
+- **Build 20** pushed `b146ec4c`, clean on Summit 800 and Cambridge (11-14).
+- **Next (awaiting Armen's choice):** digital calls on Central MA - 0x321 grant, P25 Phase 1 voice, unencrypted;
+  full decode or only "do not play as analog". Test files: `logs\reference\summit_central_p25` (11 files).
+- **Summit 800 sites:** Control = Metro Boston (5), Central MA (8), Boston (1, 31% OSW failures there - Cambridge
+  receives it at 0.3%). Monson's two sites on one control frequency: which two not yet said.
+- **Daly:** 11-13 morning loop was the owner trying an RSP1B on the Renesas card (kept disconnecting, put back).
+  Spontaneous drops remain two, both 5260.
+
+## Previous state 2026-11-14 10:00: `edacs` build 20 (Type II calling radio; includes build 19)
 
 - **Build 20** = build 19 (never applied alone) + Type II: the calling radio is used only when the channel word
   comes straight after it (CHANGELOG build 20). `edacs-20.patch` has two commits and applies on `6530f233`.

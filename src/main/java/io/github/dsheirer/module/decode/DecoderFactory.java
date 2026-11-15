@@ -415,7 +415,9 @@ public class DecoderFactory
             modules.add(new SmartNetDecoder());
             SmartNetTrafficChannelManager trafficChannelManager = new SmartNetTrafficChannelManager(channel);
             modules.add(trafficChannelManager);
-            modules.add(new SmartNetDecoderState(channelType, trafficChannelManager, config));
+            SmartNetDecoderState smartNetState = new SmartNetDecoderState(channelType, trafficChannelManager, config);
+            smartNetState.setAliasList(aliasList);
+            modules.add(smartNetState);
 
             //Several control channel frequencies (Radio Reference import lists every 'c' frequency): move to the
             //next one while no control channel is decoded
@@ -476,7 +478,9 @@ public class DecoderFactory
             modules.add(new EDACSDecoder());
             EDACSTrafficChannelManager trafficChannelManager = new EDACSTrafficChannelManager(channel);
             modules.add(trafficChannelManager);
-            modules.add(new EDACSDecoderState(channelType, trafficChannelManager, config));
+            EDACSDecoderState edacsState = new EDACSDecoderState(channelType, trafficChannelManager, config);
+            edacsState.setAliasList(aliasList);
+            modules.add(edacsState);
 
             if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
                 sctmf.hasMultipleFrequencies())
@@ -627,6 +631,7 @@ public class DecoderFactory
 
         DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)decodeConfig;
         NBFMDecoderState decoderState = new NBFMDecoderState(channel.getName(), decodeConfigNBFM);
+        decoderState.setAliasList(aliasList);
         NBFMDecoder decoder = new NBFMDecoder(decodeConfigNBFM);
         decoder.setDecoderState(decoderState);
         modules.add(decoder);

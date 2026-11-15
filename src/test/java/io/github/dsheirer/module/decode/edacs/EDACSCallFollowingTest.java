@@ -59,7 +59,13 @@ public class EDACSCallFollowingTest
 
     private void setup()
     {
+        setup(false);
+    }
+
+    private void setup(boolean ignoreUnaliased)
+    {
         DecodeConfigEDACS config = new DecodeConfigEDACS();
+        config.setIgnoreUnaliasedTalkgroups(ignoreUnaliased);
         List<Long> frequencies = new ArrayList<>();
         for(double mhz : MBTA)
         {
@@ -236,5 +242,42 @@ public class EDACSCallFollowingTest
         holder.join(5000);
         p25.join(5000);
         assertTrue(done, "event for another channel waited on the manager's lock");
+    }
+
+    /**
+     * Test: "ignore unaliased talkgroups" - a call to a group with no alias is listed but no voice channel is started;
+     * a group with an alias is followed; the activity summary shows the alias name.
+     */
+    @Test
+    void testIgnoreUnaliasedTalkgroups()
+    {
+        setup(true);
+        io.github.dsheirer.alias.AliasList aliasList = new io.github.dsheirer.alias.AliasList("test");
+        io.github.dsheirer.alias.Alias alias = new io.github.dsheirer.alias.Alias("Red Line");
+        alias.addAliasID(new io.github.dsheirer.alias.id.talkgroup.Talkgroup(Protocol.EDACS, 529));
+        aliasList.addAlias(alias);
+        mState.setAliasList(aliasList);
+
+        call(EDACSMessage.MT1_DIGITAL_GROUP_VOICE, 5, false, 530, 13254, false);
+        assertEquals(0, mStarts.size(), "no alias - not followed");
+        assertEquals(1, mEvents.size(), "but listed");
+        assertEquals("PROVOICE NO ALIAS - NOT FOLLOWED", mEvents.get(0).getDetails());
+        assertEquals(1, mState.getUnaliasedCount());
+
+        call(EDACSMessage.MT1_DIGITAL_GROUP_VOICE, 6, false, 529, 13254, false);
+        assertEquals(1, mStarts.size(), "aliased group is followed");
+        assertTrue(mState.getActivitySummary().contains("Red Line"), mState.getActivitySummary());
+    }
+
+    /**
+     * Test: with the switch off (the default, and every existing playlist) an alias list changes nothing.
+     */
+    @Test
+    void testUnaliasedFollowedByDefault()
+    {
+        setup();
+        mState.setAliasList(new io.github.dsheirer.alias.AliasList("test"));
+        call(EDACSMessage.MT1_DIGITAL_GROUP_VOICE, 5, false, 530, 13254, false);
+        assertEquals(1, mStarts.size());
     }
 }
