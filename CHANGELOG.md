@@ -5,6 +5,17 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-2] - 2026-11-15
+
+### Fixed
+- **Background noise on digital Motorola Type II and ProVoice calls** (Cambridge, first hour of 1.0.0-ap-1: "slight
+  background rumble in the SmartZone channels"). Build 25 gave every voice codec its settings when the codec was
+  loaded - gain control on, comfort noise at the default 0.05. Upstream's codec module, taken in ap-1, only sets them
+  from a channel's own JMBE settings, and these two kinds of voice channel have none, so they ran on the library's
+  defaults. The build 25 defaults are applied again when the codec loads; a channel's own settings still replace them.
+  Not confirmed by replay: the workspace has no JMBE library, so the codec's audio cannot be compared there.
+- Windows package made from the installed JDK (the pinned download no longer matched it).
+
 ## [1.0.0-ap-1] - 2026-11-15
 
 The fork moved onto upstream SDRTrunk 1.0.0 (`v1.0.0`, `73d32386`). Everything the fork had in `edacs` build 25 is

@@ -24,6 +24,7 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.audio.squelch.ISquelchStateListener;
 import io.github.dsheirer.eventbus.MyEventBus;
+import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.preference.PreferenceType;
@@ -63,6 +64,33 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
         mUserPreferences = userPreferences;
         MyEventBus.getGlobalEventBus().register(this);
         loadConverter();
+    }
+
+    /**
+     * AP-fork (1.0.0-ap-2): gives a newly loaded codec the settings every build up to edacs-25 gave it: automatic gain
+     * control on, and the default tone and comfort noise gains.  A channel's own JMBE settings are applied afterwards
+     * and replace these.  Without this a voice channel that has no JMBE settings of its own - a digital Motorola Type
+     * II call, a ProVoice call - ran on the library's defaults, with comfort noise at full level in place of lost
+     * voice frames (Cambridge 2026-11-15: background noise on the SmartZone channels after moving to 1.0.0).
+     */
+    private void applyDefaultFeatures()
+    {
+        List<String> features = getFeatures();
+
+        if(features.contains(IAudioCodecV2.FEATURE_AUTOMATIC_GAIN_CONTROL))
+        {
+            setFeature(IAudioCodecV2.FEATURE_AUTOMATIC_GAIN_CONTROL, true);
+        }
+
+        if(features.contains(IAudioCodecV2.FEATURE_TONE_GENERATOR_GAIN))
+        {
+            setFeature(IAudioCodecV2.FEATURE_TONE_GENERATOR_GAIN, DecodeConfigJMBE.DEFAULT_TONE_GAIN);
+        }
+
+        if(features.contains(IAudioCodecV2.FEATURE_NOISE_GENERATOR_GAIN))
+        {
+            setFeature(IAudioCodecV2.FEATURE_NOISE_GENERATOR_GAIN, DecodeConfigJMBE.DEFAULT_COMFORT_NOISE_GAIN);
+        }
     }
 
     /**
@@ -319,5 +347,6 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
         }
 
         mAudioCodec = audioConverter;
+        applyDefaultFeatures();
     }
 }
