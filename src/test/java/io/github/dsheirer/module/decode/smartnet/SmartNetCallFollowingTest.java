@@ -610,4 +610,26 @@ public class SmartNetCallFollowingTest
         assertTrue(!voiceConfig(mStarts.get(0)).isDigital(), "not known to be digital");
         assertNull(get(mStarts.get(0).getIdentifierCollection(), Role.FROM));
     }
+
+    /**
+     * Test (edacs-25): a heartbeat that arrives before the voice channel has started does not end the call.  The
+     * sample source of a voice channel sends heartbeats from the moment it is created; the call start time is still 0
+     * then and the call looked older than its limit, so the voice channel was shut down as it started.
+     */
+    @Test
+    void testHeartbeatBeforeStart()
+    {
+        SmartNetDecoderState state = new SmartNetDecoderState(Channel.ChannelType.TRAFFIC, null,
+            new DecodeConfigSmartNet().copyForTrafficChannel());
+        List<DecoderStateEvent> events = new ArrayList<>();
+        state.setDecoderStateListener(events::add);
+        state.getHeartbeatListener().receive(new Heartbeat());
+        state.getHeartbeatListener().receive(new Heartbeat());
+        assertEquals(0, events.size(), "nothing before start - in particular no END");
+
+        state.start();
+        state.getHeartbeatListener().receive(new Heartbeat());
+        assertEquals(1, events.size());
+        assertEquals(DecoderStateEvent.Event.START, events.get(0).getEvent());
+    }
 }

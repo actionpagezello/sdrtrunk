@@ -2173,6 +2173,12 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     }
 
     @Override
+    public boolean hasOwnCallSummary()
+    {
+        return true;
+    }
+
+    @Override
     public String getActivitySummary()
     {
         StringBuilder sb = new StringBuilder();

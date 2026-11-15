@@ -378,7 +378,11 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
      */
     private void heartbeat()
     {
-        if(mChannelType != ChannelType.TRAFFIC || mTrafficEnded)
+        //A voice channel's sample source runs its own thread from the moment it is created and sends a heartbeat every
+        //20 ms, so one can arrive before start() has run.  The call start time is then still 0, the call looked older
+        //than its limit, and the voice channel was shut down as it started: the whole call was lost (Cambridge
+        //2026-11-14/15: 328 of 12,189 EDACS calls, logged as "voice channel open 0.0 s").
+        if(mChannelType != ChannelType.TRAFFIC || mTrafficEnded || !mTrafficStarted)
         {
             return;
         }
@@ -533,6 +537,12 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
     public long getGrantCount()
     {
         return mGrantCount;
+    }
+
+    @Override
+    public boolean hasOwnCallSummary()
+    {
+        return true;
     }
 
     @Override

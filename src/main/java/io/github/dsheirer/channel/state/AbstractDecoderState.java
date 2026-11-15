@@ -98,6 +98,15 @@ public abstract class AbstractDecoderState extends Module implements ActivitySum
     public abstract void receiveDecoderStateEvent(DecoderStateEvent event);
 
     /**
+     * AP-fork (edacs-25): true when this decoder state's activity summary already lists the calls by talkgroup, so
+     * that the Details tab does not add the general list as well.
+     */
+    public boolean hasOwnCallSummary()
+    {
+        return false;
+    }
+
+    /**
      * Activity Summary - textual summary of activity observed by the channel state.
      */
     public abstract String getActivitySummary();

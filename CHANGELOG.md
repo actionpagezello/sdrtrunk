@@ -42,6 +42,43 @@ and can only be told apart by the "Build Timestamp" log line.
 | 22 | edacs-22 | Type II: digital calls (grant 0x321, P25 Phase 1 voice) are decoded as speech instead of played as analog noise |
 | 23 | edacs-23 | ProVoice: a transmission that is silence throughout is not recorded or streamed; Type II: the reception line counts the control words that were never found |
 | 24 | edacs-24 | P25: the Details tab lists the calls by talkgroup with the alias name |
+| 25 | edacs-25 | EDACS and Type II: a voice channel is no longer shut down as it starts (2.7% of MBTA calls were lost); calls by talkgroup in the Details tab for every kind of channel; two upstream fixes (P25 HDU, Golay 24) |
+
+### Build 25 - voice channels shut down at start; Details list for all channels; two upstream fixes
+- **CORRECTION of build 23's "EDACS calls with no audio - verified not lost": WRONG for the 336 calls whose voice
+  channel was open under a second.** They were classed as "assigned and released at once" without checking how
+  long the control channel kept the call up. Checked now (Cambridge, 12,189 EDACS calls, 2026-11-14 10:10 to
+  11-15 07:52): 328 calls were logged "voice channel open 0.0 s, audio 0.0 s" from the voice channel's own
+  thread in the same millisecond the call started; for 321 of them the control channel kept the call up for a
+  second or more (201 for 3 s or more). Those calls were lost whole: 2.7% of the EDACS calls. The 171
+  "header only" calls stand as verified.
+- **Cause (found from the "error at start-up" on Summit 800, which is the same fault seen from the other thread):**
+  the sample source of a voice channel (`PolyphaseChannelSource`) starts its output thread when it is CREATED and
+  that thread sends a heartbeat every 20 ms. `ProcessingChain.setSource` connects the heartbeats to the chain's
+  modules before `ProcessingChain.start()` has run their `start()`. `EDACSDecoderState.heartbeat()` (and the same
+  code in `SmartNetDecoderState`) ended a voice channel when `now - mTrafficStart` exceeded the call limit - and
+  `mTrafficStart` is 0 until `start()`. A heartbeat in that gap sent END, the channel state went to TEARDOWN and
+  asked for the channel to be disabled, and the call's voice channel was stopped as it started. When the stop ran
+  on the starting thread it removed the source from the module list inside the start loop: the
+  `ConcurrentModificationException` at `ProcessingChain.start` with "Error removing polyphase channel source"
+  (Summit 800 2026-11-14 12:13:59 and 12:34:24; open since early November). The gap is longer for EDACS (the
+  voice codec is loaded while the modules are set up), hence 2.7% there against 3 of 4,396 Type II calls at
+  Paxton and none of 2,146 at Cambridge.
+- **Fix:** the heartbeat is ignored until the voice channel has started (`!mTrafficStarted`), in both decoder
+  states. Tests: `EDACSHeaderTalkgroupTest.heartbeatBeforeStartDoesNotEndTheCall`,
+  `SmartNetCallFollowingTest.testHeartbeatBeforeStart` (fail without the fix).
+- **To check in the next log:** no "voice channel open 0.0 s" line, no ConcurrentModificationException.
+- **Details tab, every kind of channel (Armen: "Add the same details for DMR and NXDN. Make sure it is available
+  for all channels"):** `CallSummary` listens to the decode events of each processing chain and counts every voice
+  call once against the talkgroup it is to; `ChannelDetailPanel` adds "Calls by talkgroup (talkgroup, alias,
+  calls)" with the alias names for any channel whose decoder does not list them itself - DMR, NXDN, NBFM, LTR,
+  MPT-1327, Passport and the rest. EDACS, Motorola Type II and P25 keep their own lists (builds 21 and 24).
+  Display only. Test: `CallSummaryTest`.
+- **Two upstream fixes** (cherry-picked with their author, Steve Pinkham): `74dc3253` P25 Phase 1 HDU - the
+  seventh Golay word of the call header was read from bit 278 instead of 378, so the header's error correction
+  worked on the wrong bits; `7fcf0353` `Golay24.checkAndCorrect` corrected the wrong bits for a word that is not
+  at the start of its message (P25 TDULC, DMR voice superframe). With upstream's `Golay24OffsetTest`.
+- **Daly:** 11-14 clean (no RSP drop). The 11-15 log stops at 04:44:05 in mid-activity with no shutdown line.
 
 ### Build 24 - P25: calls by talkgroup with alias names in the Details tab
 - **Request (Armen, 2026-11-15):** show the talkgroup and its alias for P25 channels in the Details tab, as build
@@ -63,7 +100,8 @@ and can only be told apart by the "Build Timestamp" log line.
   voice frames, Summit 800 58 of 61, Monson 1 of 1. Armen recorded six on Paxton (59152 FCECS Fire Disp, 59184
   FCECS PD Disp - Franklin County dispatch tied to CoMIRS, mode D on Radio Reference): "They sound ok"; measured
   speech-like (spectral flatness 0.09-0.31; the analog-decoder noise was 0.81-0.86). The editor switch is visible.
-- **EDACS calls with no audio - VERIFIED NOT LOST (Cambridge, 2026-11-14 10:10 to 11-15 07:52, 12,189 calls):** 511
+- **EDACS calls with no audio (Cambridge, 2026-11-14 10:10 to 11-15 07:52, 12,189 calls) - "NOT LOST" WAS WRONG
+  FOR THE 336 SHORT ONES, SEE BUILD 25:** 511
   had no audio. 336 had their voice channel open under a second (assigned and released at once). 171 were "no
   voice - header only": the radio keyed up and sent the ProVoice header (median 0.72 s, at most 2.0 s) and no voice
   frame. 3 found nothing on the channel in 1.6-1.7 s, 1 had a single voice frame. No call with speech in it is

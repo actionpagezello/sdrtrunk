@@ -160,9 +160,26 @@ public class ChannelDetailPanel extends JPanel implements Listener<ProcessingCha
                 sb.append("\n");
             }
 
+            boolean listed = false;
+
             for(DecoderState decoderState : processingChain.getDecoderStates())
             {
                 sb.append(decoderState.getActivitySummary());
+                listed |= decoderState.hasOwnCallSummary();
+            }
+
+            //AP-fork (edacs-25): calls by talkgroup with alias names for every kind of channel.  EDACS, Motorola
+            //Type II and P25 list them in their own summary.
+            if(!listed)
+            {
+                io.github.dsheirer.alias.AliasList aliasList = null;
+
+                if(channel != null && processingChain.getAliasModel() != null && channel.getAliasListName() != null)
+                {
+                    aliasList = processingChain.getAliasModel().getAliasList(channel.getAliasListName());
+                }
+
+                sb.append("\n").append(processingChain.getCallSummary().format(aliasList));
             }
 
             details = sb.toString();

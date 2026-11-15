@@ -3,7 +3,15 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-15 11:30: `edacs` build 24 (P25 calls by talkgroup in the Details tab)
+## Current state 2026-11-15 13:10: `edacs` build 25 (voice channels shut down at start - 2.7% of MBTA calls lost)
+
+- **Build 25** (CHANGELOG build 25): `edacs-25.patch` = three commits on build 24 (two upstream cherry-picks, then
+  the build). Build 24 not applied yet either: Armen applies 24 and 25 together.
+- **The important one:** a heartbeat before `start()` shut voice channels down as they started. EDACS 2.7% of
+  calls at Cambridge. Also the cause of the ConcurrentModificationException in `ProcessingChain.start`.
+- **Next log (any machine on build 25):** count "voice channel open 0.0 s" - expected none.
+
+## Previous state 2026-11-15 11:30: `edacs` build 24 (P25 calls by talkgroup in the Details tab)
 
 - **Build 24** (CHANGELOG build 24): `edacs-24.patch`, one commit on `ad93b6a0` (build 23). Display only.
 - **Cambridge** runs build 23 with the new tuner limits and the CoMIRS 700 MHz site (P25 Phase 2) since about

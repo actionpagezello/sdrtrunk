@@ -69,4 +69,25 @@ public class EDACSHeaderTalkgroupTest
         unknown.receive(new ProVoiceHeaderMessage(280, 0));
         assertArrayEquals(new int[]{0, 0, 0}, unknown.getHeaderCounts());
     }
+
+    /**
+     * Test (edacs-25): a heartbeat that arrives before the voice channel has started does not end the call (Cambridge
+     * 2026-11-14/15: 328 of 12,189 calls were lost this way, logged as "voice channel open 0.0 s").
+     */
+    @Test
+    void heartbeatBeforeStartDoesNotEndTheCall()
+    {
+        EDACSDecoderState state = voiceChannel(273);
+        java.util.List<io.github.dsheirer.channel.state.DecoderStateEvent> events = new java.util.ArrayList<>();
+        state.setDecoderStateListener(events::add);
+        state.getHeartbeatListener().receive(new io.github.dsheirer.source.heartbeat.Heartbeat());
+        state.getHeartbeatListener().receive(new io.github.dsheirer.source.heartbeat.Heartbeat());
+        org.junit.jupiter.api.Assertions.assertEquals(0, events.size(), "nothing before start - in particular no END");
+
+        state.start();
+        state.getHeartbeatListener().receive(new io.github.dsheirer.source.heartbeat.Heartbeat());
+        org.junit.jupiter.api.Assertions.assertEquals(1, events.size());
+        org.junit.jupiter.api.Assertions.assertEquals(io.github.dsheirer.channel.state.DecoderStateEvent.Event.START,
+            events.get(0).getEvent());
+    }
 }
