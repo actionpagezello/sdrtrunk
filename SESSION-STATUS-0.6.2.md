@@ -1,0 +1,1648 @@
+# SDRTrunk AP Features - Session Status
+
+> NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
+> more current than this file. This file tracks build/release state at a glance.
+
+## Current state 2026-11-15 15:30: build 25 clean on four machines; migration to SDRTrunk 1.0.0 planned, not started
+
+**Start here in a new session.** `CLAUDE.md` (local, not in git) opens with a handoff block; `MIGRATION-1.0.md`
+(in this repository) is the inventory.
+
+**Branches on GitHub:** `edacs` = build 25 plus documents (version `0.6.2-ap-16.1-edacs-25`), now frozen as the
+fallback. `master` `18b0ae4e` (ap-16.1). `smartnet` superseded. No `ap-1.0` branch yet.
+
+**Build 25 in service (logs of 2026-11-15, about 80 minutes each):** Cambridge, Summit 800, Paxton, Monson. No
+"voice channel open 0.0 s" (one intended analog-to-P25 restart at Summit), no ConcurrentModificationException,
+Cambridge EDACS calls with no audio 1.1% (was 4.2%), TUNER UNAVAILABLE 0 at Cambridge with the tuner limits
+below (was 136), CoMIRS decoding. Daly on build 14.
+
+**Migration - decided by Armen 2026-11-15:**
+- Base on upstream `v1.0.0` (`73d32386`). New branch `ap-1.0`. Versions `1.0.0-ap-1`, `1.0.0-ap-2`, ...
+- One build with everything, trialled at the same time on Somerville (P25, NBFM, Zello) and Cambridge (P25
+  trunking, EDACS, SmartZone). Every other machine stays on build 25 until both are clean.
+- The fork's "ThinLine Radio" stream type becomes "Code 3 Stream" (his new app; he runs no ThinLine servers).
+  Saved ThinLine streams must load as Code 3 Stream with their settings; the upload format does not change.
+  Upstream's "Thinline Radio" type (`aad971db`, after the release) is imported beside it.
+- The fork's CTCSS/DCS stays. Playlists must keep loading. No GitHub releases of the fork.
+
+**Not yet done:** Armen has reviewed the inventory twice but has not said "approved". Needed from him: that
+approval, the Somerville and Cambridge playlist files (never print credentials), Java 27 on the build PC.
+
+**Measured for the inventory (merge base `b385a42b`, 2026-07-11):** upstream changed 991 files, the fork 1,019,
+831 in common, 724 of those already identical. 447 files differ between build 25 and `v1.0.0`: 153 upstream only
+(36 the fork lacks), 162 fork-only files, 25 fork-changed and untouched upstream, 107 changed on both sides (the
+hand merge). Compare with `git diff -w --ignore-cr-at-eol` - the fork has CRLF files and a plain diff overstates.
+
+**Corrections made on 2026-11-15 (do not repeat):**
+- The first inventory said "keep the fork's" for every shared feature without comparing the code. Compared, it
+  is three lists: fork better, upstream better (bounded `Dispatcher`, NXDN traffic manager, JMBE audio controls,
+  editor layout, MDC-1200 loop), merge both (`NoiseSquelch`, P25 Phase 1 decoder state, DMR traffic manager, RTL).
+- `74dc3253` and `7fcf0353` are inside `v1.0.0` (checked with `git merge-base --is-ancestor`); nothing to carry.
+- Fork features left off the first list: P25 NAC filter and talkgroup override; DMR colour code filter, voice
+  frame A confirmation, channel numbers learned over the air, Ignore Unaliased Talkgroups for DMR. Before porting
+  an area, list the fork's differences from the diff itself, not from memory or this changelog.
+- A fault to fix in the migration: `C4FMSymbolProcessor.getBalance` can index -1 (Monson DMR, once); upstream's.
+
+**Port order:** base and build files; playlist compatibility; NBFM; streaming (Zello, Code 3 Stream, Thinline
+Radio); P25 / DMR / NXDN fixes; tuners; EDACS and Type II; screens, tools, documents. Then replay of the kept
+recordings on build 25 and on the new build.
+
+## Previous state 2026-11-15 14:30: `edacs` = build 25, pushed as `ce2915e0`; documents brought up to date
+
+**Branches on GitHub (actionpagezello/sdrtrunk):** `edacs` `ce2915e0` (build 25, version
+`0.6.2-ap-16.1-edacs-25`), `master` `18b0ae4e` (ap-16.1, unchanged), `smartnet` `6fc43fa9` (older Type II work,
+superseded by `edacs`).
+
+**What the `edacs` branch adds to ap-16.1 (builds 1-25, details in CHANGELOG.md):**
+- EDACS Extended Addressing control channel, call following, ProVoice digital voice (checked against
+  TIA/EIA/IS-69.5), Radio Reference site import, header talkgroup check, silent transmissions not saved.
+- Motorola Type II / SmartZone control channel, analog call following, digital calls (grant 0x321) decoded as
+  P25 Phase 1 voice, site number, calling radio only from a complete grant, true reception figure.
+- "Ignore Unaliased Talkgroups" for EDACS and Type II. Calls by talkgroup with alias names in the Details tab for
+  every kind of channel (and CTCSS/DCS tones with alias names on NBFM).
+- Build 25: a voice channel is no longer shut down as it starts (EDACS 2.7% of calls at Cambridge).
+- Two upstream fixes taken early: `74dc3253` (P25 HDU Golay word start), `7fcf0353` (Golay 24 word not at the
+  start of its message).
+
+**Where it runs (2026-11-15):** Cambridge build 23 with the new tuner limits and CoMIRS since 09:55 (build 25 to
+follow), Summit 800 build 23, Paxton and Monson build 22, Daly build 14.
+
+**Waiting for (nothing to build):**
+- A Cambridge log on build 25: no "voice channel open 0.0 s", no ConcurrentModificationException; TUNER
+  UNAVAILABLE with the tuner limits below; CoMIRS decoding; how often "was silence throughout" appears.
+- A look at the Details tab on a P25 channel and on a DMR or NBFM channel (not seen on a screen yet), and at the
+  two channel-editor controls of build 21 (the switch is confirmed visible; the Site box not yet mentioned).
+- A few clean days, then the alignment with upstream SDRTrunk 1.0 (`v1.0.0` = `73d32386`; upstream master
+  `5bce5416` on 2026-11-14, 65 commits the fork does not have, Java 27; the fork's CTCSS stays; playlists must keep
+  loading). It starts with an inventory: take upstream's / keep the fork's / fork only.
+
+**Cambridge tuner layout set by Armen 2026-11-15 (frequency limits decide which device takes a channel):**
+Nooelec 850.0-853.0 (MBTA lower ten channels), Nooelec 853.0-856.0 (MBTA upper three + control 853.9000, MSP
+Boston control 854.3625), RSP1B 856.0-861.0 at 7 MHz (MSP Boston voice and other controls, two P25 channels),
+Nooelec 768.0-772.0 and Nooelec 772.0-776.0 (CoMIRS Metro Boston Overlay, P25 Phase 2).
+
+**Decided by Armen, not to be reopened:**
+- Summit 800 Airspy sample loss and its gain: his to handle; the machine will take nearer sites.
+- Zello "kicked" on C-PTL-1 / C-PTL-3: the account is logged in on several computers. Not a bug.
+- Paxton's many Type II site channels were a test.
+- Starting a multi-frequency channel on its last control frequency (EDACS takes about 18 s to lock at start
+  because it begins on the first frequency of its list): "trivial and not needed". Putting 853.9000 first in the
+  list does it by hand.
+- No more document searching; no DSDPlus comparison; no TSB-69.3 purchase (caller ID from the voice channel).
+- Daly's 11-15 log stopping at 04:44:05: a short power loss. Daly's two spontaneous RSP1B drops (unit 5260, 11-11
+  and 11-12) have not recurred on build 14.
+
+**Still unexplained (no work planned):** the beginning of three rated MBTA calls being hard to understand; Monson
+hearing sites 7 and 14 on 856.0625 in the same minute.
+
+## Previous state 2026-11-15 13:10: `edacs` build 25 (voice channels shut down at start - 2.7% of MBTA calls lost)
+
+- **Build 25** (CHANGELOG build 25): `edacs-25.patch` = three commits on build 24 (two upstream cherry-picks, then
+  the build). Build 24 not applied yet either: Armen applies 24 and 25 together.
+- **The important one:** a heartbeat before `start()` shut voice channels down as they started. EDACS 2.7% of
+  calls at Cambridge. Also the cause of the ConcurrentModificationException in `ProcessingChain.start`.
+- **Next log (any machine on build 25):** count "voice channel open 0.0 s" - expected none.
+
+## Previous state 2026-11-15 11:30: `edacs` build 24 (P25 calls by talkgroup in the Details tab)
+
+- **Build 24** (CHANGELOG build 24): `edacs-24.patch`, one commit on `ad93b6a0` (build 23). Display only.
+- **Cambridge** runs build 23 with the new tuner limits and the CoMIRS 700 MHz site (P25 Phase 2) since about
+  09:55 on 11-15. Log wanted after a few hours: TUNER UNAVAILABLE count, CoMIRS decoding, "was silence
+  throughout" count.
+
+## Previous state 2026-11-15 09:40: `edacs` build 23 (silent ProVoice transmissions; Type II reception line)
+
+- **Build 23** (CHANGELOG build 23): `edacs-23.patch`, one commit on `13e270fd` (build 22).
+- **Build 22 confirmed by ear** (Armen, six Paxton recordings of 59152 / 59184). EDACS no-audio calls verified as
+  key-ups without speech - none lost. (WRONG for the calls open under a second - see build 25: 2.7% were lost.)
+- **Armen's decisions 11-15:** Summit 800 Airspy loss not a concern; Zello "kicked" is the same account logged in on
+  several computers - not a bug; the Paxton multi-site channels were a test, no more work on them; Cambridge gets
+  more Nooelec sticks later (7 in all for the 800 band plus CoMIRS Metro Boston Overlay 769-775 MHz) - not soon.
+- **EDACS left:** nothing to build. Clean days on Cambridge, then the upstream alignment.
+
+## Previous state 2026-11-14 22:40: `edacs` build 22 (Type II digital calls decoded as P25 voice)
+
+- **Build 22** = digital grant 0x321 -> P25 voice channel (CHANGELOG build 22). `edacs-22.patch`, one commit on
+  top of build 21. Audio not tested in the workspace - Armen listens to 59152 / 59184 on Central MA.
+- **Paxton:** build 13, one Type II channel hops between 854.3625 / 855.5375 / 859.2375 (two or three different
+  sites share those). With build 21+ and the Type II diagnostics box, the log names the site on each.
+
+## Previous state 2026-11-14 21:15: `edacs` build 21 (alias names in Details, ignore unaliased, site number)
+
+- **Build 21** = three requests (CHANGELOG build 21). `edacs-21.patch`, one commit on `b146ec4c`.
+- **Build 20** pushed `b146ec4c`, clean on Summit 800 and Cambridge (11-14).
+- **Next (awaiting Armen's choice):** digital calls on Central MA - 0x321 grant, P25 Phase 1 voice, unencrypted;
+  full decode or only "do not play as analog". Test files: `logs\reference\summit_central_p25` (11 files).
+- **Summit 800 sites:** Control = Metro Boston (5), Central MA (8), Boston (1, 31% OSW failures there - Cambridge
+  receives it at 0.3%). Monson's two sites on one control frequency: which two not yet said.
+- **Daly:** 11-13 morning loop was the owner trying an RSP1B on the Renesas card (kept disconnecting, put back).
+  Spontaneous drops remain two, both 5260.
+
+## Previous state 2026-11-14 10:00: `edacs` build 20 (Type II calling radio; includes build 19)
+
+- **Build 20** = build 19 (never applied alone) + Type II: the calling radio is used only when the channel word
+  comes straight after it (CHANGELOG build 20). `edacs-20.patch` has two commits and applies on `6530f233`.
+  Meant for Summit 800 (MBTA EDACS + MSP Type II on one Airspy); nothing else in SDRTrunk is changed or removed.
+- **To read in the next Summit 800 log:** "calling radios not used so far: N" on the per-minute DEBUG line;
+  grant lines naming a one-off radio should be gone (604 of 21,270 on 11-12).
+- **Verified against the standards 2026-11-13/14:** ProVoice decode matches TIA/EIA/IS-69.5 (code words, PN
+  sequence, bit order, 7100 -> 7200 conversion); the IMBE tables are the same as TIA-102.BABA, so JMBE's P25
+  synthesizer is right for EDACS. Passing error counts to JMBE (smoothing/repeat): 86 of 92 calls unchanged -
+  not built. Prototype kept at `/home/claude/pv/prototype-errors-to-jmbe.diff`.
+- **Closed by Armen:** more document searching; DSDPlus comparison (too complicated to set up).
+- **Still wanted:** a hardware ProVoice scanner recording beside Cambridge; 5 minutes of MSP control channel
+  baseband from Summit 800; which JMBE jar is selected on Cambridge and Summit 800.
+
+## Previous state 2026-11-13 20:30: `edacs` build 19 (ProVoice suspect voice frames not played)
+
+- **Builds:** 19 = a voice frame with 2+ corrected errors beside one that failed is concealed (CHANGELOG build 19,
+  with the analysis of the 21 calls rated on Cambridge 11-13). Build 18 pushed as `6530f233` (tree `d81875b0`),
+  on Cambridge and Summit 800 since 11-12 21:23.
+- **Plan agreed 2026-11-13:** settle EDACS first, then one alignment pass with upstream. Upstream released
+  `v1.0.0` (`73d32386`, 11-13; master `9641d2ef` three commits later): Java 27, Gradle 9.9, version from the git
+  tag, its own ThinLine Radio upload type (`audio/broadcast/thinline`; the fork has `thinlineradio`). 64 commits
+  and 486 files from the fork's merge base. The alignment starts with an inventory in three piles (take
+  upstream's / keep the fork's / fork only); Armen decides the piles; **his CTCSS stays** (different, and he
+  thinks better); playlists must keep working. Two upstream fixes the fork also needs come with it: `74dc3253`
+  (P25 HDU Golay word start 278 -> 378, `HDUMessage.java`) and `7fcf0353` (`Golay24.checkAndCorrect` wrong for
+  words not at bit 0: P25 TDULC words 2-12, DMR voice superframe words at 24 and 48).
+- **EDACS is settled when:** builds 17-19 have run clean for a few days on both sites; Armen has listened to 19;
+  his call on Summit 800's reception (signal level, not code).
+- **Soft-decision decoding closed:** repeated with the Hamming fix (`/home/claude/pv/soft18.py`): the fix alone
+  took accepted-but-wrong from 126 to 80 (about 79 -> 33 real); soft on top fixes 1, recovers 2 of 34, breaks 16.
+- **References looked at:** Trunk Recorder Pro (Rust, GPL-3): ProVoice tested on synthesized signals only; has
+  the same Hamming correction by table as build 18 - a second independent confirmation. Original mbelib 1.3.0
+  (szechyjs, last change 2019) still has the fault.
+- **Candidates, not built:** mute the fixed start-up voice frames; no audio file for a transmission that is all
+  silence; caller ID in the voice channel.
+- **Logs folder:** `C:\Users\Admin\projects\logs\reference` holds the 11-12 two-site MBTA recordings, the six
+  Monson recordings and `EDACSConv`. Keep.
+- **Tools (workspace):** `/home/claude/dsd/RunFull19.java` (whole decoder + JMBE to audio and per-message
+  counts), `/home/claude/pv/match.py` (audio file -> baseband by correlation), `an13.py`, `chop.py`, `rule.py`
+  (paired-site score of a concealment rule).
+
+## Previous state 2026-11-12 21:30: `edacs` build 18 (ProVoice Hamming correction fixed)
+
+- **Builds:** 18 = Hamming (15,11) correction by table (CHANGELOG build 18). Build 17 pushed as `c9c88631` (tree
+  `a3a91076`), running on Cambridge and Summit 800 since 20:07 on 11-12 and confirmed there: every readable header
+  (1,255) named the call's talkgroup.
+- **Run 18 on Cambridge and Summit 800.** Nothing new in the log; the gain is in weak-signal voice at Summit 800.
+- **Muffled call (280 from 1407) closed:** same tone through JMBE and mbelib-neo; the dullest of 37 calls at the
+  source.
+- **Next:** Daly recovery test when its RSP1B drops; caller ID (six header bits and the frames after the header
+  not decoded); mbelib-neo has soft-decision entry points for 7100x4400 (`mbe_processImbe7100x4400SoftFramef`) -
+  the soft-decision test of build 17 was run with the Hamming fault in place and could be repeated.
+- **Tools (workspace, not in the repo):** `/home/claude/dsd` - mbelib-neo built (`inst/`, pffft cloned by git
+  because the archive download is refused), `cmp.c` (our parameter bits against mbelib-neo's, and its audio),
+  `RunJmbe.java` + `jcls/` (JMBE codec compiled from DSheirer/jmbe); `/home/claude/pv/Dump7100.java`, `ham.py`
+  (paired-site score of the correction).
+
+## Previous state 2026-11-12 20:15: `edacs` build 17 (ProVoice header read; talkgroup check)
+
+- **Builds:** 17 = header word read (BCH checked), talkgroup compared with the call (log only), a readable header
+  starts a new transmission wherever it is (CHANGELOG build 17 has the measurements). Build 16 pushed as `941c2bd4`
+  (tree `128011a1`), running on Cambridge and Summit 800 since about 17:50 on 11-12 and confirmed there
+  (overall damaged 1.0% / 2.7%). Build 14 running on Daly; no RSP drop reported since.
+- **Run 17 on Cambridge and Summit 800.** Look for `talkgroup in N of N headers` on the EDACS call lines and for
+  WARN `the voice channel is carrying a transmission for talkgroup`.
+- **Soft-decision decoding: tested, not built** (CHANGELOG build 17). Summit 800's remaining losses are reception.
+- **Next:** one-off mbelib-neo / dsd-neo comparison on the clean-but-muffled call
+  (`20261112_151820_851475000_..._35_baseband.wav`, 280 from 1407, every frame 0 errors); Daly recovery test when
+  its RSP1B drops; the six header bits after the talkgroup and the frames after the header (caller ID?) are not
+  decoded.
+- **Tools (workspace, not in the repo):** `/home/claude/pv/hdr.py` (header words per recording), `Run17.java`
+  (whole decoder over recordings), `soft.py` / `verify.py` (soft-decision prototype).
+
+## Previous state 2026-11-12 18:00: `edacs` build 16 (ProVoice sign-off and flag bit)
+
+- **Builds:** 16 = sign-off not played, flag bit not counted (CHANGELOG build 16 has the measurements). Build 15
+  pushed as `ef5343ec` (tree `d217c7bd`), running on Cambridge and Summit 800 since about 15:05 on 11-12 and
+  confirmed there. Build 14 running on Daly; no RSP drop reported since.
+- **Run 16 on Cambridge and Summit 800**, "EDACS / ProVoice decoder" ticked.
+- **Next:** build 17 candidates - soft-decision decoding (Summit-only losses, 4.4%), header by structure with the
+  talkgroup check, stricter handling of real bursts; one-off mbelib-neo / dsd-neo comparison on the clean-but-muffled
+  call (`20261112_151820_851475000_..._35_baseband.wav`, 280 from 1407, every frame 0 errors).
+- **Machines:** Cambridge has four Nooelec RTLs; its RSP1B is disconnected on purpose, so "Couldn't open SDRplay
+  API" at startup there is expected. "SDR 2" (playlist wipe) is working again; cause not looked at.
+
+### Findings 2026-11-12 afternoon (working notes)
+- Build 15 confirmed live (logs 15:07-15:32 Cambridge, 15:04-15:25 Summit 800): first 0.48 s damaged 0.9% / 2.5% (was ~60%), middle 3.4% / 3.9%, last 0.48 s 21.0% / 19.3%; header median 0.40 s; found on 279/282 and 201/204 transmissions; header-only bursts dropped 4 / 27. Pushed as ef5343ec (tree d217c7bd).
+- ProVoice voice-channel header layout (measured, MBTA): repeating 208-bit block = 64-bit data sync 0x94D835230EBFAA55 + 48-bit word W sent W, ~W, W (EDACS control-channel convention per lwvmobile's RadioReference thread 411787, which describes 40-bit control messages sent message/inverse/message). A 736-bit "frame" holds ~3.5 blocks; in decoder frame bits the triples start at bit 32, 240, 448.
+- W = 0xA8, 6 zero bits, 16-bit TALKGROUP (bits 14-29), 6 bits unknown (vary with talkgroup, not with caller), 12 bits (check?). Verified 12 of 12 Cambridge calls 2026-11-12 15:15 against control channel TO (273->A80004473BBF, 280->A8000462A434, 533->A80008560454, 561->A80008C7F8B7). Caller ID is NOT in W.
+- After the header: frame(s) with sync ...0EBF33CC, C107..., then 6969/9696 pattern, then voice.
+- End of transmission: last frame's trailing voice frames are non-voice while carrier stays (dotting per ledacs-esk dot-detector); ~20% of last 0.48 s. TODO build 16.
+- Cambridge: SDRplay API open fails at every start since at least 11-11 08:00 (RSP1B unused, 4 RTLs only); 57 of 11,596 MBTA call starts 11-12 not followed (TUNER UNAVAILABLE, mostly 851.0625/851.175/851.225).
+- Reference projects reviewed (front pages only): dsd-neo (best ProVoice reference, mbelib-neo), ledacs-esk (dotting detector, understanding_frames.txt), tr-op25 (claims ProVoice, unconfirmed); GopherTrunk no ProVoice audio; NyxScope proprietary; gr-edacs/ledacs old; OnAir unrelated (DVB/DAB).
+- Tools: /home/claude/pv/Replay.java (frame dump), framesb.txt (11-09 recording frames with bits).
+- EDACSConv folder (Armen, 2024-09): C/ = real DSD-FME sources (provoice.c, provoice_const.h, edacs-fme.c, edacs-bch3.c); JAVA/ = machine conversions that do not match the C (64-bit frames, 15-bit sync, invented agency names) - not usable. Our ProVoiceFrameDecoder already follows provoice.c (voice at bit 144, 18 bits between pairs).
+- provoice.c reads 144 bits before the voice in every frame: N64, a 16-bit "LID", S64, and does nothing with them; it has no header or end-of-transmission handling. Measured on 12 Cambridge calls 11-12 15:15: N64 = 0EBF333369696969 constant; "LID" bits 64-79 = 0x6969 constant (filler, not an ID on MBTA); S64 = 6969 + a value that changes frame to frame (98000 08 / C487E9 / 557B0A / 4444E1 - a sequence) + 24 bits constant per call: 5575AA (FROM 10778 x3), 6B2700 (FROM 11750, 3760, 1407, 1041), 83DF17 (FROM 108, 105, 117 = low IDs, likely consoles). Not the caller ID; maybe radio class / key. Caller ID not found in voice frames.
+- Patent US20030190923 [0042]: LID is "re-conveyed" on the working channel - candidate location is the frame(s) after the header (sync ..33CC, C107...). Not decoded yet.
+- Armen's rated calls 11-12 (Summit 800 unless noted), from logs + baseband replay:
+  15:06-15:08 (no baseband): 3624 "muffled/digital" 65% damaged; 1408 "gargled" 32%; 3710 "no audio" decoded silence (-67 dBFS, frames fine); 115 "background noise" same at Cambridge (source); 1199 15:07:13 "muffled" 0 of 132 damaged (same radio rated clear at 15:06:18); 3032 "start cut off" 1.7%, hissy.
+  15:16-15:18 (baseband): 535/105 "not understandable" signal 2 dB over floor; 273/2947 "poor decoding" 3 dB over floor, steady 2-1-2-1 errors per voice frame; 273/1058 "not very clear" 8 consecutive destroyed frames mid-call + 6 garbage frames between first dotting and final dotting; Cambridge 305/23634 "beginning not clear" header 4 frames then all-clean voice (source/unknown); 280/1407 "mostly clear but muffled" ALL frames 0 errors (candidate for dsd-neo comparison; file 20261112_151820_851475000_..._35_baseband.wav).
+- KEY: call 296/3774 15:16:59 "data sounds", recorded at BOTH sites: damaged frames are bit-for-bit identical at Cambridge (64 dB signal) and Summit (frame errors 4401 and 7875 at the same positions, and the constant overhead is corrupted identically: S64 6979.. instead of 6969.., ..632700 instead of ..6B2700). So these errors are in what the site transmits = the portable's uplink errors regenerated by the repeater. Not fixable by reception. In 7875 the 4th voice frame (5 errors) passes MAX_ERRORS=5 and is played = "data sound".
+- IDEA for concealment: per-frame constant overhead (N64 0EBF333369696969, bits 64-79 6969, S64 starts 6969, last 24 bits constant per call) is a free quality indicator; a voice frame with 3-5 errors inside a frame whose other voice frames are damaged or whose overhead has bit errors should be treated as damaged. Needs evaluation on 11-09 recording + 237 basebands.
+- Dotting rule: alternating run >=16 bits marks end of transmission (voice max run <16 in 1874/1927 frames); garbage frames can follow the first dotting for ~0.5 s before the long dotting (273/1058).
+- Some transmissions show a constant 2-1-2-1 or 1-1-1-1 error pattern in every frame even at 60 dB (11-09 tx 5) - systematic, probably radio-specific bits; uses up error budget.
+- PAIRED-SITE TEST (Armen's idea, 33 calls 15:15-15:18 recorded at both Summit 800 [signal 34-41 dB] and Cambridge [55-68 dB], /home/claude/pv/pairs.py): 4,424 voice pieces (20 ms) compared after removing headers. Clean at both 92.2%; damaged at BOTH 130 (2.9%) - 118 of those in frames >=99% bit-identical at the two sites = transmitted that way; damaged at Summit only 196 (4.4%) = Summit reception; Cambridge only 19 (0.4%). The both-sites damage is 2 or 4 pieces at the end of nearly every call (the sign-off frame) plus two calls with long runs (151522_853662500: 53; 151536_851450000: 20) = uplink trouble.
+- Also: of 1,955 pieces with any corrected errors at either site, 1,326 have the SAME non-zero error count at both sites. So most small "corrected error" counts are also in the transmission, not reception. LEAD: find which bit positions are being "corrected" - if always the same positions, the decoder (ours and DSD-FME) may be treating non-voice bits as voice, and correcting them could alter the voice parameters (possible cause of clean-but-muffled calls).
+- "CORRECTED ERRORS" ARE MOSTLY A FLAG BIT (tools /home/claude/pv/PVD.java + Replay2.java, 33 Cambridge strong-signal recordings, 4,905 accepted voice pieces): 3,335 have 0 errors; of the 1,570 with errors, 1,112 are bit 17 of code word c0 and 732 bit 17 of c1 (often both), nothing else. Per call: 11 of 33 calls have zero errors in every piece; ~10 calls have 1-2 in every piece (first 2 pieces of those calls are 0). After the correction c1-c3 decode with 0 errors, so the descrambling seed (from c0) is right = the correction is right and the voice is NOT altered. Conclusion: some radios deliberately invert that bit in c0/c1 (a flag riding on the FEC). Harmless to audio, but it uses 1-2 of the MAX_ERRORS=5 budget on those calls, so real errors push pieces over the limit sooner. TODO: do not count the flag bits as errors. This also explains the constant 2-1-2-1 / 1-1-1-1 patterns seen on 11-09.
+- So "damaged at both sites" has three parts: end sign-off (not voice), flag bits (not errors, and not counted as damaged anyway), and real uplink bursts (constant overhead fields corrupted too, e.g. 6979 for 6969, 632700 for 6B2700) concentrated in 2 of 33 calls.
+
+## Previous state 2026-11-12 15:30: `edacs` build 15 (ProVoice header no longer played as voice)
+
+- **Builds:** 15 = `ProVoiceHeaderDetector` (see CHANGELOG build 15 for the measurement). Build 14 pushed as
+  `23fae4f4` (tree `90b0420d`) and running on Daly since about 13:55 on 11-12.
+- **Run 15 on Cambridge and Summit 800** with "EDACS / ProVoice decoder" ticked. Confirmation: `ProVoice
+  transmission:` lines end with `header 0.xx s not played`, and the "first 0.48 s" damage figure drops from about
+  60% to about the mid-call figure. If it does not, the header at those sites differs from the recording's.
+- **How it was found:** `/home/claude/pv/Replay.java` in the workspace (not in the repo) feeds a baseband WAV to
+  `EDACSDemodulator` one sample at a time, frames it like `ProVoiceDecoder`, and prints sample position, sync type,
+  the four voice-frame error counts and the 736 bits of every frame. The MBTA-5 baseband (50 kHz I/Q, 1992 s,
+  `20261109_220431_851937500_MBTA_MBTA_MBTA-5_127_baseband_cut.wav`, kept in the logs folder) gave 1927 frames in 40
+  transmissions. Similarity to the previous frame is 1.00 for header repeats and about 0.65 for voice.
+- **Ruled out on the way:** DC removal and timing recovery settling (carrier offset is 100-200 Hz against about
+  1.9 kHz deviation, and the damage has a hard edge at the header's end, not a decay).
+- **Since 14:00 on 11-12:** Monson has no `hs_err_pid*.log` after 13.8 h on build 13 - the RTL crash fix is
+  confirmed. Armen may have changed the Airspy gain on Summit 800 on 11-11 (not certain), which would explain its
+  better MBTA reception. Cambridge clock being fixed.
+- **"SDR 2" playlist (machine not identified yet):** `default.xml` was the empty `<playlist version="4"/>` (25
+  bytes); `default.xml.backup` was whole (124,058 bytes, 57 channels, 285 aliases, 10 Zello streams, 13 auto-start,
+  all cross-references good). Armen given a guarded PowerShell block to restore it and keep a spare copy. Cause
+  unknown - needs that machine's log from the time it happened. SDRTrunk replaces the backup at each save, so a
+  second wipe could overwrite the good backup.
+- **Upstream re-read 13:40 on 11-12:** nothing worth taking now; table given to Armen (ThumbDV removal no, JMBE
+  2.1.1 no, build-script rework and library updates later as one maintenance build).
+
+## Previous state 2026-11-12 14:00: `edacs` build 14 (RSP recovery; hunting log lines)
+
+- **Builds:** 14 = RSP recovery (`RspRecoveryMonitor`), log lines when a channel hunts for its control channel
+  (`FrequencyHunt`), these docs. Build 13 pushed as `4d04a647` (tree `a000b191`).
+- **Where it goes:** Daly, which runs 16.1 from `master` and has no recovery until it takes an `edacs` build.
+  Monson, Summit 800 and Cambridge run build 13 and can take 14 at any restart. Paxton has not run 13 yet (system
+  maintenance).
+- **RSP recovery is not proven on hardware.** The next Daly drop is the test. What to read in its log: the
+  `RSP recovery:` lines - the first check (10 s after the removal) says what the SDRplay API listed.
+
+### Findings 2026-11-11 night to 2026-11-12 afternoon
+- **Monson, build 13 (jRTL 1.4.0.3):** 2026-11-11 22:12:55 to 11-12 12:03:55, 13 h 51 min, no crash, no restart, no
+  RTL or USB error. Longer than the build 10 run (13.2 h). The `bin` folder has not been checked for
+  `hs_err_pid*.log` yet. Paxton not tested.
+- **Daly (16.1), RSP1B SER#24050F5260 removed twice:** 11-11 18:05:53 and 11-12 09:20:53 (10 h 44 min after the
+  22:36:44 restart), 16 NH/Haverhill channels each time. Identical pattern: working normally seconds before, then
+  `Processing device removal for tuner [A]`. Measured on the machine at 12:00 on 11-12: Windows lists both RSP1Bs
+  present and OK; no USB, PnP, power or service event in the System log for 24 h; USB selective suspend is disabled
+  on AC; `sdrplay_apiService` running since 11-09 17:29 (never restarted); RSP1B SER#24040A4B60 on the same service
+  unaffected.
+- **Daly USB layout (Dell, measured):** everything is on the motherboard's Intel xHCI controller, no hub - RSP1B
+  5260 on port 1, Logitech receiver port 5, RSP1B 4B60 port 7, NESDR SMArt v5 (serial 00002003) port 9. The Renesas
+  USB 3.0 card Armen installed is seen by Windows and has nothing plugged into it. **Test agreed:** move 5260 to
+  the Renesas card (SDRTrunk closed first). Still drops there -> the radio or its cable; stops -> motherboard port 1.
+- **Monson uploads, `s1.scannerwx.com`:** HTTP 502 from 09:53:30, last accepted upload 10:31:45, then Cloudflare
+  error 1033 (tunnel has no connector - the server end) to the end of the log at 12:03; 296 ThinLine recordings aged
+  off. Armen: most Cloudflare errors are on our server; the disconnections are not the concern, the receiving end
+  is. Each stream retests a failed server every 5 s (stock value; several streams to one host added up to 6,568
+  tests in two hours). **Decision: retry timing stays.** Logging the first line of an HTML error body instead of
+  the whole page goes with the deferred log trimming.
+- **Summit 800, build 13, 11-11 22:24 to 11-12 13:04:** MBTA control channel errors 2.6% median (about 15% on the
+  morning of 11-11, build 11); ProVoice damaged frames mid-call about 7% (was about 22%), last 0.48 s 24% (was 40%).
+  Nothing in build 12 or 13 touches the Airspy or EDACS path, so something else changed between 08:00 and 22:24 on
+  11-11 - asked Armen, not answered yet. MSP Type II OSW failures 26.6% median, still poor. Airspy dropped samples
+  in four minutes after startup (22:53, 23:09, 23:10, 23:11; at most 0.208%), none in the 13.5 h after.
+- **ProVoice start-of-transmission damage does not follow reception:** first 0.48 s is 62% damaged at Summit 800
+  with mid-call at 7%, and the same order at Cambridge (19 of 24 frames on single calls). It is the decoder, not
+  the signal, and it is the audible "digital sound" at the start of calls. **Top decoding item after build 14.**
+- **Audio comparison, Summit 800 against Cambridge (recordings 11-11 22:48-23:06, 100 calls paired by talkgroup,
+  radio and time):** Summit lacks 52 s of the 489 s Cambridge has (10.7%; 40 s mid-call), 28 of 95 calls lack more
+  than 0.5 s; level, clipping and frequency balance are the same at both sites, so "muffled" is repeated and
+  silenced frames, not filtering. CORRECTION to what Armen was first told: the "20% sounds different" figure used a
+  similarity cut-off that was too strict, and it does not match the log, which shows 4-7% mid-call damage for that
+  hour; two of the dropped-sample minutes fall inside the recordings.
+- **MBTA outage 2026-11-12:** control channel on 853.7250 MHz gone from about 11:55 to 12:45 real time (Cambridge
+  log 11:49:58-12:39:50, its clock is 5-6 minutes slow; Summit 800 log 11:56:35 to a restart at 12:43:55, locked at
+  12:45). Both sites decoded again on 853.7250 without help. Restarting the channel and the program did nothing
+  because there was no signal.
+  - **The two sites are configured differently.** Summit 800's MBTA channel has a frequency list and hunts (its
+    thread is named `[32/EDACS] MULTI FREQ`). Cambridge's has the single frequency 853.7250 and cannot hunt (thread
+    `[18/EDACS] 853725000`, no `MULTI FREQ` anywhere in its log) - it waited and resumed. If the control channel
+    ever does move, Cambridge will not follow until its channel is given the full list.
+  - **Claude was wrong twice here:** said the control channel had moved to a frequency outside the list, and then
+    that a new channel with all frequencies had found it. It never moved. The causes: hunting logged nothing, and
+    the two machines' clocks differ by about 5 minutes.
+    Build 14 adds the hunting lines. RULE: compare the clocks before comparing times across machines.
+  - MBTA channel as configured: Source list 851.175, 851.425, 851.9375, 852.25, 853.725, 851.45 (rotation 1000 ms);
+    LCN list 1-15 = 851.175, 851.225, 851.425, 851.475, 851.9375, 851.9875, 852.175, 852.25, 853.6625, 853.725,
+    853.9, 851.0625, 851.45, 851.9625, 853.925. Armen added a second MBTA channel with all 15 frequencies on Summit
+    800; from 12:49 both channels were decoding there, so each call was handled twice until one is stopped.
+- **Code note:** `MultiFrequencyTunerChannelSource` sends its rotation success / failure notifications into its own
+  consumer adapter, where `TunerChannelSource.process` ignores them - no module ever receives them (upstream
+  behaviour, left alone).
+- **Upstream re-read 2026-11-12 13:30:** head `a53f6e9d` (#2628 ThumbDV support removed, 11-12). Libraries: jrtl
+  1.4.0.3, jsdrplay 3.15.3 (latest tag, 11-07), jlibusb 1.0.30.1, jairspy 1.0.12.1, jhydrasdr 1.1.4.1 - all the same
+  as the fork; JMBE 2.1.1 upstream against 2.1.0 in the fork (2.1.1 only tidies tests). Nothing new for the RSP.
+
+### OPEN (edacs) as of 2026-11-12
+- **Armen to do:** Daly - move RSP1B 5260 to the Renesas card, load build 14. Cambridge - fix the clock (5-6 min
+  slow) and give its MBTA channel the full frequency list. Summit 800 - one MBTA channel, Auto-Start on. Check the Monson and Paxton `bin` folders
+  for `hs_err_pid*.log`.
+- **Armen to answer:** what changed on Summit 800 on 11-11 between 08:00 and 22:24; the order of the DRAFT
+  priorities (section below).
+- **Next investigations:** ProVoice start-of-transmission damage - DONE in build 15; ProVoice end-of-transmission
+  frame and decoding the header's contents; EDACS "open 0.0 s" lines;
+  `ConcurrentModificationException` in `ProcessingChain.start` (once more at Summit 800, 11-12 01:41:24, on the
+  MBTA control channel's thread, with a polyphase "channel source was not previously added" error beside it); Type II at Summit 800; Zello "kicked" on C-PTL-1 / C-PTL-3 (Monson) - unexplained,
+  not a priority for Armen.
+- **Deferred by Armen:** log trimming (now including one-line HTML error bodies); minimum segment length before
+  streaming. Upstream build-script rework, ThumbDV removal and library updates: not taken, each its own build.
+
+### Working rules added 2026-11-12
+- A PowerShell block that writes a file must not assume `$env:USERPROFILE\Desktop` exists (Daly's Desktop is
+  under OneDrive): use `[Environment]::GetFolderPath('Desktop')`.
+- `PlaylistManager.java` and `gradle.properties` have CRLF line endings; most other sources are LF. An edit made by
+  a script must keep the file's endings (`open(..., newline='')`), or the patch rewrites the whole file.
+- Say "I can't tell from the log" before offering a cause. On 11-12 two confident causes for the MBTA outage were
+  wrong within the hour.
+
+## Previous state 2026-11-11 22:15: `edacs` build 13 (jRTL 1.4.0.3 - upstream's fix for the Monson crash)
+
+- **Builds:** 13 = jRTL 1.4.0.3 (upstream's fix for the Monson crash) with the build 10 stream change kept as a second
+  layer, upstream's C4FM score test, corrected docs. Build 12 pushed as `7fb66b2b` (tree `2997af12`).
+- **Run it on Monson and Paxton** (RTL machines with trunked systems). Summit 800 and Cambridge can take it too.
+
+### Findings and corrections 2026-11-11 late evening
+- **CORRECTION: a newer jRTL DID exist.** The 11-11 21:30 section below says "No newer jRTL exists" and that upstream
+  as of `e7f4f655` used jRTL 1.4.0.2. Both are wrong. jRTL **1.4.0.3** was released 2026-11-11 02:06 and upstream
+  moved to it at 03:16 (`000ac51f`, issue #2621 "Windows rtl-sdr crashing on retune", jRTL issue #4). The version was
+  checked on 11-10 and not re-checked when upstream was fetched again on 11-11. RULE: when reporting upstream's
+  state, re-read `build.gradle` versions and the release tags of the driver libraries at that moment.
+- **Root cause of the Monson crash (upstream's diagnosis, native patch 0002 in jRTL):** `rtlsdr_read_async` freed its
+  bulk transfers when the stream ended without waiting for libusb to hand them all back. A control transfer on
+  another thread (a retune) then handled the completion of a freed transfer and crashed in
+  `windows_handle_transfer_completion` -> `RtlEnterCriticalSection`. Triggers: the stream being cancelled, OR a
+  transfer failing mid-stream (on Windows any status other than completed or cancelled sets `dev_lost`). The fix
+  counts transfers in flight and frees them only when the count is zero; a stream that dies without being cancelled
+  now returns `LIBUSB_ERROR_IO`.
+- **Build 10 against the driver fix:** build 10 (never stop the RTL stream) removes the stop-then-retune path only.
+  It does NOT cover a transfer failing mid-stream during a retune. jRTL 1.4.0.3 covers both, at no cost. Build 13
+  has both. To prove the driver fix alone is enough, a later build would restore stop-on-last-listener and run on
+  Monson; until then the stream change stays.
+- The jRTL 1.4.0.3 jar carries a different `windows-x86_64/rtlsdr.dll` (182,272 bytes) from 1.4.0.2 (181,760).
+- **C4FM "bounds check the start of the buffer" (upstream #2622, 11-11):** the fork made the identical change
+  (`bufferPointer >= 0 &&`) on 2026-10-28 in ap-15.10.1 and also guards a second index upstream does not. Upstream
+  added a test; build 13 takes it (`C4FMSymbolProcessorScoreTest`) and it passes on the fork's code.
+- **Upstream since the fork's 11-09 sync, NOT taken yet:** build script rework #2610/#2612/#2614/#2616 (Gradle
+  wrapper, unused OS/arch tuner libraries stripped from the artifacts, JFXPanel packaging, runtime plugin) and
+  library updates (logback 1.6.6, jackson 2.23.0, flatlaf 3.8, guava 33.8.0, MINA 2.2.10, controlsfx 11.2.6, slf4j
+  2.0.20, commons-io 2.22.0, commons-lang3 3.21.0, gson 2.15.0, miglayout 11.5.2, JTransforms 3.2, JMBE 2.1.1 -
+  2.1.1 only tidies tests). Each should be its own build. Still not taken by decision: LimeSDR, 1.0.0 beta label.
+
+### Claude's workspace can now build and test (from 2026-11-11)
+- Armen set the Claude network setting to allow all websites, which opened Gradle, Maven Central, JitPack and
+  BellSoft. (On the Max plan there is no per-domain list.)
+- Recipe, about 5 minutes in a new session:
+  1. `git clone --branch edacs https://github.com/actionpagezello/sdrtrunk.git`
+  2. Download the BellSoft **Full** JDK (it has JavaFX; the one Gradle auto-provisions does not and the compile
+     fails with "package javafx... does not exist"):
+     `https://download.bell-sw.com/java/25.0.1+11/bellsoft-jdk25.0.1+11-linux-amd64-full.tar.gz`, unpack it.
+  3. `./gradlew --no-daemon -Porg.gradle.java.installations.paths=<unpacked jdk> -Porg.gradle.java.installations.auto-download=false -Porg.gradle.java.installations.auto-detect=false test`
+  4. Maven Central sometimes answers 429 "Too Many Requests"; wait a minute and run again.
+- Full suite in the workspace on build 13: 316 tests in 84 classes, 315 pass. The one failure,
+  `ZelloBroadcasterTimingTest`, is "Unable to open DISPLAY" - the workspace has no screen. Not a code fault.
+- **Every patch is now compiled and run through the full suite in the workspace before delivery.** Armen's steps
+  are unchanged: tree hash, test line, build, push. The Windows build and anything in a native driver can only be
+  verified on his PC and on the machines.
+
+## Previous state 2026-11-11 21:30: `edacs` build 12 (RTL fix held overnight; Airspy / HydraSDR logging)
+
+- **Builds:** 12 = Airspy / HydraSDR dropped-sample warning and Diagnostics box, ProVoice damage-position class with
+  tests, corrected hotplug warning text, these docs. Build 11 pushed as `8f9325cd` (tree `e8af30e3`). Build 10 is
+  the RTL stream fix. `master` is still ap-16.1.
+- **Plan (Armen, 11-11):** when the `edacs` work is done it becomes 16.2 and EVERY machine runs it. No separate RTL
+  patch for `master`.
+- **Who runs what:** 16.1 = Baker, Beauport, Daly, Salisbury, Somerville only. `edacs` builds = Monson and Paxton
+  (build 10), Cambridge and Summit 800 (build 11). The rest of the fleet is not on 16.x.
+- **Summit 800 now runs MBTA (EDACS) and the MSP Metro Boston Type II site together on its Airspy.** Cambridge was
+  NOT running MBTA overnight 11-10/11-11 (zero EDACS calls on build 11).
+
+### Priorities - DRAFT, not yet confirmed by Armen (proposed 2026-11-11)
+When two conflict, the higher one wins.
+1. Never miss a call the radio could have received. No change may skip, delay or close a channel to save tuners,
+   CPU or log space.
+2. Stay running unattended - no crashes, freezes or states that need a restart.
+3. Audio goes to the right place with the right label (talkgroup, alias, stream).
+4. Don't cut speech - no clipped starts or ends, no gaps mid-call.
+5. Audio is clean - no tones, noise tails, data bursts, distortion or blips reaching listeners.
+6. Nobody's files are harmed - playlists and settings keep working; going back to upstream loses nothing.
+7. Low delay to Zello and ThinLine.
+8. Efficient use of tuners and CPU.
+9. Small, tidy logs.
+- A change that risks 1 or 2 does not ship switched on: it goes behind a checkbox or stays a measurement.
+- Say what a change costs against this list BEFORE building it. (11-11: a "confirm a Type II grant on an unknown
+  channel" idea was dropped for this reason - it would have missed about one first call per two restarts to remove
+  5 silent 3-second channel openings a night.)
+
+### Findings 2026-11-10 evening to 2026-11-11
+- **RTL stream fix (build 10) HELD.** Monson 18:45 -> 07:56 (13.2 h), full playlist auto-started, 7,918 calls
+  streamed, 199 Type II calls all with audio and source ID, normal close. Paxton 18:18 -> 07:58 (13.7 h), 1,448
+  Type II calls all with audio, normal close. Build 9 crashed on Monson 15 times, 12 within 2.5 minutes.
+- **Cambridge build 11:** 20:34 -> 07:58 (11.4 h), normal close, no exceptions - but no EDACS traffic to judge.
+- **Summit 800 build 11, 21:32 -> 08:06 (10.6 h), normal close, EDACS + Type II boxes ticked:** 6,057 EDACS calls,
+  1,645 Type II calls, 2 TUNER UNAVAILABLE, no exceptions.
+- **ProVoice damage by position (Summit 800, 8,518 transmissions):** first 0.48 s 63.6%, middle 19.8%, last 0.48 s
+  43.0%, overall 31.9%. The start figure is about 60% for every transmission length, so the start damage is
+  systematic (decoder or signal format), which matches Cambridge's "19 voice frames per call". Summit 800 receives
+  MBTA far worse than Cambridge (middle 20% against 2-3% implied). 2,168 transmissions are shorter than 0.5 s and
+  76.5% damaged. NEXT: read what the decoder does with the first frames of a transmission.
+- **EDACS no-audio calls at Summit 800: 168 (2.8%).** 63 are "open 0.0 s, audio 0.0 s" lines logged from the voice
+  channel's own thread in the same millisecond as "call start" - looks like a summary line written when the channel
+  starts, NOT confirmed in code. 88 were open >= 1 s with nothing decoded.
+- **Type II off-site frequencies = misread control words.** The Summit 800 control channel fails the check on 13.7%
+  of OSWs in the median minute (p10 6.1%, p90 25.5%). A grant to an unused channel (e.g. channel 512 852.8250,
+  channel 472 851.8250) appears once, is never repeated, and the voice channel closes after 3 s with "updates
+  stopped", audio 0.0 s. 5 in 1,645 calls. A real grant is repeated in 0.10 s median, 0.25 s p90. About 10% of real
+  calls were announced only once, so a repeat must NOT be required on known channels.
+- **Type II calls with no source ID (283, 17%)** start from "call start ... FROM:null": the first OSW of the grant,
+  which carries the radio ID, was lost.
+- **Silent calls never reach Zello/ThinLine/Rdio (verified):** no audio = no audio segment = no AudioStreamingManager
+  entry. But very short segments do: Summit 800 had 1,829 of 5,938 segments under 0.2 s (31%) and 570 of 0.2-0.5 s;
+  Cambridge MBTA build 9 had 8 of 4,368. A minimum length before streaming was offered and DECLINED by Armen
+  (11-11) - fix Summit's reception first.
+- **Airspy and HydraSDR drivers both report dropped samples** (`SampleBuffer.droppedSamples()`: Airspy per block,
+  HydraSDR running total) and the fork ignored it until build 12.
+- **The Airspy and HydraSDR controllers stop the stream when the last channel leaves the tuner** - the pattern that
+  build 10 removed for RTL. No evidence that they crash; watch the stream start/stop DEBUG lines.
+- **16.1 review, 5 machines, 11-09 ~17:30 -> 11-10 ~20:45 (about 27 h each):** no restarts, crashes, exceptions,
+  queue overflows or tuner errors. Calls on 11-10: Baker 2,606, Beauport 1,448, Daly 9,924, Salisbury 9,210,
+  Somerville 21,774. They run almost only conventional NBFM, so they do not exercise the rotation path that crashed
+  Monson. Every dongle is on USB bus 1 with the same bus:port under 16.0 and 16.1 - no tuner-configuration edit
+  needed (the bus swap applies only to machines with dongles on more than one bus: Monson, Paxton).
+- Daly's upgrade: `sdrplay_api_Open failed` three times 17:27-17:28 (once on 16.0), 66 "No Tuner Available";
+  fine from the 17:31 start. Rdio Scanner server returned HTTP 502 to Baker, Beauport, Daly and Salisbury about
+  11:54-13:00 on 11-10 (server side). "CTCSS / DCS squelch codes" DEBUG is ticked on Baker and Somerville (93-96% of
+  their logs; Somerville 240-280 MB/day) and on Daly from 11-10.
+- **4 GB max Java memory is the deliberate 16.x setting** (an 11-10 remark calling it off-standard was wrong).
+- **USB hotplug:** from 16.1 jLibUSB polls the USB device list on Windows ("LibUsb - started USB hotplug detection
+  (polling)"), so a dongle plugged in while running is detected and added; before 16.1 Windows had no detection.
+  RSPs are still found only at startup. Stopped channels are not restarted when a dongle returns (code reading).
+  No log shows a real plug/unplug yet - UNTESTED.
+- **[WRONG - see the 22:15 correction above: jRTL 1.4.0.3 existed]** Upstream as of 11-11 (`e7f4f655`): same jRTL 1.4.0.2 / jLibUSB 1.0.30.1 and the same stop-on-last-listener RTL
+  code that crashed Monson. No newer jRTL exists. JMBE 2.0-2.1.1 (Oct 2026) were gain/AGC fixes from user reports.
+
+### OPEN (edacs) as of 2026-11-11
+- ProVoice: why about 60% of the first 0.48 s of every transmission is damaged.
+- Summit 800 MBTA reception: run build 12 and look for the dropped-sample WARN.
+- EDACS "open 0.0 s" lines - confirm they are a logging artifact.
+- `ConcurrentModificationException` in `ProcessingChain.start` (Cambridge, 2 in 4,449 calls) - not fixed.
+- P25 added to Summit 800 alongside EDACS and Type II - waiting for a clean baseline first.
+- Hotplug test: unplug and replug one RTL dongle on a test machine and send the log.
+- Type II signaling squelch - still needs weak-signal recordings.
+- Deferred: log trimming; a minimum segment length before streaming.
+
+### Working rules added 2026-11-11
+- **Every patch comes with tests for what it changes and a test line to run between `git am` and the build:**
+  `.\gradlew test --tests "<filter>"`. If it fails, paste the output and do not build or push.
+- Claude's workspace cannot download Gradle, Maven Central, JitPack or the BellSoft JDK (network policy), so the
+  full build happens only on Armen's PC. Standalone classes can be compiled and exercised in the workspace.
+- Claude never posts a command block that is not meant to be run as written (11-11: a template block with a
+  placeholder filter was run; it only rebuilt build 11).
+
+## Previous state 2026-11-10 19:30: `edacs` build 11 (numbered builds, RTL crash fix under test)
+
+- **`edacs` branch builds are numbered from build 9:** version `0.6.2-ap-16.1-edacs-<n>`, patch `edacs-<n>.patch`,
+  zip in its own `sdrtrunk-ap-versions\v0.6.2-ap-16.1-edacs-<n>\` folder. Patches 1a-1h are builds 1-8 (table in
+  CHANGELOG.md). Build 9 = 1h + number (tree `b27e61eb`, pushed `667ecd90`). Build 10 = RTL stream kept running
+  (tree `9ce6cf64`, pushed `77bcb05b`). Build 11 = ProVoice damage-by-position DEBUG line + these docs.
+- **Running:** Monson build 10; Cambridge, Paxton and Summit 800 were last seen on build 9 or the 10:36 build.
+- **Next:** build 11 on Cambridge with "EDACS / ProVoice decoder" ticked for a few hours; Monson on build 10 or 11
+  overnight with the full playlist; Summit 800 on the current build with "Motorola Type II decoder" ticked.
+
+### Findings 2026-11-10 afternoon/evening
+- **MONSON CRASH = RTL driver, not Type II/EDACS.** 23 stops with no shutdown in the 11-10 log (8 on the 11-09
+  `smartnet` build 07:53-08:10, 15 on build 9 14:08-17:10; 12 of the 15 within 2.5 min of start). Crash reports
+  are `hs_err_pid*.log` in the build's `bin` folder ON THE MACHINE (not in the SDRTrunk log folder, and Windows
+  logs no event). All 13 read: `EXCEPTION_ACCESS_VIOLATION` in `ntdll.dll` <- `libusb-1.0.dll` <- `rtlsdr.dll`
+  (jRTL 1.4.0.2 / jLibUSB 1.0.30.1, adopted in 16.x) on an `sdrtrunk scheduled thread`. Java frames (two reports):
+  `ChannelRotationMonitor.checkState -> MultiFrequencyTunerChannelSource.rotate -> getNextSource ->` either
+  `TunerManager.getSource -> updateTunerFrequency -> RtlSdrDevice.setCenterFrequency` or
+  `HalfBandTunerChannelSource.start -> RTL2832TunerController.addBufferListener -> startStreaming ->
+  RtlSdrDevice.startRx -> resetBuffer`. With auto-start cancelled and only the Type II channel running, build 9
+  ran 84 min clean. jRTL `stopRx()` does join its stream thread, so the Java side is not obviously racing.
+- **Build 10 fix (theory NOT proven):** a control transfer sent after the stream was stopped faults in libusb.
+  `RTL2832TunerController.removeBufferListener` no longer stops the stream; `receive()` drops samples while there
+  is no listener; `closeDevice` turns the bias-T off before `stopRx`. Monson on build 10 with the full playlist:
+  27 min and 30 min, both closed normally, no crash. Needs an overnight run. Any 16.x machine with RTL dongles and
+  a rotating multi-frequency channel could have the same crash (master ap-16.1 has the same code) - port the
+  change to master if the overnight run holds.
+- **Command to find crash reports on any machine** (prints the key lines):
+  `Get-ChildItem C:\ -Recurse -Filter 'hs_err_pid*.log' -EA SilentlyContinue | Sort LastWriteTime | % { "==== $($_.FullName) $($_.LastWriteTime)"; Select-String -Path $_.FullName -Pattern '^#  |Problematic frame|Current thread|^C  \[|dsheirer|Java frames' | Select -First 40 | % { $_.Line } }`
+- **Cambridge has NO crash reports** (searched all of C: at 17:00), so its two stops on the 10:36 build (1g) were not
+  the RTL crash. Both came 0.2-0.8 s after the first EDACS voice channel closed and 0.7-2.7 s after a playlist
+  save. Still unexplained; did not recur.
+- **Cambridge build 9, 13:38-17:48 (4 h 09 min, normal close): 1h holds.** 4,449 EDACS calls; 49 with no audio
+  (1.1%, was 5.8% on the 07:44 build); audio 75% of channel-open time; 31 TUNER UNAVAILABLE (LCN 1, 2, 12, 15).
+  44 of the 49 no-audio calls had the channel open <= 0.1 s; only 5 were open >= 1 s with nothing decoded.
+- **BUG, not fixed:** `ConcurrentModificationException` at `ProcessingChain.start(ProcessingChain.java:740)` from
+  `ChannelProcessingManager.startProcessing` on the EDACS control thread, with "Error removing polyphase channel
+  source - channel source was not previously added" just before it (Cambridge 13:52:21 and 14:01:45). A voice
+  channel is stopped while it is still starting; the call logs "open 0.0 s, audio 0.0 s". 2 in 4,449 calls.
+- **ProVoice "damaged frames" is about 19 voice frames per call plus about 2.4% of the rest** (linear fit over
+  4,397 calls; 53% damaged on calls under 50 frames, 5.4% over 400 frames; all 13 LCNs 9.4-11.2%). So the 10.4%
+  figure is mostly a fixed ~0.4 s per call, probably at the start or end, and mid-speech damage is 2-3%. Build 11
+  adds a DEBUG line per transmission, "ProVoice damage by position: first 0.48 s X of Y, middle X of Y, last
+  0.48 s X of Y voice frames", to say which. The EDACS box was not ticked on 11-10, so no DEBUG data yet.
+- **Summit 800 (MSP Metro Boston Type II, Airspy):** overnight on the older build 2,970 calls, 3 with no audio; the 3
+  were on 860.6375, 851.225 and 851.425 and two TUNER UNAVAILABLE on 868.2 and 866.375 - not site frequencies,
+  probably wrong channel numbers from the control channel (not confirmed). 338 calls (11%) had no source ID.
+  10:36 build, 11:13-11:27: 53 calls, all with audio and source ID, normal close. Max Java memory there is 4 GB.
+- **Type II low-speed data is on every keyed moment (strong signals):** Summit 800, 53 calls, 9,458 blocks of
+  50 ms, none without it; lines 150/21 = 7.14 Hz apart from 21.5 to 121.5 Hz, same as Monson. Audio ends within
+  0.2 s of the carrier drop on all 53. Monson build 10, 18 calls on 854.4875: audio ends within 0.25 s of the carrier
+  drop; the last ~0.5 s of each call carries a different pattern (75, 112.4, 150 Hz); about half of the carrier
+  time has no voice (2-29 s per call, repeater hang between talkers). All of these signals were 50-60 dB above
+  the floor - NO weak-signal recordings yet, which is what the signaling squelch decision needs.
+- **Paxton build 9, 13:57-14:23:** 144 Type II calls on MSP Troop C, all with audio, 19 without source ID, no crash.
+- **Zello `kicked` on C-PTL-1 and C-PTL-3 at both Monson and Paxton** - probably the two machines logging in to the
+  same channels (not confirmed).
+- **Diagnostics boxes:** Zello and ThinLine default to ticked. The "Diagnostics category ... set to" lines are written
+  before the log file opens, so the log never shows what is ticked; infer it from which packages log DEBUG.
+- **Log volume (measured, DEFERRED by Armen until the build work is done):** per-call "Call ... complete" 31-38%,
+  NBFM "Tone coverage (measurement only)" 16-25%, NBFM filter setup lines per channel start 6-18%, P25 health
+  reports 7-9%, ThinLine upload DEBUG 5-7%, Zello stream started/stopped up to 9%. None of these exist upstream
+  (upstream root level is DEBUG, the fork's is INFO). Plan when the time comes: move all but the per-call and
+  trunked call lines behind their Diagnostics boxes, and log the ticked boxes at startup.
+
+### OPEN (edacs) as of 2026-11-10 evening
+- Monson overnight on build 10/11 with the full playlist - proves or disproves the RTL stream fix. If it holds, port
+  to master.
+- Cambridge a few hours on build 11 with "EDACS / ProVoice decoder" ticked - damage position, and the no-audio calls.
+- `ConcurrentModificationException` in `ProcessingChain.start` (voice channel stopped while starting).
+- Summit 800 with "Motorola Type II decoder" ticked - off-site frequencies and missing source IDs.
+- Type II signaling squelch - still needs WEAK recordings; the six Monson basebands of 11-10 08:45 are unmeasured.
+- Cambridge 10:36-build stops - unexplained, not recurring.
+- Log trimming - deferred (above). Earlier OPEN items below still stand unless listed here.
+
+### Working rules added 2026-11-10 evening
+- If `git rev-parse "HEAD^{tree}"` does not match the hash given, STOP - do not build or push. (Build 10: the
+  patch delivered was the copy from before a CHANGELOG correction; code identical, one sentence differed.)
+- Claude writes a fresh patch file name for every regeneration, or re-reads the delivered file's hash, so a stale
+  copy cannot be delivered again.
+- Crash with no error in the log = look for `hs_err_pid*.log` in the build's `bin` folder first.
+- Logs and recordings in `C:\Users\Admin\projects\logs` are deleted by Armen as soon as they are reviewed - write
+  findings into these docs the same day.
+- Commit trailer names the model that did the work (this session: `Co-Authored-By: Claude Fable 5.2`).
+
+## Previous state 2026-11-10 12:00: `edacs` branch test builds (Motorola Type II + EDACS EA / ProVoice)
+
+- **Master:** ap-16.1 (upstream jLibUSB, DMR voice error detection, RTL range editor fix). Earlier state below.
+- **`smartnet` branch** (on 16.1): Motorola Type II SmartNet/SmartZone control channel and call following, builds
+  as `0.6.2-ap-16.1-smartnet`. Tree `de521ff4`, pushed `6fc43fa9`. Superseded by `edacs`, which contains it.
+- **`edacs` branch** (on `smartnet`): EDACS Extended Addressing with ProVoice audio, builds as
+  `0.6.2-ap-16.1-edacs`. Current: tree `255ad01b`, pushed `275a3219` (2026-11-10 11:45), zip
+  `sdrtrunk-ap-versions\v0.6.2-ap-16.1-edacs\sdr-trunk-windows-x86_64-v0.6.2-ap-16.1-edacs.zip` (each `edacs`
+  build overwrites this zip - same version name).
+- **Deploy next:** Cambridge (MBTA EDACS + P25) and Monson (MSP Type II) on the 11:45 build.
+- Decide whether to merge `edacs` into master as **ap-16.2** once Cambridge and Monson run cleanly.
+
+### `edacs` branch patches (`edacs-1<x>.patch`, `git am --keep-cr --3way`, in order on `smartnet`)
+| Patch | Tree | What |
+|---|---|---|
+| 1a | `a5d35fec` | EDACS EA control channel (9600 baud): assignments, talkgroups, units |
+| 1b | `0cd1d8c1` | Voice channel following; ProVoice decoder (IMBE 7100 -> P25 IMBE -> JMBE); analog EDACS voice; LCN list editor; playlist compatibility |
+| 1c | `e16befb5` | ProVoice concealment like mbelib: > 5 errors repeats the last good frame, silence after 3 |
+| 1d | `a4f78893` | Radio Reference import of EDACS EA sites (LCN list in RR order, all control channels) |
+| 1e | `befdae14` | Diagnostics checkboxes "Motorola Type II decoder" and "EDACS / ProVoice decoder" (DEBUG); graphic EQ on EDACS voice. Pushed `7a9652dc` |
+| 1f | `36ccaf96` | Type II voice: carrier squelch (mute when the carrier is 20 dB below the call level) + LowSpeedDataFilter (cut < 250 Hz, flat > 350 Hz); EDACS analog voice: carrier squelch |
+| 1g | `7ccff279` | Deadlock fix by sending start/stop requests after the manager lock - **withdrawn** (see 1h). Pushed `08773d66` |
+| 1h | `255ad01b` | Replaces 1g: managers ignore other channels' events before taking their lock (as P25 does). Pushed `275a3219` |
+
+### Findings 2026-11-09/10
+- **MBTA EDACS EA (Cambridge):** control 853.725 (LCN 10). LCN list in Radio Reference order: 851.175, 851.225,
+  851.425, 851.475, 851.9375, 851.9875, 852.175, 852.25, 853.6625, 853.725, 853.9, 851.0625, 851.45, 851.9625,
+  853.925. Assignment MT1 0x03 = ProVoice group call, 0x06 = analog; LCN > 25 are status values. Updates every
+  0.1-0.6 s while a call lasts; call ends 1.5 s after the last update. Control replay: 247 assignments, 235 calls.
+- **ProVoice audio:** about 8% of voice frames concealed on LCN 5 (1.7%-89% per transmission). Armen: 70-80% clear,
+  a little muffled/gargle, occasional digital sounds. Suggested EQ +4-6 dB at 2.1/2.9/3.5 kHz, -3 dB at 200/280 Hz.
+- **Cambridge 11-10 08:24-08:45 (07:44 build):** 481 calls, all ProVoice; 9 TUNER UNAVAILABLE (851.0625 and
+  851.2-851.4 tuners busy); 15 of 291 voice channels closed with no audio - not explained yet (needs EDACS DEBUG).
+- **Cambridge deadlock 08:45 (07:44 build):** P25 thread (857.0125) inside `ChannelProcessingManager.startProcessing`
+  delivering a P25 channel event to `EDACSTrafficChannelManager.processChannelEvent` (synchronized, membership
+  checked inside the lock) while the EDACS control thread held the manager lock posting a
+  `ChannelStartProcessingRequest`. Both systems stopped. Report `20261110_084512_..._diagnostic_report`.
+- **10:36 build (1f + 1g) stopped twice** at Cambridge (11:10:56, 11:11:45), each about 1 s after the first EDACS
+  voice channel closed; nothing logged (no exception, no deadlock report, all threads silent). No hs_err file
+  checked. 1g changed exactly the voice channel close path, so it was withdrawn (1h). Cause not proven.
+- **Monson tone (MSP Type II, 854.4875):** the tone is the Type II sub-audible low-speed data (150 baud), not a PL
+  tone - a line spectrum 7.14 Hz apart (42.75, 50.0, 57.25, 64.25, 71.5, 78.5 Hz; 150/21 = 7.14 -> a repeating
+  21-bit word), strongest at 50 Hz, +15 dB over the pauses before 1f, -42 dB after. A 112 Hz burst at unkey.
+  No 97.3 Hz tone, although Radio Reference lists MSP "Connect Tone: 97.30" - the connect tone values appear to
+  name a data code, not an audio frequency.
+- **Monson tail:** the noise squelch passed up to 1.7 s of noise after the carrier dropped; fixed by the 1f carrier
+  squelch (audio ends at the carrier drop on the five recordings).
+- **Monson config:** control channels only 855.9375 and 854.9375 (Radio Reference lists the wrong one first);
+  voice 855.6875, 855.4125, 854.4875. Monson needs `ChannelRotationMonitor` (multi-frequency control) - fixed on
+  `smartnet`.
+- **MSP Metro Boston (Type II):** 16 of 58 calls were lost to duplicate call suppression when a talkgroup moved
+  channel; fixed (a new grant for the talkgroup on another channel ends its old call).
+- **jLibUSB (16.1) renumbers USB buses** on machines with several USB controllers, so "RTL-2832 USB Bus:X Port:Y"
+  tuner settings no longer match. Fixed by editing `tuner_configuration.json`: Monson bus 1 <-> 2; Paxton old
+  Bus 2 -> 5, 4 -> 2, 5 -> 4 (files `tuner_configuration_monson.json` / `_paxton.json` delivered; Paxton not yet
+  installed).
+
+### OPEN (edacs)
+- Deploy the 11:45 build to Cambridge and Monson; Cambridge: tick "EDACS / ProVoice decoder" and send an hour of
+  log (damaged-frame rate per transmission; the zero-audio voice channels).
+- If it stops again: window closed or frozen? `hs_err_pid*.log` in the SDRTrunk start folder?
+- Type II signaling squelch (open only while the 150-baud low-speed data is present; optional check of the site's
+  connect tone code) - needs more Monson voice recordings first (weak transmissions, unkeys).
+- ProVoice audio quality (muffled/gargle) - more recordings; EQ first.
+- Automatic migration of tuner settings when jLibUSB renumbers buses (optional, code).
+- 16.1 logs from the other machines; Daly pre-reboot log; Summit 800 overnight log; Paxton tuner file.
+- Decide whether to merge `edacs` into master as ap-16.2.
+
+### Working rules added 2026-11-09/10
+- Patches go to `C:\Users\Admin\projects\logs`; run `git am` from `C:\Users\Admin\projects\sdrtrunk-ap`. Don't
+  delete `*.patch` from the logs folder before they are applied. Copy only the commands, not `->` result lines.
+- Fork-only playlist types (Type II, EDACS) are kept out of `default.xml` and restored from `default.ap.xml`, so
+  the playlist still loads in upstream SDRTrunk.
+- Stop-hook "unpushed commits" messages: this session can't push - Armen pushes; `edacs16` is the session's local
+  name for `edacs`.
+
+## Previous state (2026-11-07): ap-15.11.4 to ap-16.1
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.11.4\sdr-trunk-windows-x86_64-v0.6.2-ap-15.11.4.zip`
+- Tree `4b011321`, pushed as `ed1d89c5` (guard on the tree hash; commit hashes differ between machines).
+- **Running:** Daly, Somerville, Audubon on 15.11.3 or later (confirm 15.11.4 from their next logs). Baker (Roger Baker, DESKTOP-3NNNO6F) on 15.11.3 since 11-04 22:56.
+- **15.11.5** built and pushed 2026-11-07 (`7ee1c957`, tree `721115e0`); running on Baker since 11-07 22:57.
+- **16.0** built and pushed 2026-11-08 (`a56666f4`; nightly workflow removed `10bb4e1d`, tree `43be91dd`). Running on
+  Baker, Daly, Somerville, Salisbury, Beauport, Summit 800 - 28 h review 11-09: no tuner removals, no setting errors.
+- **Next build: ap-16.1** (patch 2026-11-09) - upstream jLibUSB, DMR voice error detection, P25P1 adjacent status,
+  Airspy bias-T, two UI fixes; fork: RTL range editor fix, editor no longer stuck after an error, uncaught
+  exceptions logged.
+- Branches (GitHub): `edacs` (MBTA EDACS EA control channel, stage 1a), `smartnet` (Motorola Type II, stage 1a).
+
+### Releases 2026-10-31 to 11-07 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
+| Version | Tree | Pushed | What |
+|---|---|---|---|
+| 15.10.8/15.10.9 | `fafb4a32` | `5f174ddd` | LSM decoding improvements (Lowell, Rockingham, Cambridge confirmed) |
+| 15.10.10 | `575ce837` | `15f7b065` | Per-channel JMBE settings (JMBE 2.1.x; comfort noise default 0.05, migrated once from 1.0); upstream #2554 #2550 #2553 #2551 #2555 #2547 #2467 #2470 |
+| 15.11 | `b364c02b` | `984ad3b5` | Upstream channelizer #2527/#2534/#2538, P25 Phase 2 #2525, HydraSDR #2541, bladeRF #2543/#2545, waterfall #2546, AM #2556. Kept: Dispatcher drop-oldest (+ `offer()`), fork NBFM channel filter (upstream's moved Brookline squelch decisions) |
+| 15.11.1 | `f5c5ddf2` | `8ffe9c8f` | RSP recovery (`RspRecoveryMonitor`), SDRplay API open-failure logging (INFO with no RSP on USB, ERROR with advice otherwise), upstream #2568 mixed-radix FFT and #2570 SDR# I/Q recording (recorder write/close serialized — fixes Cambridge `ClosedChannelException`) |
+| 15.11.2 | `ac2cf6a8` | `fa7120be` | NBFM "Tone coverage (measurement only)" INFO line per tone-filtered call; Zello: a disposed broadcaster never starts/reconnects (Daly stale-broadcaster loop, 155 errors x 3 channels) |
+| 15.11.3 | `37c77e84` | `8b2956b9` | "ZELLO INCIDENT" structured lines (UTC, machine, network, user, channel, command+seq, response, close code, connection age, reconnect timing); machine-wide Zello connect limit 9/min (Zello: 10/min/IP); "Zello Consumer" relabeled "Zello Friends & Family" (display only) |
+| 15.11.4 | `4b011321` | `ed1d89c5` | RSP recovery releases the removed RSP (`sdrplay_api_ReleaseDevice`) before listing, device list read under the API lock; RTL-2832 USB transfer runaway restart (10x expected rate for 3 s; stop after 3 restarts/10 min); per-minute USB transfer status summary when abnormal |
+| 15.11.5 | `721115e0` | `7ee1c957` | Tuner config apply: range first, saved frequency outside the range moved inside (WARN), frequency/PPM failures no longer skip sample rate and gain (Baker RTL 6.2/6.1.1); upstream #2580 alias identifier sort |
+| 16.0 | `43be91dd` | `10bb4e1d` | Upstream tuner libraries #2573 #2590 #2593 #2595 #2597 #2598 #2587; RSP recovery + RTL runaway restart removed; 15.11.5 apply fix kept (middle of range when bandwidth unknown). Test: Baker, Daly, Somerville |
+| 16.1 | (see patch) | not yet | Upstream #2605 jLibUSB #2608 #2602 #2599 #2603 #2591; RTL range editor fix; tuner editor error state; uncaught exceptions logged |
+
+### Findings 2026-11-03/04
+- **Daly 11-04 outage (15.11.3):** (1) 15:19 RTL-2832 Bus 1 Port 9 entered a USB loop — ~17,500 buffers/s discarded
+  (normal 73/s) until shutdown; North Andover Fire (453.1875) and 453.2625 dead from 15:19. (2) 17:57 SDRplay API
+  reported RSP1B 24050F5260 removed (16 channels: Lawrence, Salem NH, Windham, Derry, Londonderry, Hudson,
+  Haverhill); (3) 18:42 RSP1B 24040A4B60 removed (6: Andover, North Andover Police, Methuen). Windows event log had
+  no USB/PnP events. A restart of SDRTrunk alone brought all three back -> software, not hardware or the API service.
+  RSP recovery checked every 30 s for 90 min and never saw the RSPs: **bug** — `ControlRsp.deviceRemoved()` clears
+  the device without `sdrplay_api_ReleaseDevice`, so the API keeps it selected and `GetDevices` never lists it
+  (spec v3.15: "Once a device has been selected, it is no longer available"; ReleaseDevice "makes that device
+  available"). RTL/USB code unchanged in 15.11.x. 24050F5260 removals: 11-01 11:12, 11-03 14:14 (15.10.7), 11-04.
+  13:06 network outage at Daly (all Zello reset, ConnectException, Rdio upload fail) recovered by 13:10.
+- **Tone coverage (measurement):** 60% rule drops real weak calls (Beverly Police 08:01:56 "903, can you back her?"
+  10.7 s at 56%; 53 long Beverly drops on 11-04). Candidate "short-call rule": drop only if coverage < 60% AND
+  < 2 s after confirmation. Results: overnight 3 machines 92 drops (12 checked by audio = noise); Somerville day
+  15,400 calls -> 554 (3.6%), Audubon day 8,750 -> 201 (2.3%, 23 on Beverly, unverified). Everett Police data
+  bursts carry the tone (100% coverage) — a coverage rule can't remove them; MDC1200 aux decoder to be enabled on
+  Everett to identify them. Armen: wait for more logs before adding the short-call verdict.
+- **Replay harness quirk:** `RPF2` with 2500-sample chunks makes the CTCSS detector alternate 131.8/151.4 Hz even on
+  a clean synthetic tone; 1000-5000 other sizes fine. Live unaffected. Unexplained (harness or resampler) — check
+  whether earlier NBFM replays used 2500 (`runf.sh` did).
+- **Zello:** Somerville 13.5 h: 23 disconnects (all 1006, no reason), all reconnected; incident file for Antwan
+  (Zello support) `logs\zello_incidents_SDR-8_2026-11-04.txt` (incidents A/B/C). Audubon: Lynn MA Police added 16:37,
+  invalid credentials twice then connected 16:39. Daly aliases stream to MISSING broadcasts (Jimmy Test Channel,
+  Rockingham County, Hillsborough County) — cleanup.
+- **Marblehead Police (Audubon):** reception fine (34-38 dB, 131.8 Hz) when active; idle bursts are the 460.175
+  DMR neighbour opening the squelch. Noise squelch can't be made stricter (defaults are the minimum).
+- **Audubon:** Wilmington Fire (154.2875) and Atlantic Amb 4 (152.285) "No Tuner Available" on every start; ingest
+  HTTP 500 "could not store audio" 08:44-08:53 (5) and 502 06:54; log 517 MB/day from CTCSS DEBUG (Lynnfield
+  Police 454k lines — squelch open on noise) — set CTCSS_DCS diagnostics to INFO.
+- **Somerville:** RTL Bus 1 Port 5.1.1 config error on every start (saved 460.6 MHz vs max 160.545 MHz).
+- **TLRTimeSync on Daly** fails ~5,500 times: `thin.actionpagezello.com` no such host — hostname needs updating
+  (check other machines).
+
+### Findings 2026-11-05/07
+- **Baker Salem Fire (15.11.3, 11-04 22:56 restart):** RTL Port 6.2 range 150-170 MHz with saved 483.5125 MHz and
+  Port 6.1.1 min 150 MHz with saved 101.1 MHz -> `TunerController.apply` threw at the frequency-correction step and
+  the RTL sample rate and gain were never applied (both restarts 22:56 and 23:03). From then Danvers Fire, Salem
+  Fire, Salem Ch2, Manchester BTS, Peabody Fire, Lynn FG2, Salem Ch5 squelch never open/close (~35,600 tone
+  lines/hour each, 1.7 GB/day log); Salem Fire idle tone 7-11 dB vs 23 dB before, 768 ms of held hiss at call
+  start vs 192 ms. Channel sourcing respects the range (`PolyphaseChannelSourceManager.isTunable`), so 6.2 itself
+  can't take UHF; the UHF cluster 6.2 used to serve moved to another tuner - which one not in the log (check the
+  Tuners tab; 6.1.1 runs unconfigured too). Ranges are intentional (VHF to the RSP1B). Fixed in 15.11.5;
+  workaround: set 6.2 / 6.1.1 frequency inside the range and restart.
+- **Everett MDC1200:** 216 IDs (42 units); 114 at voice start, 93 burst-only short calls, 9 split. Options offered
+  (flag/drop burst-only, mute the burst, unit ID as FROM) - Armen to choose.
+- **Upstream review:** #2580 in 15.11.5; NXDN #2529/#2577 apply clean, not taken; skip #2277, #2578. Airspy:
+  keep current driver, revisit jAirspy in 2-3 weeks.
+
+### Findings 2026-11-07/08 (Baker tuner layout)
+- 15.11.5 fixed the 483 MHz channels (squelch closes again). Armen's range edits ~22:20 11-07 moved VHF to the
+  RSP1B; on 15.11.3 the RSP1B's settings failed (saved 484.4 MHz vs 150-160) -> VHF "No Tuner Available"; on 15.11.5
+  VHF ran on the RSP1B and got only noise (Hamilton noise floor 0.124 vs 0.0028 on an RTL 11-04; spectrum flat).
+  Not gain/antenna/bias-T/notch (Armen). Unexplained - candidate: fork RSP update queue (Device.UpdateRequestManager)
+  waits forever for a completion event; jsdrplay (16.0) replaces it. Test on 16.0: RSP1B 150-160.
+- Working layout (11-08): RSP1B 480-490 (all 482-487 MHz channels), Nooelecs for VHF (Hamilton pair; Ipswich), 460s,
+  470s. One RTL (2.4 MSPS, ~2.2 MHz usable) can't hold 482.16-487.39 (5.2 MHz).
+
+### OPEN
+- **ap-16.0:** build; deploy to Baker, Daly, Somerville. Check every tuner starts and keeps its settings (RTL gain is
+  now a single value - check it), RSP1B on VHF at Baker, any RSP removal / RTL stall (recovery code removed).
+- Hardware test of 15.11.4 RSP/RTL recovery: unplug an RSP / RTL for a minute on a watched machine.
+- Tone coverage: more logs, then a measure-only short-call verdict; per-channel enforcement switch later.
+- MDC1200 on Everett Police (Somerville) to identify the data bursts.
+- Zello support (Antwan): send incident file; answer "cross-linked channels still failing?".
+- Somerville Police NBFM rejoins full-day check (15.11); Rdio Scanner retry on 5xx; Chelsea Police - Pri repeated
+  headers; Audubon RTL wideband recordings as a channelizer A/B test; Salem State 10/30 recordings (Armen checking).
+- RSP recovery and RTL recovery are untested on hardware.
+
+## Previous release: ap-15.10.7 (2026-10-30) — state as of 2026-10-31 08:00
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.10.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.10.7.zip`
+- Tree `1930b609c57991595530c793e42406c21dc7e110`, pushed 2026-10-30 as `d91eb1d4` (guard on the tree hash).
+- **Rollout:** 15.10.6 on the LSM machines first (Bailey UHF, Salisbury, Somerville), then 15.10.7 on Audubon (DMR);
+  Daly, Cambridge, Beauport, Bailey VHF at their next update (nothing in 15.10.6/7 affects their channels).
+- After rollout check: far fewer `P25P1 LSM rotated sync detected` lines on Lowell, Rockingham West/East, Watertown
+  and Arlington (15.10.5: ~35/h per channel, ~28% of them wrong-way) and more calls on those channels; Salem State
+  call events with no junk SMS / data packets / false emergency calls; P25 channels with the equalizer on start flat
+  on the new bands (re-enter settings).
+- JMBE 2 on every machine. Auto-PPM stays off. Diagnostics boxes: NBFM DEBUG is on for review (Somerville logs
+  ~200 MB/day); turn off when done.
+
+### Fleet versions (last seen in logs, 2026-10-30)
+| Machine | Version | Notes |
+|---|---|---|
+| Salisbury (SDR-9) | 15.10.6 (20:57 10-30) | Rockingham Sheriff West 154.815 / East 154.950 are LSM; Troop A baseband rollover `_2`..`_4.wav` confirmed |
+| Audubon | 15.10.6 (21:18 10-30) -> 15.10.7 | DMR Salem State (CC 12, Hytera), OneVoice Haverhill/Boston (Con+ control), NXDN Georgetown |
+| Bailey UHF (SDR-4) | 15.10.5 -> 15.10.6 | Lowell Police 482.4125 LSM |
+| Somerville | 15.10.5 -> 15.10.6 | Watertown Police 470.7125 and Arlington Police 471.1625 LSM; NBFM DEBUG on |
+| Cambridge | 15.10.5 | CoMIRS control: Massport C4FM (single tower), Cambridge and Boston Simulcast LSM |
+| Daly (DESKTOP) | 15.10.4 | P25 C4FM conventional only |
+| Beauport (SDR-13) | 15.10.5 | |
+| Bailey VHF (SDR-3) | 15.10.1 or later | not reviewed this cycle |
+
+### Releases 2026-10-29/30 (patches `ap-<ver>.patch`, `git am --keep-cr --3way`)
+| Version | Tree | What |
+|---|---|---|
+| 15.10.3 | `e8b8d7ee` | Upstream #2478 (unmerged) P25 Phase 1 LSM false-lock recovery: rotated sync detectors (+/-90, 180 deg) correct the PLL after 1 s without a valid NID; PLL range +/-2000 Hz; clamp watchdog; leak toward the last valid PLL; framer rejects an over-corrected NID whose NAC isn't the tracked NAC (Manchester BTS uses only 0x526). Lowell replay voice frames 15.10.2 -> 15.10.3: -754 Hz 1,654 -> 1,922; 0 Hz 671 -> 2,027 |
+| 15.10.4 | `55cc0812` | Upstream #2517 (f2c98cdb, Denny Sheirer) DMR rework on the shared C4FM framework, soft decoding (BPTC, CACH, SLC, EMB). Fork deltas kept (C4FM health counters and bounds guards, OTA channel frequency). P25 C4FM (12), LSM (4), NXDN (23) replays identical. #2511 not included (needs upstream's per-channel JMBE 2 UI) |
+| 15.10.5 | `2b84ea12` | Two #2517 regressions on Salem State: (1) soft EMB decoding chose a word 4 bits away (Salem State's EMB is always 2 bits from a valid word) and broke embedded LC: radio IDs 25 -> 18, talker aliases 6 -> 0; `EMB` now takes the closest word and uses soft bits only to break ties (valid with 1 corrected bit, or 2 when the soft decision agrees). (2) lone voice frame A from false syncs started no-ID calls ~2/min; `DMRMessageProcessor` holds voice A until a voice B follows on that timeslot. Upstream test `testEMBSoftDecode` adjusted |
+| 15.10.6 | `fa8870f0` | (1) DMR color code filter (conventional/control channels): established after 3 consecutive valid data bursts, changed after 5; other-CC valid bursts dropped (junk SMS, false emergency call, false grants ~1/min). (2) LSM `ROTATED_SYNC_THRESHOLD` 90 -> 120: corrections that led to decoding scored 134.9-138.0, noise 93.4-105.6. (3) P25 graphic EQ bands 200/280/390/550/770/1100/1500/2100/2900/3500 Hz, Q 3.0, stored as `graphic_eq_band_gains_200_3500` (old 70 Hz-3.2 kHz values not used; channels start flat; old element kept so rollback restores it) |
+| 15.10.7 | `1930b609` | Color code filter also drops CRC-failed bursts with another CC once established (packet assembler built a "valid" packet from CRC-failed CC 10 headers on Salem State) |
+
+### Fleet review 2026-10-30 (15.10.4/15.10.5 logs, 16-22 h per machine)
+- **LSM wrong-way corrections (fixed in 15.10.6).** 15.10.3's recovery fired ~35/h per LSM channel; corrections at
+  key-up (median 3 s after the last call) rescued false locks, but those in idle time (median 56 s) moved a correctly
+  locked PLL 1200 Hz away and the channel stayed nearly deaf until another correction: Lowell 193 of 690 (21 vs 190
+  calls/h, 5.8 of 21 h); Rockingham West 5.6 vs 143 calls/h (5.9 h), East 12.4 vs 114 (5.1 h); Watertown 4.7 vs 72
+  (12.2 h), Arlington 9.1 vs 65 (10.3 h). A "move away from the last decoded offset" guard was tried first and
+  dropped: valid NIDs also decode at false-lock offsets (two Lowell test offsets collapsed). Threshold 120: Lowell
+  replays equal or better (today 2,844 = 2,844; -754 Hz 1,953 -> 1,962; 0 Hz 2,070 -> 2,088; +246 Hz 2,079 -> 2,088;
+  -1,754 Hz 1,953 = 1,953), CoMIRS LSM control channels identical, Rockingham 28-min replays unchanged. Salisbury first
+  half hour on 15.10.6: 48 -> 21 corrections/h, 0 wrong-way (13 in the 1.5 h before).
+- **Baseband rollover (15.10.2) confirmed** on Salisbury Troop A: `baseband.wav`, `_2`, `_3` at 4,294,967,292 bytes, `_4`.
+- **Cambridge (CoMIRS):** 18 h clean; Massport 863k syncs / 5 losses; Zello 1006 disconnects reconnect on the first
+  retry; memory floor flat ~170 MB.
+- **Daly:** P25 sync loss per 1000 syncs unchanged from 15.10.1 on all 14 channels. Rdio Scanner uploads: 12 HTTP
+  502/520 from the ingest servers (11:38, 12:35-12:38, 12:57) were not retried — those calls are missing server-side.
+- **Beauport/Salisbury/Daly:** one call/day muted for an unrecognised encryption algorithm ID (6 on Daly, 0x9A HDU on
+  Beauport 470.4) — mis-decoded frames on weak signals; watch only.
+- **Somerville:** tuner on USB port 5.1.1 has a saved maximum frequency of 160.545 MHz and a saved centre of 460.6 MHz,
+  so `TunerController.apply()` throws at `setFrequencyCorrection` on every start and skips its PPM/auto-PPM setup
+  (configuration, not code). Massport Zello channel: 44 `invalid password` logons 15:56-16:51.
+- **Audubon:** 6 Dispatcher queue-overflow warnings in 16 h (seen before 15.10.4 too); one benign
+  `ComplexSamplesWaveRecorder` ClosedChannelException at a traffic-channel recording close.
+- **Short / split calls (open).** Many transmissions are split into fragments: Somerville NBFM Brookline Fire 1,078 of
+  2,452 calls < 1 s, 1,011 of them within 2 s of another call, gaps mostly < 0.5 s; its carrier squelch opened/closed
+  ~3,200 times in a day. Brookline Police, Revere, Chelsea, Everett similar. P25 channels' short calls are mostly
+  0.5-2 s apart (normal exchanges). Fragments lose a few hundred ms at each break — the "bits of audio" Armen hears.
+
+### OPEN
+- Field-check 15.10.6/15.10.7 (see the rollout checks above).
+- **NBFM split transmissions** (Brookline Fire/Police first): try a lower squelch; or a 15-20 min Brookline Fire
+  baseband to decide between a squelch hang time (keep the gate open ~0.5 s after carrier drop) and other causes.
+- **Salem State (Audubon) decode quality**: weak at Audubon (38 of 94 calls < 1 s); need Armen's description and a
+  daytime baseband during traffic.
+- **Rdio Scanner upload retry** on HTTP 5xx with backoff — separate release (touches every machine's upload path).
+- Optional: `TunerController.apply()` to bring a saved frequency into the tuner's own limits before applying the PPM
+  correction.
+- JMBE 2 per-channel controls (upstream #2485/#2502/#2505, then #2511) — separate release if wanted; the P25 EQ
+  editor section must be kept.
+- Noise-framed DMR voice superframes on Salem State still occur occasionally (EMB with random CC, sometimes PI set);
+  they produced no call events in the logs — watch.
+- Carried: 15.10 weak-signal voice errors (low priority); Rowley Police (Beauport) never decodes; Derry Police
+  recalibrations; MASCO 464.600; Bailey UHF channels without a tuner; Methuen Police - Test; stream delete by
+  name+type; upstream #2403/#2428/#2477 when relevant.
+
+Replay toolkit (cloud container scratchpad, recreate if needed — never on the device VM): `pip install
+jdk4py==25.0.2.1` (Java 25 runtime); javac from the `jdk.compiler` + `jdk.internal.opt` jmods with
+`module-info.class` removed, run from the classpath; `jdk.incubator.vector` and JavaFX classes extracted from their
+jmods; changed classes compiled into an overlay directory ahead of `build\install\sdr-trunk\lib\*`; reflection
+harnesses `RP` (P25 C4FM) and `RPN` (NXDN) feed a 50 kHz wav through `ComplexWaveSource`. Whole-tree compile needs
+`--add-exports java.base/jdk.internal.vm.vector=ALL-UNNAMED`. Baseband WAVs cap at 4 GiB (5.97 h at 50 kHz);
+`Cut-Baseband.ps1` cuts a 30-min slice from a WAV that is still being written.
+
+### Working rules (from Armen)
+- Git runs on the Windows machine only, never through the device bridge (CRLF). Deliver `git format-patch`;
+  Armen applies with `git am --keep-cr --3way ap-<ver>.patch` and checks the tree hash. Stage explicit files,
+  never `git add -A`. Armen's build is the official compile; Armen pushes.
+- The device VM is for another project and never for SDRTrunk work: stage files into the cloud container instead.
+- Measure before diagnosing; no fix built on an unchecked assumption. Auto-PPM is unreliable — don't propose it.
+- Mute affects local speakers only. Paxton is not Armen's machine: read-only commands there.
+- Don't propose PRs to DSheirer/sdrtrunk; pulling from upstream is fine.
+- Playlists contain Zello credentials: read structure only, never print credential attributes.
+- Nothing changed in how the agencies transmit (frequencies, sites, modulation) — don't raise it again.
+
+## Previous state (2026-10-29): ap-15.10.2
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.10.2\sdr-trunk-windows-x86_64-v0.6.2-ap-15.10.2.zip`
+- Tree `1ab7a20218ab32f7b32f29cfdf117200f2adc426`, pushed 2026-10-29 as `32458980` (guard on the tree hash;
+  commit hashes differ between machines)
+- **Rolling out 15.10.2 fleet-wide 2026-10-29** (contains 15.10.1). After rollout check: a `..._baseband_2.wav`
+  after ~6 h and no `exceeded 20 versioning attempts`; Audubon's `DMR processChannelGrant` lines gone with the new
+  "DMR decoder" Diagnostics box off; no `BufferOverflowException` on NBFM. Armen will switch off the Diagnostics
+  boxes he turned on for testing.
+- **The silent conventional P25 channels are fixed** (15.9.32, then the upstream rework in 15.10). Confirmed on
+  five machines 2026-10-27/28 — see "Fleet results" below.
+- **Never deploy 15.9.28 or 15.9.29** (playlist bugs, see the release table). 15.9.31 and older still have the
+  P25 lockout.
+- **15.10.1 confirmed 2026-10-29** (00:00-10:00 logs, five machines): no `ArrayIndexOutOfBounds` in the C4FM
+  processor (Daly had 2 the night before on 15.10), no `unknown encryption algorithm` on Salisbury (8 the night
+  before), no lockouts. Confirm `legacy 5x gain ... bypassed` (JMBE 2) on every machine.
+- **Keep auto-PPM off on every tuner** — it ran away on Bailey UHF overnight 10-28/29 (see below). Armen: it has
+  always been an issue; leave the code alone for now.
+
+### Fleet versions (last known, 2026-10-29)
+| Machine | Version | Notes |
+|---|---|---|
+| Salisbury (SDR-9) | 15.10.1 | was 15.9.31 until 10-28 — 10-27 is the clean "before" day |
+| Daly (DESKTOP) | 15.10.1 | Methuen Police - Test stopped 00:32 10-28; turn back on for the side-by-side |
+| Beauport (SDR-13) | 15.10.1 | "Essex County - Live/Test" streams MISSING on calls — being reworked by Armen, ignore |
+| Audubon | 15.10.1 | NXDN (Georgetown) + DMR (OneVoice Haverhill/Boston, Salem State); Burlington Police moving here |
+| Bailey VHF (SDR-3) | 15.10.1 | |
+| Bailey UHF (SDR-4) | 15.10.1 (13:53 10-28, from **15.7**) | JMBE 2.0.2 since 15:42 10-28; auto-PPM disabled 10-29 |
+| Baker, Somerville | 15.9.32 | move to 15.10.1 |
+| Metro-25 (friend's PC) | — | **No longer supported (Armen, 10-29).** Notes kept as reference for P25 trunking/Phase 2 testing |
+| Summit 800 | — | not streaming at present |
+
+Deploy recipe: back up the playlist folder first
+(`$p="$env:USERPROFILE\SDRTrunk\playlist"; Copy-Item $p "$p-backup-$(Get-Date -Format yyyyMMdd-HHmm)" -Recurse`),
+install, start, close, start again; log must say `Playlist read - last saved by this fork`.
+
+### Releases 2026-10-26 to 10-28 (patches `ap-<ver>.patch`, applied with `git am --keep-cr --3way`)
+| Version | Tree | What |
+|---|---|---|
+| 15.9.32 | `3bbe70d6` | Stop noise from parking the P25 Phase 1 C4FM equalizer: NAC tracker 8 slots, least-seen evicted; only trusted NIDs train it or move the equalizer/mixer; 10-min `P25 Phase 1 sync health` line |
+| 15.9.33 | `c613775b` | Channel editor keeps the saved channel selected (restart prompt no longer restarts the neighbouring channel); `Playlist saved - ... written in N ms, M ms after the change` log line. Never built on its own — folded into 15.10 |
+| 15.10 | `d3d8da10` | Upstream #2494/#2514 (5635341d) P25 Phase 1 C4FM + NXDN rework, plus #2519 (re-score a lagging sync at its own offset) and #2520 (3600 Hz passband); sync health line rewritten for the new processor. DMR unchanged (#2517 not included) |
+| 15.10.2 | `1ab7a202` | (1) `WaveWriter` rollover/versioning insert `_N` before the file's own extension — baseband I/Q is written straight to `.wav`, so the old `.tmp`-only rename left the name unchanged and every recording stopped at 4 GiB with `exceeded 20 versioning attempts`. (2) `RealResampler` loads input in pieces that fit its 4,192-sample buffer (NBFM squelch-open burst was dropped with `BufferOverflowException`). (3) Diagnostics "DMR decoder" checkbox, off by default (`processChannelGrant` was 84% of Audubon's log). Tested against 15.10.1 in the sandbox |
+| 15.10.1 | `49b04794` | (1) `C4FMSymbolProcessor.score()`/`validateSyncWaveform()` bounds-checked: a lagging sync just after a buffer reload read index -1 (Daly, Windham Fire/Police). (2) Shortened P25 Reed-Solomon codes reject corrections in the zero padding: corrupted LDU2 encryption sync words were passing as corrected and muting clear calls |
+
+The 15.9.24-15.9.31 releases are listed in the previous state section below.
+
+### How the lockout was found and fixed (detail of the 15.9.32 diagnosis is in the previous state section)
+- Root cause in the old `P25P1DemodulatorC4FM` (upstream 0d886c27, Nov 2025, in the fork since v0.6.2-ap in
+  March 2026; 0.6.1 does not have it): noise NIDs with random NACs evicted the channel's NAC from a 3-slot
+  tracker, the NAC check switched off, a noise sync was accepted and its >PI/8 correction applied in full, parking
+  the equalizer near the +/-PI/3 (800 Hz) clamp where no real sync validates.
+- 15.10 replaces that decoder with upstream's `P25P1SymbolProcessorC4FM`/`C4FMSymbolProcessor`: sync validity no
+  longer uses the NID/NAC (reference sync waveform check on the first two syncs after a loss), and a full
+  correction is applied only while unsynchronized, so a channel recovers by itself.
+- Replay, messages/voice frames (15.9.31 -> 15.9.32 -> 15.10): Troop B 09:37 1,233/130 -> 2,758/296 -> 2,795/296;
+  Troop B 11:01 809/93 -> 1,359/150 -> 1,432/165; Methuen Test 135/0 -> 1,419/367 -> 1,454/367; Methuen Police
+  +585 Hz 135/0 -> 1,414/367 -> 1,454/367; nights unchanged or slightly up. Upstream rework without #2519/#2520
+  lost whole transmissions (Troop A night 533/34 vs 943/104).
+- NXDN (Audubon Georgetown, 22 traffic recordings, 15.9.33 -> 15.10): valid 9,600 -> 13,171, voice 1,532 ->
+  2,126, CRC-failed 2,393 -> 38.
+- 15.10.1 changes nothing measurable on the replays (all eight byte-for-byte identical to 15.10).
+
+### Fleet results
+15.9.32, 2026-10-27 (full day):
+- Beauport ~18 h, Daly 00:00-21:58, Bailey VHF 00:06-22:40: no lockout on any P25 channel; Troop B decoded every
+  hour with traffic, 0 recalibrations, mixer ~-12 Hz, only NAC 0x826.
+- Salisbury was still on **15.9.31** that day and shows the bug: Troop A last decoded 16:10:45, nothing until
+  19:22 shutdown; Seabrook Police no voice all day; Hampton Police none after 08:00; foreign-NAC noise frames in
+  Troop A's decoded log 09:32-13:40.
+- Daly Derry Police: 150-430 recalibrations/h and four extra "established" NACs one to three bits from 0x827 —
+  Armen: Derry is far away, likely signal. Still 150-415 recalibrations/h on 15.10.
+
+15.10, night of 2026-10-27/28 into the morning:
+- Salisbury: Seabrook Police, Hampton Police and Troop A all decoded through the night (Hampton calls every
+  hour, Seabrook 38 calls 06:00); 0 waveform rejects; recalibrations only on Portsmouth Police (<= 9/h).
+- Daly: no lockouts; two `ArrayIndexOutOfBoundsException: Index -1 out of bounds for length 1155` (Windham Fire
+  03:44, Windham Police 05:47) -> fixed in 15.10.1. Methuen Police mixer converged 0 -> -590 Hz by 08:18 (moves
+  only with traffic).
+- Bailey VHF: Troop B 0 recalibrations, balance +/-1 Hz; DES (0x81) calls muted correctly; two calls tagged
+  Motorola Padstone (0x05) at 01:40/01:50 — almost certainly corrupted headers (15.10.1 fix 2).
+- Audubon: NXDN Georgetown control 96-3,720 group calls/h, traffic followed; DMR OneVoice quiet overnight, busy
+  from 06:00 (83 grants with `allocated=false` — traffic-channel limit, not decoding).
+- Beauport: Gloucester Police/Rockport Police/Manchester BTS normal; Gloucester Fire no syncs 00:35-07:58, then
+  calls at 07:58 and 08:26 — quiet night, not a fault. Playlist saves 40-298 ms.
+
+### 15.10.1 detail
+1. Buffer bounds: `C4FMSymbolProcessor` keeps 25 symbols of history (131 samples at 25 kHz; buffer 1155 =
+   131 + 1024). A lagging-detector detection on the first symbol after a reload starts its window ~3.6 samples
+   in, and the optimizer probes 3/4 symbol (3.9 samples) further left -> index -1. Reproduced directly with the
+   live buffer length. Fix matches the existing `getCorrection()`/`getEqualizedSymbol()` guards. Upstream master
+   (f2c98cdb) has the same code.
+2. Reed-Solomon padding: RS(24,16,9) LDU2 ESS, RS(24,12,13) link control, RS(36,20,17) HDU and RS(44,16,29)
+   Phase 2 ESS are decoded as full RS(63,k) with zero padding; corrections in the padding were reported as
+   success. 200,000 random RS(24,16,9) words: 3.34% "correctable" (3.28% via the padding) -> 0.056%;
+   RS(24,12,13) 0.086% -> 0. All codewords with <= 4 / <= 6 symbol errors still correct. Field signature: scattered
+   one-off `unknown encryption algorithm` IDs on clear channels (Rockingham Sheriff East/West on Salisbury, Troop
+   B and Boxborough on Bailey VHF, North Andover Police and Derry Fire on Daly); the audio module takes the call's
+   encryption state from the first valid header, so one bad LDU2 muted the rest of a clear call.
+
+### Bailey UHF and audio findings, 2026-10-28/29
+- **JMBE 1.x clips P25 audio.** Bailey UHF ran `jmbe-1.0.9.jar`: `legacy 5x gain (P25 Phase 1, NXDN) in use`, a fixed
+  5x gain hard-clipped at 0.95 (31,128) — Tewksbury Fire unit 5012 had 1.9% of samples on the ceiling. After switching
+  to `jmbe-2.0.2.jar` (`legacy 5x gain ... bypassed`, AGC on): <= 0.06% at the ceiling. Every machine must be on JMBE 2.
+- **Tewksbury Fire/Police hum and robotic audio come from the dispatch console audio** (Fire console ID 16777211,
+  Police ID 7), not the decoder. Console and units arrive at Bailey at the same strength (59 transmissions: median 50.9
+  vs 49.9 dB; everything goes through the same tower — Armen). Console voice frames decode ~99% clean, but its
+  between-word gaps carry 87-97% of their energy below 300 Hz, 45-67% exactly on 60/120/180 Hz (units 3-17%):
+  mains hum on the console line, which the IMBE encoder turns buzzy. Fix is at Tewksbury's console. Console
+  transmissions end with 3-5 constant `AAAA...` IMBE fill frames; JMBE 2 renders them as near silence (harmless).
+- **Auto-PPM runaway** on tuner RTL-2832/R820T 93125430 (483.45 MHz, Tewksbury): auto-PPM stepped ~+1.24 PPM every
+  ~10 min and each step increased the measured error (00:03 0.42 PPM / 53 Hz -> 06:02 38.8 / 1,492 Hz -> 08:20 56.0
+  / 2,058 Hz; Armen found it at -76). Tewksbury Police silent from ~03:00 until it was set back to 0. Only Bailey UHF
+  had auto-PPM enabled. Armen: long-standing issue, leave it disabled, no guard for now.
+- **#2520 (3,600 Hz baseband passband) evaluated and kept.** 51 min of real Tewksbury Fire: a 4,400/5,200 Hz passband
+  cut damaged console frames 105 -> 44/32, almost all from one weak fade at 15:32:42. Burlington Police on Bailey UHF
+  (weakest channel there, ~14 dB above noise): wider is worse (frames with a Golay word at its 3-error limit: 3,600 Hz
+  214, 4,400 Hz 211, 5,200 Hz 259). Strong channels identical at every width. 4,400 Hz designs at 24-48 kHz; 5,200 Hz
+  is borderline at 24-27 kHz.
+- **15.10 weak-signal voice errors (open, low priority).** Burlington on Bailey UHF, frame-by-frame vs 15.9.32: 162
+  frames good on 15.9.32 and bad on 15.10.1, 48 the other way; 15.10.1 also recovers 135 frames 15.9.32 misses.
+  Edge-of-correction frames 84 (15.9.32) vs 214 (15.10.1). Not the cause (each tested on Burlington): baseband
+  passband, the C4FM symbol equalizer (off, or no decision-directed updates), Gardner timing tracking, the per-sync
+  timing correction, 15.9.32's RRC. Next candidate: sample-equalizer gain/balance tracking (several Bailey UHF
+  channels keep gain exactly 5.2083 all session). On Audubon's Burlington signal (~18 dB, 2026-10-29) 15.10.1 decodes
+  2,475 frames 100% clean vs 15.9.32 2,398 / 99.8% — the gap only shows at the edge of reception.
+- **NBFM resampler overflow** (FIXED in 15.10.2): `BufferOverflowException` in `RealResampler$BufferManager.load`
+  (4,192-float input buffer) at squelch open on MA Fire District 6 - Admin (483.6375); the open burst was dropped.
+- **Log volume** (midnight to morning 10-29): Audubon 7.1 MB, 84% `DMR processChannelGrant` DEBUG; Bailey UHF 5.4 MB,
+  73% NBFM squelch/CTCSS/hum DEBUG; Salisbury 7.5 MB (41% NBFM, 28% Zello); Daly 8.2 MB (31% NBFM, 22% Rdio/ThinLine,
+  10% Zello). The file appender takes DEBUG from every logger no Diagnostics checkbox controls (root set to ALL in
+  `ApplicationLog`). P25 health lines are 6-8%; kept on (counters only, ~2.5 KB/h per P25 channel) — revisit for a
+  large P25 trunked system.
+- **DMR**: one `ArrayIndexOutOfBoundsException: Index 144` in `DMRMessageFramer.receive` (OneVoice, Audubon, 00:41
+  10-29) and 7 Dispatcher queue-overflow warnings on Salem State DMR. Upstream code; #2517 replaces the framer.
+- Tewksbury Police recording 15:31-15:42 10-28 was wall-to-wall wideband noise (~40 dB above the normal floor) —
+  consistent with the auto-PPM drift. Lowell Police is LSM (simulcast): 97% clean with the LSM decoder.
+- `Cut-Baseband.ps1` lives in `C:\Users\Admin\projects\logs` and a spare copy in the repo folder (untracked); the
+  staging limit is 400 MB per file, so cut 20-30 min slices.
+
+### OPEN
+- 15.10.2 fleet-wide; JMBE 2 on every machine; Diagnostics boxes off except when tracing.
+- Next code item: #2478 (P25 Phase 1 LSM false lock), tested first on the Lowell Police LSM recording (Bailey UHF
+  10-28 15:31). It changes `P25P1DemodulatorLSM` (conventional LSM channels, and Phase 1 LSM control and traffic
+  channels on trunked systems — not Phase 2 TDMA) and `P25P1MessageFramer` (NAC check, shared with C4FM — check
+  multi-NAC channels such as Derry Police). Its commits note that a false-locked LSM decoder reports the carrier
+  offset to auto-PPM with the wrong sign; Bailey UHF's runaway tuner carried Lowell Police (LSM, -754 Hz) — possible
+  link, unverified. DMR #2517 when DMR use grows.
+- 15.10 weak-signal voice errors (see above) — low priority.
+- Burlington Police moving to Audubon; District 6 Admin on hold (weak, to be relocated).
+- **Rowley Police (Beauport)** never decodes (15.9.31, 15.9.32, 15.10 — a few syncs/h, no voice); Armen checking
+  its configuration.
+- **Derry Police (Daly)**: 150-430 equalizer recalibrations/h on 15.9.32, 15.10 and 15.10.1 — weak distant signal;
+  decodes. Westford Police (Bailey UHF) 686 and Portsmouth Police (Salisbury) 133 recalibrations on 10-29, both decoding.
+- **Alias save delay on Beauport**: not reproduced; Beauport saves take 40-298 ms, ~2 s after the change. The
+  `Playlist saved` line will show it if it recurs — note the time.
+- **MASCO 464.600 (Audubon)** barely decodes; Georgetown duplicate control channel appears resolved (`Control_51`).
+- **Bailey UHF**: "Middlesex County" / "Middlesex County - APM" streams were MISSING on every call 10-28 (gone on
+  10-29); Belmont Police, Boxborough Fire, Maynard Fire, Ayer Fire (470-471 MHz) have no tuner.
+- **Methuen Police - Test** stopped on Daly 10-28 00:32.
+- **Upstream PRs after 15.10**: #2478 (see above); #2460/#2459/#2486 P25 Phase 2 (were for Metro-25 — reference only); wait on DMR #2517; measure CPU before #2403 HydraSDR JNI; #2477 after checking Rockingham logs; #2511
+  with the JMBE 2 release; #2428 channelizer before the Denmark machine. Skip #2501, #2500.
+- **Lowell Police / Derry Police 30-min channel recordings** still wanted for off-centre and weak-signal testing.
+- **Ingest outage 2026-10-27 from 11:40**: Cloudflare 502 then 1033/530 on ingest.actionpagemedia.com and
+  ingest.actionpagezello.com (server side); Zello WebSocket failures on Bailey VHF 11:00-12:59 the same day.
+- **Stream delete matches by name+type** (`BroadcastModel.getConfiguredBroadcast`), not by row — retest.
+- **Baker Action Ambulance** TDMA veto check; **Beauport Rockport Fire** is a slow channel (Armen).
+- Stay on JDK 25 / Gradle 9.2 (JDK 27 is non-LTS, support ends March 2027).
+
+## Previous state (2026-10-26): ap-15.9.31 release and the 15.9.32 diagnosis
+
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.31\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.31.zip`
+- Tree `f2fd30d33454b3d832f196ebb98b280b49aee4e0` (guard on the tree hash; commit hashes differ between machines)
+- **ap-15.9.32 delivered 2026-10-26 as `ap-15.9.32.patch` (tree `3bbe70d6`): fixes the silent P25 channels - see below. Not yet built.**
+- **Never deploy 15.9.28** (loses upstream-type streams such as Rdio Scanner on the 2nd start) **or 15.9.29**
+  (cannot read a playlist with a multi-frequency source). Use 15.9.31.
+
+### Fleet versions (last known)
+| Machine | Version | Notes |
+|---|---|---|
+| Salisbury (SDR-9) | 15.9.31 | from ap-15.7 on 2026-10-25 22:45 |
+| Daly (DESKTOP) | 15.9.31 | "Methuen TEST" channel on 482.4625 running alongside Methuen Police |
+| Beauport (SDR-13) | 15.9.31 | |
+| Baker | 15.9.29 | ingest streams restored from history 2026-10-23; move to 15.9.31 |
+| Somerville | 15.9.28 | move to 15.9.31 |
+| Audubon | 15.9.24 | |
+| Bailey VHF (SDR-3) | ap-15.5 | RTL/Nooelec only |
+| Bailey UHF (SDR-4) | ap-15.7 | RTL/Nooelec only |
+| Metro-25 (friend's PC, Windows user "User") | 15.9.30 installed; recommended to run the 0.6.1 final | see Metro-25 below |
+
+Deploy recipe: back up the playlist folder first
+(`$p="$env:USERPROFILE\SDRTrunk\playlist"; Copy-Item $p "$p-backup-$(Get-Date -Format yyyyMMdd-HHmm)" -Recurse`),
+install, start, close, start again; log must say `Playlist read - last saved by this fork`.
+
+### Releases this cycle (all patches delivered as `ap-<ver>.patch`, applied with `git am --keep-cr --3way`)
+| Version | Tree | What |
+|---|---|---|
+| 15.9.24 | `ab88399b` | JMBE 2.x: skip the legacy 5x P25P1/NXDN gain under library AGC (Audubon −16.8 dBFS, 0% clipped) |
+| 15.9.25 | (built inside 15.9.26) | P25P1 idle close after 2 s without audio; NBFM stuck-call watchdog timed per call; playlist never saved over an unreadable file, atomic save, `playlist\history` (hourly, newest 20) |
+| 15.9.26 | `02539dd2` | One playlist for fork and upstream: `default.xml` upstream-readable, `default.ap.xml` companion with fork-only streams/alias ids/settings, merged on load |
+| 15.9.27 | `99bfc0c4` | Renamed channels (decoder+frequency) and aliases (list+ids) keep fork settings; settings turned off upstream stay off |
+| 15.9.28 | `f964996a` | 0.6.1 release no longer disables NBFM tone filters (tested against 0.6.1 as well as master) |
+| 15.9.29 | `85e6708d` | Same-named elements made contiguous before reading (Baker lost its Rdio ingest streams on 15.9.28) |
+| 15.9.30 | `d503ddbc` | `type` attribute written first again (Metro-25 multi-frequency source unreadable on 15.9.29); fall back to the file and block saving if the merge cannot be read |
+| 15.9.31 | `f2fd30d3` | Measurement only: every 10 min each P25 Phase 1 channel logs `P25 Phase 1 health on [channel] ...` |
+
+Compatibility test harness (sandbox, recreate if needed): fork and upstream save/load code compiled together;
+`multiround.py` two-sided 5-round edit test (19/19 against upstream master b0428a1d and 0.6.1); `run.sh`
+scenarios A–E. Baseband replay harness `RP`/`RPC` (LSM/C4FM) feeds a 50 kHz I/Q wav through the fork and the
+0.6.1 decoders.
+
+### FIX DELIVERED — conventional P25 channels silent for hours/days: ap-15.9.32 (patch `ap-15.9.32.patch`, tree `3bbe70d69e78e23132cc7a1880211feba0f98d68`, not yet built or deployed)
+Armen confirmed the agencies are heard elsewhere and **nothing changed in how they transmit, frequencies or
+sites — do not raise that again.** Affected: Salisbury Troop A / Seabrook / Hampton, Bailey VHF Troop B, Daly
+Methuen Police, Beauport Gloucester Police / Rockport Fire.
+
+Root cause, measured 2026-10-26 by replaying channel `Baseband I/Q` recordings through the 15.9.31 C4FM decoder
+with its state logged (Salisbury Troop A, Bailey VHF Troop B x2, Daly Methuen Police and Methuen Police - Test):
+1. Noise produces sync patterns whose NIDs BCH-decode. Their random NACs entered `NACTracker` (3 slots, oldest
+   evicted), which within minutes of silence held three count-1 random NACs and had evicted the channel's NAC ->
+   `getTrackedNAC()` = 0 -> the NAC check in `validateNID` was off.
+2. A noise sync with a random NAC was then accepted; its PLL correction > PI/8 re-initialized the equalizer and was
+   applied in full -> PLL at/near the +/-PI/3 (800 Hz) clamp (Troop B 09:54:00 and 11:14:15, Methuen Test 09:02:22,
+   all at the noise floor).
+3. The equalizer only moves on a valid sync; parked there, no real transmission validates -> dead until restart.
+   Methuen Police's recording sat 510 Hz further off (+585 Hz) than Methuen Police - Test's (+75 Hz), same tuner.
+   CORRECTED 2026-10-26 after the first 15.9.32 run: both mixers then settled at -611 Hz (the RSP1B's own error) and
+   both recordings sat at +130 Hz, so Police's mixer had never finished converging because the channel was locked
+   out; false syncs walking it away was not measured. Gating the mixer to trusted syncs stays as a precaution.
+- Evidence that it is decoder state, not RF: Troop A 08:54-11:13 live 0 messages, replay 5,154; same channel after
+  the 14:06 restart live 4,607 / replay 4,605. Resetting only the equalizer at 10 min revived the Methuen Test
+  replay (0 -> 1,283 messages in 20 min); resetting only the NAC tracker did nothing. Right-click mute is unrelated
+  (audio modules only; the lockout reproduces in the replay tool, which has no audio modules).
+
+15.9.32 changes: `NACTracker` 8 slots, evicts least-seen then oldest, `isEstablished()`; `validateNID` accepts any
+established NAC (seen 3x) and rejects others, rejects undefined DUIDs, unrolls the NAC-assist retry to flag it;
+only a **trusted** NID (no NAC assist, <= 15 bit errors over sync+NID) trains the NAC tracker, moves the equalizer
+or steers the mixer (threshold: 5,775 syncs in carrier needed <= 13, 99% none; 6 in noise needed 19-26). New INFO
+lines: `P25 Phase 1 sync health on [channel] ...` every 10 min (trusted / withheld / rejected NAC / rejected DUID /
+recalibrations, equalizer signal offset and gain, established NACs, channel mixer correction) and
+`P25 Phase 1 equalizer on [channel] recalibrated by a trusted sync ...`. No recovery timer and no mixer cap, on
+purpose: with noise unable to move either, the logs will show whether anything else still parks a channel.
+
+Replay, 15.9.31 -> 15.9.32 (four 30-min REPRO files in `C:\Users\Admin\projects\logs`): Troop B 09:37 1,233 ->
+2,758 messages; Troop B 11:01 809 -> 1,359; Methuen Test 135 -> 1,419; Methuen Police (+585 Hz) 135 -> 1,414.
+Per-window counts match the live channels while they worked (Troop B 10:00 326/326, 11:10 891/891; Methuen Test
+09:10 985/987). Voice-frame counts identical before each original stall; messages in noise 9 -> 3.
+
+Next:
+- Build 15.9.32 (tree above), deploy first to Salisbury, Daly, Bailey VHF (needs 15.5 -> 15.9.32) and Beauport.
+- Success = the affected channels keep decoding past a day; sync health lines show `withheld`/`rejected` counts in
+  quiet periods and `equalizer recalibrations` near 0; Methuen Police and Test show the same `channel mixer
+  correction` (about -611 Hz on Daly's RSP1B).
+- Daly, first 31 min on 15.9.32 (22:43-23:14 2026-10-26): Methuen Police and Methuen Police - Test decoded the
+  same messages minute by minute; every carrier second in both channel recordings (63-64 s) had a decode within 1 s;
+  both mixers -611 Hz, equalizer within 6 Hz; 0 recalibrations. A day-long run is still the real test.
+- New observation, Daly Derry Police (busy, marginal): 46-58 recalibrations per 10 min, in pairs - a trusted TDU
+  with 10-15 bit errors throws the equalizer 300-460 Hz, the next sync (0-15 errors) brings it back within a
+  second. Not a lockout, and probably not new (15.9.31 did not log it). Candidate: apply a correction above PI/8
+  only when the next trusted sync confirms it. Measure on a Derry Police channel recording first.
+- Not yet tested: a channel that runs well off-centre (Lowell Police at -748 Hz: a fresh 15.9.31 decoder never
+  acquired it, the live channel did) and weak signals near the 15-bit-error threshold. Armen to record 30 min of
+  Lowell Police channel Baseband I/Q while it decodes normally.
+- Seabrook, Hampton, Gloucester, Rockport were not recorded; same mechanism expected, unverified.
+
+Replay toolkit (device VM, recreate if needed): `pip install jdk4py==25.0.2.1` (Java 25 runtime); javac from
+`build\jdks\...\jdk-25.0.1-full\jmods\jdk.compiler.jmod` + `jdk.internal.opt.jmod` extracted to a directory,
+`module-info.class` removed, run from the classpath; `jdk.incubator.vector` classes from its jmod on the classpath
+with `--add-exports java.base/jdk.internal.vm.vector=ALL-UNNAMED` (and misc/annotation/util); compile changed
+classes into an overlay directory ahead of `build\install\sdr-trunk\lib\*`; a reflection harness feeds a 50 kHz
+wav through `ComplexWaveSource` -> `P25P1DecoderC4FM`. Baseband WAVs cap at 4 GiB (5.97 h at 50 kHz).
+
+### OPEN — other items
+- **Metro-25 (P25 Phase 2, LSM, Zone 3, control 769.90625):** replaying the same recordings, the 0.6.1 LSM
+  decoder decodes 10–25x more messages than the fork/nightly LSM decoder (CPU ~3.5% vs ~1.2% of a core), and
+  the 0.6.1 recording path gave ~6x cleaner baseband for unknown reasons (same RTL, 2.4 MSPS, polyphase). Hold
+  the decoder port until a single wideband recording is replayed through both versions. Keep "max traffic
+  channels" at 10: 0.6.1 refused every grant 10:14–10:27 (channels not returned), not a capacity limit. Two
+  SDRTrunk instances were seen running at once on that PC.
+- **(FIXED in 15.10.1 - Reed-Solomon padding)** **Whole calls muted on a mis-decoded encryption ID** (Salisbury Rockingham Sheriff East/West: scattered IDs
+  0x76, 0xB8, 0x3F, 0x0E, 0xED ...). Candidate: mute only when the same unknown ID repeats or the HDU agrees.
+  Measure on a recording first.
+- **Stream delete matches by name+type** (`BroadcastModel.getConfiguredBroadcast` via `equals`), not by the
+  selected row; Armen saw a deleted Rockingham stream reappear. Fix: delete by identity, log stream add/edit/
+  delete. (Salisbury's disk was full at the time — see below — so retest first.)
+- **Salisbury disk filled 2026-10-26 02:07** by a tuner recording left running (RSP1B 10 MSPS ≈ 140 GB/h).
+  Tuner recordings: 10–15 s only. Files deleted.
+- **ingest.actionpagemedia.com** call-upload connection tests failing from Salisbury from 06:53 on 2026-10-26.
+- **Baker Action Ambulance (461.200, 107.2):** TDMA veto cut speech on ap-15.9.x < 15.9.17 (100 Hz hum = H3);
+  confirm with a 15.9.29+ log that `TDMA veto refused ... no fundamental` replaces `Closing tone gate`.
+- **Beauport Rockport Fire:** no call 45 h on 10-23/24; check channel running/tuner at startup.
+- JMBE 2.x per-channel settings (AGC/tone/noise gain) are preserved but not applied; UI not ported — deferred
+  until a channel needs it.
+
+## Earlier release: ap-15.9.16 (2026-10-06)
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.16\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.16.zip`
+- Built 2026-10-06, JDK 25 Bellsoft / Gradle 9.2
+- Tree `99010c848b4dca71cade899b8b6824bb5d233702`
+- **Deployed to Summit VHF/UHF only.** Measurement release — changes no behaviour.
+
+**Logs the TDMA detector's per-window score, winning rate and harmonic ratios.** Like ap-15.9.11 this
+deliberately fixes nothing. `DETECTION_THRESHOLD` stays 20.0, `CONFIRMATION_WINDOWS` stays 1,
+`RELEASE_WINDOWS` stays 3, and the veto keeps closing gates exactly as before — Bolton included.
+
+Bolton Fire 453.600 is analog NBFM whose only neighbour, PrideStar/Trinity 453.6125, is also analog. There
+is no digital signal near it. `TdmaInterferenceDetector` latched **1,072 times** on it on 2026-10-05 and cut
+one transmission into five files — the recordings hold 11.7 s of audio across a 14.9 s span, so roughly
+3 seconds was discarded.
+
+Two fixes were proposed and both fail against the log:
+
+| proposal | why it fails |
+|---|---|
+| raise `DETECTION_THRESHOLD` | Bolton's analog comb scores reach **127.3**, p90 40.9. The class note claims real DMR peaks at 64+. No threshold separates them. |
+| raise `CONFIRMATION_WINDOWS` | No latch on any channel holds under 300 ms. Bolton's minimum is 350 ms, median 450 ms. All 955 of its latches would satisfy a 3-window rule and still cut the call. |
+
+A per-channel opt-out would work but is a standing maintenance burden with two silent failure modes, and was
+arrived at by declaring the problem unsolvable after testing two knobs.
+
+Reimplementing the algorithm in Python against the six Bolton recordings gave a maximum score of **11.1**,
+and 1.1–4.7 on the five that were cut. That settles nothing: the detector taps at `NBFMDecoder:646`, ahead of
+the gate at 653, so the recordings hold only audio that *passed* while the windows scoring 24–127 are in the
+gaps the veto cut and were never written to disk. The per-window numbers cannot be recovered from the
+recordings, hence the survey.
+
+What the exercise did establish: clean analog Bolton voice reaches 11.1 against a threshold of 20, where the
+calibration note puts synthetic "speech-like AM" at 13 — far thinner margin on real audio than claimed, and
+the note admits its negatives were synthetic. And the winning candidate rate wanders (32.5, 33.33, 34.0,
+35.0) with lopsided harmonic ratios, one window scoring H1=0.3 H2=7.2 H3=6.1. The note says requiring three
+harmonics separates a real cadence from "broad modulation that merely happens to have energy near 33 Hz";
+because the score is their geometric mean, one strong harmonic carries a window where the fundamental is
+absent. It averages the missing harmonic away instead of rejecting it.
+
+New log line, gated on `SURVEY_FLOOR = 5.0` or the detector already being latched:
+
+```
+TDMA survey: score=27.4 rate=33.33 H1=41.2 H2=18.9 H3=12.6 noiseFloor=3.21e-07 latched=false
+```
+
+### Open after ap-15.9.16
+- **The survey decides the next move.** High-scoring windows holding `rate=33.33` with all three harmonics
+  strong together means real digital energy and an RF problem. A wandering rate with one harmonic carrying
+  the score means the harmonic test must require each harmonic individually instead of multiplying them.
+- **Bolton is still losing audio** until that is resolved — this release changes nothing about the veto.
+- **ap-15.9.15's holdover veto is inert.** All 962 holdover opens after it went in logged `targetWon=true`
+  and it never closed anything. The latch reset sits in the squelch-open full-reset branch, which needs
+  `elapsed >= TONE_HOLDOVER_MS` since the last confirmation; Bolton's `holdoverAge` never exceeds 2,300 ms,
+  so once set the flag never clears. This is the same structural trap that made the ap-15.9.11 deadline dead
+  code — state anchored to a branch that does not run during continuous interference. Fixing it properly
+  needs one instrumentation line logging actual squelch transitions, which the logs barely contain.
+
+## Superseded: ap-15.9.15 (2026-10-05)
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.15\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.15.zip`
+- Built 2026-10-05, JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean build -x test` then `.\gradlew runtimeZipWindows`
+- Tree `949657b53f2cf326ac2e0a7950fec4f773a4cef8`
+- **Deployed to Summit VHF/UHF only.** Under observation — the Bolton/Trinity result is not yet confirmed.
+
+**Closes the holdover gate when no target tone has won a bin in the episode.** ap-15.9.14 fixed the tone
+decision and the Summit 2026-10-05 log confirms it — the win score pins at −8 and the suppression line fires
+378–812 times an hour. But the gate was never opened by the tone decision: all 977 `gate OPEN via holdover`
+lines on Bolton Fire that day carried `confirmed=null`, and four of the six recordings produced were Trinity
+453.6125 splashover admitted by that path. Acton Police 154.8150 shows the same pattern with 745 unconfirmed
+opens.
+
+Closing on elapsed time does not work and the log says so: real calls spend long stretches with a non-target
+raw winner (median 1249 ms, max 2100 ms across 16 confirmed-real episodes), so a 600 ms grace truncates 14 of
+16 real calls and 1500 ms still truncates 5. The 600 ms deadline carried since ap-15.9.11 would have cut 14 of
+16 had it ever fired.
+
+What separates the populations is whether the target ever wins a bin at all. Of 12 bleed episodes, 9 never saw
+it — including all four flagged recordings — while all 16 real episodes did. So `NBFMDecoder` latches
+`mRawTargetWonThisEpisode` on first sight and the veto closes the gate when the holdover is passing
+unconfirmed audio and that flag was never set. Replayed against the log: **0 of 16 real episodes affected, 9
+of 12 bleed episodes closed.** The three survivors each had 74.4 genuinely win a bin briefly; ambiguous gates
+are left open.
+
+> **Baseline to beat, Summit 2026-10-05 (ap-15.9.14):** 16 real Bolton episodes, 12 bleed episodes, 4 of
+> which produced recordings. Keep that log — it is the before-figure for this channel pair.
+
+### Open after ap-15.9.15
+- **Bolton/Trinity unconfirmed.** Watch for `Closing tone gate — holdover with no confirmation and no target
+  bin win this episode` on Trinity keyups, and `targetWon=true` on real Bolton calls. Real calls getting
+  clipped means the latch is resetting somewhere unaccounted for.
+- **DCS path is reasoned, not measured.** The first draft of the veto would have cut every DCS call on each
+  code dropout; a DCS confirmation now latches the flag and the veto is guarded on `mCTCSSDetector != null`.
+  Needs confirming on a real DCS channel.
+- **Somerville 131.8 and the data bursts are unmeasured.** ap-15.9.14 should help 127.3/131.8 partially — the
+  pair is ~2.1 dB apart against the old 2.0 dB override, so it fired intermittently there rather than
+  unconditionally as on Bolton's 74.4/77.0 at 0.7 dB. Whether the ap-15.9.15 veto helps the bursts is unknown:
+  broadband energy may let the target win a bin by chance and latch the flag. `TdmaInterferenceDetector`
+  remains the designed defence. A Somerville log covering bursts would settle both.
+- **`tools/fleetcheck.py` parses none of the log lines added since ap-15.9.7** and its CTCSS section measures
+  the wrong thing. Fix or remove.
+
+## Fleet versions as reported
+| Machine | Version | Reported |
+|---|---|---|
+| Summit VHF/UHF | ap-15.9.16 | 2026-10-06 |
+| Stoneham | ap-15.9.9 | 2026-10-03 |
+| Somerville | ap-15.9.8 | 2026-09-30 |
+| Daly | ap-15.9.8 | 2026-09-30 |
+| Baker | ap-15.9.4 | 2026-09-17 |
+| Beauport | ap-15.9.1 | 2026-09-17 |
+| Monson | ap-15.7 or earlier | — |
+
+Anything not listed has not been reported this cycle. Do not assume a machine took a build it was not
+confirmed to have taken.
+
+## Releases ap-15.9.5 → ap-15.9.14 (see CHANGELOG.md for full detail)
+- **ap-15.9.14** — gates the adjacent-tone leakage preference on a per-target win score. The preference
+  overrode the Goertzel winner whenever a target sat within 2 dB, and 2 dB is wider than the separation
+  between any adjacent CTCSS pair, so for adjacent tones it fired unconditionally. Root cause of the Bolton
+  bleed and of the long-standing 127.3/131.8 limitation.
+- **ap-15.9.13** — CTCSS confirmation becomes a sliding window (3 of the last 5 blocks) instead of a
+  consecutive run. Cut `WOULD CLOSE` from 6.0/h to ~1.1/h and holdover gate-opens from 410/h to ~190/h. Real
+  improvement, not the fix.
+- **ap-15.9.12** — reverts the ap-15.9.10 `AnalogDecoderState` change; the "To" column no longer holds the
+  configured talkgroup between transmissions. The file is byte-identical to its ap-15.9.9 state. It was
+  bundled with the mute fix without depending on it, which was a mistake.
+- **ap-15.9.11** — arms the dead holdover backstop and logs what it *would* have done, closing nothing.
+  Measurement by design. This is what identified the ap-15.9.15 defect.
+- **ap-15.9.10** — corrects two ap-15.9.9 mistakes (`START_STREAM_RETRY_MS` 750 → 3000 against measured
+  latency; already-closed-stream errors dispatched on the error string, since the server sends them
+  unsolicited with `seq=-1`), and fixes Now Playing mute on channels whose alias list holds more than one
+  alias.
+- **ap-15.9.9** — acts on Zello Support's second round of answers and the ap-15.9.8 field result. Four small
+  Zello client changes.
+- **ap-15.9.8** — acts on Zello Support's answers of 2026-09-30. Removes a 500 ms wait on an acknowledgement
+  that is never sent. **Confirmed by measurement:** 92,774 stops across three machines produced one
+  channel-busy event, against 72.0 per thousand on Stoneham's last ap-15.9.7 day; ghosts fell from 1,687/day
+  to 6 in two days. Stoneham was an accidental control — files copied but never restarted.
+- **ap-15.9.7** — ships the squelch-close fix lost from ap-15.9.6, one upstream P25 filter correction, two
+  diagnostics.
+- **ap-15.9.6** — four changes, each measured first: two silent failures, one filter attenuating the wrong
+  part of the spectrum, one heap ceiling that was never protection.
+- **ap-15.9.5** — two silent-failure fixes plus one new warning. The Zello wedge ran four days across two
+  machines with no log line at any level.
+
+## Superseded: ap-15.9.4 (2026-09-17)
+- GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.9.4
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.9.4\sdr-trunk-windows-x86_64-v0.6.2-ap-15.9.4.zip`
+- Built and pushed 2026-09-17 with JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean runtimeZipWindows`
+- Release notes cover the whole ap-15.9.1 → ap-15.9.4 arc; ap-15.9.1/.2/.3 were same-day iterations and are
+  superseded. ap-15.9.1's RSP1B fix and ap-15.9.4's tone notch are both confirmed by measurement, not inference.
+- Deployed to: **Daly** (`DESKTOP`) and **Baker** (`DESKTOP-3NNNO6F`), both 2026-09-17. Beauport is on
+  ap-15.9.1 and has not taken .4 yet. Somerville/Stoneham/Monson still on ap-15.7 or earlier.
+- Now Playing mute confirmed working on Daly and Baker after this build. The CTCSS tone notch is validated
+  against a real recording but has not yet been confirmed by ear in production, and the DCS path is
+  unmeasured — see "Open" below.
+
+**Notches the CTCSS/DCS squelch tone out of NBFM audio.** The reported "60 Hz hum" was measured and is
+neither hum nor 60 Hz — it is the channel's own CTCSS tone. In a District 5/15 recording (CTCSS 131.8) the
+tone sat at −49 dBFS against voice at −19, while 60 Hz was at −85 dBFS and every mains frequency was 50–75 dB
+down. The tone reads as hum in the gaps because its level is constant: the 100–200 Hz band drops 0.6 dB when
+talking stops while every other band drops 20–32 dB.
+
+One biquad notch per configured tone, Q=12, taken from the channel's own `ChannelToneFilter`. Verified on the
+real recording: tone in pauses −48.4 → **−82.1 dBFS (−33.7 dB)**, voice unchanged to 0.0 dB at 300/500/800/
+1500/2500 Hz. Safe for tone squelch — the detectors tap ahead of the audio filters. DCS gets a wider notch at
+134.4 Hz, labelled partial in the log and unmeasured.
+
+> **The USB hub and SDR were not the cause.** A 60 Hz notch, the original request, would have done nothing.
+
+### Open after ap-15.9.4
+- **DCS notch unmeasured.** The CTCSS notch is validated; the DCS path (134.4 Hz, Q=4) is reasoned only.
+  Needs a clip from Lynn Fire FG 3 (DCS-125) or Boxford Police (DCS-411).
+- **Stuck-call watchdog trips**, all on tone-gated channels: Danvers Fire (483.3375) and Salem Fire Ch 2
+  (483.6375) on Baker; Essex Police (483.3000) and Manchester BTS Fire (483.7000) on Beauport. The tone
+  detector is the suspect rather than the squelch. Count them per machine with:
+  `Select-String -Path "$env:USERPROFILE\SDRTrunk\logs\*.log" -Pattern "Stuck timer watchdog"`
+- **Baker's 7 muted aliases** — worth reviewing; Salem at 2 of 3 is the only pattern the old whole-list mute
+  bug could plausibly have produced.
+
+## Released: ap-15.9.3 (built and pushed 2026-09-17)
+**Makes Now Playing mute work on a channel with no alias** — the case it was actually asked for, and the one
+ap-15.9.2 could not serve because it made the alias the only store.
+
+Two stores, one authority rule: an identifiable alias governs → that alias's Listen state (aliases are keyed by
+talkgroup, so a trunked channel carrying a call resolves to exactly one); no alias identifiable → a per-channel
+entry in `NowPlayingPreference`, applied at the audio modules and re-applied when the chain rebuilds. Exactly one
+is ever written for a given channel, so they cannot disagree. Reads take the union so the menu label always
+matches what is audible, and unmute clears both stores. Menu names its target: `Mute alias: X` vs
+`Mute channel: Y`.
+
+> **Mute is local speakers only — Zello and ThinLine keep streaming.** By design, unchanged in every version.
+
+## Released: ap-15.9.2 (built and pushed 2026-09-17)
+**Reworks Now Playing mute into a shortcut for the alias editor's Listen toggle.** ap-15.9.1 stopped the data
+corruption by decoupling mute from alias priority and storing it separately — which removed the linkage the
+feature exists for, so the right-click menu and the Listen switch no longer moved together. Mute now reads and
+writes only the governing alias's playback priority; there is no second copy of the state, and no re-apply logic,
+because `AudioSegment` resolves priority from its aliases on every segment.
+
+The governing alias is resolved most-specific-first: live TO alias (exactly one), live FROM alias (exactly one —
+this catches CTCSS-keyed conventional channels precisely, since `CTCSSIdentifier` is `Role.FROM` and CTCSS maps
+1:1 to an alias), then the sole alias in the channel's alias list. Ambiguous cases show a **disabled** menu item
+naming the reason and the alias count instead of guessing.
+
+> **Mute stops local speaker audio only — it does NOT stop Zello or ThinLine streaming.** `AudioStreamingManager`
+> never consults the do-not-monitor flag. True in every version; now documented. Taking a channel off a feed means
+> removing the broadcast channel from the alias, and there is no shortcut for that yet.
+
+## Released: ap-15.9.1 (built and pushed 2026-09-17) — RSP1B FIX CONFIRMED IN THE FIELD
+> **Confirmed on Daly, same log, same day.** 15.9 ran to 13:40, 15.9.1 from 13:43.
+> Overflow warnings 8,930 → **0**. Cumulative buffers discarded **402,708,445 → 0**. Startup line reads
+> `Rsp1bTunerController at [10.00000] MSPS - [78125] buffers/second ([128] samples each) - queue bounded at
+> [156250] elements (2.00 seconds)`. Every NH feed the RSP1B serves came back: Salem NH Police 0 → 255 stream
+> starts, Salem NH Fire 0 → 61, Derry 0 → 299/46, Londonderry 0 → 281/212, Windham 0 → 122/109, Hudson 0 → 79,
+> Lawrence MA 0 → 462/198. MA feeds on the RTLs were unaffected throughout (the control). No OOM, no tuner
+> removals. Baker's RSP1B at 8 MSPS resolves to 125,000 elements, also correct.
+
+**Fixes the RSP1B starvation that ap-15.9 claimed to fix and didn't.** `PolyphaseChannelManager` is constructed
+before the tuner applies a sample rate, so `getSampleRate()` returns 0 and the queue bound — derived once, in the
+constructor — collapsed to its 32-element floor for every tuner in BOTH ap-15.8.1 and ap-15.9. At an RSP1B's
+78,125 buffers/second that is 0.41 ms of queue: Daly discarded **262,638,170 buffers on 2026-09-16 alone**, all of
+them the RSP1B. The bound is now re-derived when `NOTIFICATION_SAMPLE_RATE_CHANGE` arrives, with a generous
+provisional bound (160,000) until then, and a WARN if any dispatcher ends up pinned to its minimum.
+
+Also carried the first **Now Playing mute fix**. Mute was writing `Priority.DO_NOT_MONITOR` into every alias in
+the channel's alias list, so muting one channel muted every channel sharing that list and unmuting wiped the
+user's configured priorities. 15.9.1 stopped that by decoupling mute from aliases entirely and keying it on the
+channel's system/site/name in `NowPlayingPreference`. **Superseded by ap-15.9.2**, which keeps the fix but
+restores the alias linkage — decoupling removed the behaviour the feature exists for.
+
+> **Neither ap-15.8.1 nor ap-15.9 should run with an RSP1B (or any tuner above ~1 kHz buffer rate).** Use 15.9.1,
+> or fall back to 15.7. RTL-2832-only machines are unaffected.
+
+Also carries a **mains hum diagnostic** for the reported 60 Hz hum on analog channels — `HumAnalyzer`, Goertzel at
+50/60/100/120/180/240 Hz, reporting per transmission which mains family the energy is in, whether the fundamental
+or the second harmonic dominates (supply ripple versus coupled field), and whether the hum level is constant or
+rises during speech pauses (additive hum versus a gain stage lifting the noise floor). It measures only; nothing is
+filtered. Off unless enabled in Diagnostics → "Mains hum analysis (audio)". Each NBFM channel now also logs its
+"Audio Filter" (200/300 Hz high-pass) setting at startup, at WARN when disabled.
+
+> **To collect hum data:** tick "Mains hum analysis (audio)" in the Diagnostics preferences panel, let the affected
+> channels run through a few transmissions, then send the application log. Turn it back off afterwards — it writes
+> three DEBUG lines per transmission per channel.
+
+> **Alias priorities may need checking after upgrading from ap-15.9 or earlier.** If mute was ever used on a
+> channel, the old code may have left `DO_NOT_MONITOR` on aliases across a whole alias list. Neither 15.9.1 nor
+> 15.9.2 repairs existing playlists — check the Listen toggles in the Aliases tab for any alias list where a
+> channel was muted. Audit with:
+>
+> ```powershell
+> $x = [xml](Get-Content "$env:USERPROFILE\SDRTrunk\playlist\default.xml")
+> $x.playlist.alias | Group-Object list | ForEach-Object {
+>   $m = @($_.Group | Where-Object { $_.id | Where-Object { $_.type -eq 'priority' -and $_.priority -eq '-1' } }).Count
+>   [pscustomobject]@{ AliasList=$_.Name; Total=$_.Count; Muted=$m; Pct=[math]::Round(100*$m/$_.Count,1) }
+> } | Sort-Object AliasList | Format-Table -AutoSize
+> ```
+>
+> A list at or near 100% muted is the damage signature. Deliberate mutes of encrypted or tactical talkgroups look
+> like a scattered subset, not a whole list.
+
+## Superseded: ap-15.9 (built 2026-09-13, released)
+Three fixes, all in the tuner sample path:
+1. **Polyphase buffer queue bound starved high-rate tuners** — `getBufferDuration()` truncates to 0 for any
+   tuner above 1 kHz buffer rate. An RSP1B at 10 MSPS delivers 78,125 buffers/sec, so the bound collapsed to
+   its ceiling: 25.6 ms of queue against a 10 ms dispatch interval, where 2 seconds was intended. Discarded
+   ~2,700 buffers/sec continuously on Paxton (12.6M over 80 minutes) and prevented the RSP1B holding a lock.
+   RTL-2832 was unaffected. Bound now derived in floating point; dispatchers named per tuner.
+2. **Frequency correction cancelled permanently and silently** — `requestedChangeHz /= count` divides by zero
+   during any quiet interval, and the uncaught throwable cancels the `scheduleAtFixedRate` task with nothing
+   logged. Also present upstream — clean PR candidate.
+3. **PPM baseline latch** (ap-fork) — the sanity clamp never updates the baseline on rejection, so a baseline
+   that starts wrong stays wrong. The first measurement is latched unconditionally, so one taken while the tuner
+   is still settling disables correction for the whole session (gradual drift is fine — the EMA follows it).
+   Baseline now re-acquired after 12 consecutive rejections, with a WARN naming the tuner.
+
+Items 2 and 3 predate ap-15.8.1 and match reports of occasional tuner lock difficulty on ap-15.7 and earlier.
+Both fail silently, so they are code-reading findings with no log evidence either way.
+
+> **ap-15.8.1 must not run with an RSP1B fitted** — see item 1. Use ap-15.9, or ap-15.7.
+
+## Previous Release: ap-15.8.1 (2026-09-07)
+- GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.8.1
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.8.1\sdr-trunk-windows-x86_64-v0.6.2-ap-15.8.1.zip`
+- Built 2026-09-07 with JDK 25 Bellsoft / Gradle 9.2, `.\gradlew clean runtimeZipWindows`. Not yet
+  deployed to any site.
+
+> `ap-15.8` is a *separate, already-deployed* build: Somerville only, 2026-08-22, carrying the
+> DMR/TDMA work and nothing else. A machine reporting `0.6.2-ap-15.8` is running that, not 15.8.1.
+
+## Previous Release: ap-15.7 (2026-08-01)
+- GitHub release: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.7
+- Zip: `C:\Users\Admin\projects\sdrtrunk-ap-versions\v0.6.2-ap-15.7\sdr-trunk-windows-x86_64-v0.6.2-ap-15.7.zip`
+
+## Contents of ap-15.8.1
+
+1. **GUI freeze fixed** — new `SafeTableRowSorter` (`gui/control/`). The channel metadata table's
+   row sorter was killing the Swing EDT when channel churn re-sorted rows whose values decoder
+   threads were changing mid-sort. Decoding continued for 5+ hours with a dead GUI on Monson.
+2. **`Dispatcher` queue bounded** — root cause of the Paxton 2026-09-05 `OutOfMemoryError`
+   (10 GB heap exhausted in under 60 seconds after a whole-JVM stall). Unbounded
+   `LinkedTransferQueue` plus unbounded `drainTo` turned a consumer stall into unbounded live-object
+   growth that the collector could not reclaim. Now bounded with drop-oldest, derived per-callsite
+   caps (20x–209x headroom over normal arrival rates), rate-limited overflow WARN and recovery INFO.
+   Clean upstream PR candidate — the file was byte-identical to upstream.
+3. **Broadcastify Calls / OpenMHz null-response NPE** — same defect already fixed for ThinLine and
+   Rdio Scanner. Also a clean upstream PR candidate.
+4. **Zello `HttpClient` closed on dispose** — selector/worker threads previously leaked on every
+   broadcaster reconnect.
+5. **Leftover `[SQUELCH DEBUG]` stdout printf removed** from `NBFMAudioFilters` (from `ae6dc745`).
+6. **Eclipse build fix ported** (upstream #2434 `9dcebb49`) — `OpenMHzEditor` package declaration.
+7. **"Show in Waterfall" tuner resolution fixed** — the menu action trusted the channel's
+   configured preferred tuner without checking that it was actually carrying the channel, so
+   channels relocated to another tuner displayed the wrong spectrum (wrong noise floor, no green
+   channel column). The live processing chain source is now authoritative; the preferred tuner is
+   a validated fallback. Confirmed by the reporter: setting the channel's tuner to None worked
+   around it.
+
+## GitHub
+- Fork: https://github.com/actionpagezello/sdrtrunk
+- Master branch has all features integrated
+- Content-synced with upstream DSheirer/sdrtrunk master as of 2026-08-01 (through e2d9c4c)
+
+## Build Environment
+- JDK 25 (Bellsoft Liberica), Gradle 9.2, JavaFX, Windows 11
+- Gradle now autoprovisions the JDK (foojay resolver + BELLSOFT vendor spec, upstream #2427)
+- Repo path: C:\Users\Admin\projects\sdrtrunk-ap
+- Build command: `.\gradlew clean runtimeZipWindows` (archiveVersion finalizer copies the zip to
+  `sdrtrunk-ap-versions\v<version>\` automatically)
+- Version property: `gradle.properties` -> `projectVersion=0.6.2-ap-15.9.16`
+- Patch workflow: work is delivered as `git format-patch` and applied on Windows with
+  `git am --keep-cr --3way ap-<version>.patch`, then the tree hash is checked against the one recorded for
+  that release. Git is never run against this repo through the device bridge — CRLF causes mass false-positive
+  staging. The cloud sandbox cannot push (proxy 403), so every push happens from Windows.
+- 10GB heap (`-Xmx10g` in build.gradle jvmArgsWindows and jvmArgsLinux)
+
+## Changes in ap-15.8 (deployed to Somerville 2026-08-22)
+**DMR digital bleed rejected on tone-filtered NBFM** — new `TdmaInterferenceDetector` (30 ms
+2-slot TDMA harmonic-comb detector) vetoes the tone gate; CTCSS loss counter now resets only on
+confirmed detection; holdover bounded by a 600 ms confirmation deadline. First production day on
+Somerville: 512 vetoes, no data bursts and no clipped voice. Nothing else is in this build.
+
+## Changes in ap-15.7
+See CHANGELOG.md for full details.
+1. **Zello "audio data sent too fast"/"bad mid" → transient** — no longer wedge channels in
+   terminal Configuration Error; stream state resets with backoff (root cause of manual
+   restarts during ap-15.6 soak).
+2. **Paced pending-frame flush** — 8-frame burst + 55ms/frame drain replaces the unpaced
+   burst that drew server stream kills; bounded tail burst at stream stop.
+3. **Pending-frame cap 15 → 30** — stops eviction of start-of-call audio (~11% of starts).
+4. **Pending-stop timeout log WARN → DEBUG** — was ~53k log lines per 3 days.
+5. **Upstream ports** — SampleNativeBuffer SIMD fix (#2398), 43 new DCS codes (#2424),
+   NXDN radio reference editor (#2446, manual merge), NXDN talker alias log removal (#2442),
+   playlist name sorting (#2342), Gradle JVM autoprovisioning (#2427).
+
+## Completed Features
+1. CTCSS channel-level filtering (full squelch, Goertzel detector)
+2. DCS channel-level filtering (full squelch, 134.4 bps slope decoder via DCSDetector.java wrapper)
+3. NAC channel-level filtering (P25 built-in, already existed)
+4. CTCSS aux decoder toggle in Additional Decoders (added to DecoderType.AUX_DECODERS)
+5. CTCSS/DCS/NAC alias identifiers (AliasItemEditor + IdentifierEditorFactory)
+6. Squelch tail/head removal (SquelchTailRemover wired into NBFMDecoder)
+7. Tone Filter UI pane in NBFMConfigurationEditor
+8. Mute/Unmute right-click + Show in Waterfall (16x zoom)
+9. Live alias editor refresh via AliasPriorityChangedEvent
+10. Zello Work + Zello Consumer real-time streaming (Opus over WebSocket)
+11. Column width/order persistence (JTableColumnWidthMonitor)
+12. Alias list alphabetical sorting (FXCollections.sort in AliasModel)
+13. Diagnostics preferences panel with per-category DEBUG toggles
+14. FxTableColumnMonitor for Channels editor column/sort persistence
+15. CTCSS/DCS/NAC auto-import from Radio Reference tone field (FrequencyEditor)
+16. NXDN decoder (upstream merge, ap-15) + NXDN radio reference import (ap-15.7)
+17. TDMA (DMR / P25 Phase 2) interference rejection on tone-filtered NBFM channels (ap-15.8)
+18. Fault-tolerant table row sorting — SafeTableRowSorter (ap-15.8.1)
+19. Bounded Dispatcher queue with drop-oldest and overflow reporting (ap-15.8.1)
+
+## Key Zello File Paths
+- AbstractZelloBroadcaster.java -> audio/broadcast/zello/ (shared base, paced flush, watchdog)
+- ZelloProtocolUtil.java -> audio/broadcast/zello/ (constants + transient error classification)
+- ZelloChannelConfiguration.java -> audio/broadcast/zello/ (shared config interface)
+- ZelloBroadcaster.java -> audio/broadcast/zello/ (Work — thin subclass)
+- ZelloConsumerBroadcaster.java -> audio/broadcast/zello/ (Consumer — thin subclass)
+- ZelloSharedConnection.java -> audio/broadcast/zello/ (shared WebSocket pool)
+- BroadcastModel.java -> audio/broadcast/ (staggered broadcaster startup + reconnect)
+
+## Test Commands
+```
+.\gradlew test --tests "io.github.dsheirer.audio.broadcast.zello.*"
+.\gradlew runtimeZipCurrent
+```
+
+## IMPORTANT: ChannelMetadataPanel path
+The correct path is `channel/metadata/ChannelMetadataPanel.java` (package `io.github.dsheirer.channel.metadata`).
+It was incorrectly copied to `gui/channel/` in ap-06 which caused mute/unmute and channel names to not work.
+Fixed in ap-07. The wrong file at `gui/channel/` was deleted.
+
+## Upstream sync (checked 2026-09-07)
+11 commits behind `upstream/master`, but 8 are already content-present (hand-ported in ap-15.7;
+compare with `git diff --ignore-cr-at-eol -w`, since some fork files are CRLF and upstream is LF).
+Genuinely outstanding:
+- `9dcebb49` eclipse build fix — **taken in ap-15.8.1**
+- `af5dbcfc` dark mode (#2411) — deferred, cosmetic, 19 files / +1767 lines, touches the fork's
+  customized preference plumbing
+- `80360029` JDK 26 + Gradle 9.6.1 + library updates (#2450) — **hold for ap-15.9 as its own
+  release.** Bumps JTransforms 3.1 -> 3.2 (the FFT in the IFFT dispatcher, the exact path implicated
+  in the Paxton OOM) and changes Vector API codegen across a fleet with mixed AVX2 support. Taking
+  it wholesale would also clobber `-Xmx10g`, `-Dprism.order=d3d,sw` and the ap-fork lazy platform
+  configuration in `runtimeZipCurrent` — hand-merge required.
+
+## Carried open items (not release-specific)
+- **Alias deletion sometimes requires a program restart** — deleted aliases do not always disappear from the
+  list. Upstream `AliasConfigurationEditor.java`; the suspect is the mutated-in-place `AliasPredicate` in a
+  `FilteredList`. Reported on ap-15.7 on a test system, selecting the alias from the dropdown rather than
+  searching for it. Unconfirmed whether a filter or dropdown selection is required to reproduce.
+- **Salisbury P25 talkgroup not displaying on ap-15.7** — not the analog path, and predates every fork panel
+  change. Unexplained.
+- **Daly RSP1B removal verification** — deferred by decision after three clean days following the 10-01
+  33-callback burst.
+- **Zello needs a correction** — the ghost figure reported to them was inflated; most of the silent-start
+  count was an artefact of our own 15 ms measurement.
+- **Missing stop acks concentrate on specific channels**, worst on Massport (consumer network). Not chased.
+- **`tools/fleetcheck.py` parses none of the log lines added since ap-15.9.7** and its CTCSS section
+  measures the wrong thing. Every analysis this week was hand-rolled Python against raw logs; that script
+  should be doing it. Fix or remove.
+- **`TdmaInterferenceDetector`'s calibration is not trustworthy as written.** The class note's negatives
+  were synthetic — "speech-like AM peak 13" — and real analog voice measures 11.1 on a clean clip while
+  Bolton's channel reaches 127.3. Any future change here should be set from measured per-window scores
+  (the ap-15.9.16 survey), not from that note's figures. The three-harmonic requirement does not do what
+  the note claims, because the score is a geometric mean.
+
+## HydraSDR RF One
+Supported in the fork already, pulled from upstream: `source/tuner/hydrasdr/`, VID `38af` PID `0001`,
+`TunerType.HYDRASDR_R828D`. Usable bandwidth is enforced per sample rate in `HydraSdrTunerController`
+(lines 289–305) and the same table applies to Airspy, which shares the controller shape:
+
+| Rate | Usable % | Usable BW |
+|---|---|---|
+| 10 MSPS | 90% | 9.00 MHz |
+| 6 MSPS | 83% | 4.98 MHz |
+| 3 MSPS | 66% | 1.98 MHz |
+| 2.5 MSPS | 60% | 1.50 MHz |
+
+RTL R820T is 98% (`R8xEmbeddedTuner.USABLE_BANDWIDTH_PERCENT`), max listed rate 2.880 MHz.
+
+**Leave sample packing off.** `setSamplePacking(false)` at init is correct: packing forces
+`ScalarPackedSampleConverter` and there is no vectorized packed converter, so it trades the SIMD path for 25%
+of USB bandwidth. Only reach for it if a 10 MSPS device actually starves — USB starvation logs
+`USB transfer [...] submit attempt failed` and, at the limit, `Maximum USB transfer buffer errors reached`,
+whereas scalar conversion costs CPU and logs nothing.
+
+HydraSDR maintains its own sdrtrunk fork (`hydrasdr/sdrtrunk`) replacing the pure-Java USB path with a JNI
+bridge to `libhydrasdr`, claiming ~25× lower streaming CPU. Unverified vendor claim; adopting it means a
+native DLL in the build and runtime zip on every machine. Not done.
+
+## Denmark, ME build plan (not yet installed)
+Dell OptiPlex 9020, i7-4790, 32 GB. Antenna → 20 ft Belden 400 → ZX60-P103LN+ (+25 dB at VHF, NF 0.4–0.6 dB,
+own 5 V supply — Bias-T is useless in this topology) → FM broadcast filter + SLP-550+ → Anzac DS-4 four-way.
+Filters go **after** the LNA: their loss would land directly on a 1.1 dB system noise figure ahead of it, and
+the ZX60's input P1dB near +0.9 dBm means it will not compress on anything that site presents. `LINEARITY`
+mode, low steps, both AGCs off, no attenuator — keep a 3 and 6 dB pad on the shelf for a single leg only.
+
+Coverage of the 100-frequency list, exhaustive over window placements at 9.0 MHz: 1 device 73%, 2 devices 84%,
+3 devices 91%, 4 devices 98%.
+
+| Device | Rate | Center | Ch |
+|---|---|---|---|
+| HydraSDR #1 | 10 MSPS | 154.9625 | 73 |
+| HydraSDR #2 | 10 MSPS | 171.2562 | 11 |
+| Airspy Mini | 3 MSPS | 160.2450 | 6 |
+| Nooelec | 2.4 MSPS | 461.3375 | 5 |
+| Nooelec | 2.4 MSPS | 453.5375 | 3 |
+
+Five devices, 98 of 100. Skip a device for 163.5750 — Augusta RCC South is already covered at 169.6625.
+Start with the two HydraSDRs (84%) and add the rest only where a survey shows traffic. The RF One is USB 2.0
+and moves ~40 MB/s at 10 MSPS against a ~40 MB/s per-controller ceiling, so each 10 MSPS device wants its own
+host controller; a StarTech PEXUSB3S44V (four independent Renesas µPD720202 controllers, PCIe x4, aux power
+connected) solves that if a third or fourth device is added. It does nothing for CPU, which is the remaining
+unknown.
+
+## Queued
+- **Audit every tuner's sample rate across the fleet** — an RTL-2832 above ~2.56 MSPS drops USB
+  samples; see the RTL-2832 section in CLAUDE.md. On Daly, Methuen Police went from 1 call to 246
+  in the same clock window by moving 2.88 -> 2.4 MSPS. Configuration change, not code, and the
+  highest-value item outstanding. The failure mode is silence, not a logged error.
+- **P25 unknown-ALG-ID should be visible, not silent** (revised — was "double-confirm").
+  `Encryption.UNKNOWN` is treated as encrypted and mutes the call with no log line at any level.
+  The Daly evidence shows the corruption came from sample loss at the tuner, not the decoder, so
+  the double-confirm approach is the wrong shape — it would add latency to every genuinely
+  encrypted call to compensate for a problem better fixed upstream. Keep the safe default, but log
+  the raw ALG ID at WARN so the episode is diagnosable.
+- **Warn at startup when a tuner is configured above its safe sample rate** — SDRTrunk knows the
+  tuner class and the configured rate. One log line would have caught the Methuen problem months
+  earlier.
+- **Revisit `-Xmx10g`** — fleet steady state is under 1 GB. Needs a fleet-wide check before changing.

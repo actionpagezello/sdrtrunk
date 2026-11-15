@@ -90,11 +90,11 @@ TUNER_ID = re.compile(r'(SER#\w+|\b(?:RSP1B|RSP1A|RSPdx|RSPduo|RTL-?2832\S*)\b)'
 
 P25_ALG = re.compile(r'unknown encryption algorithm ID (\d+) \(0x([0-9A-Fa-f]+)\).*?Talkgroup\(s\): (.*)$')
 
-# ThinLine / Rdio Scanner call upload.  A feed that cannot reach its endpoint retries every 5 seconds
+# Call upload (Rdio Scanner, Thinline Radio, Code 3 Stream; "ThinLine Radio" in builds before 1.0.0-ap-1).  A feed that cannot reach its endpoint retries every 5 seconds
 # indefinitely and writes one WARN each time; 63,414 of these hid in four days of Cambridge logs before this
 # section existed.  The endpoint and the error code are what identify the fault (1033 and 530 are Cloudflare).
-RDIO_FAIL = re.compile(r'Rdio Scanner connection test failed for \[([^\]]+)\].*?(?:error code|Status Code)[: ]\s*(\d+)')
-RDIO_OK = re.compile(r'Rdio Scanner reconnected to \[([^\]]+)\]')
+RDIO_FAIL = re.compile(r'(?:Rdio Scanner|Thinline Radio|Code 3 Stream|ThinLine Radio) connection test failed for \[([^\]]+)\].*?(?:error code|Status Code)[: ]\s*(\d+)')
+RDIO_OK = re.compile(r'(?:Rdio Scanner|Thinline Radio|Code 3 Stream|ThinLine Radio) reconnected to \[([^\]]+)\]')
 
 # Tuner frequency error, ap-15.9.7 and later.  Absent on earlier builds, where a wrong PPM is invisible.
 FREQ_ERR = re.compile(r'Tuner \[([^\]]+)\] frequency error (-?\d+) Hz at (\d+) Hz over (\d+) channel')

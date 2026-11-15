@@ -1,0 +1,3524 @@
+# Changelog
+
+All notable changes in the `actionpagezello/sdrtrunk` fork are documented here. Upstream
+DSheirer/sdrtrunk changes are not repeated; only the `ap-` fork deltas are recorded.
+
+Versioning follows `0.6.2-ap-<n>` where `<n>` increments for each fork release.
+
+## [0.6.2-ap-16.1-edacs] - 2026-11-10 (`edacs` branch test builds, on 16.1)
+
+Test builds for Cambridge (MBTA) and Monson (MSP). Built as `0.6.2-ap-16.1-edacs` (`0.6.2-ap-16.1-smartnet` on
+the `smartnet` branch) so they never overwrite the 16.1 zip.
+
+### Build numbers
+From build 9 every `edacs` build has its own number: the version is `0.6.2-ap-16.1-edacs-<n>`, the patch is
+`edacs-<n>.patch`, and the zip goes to its own `v0.6.2-ap-16.1-edacs-<n>` folder, so no build overwrites another.
+The "SDRTrunk Version" log line shows the number. Builds 1-8 were all named `0.6.2-ap-16.1-edacs` (patches 1a-1h)
+and can only be told apart by the "Build Timestamp" log line.
+
+| Build | Patch | What |
+|---|---|---|
+| 1 | 1a | EDACS EA control channel |
+| 2 | 1b | Voice channel following, ProVoice audio, LCN list editor |
+| 3 | 1c | ProVoice concealment of damaged frames |
+| 4 | 1d | Radio Reference import of EDACS EA sites |
+| 5 | 1e | Diagnostics checkboxes, graphic EQ on EDACS voice |
+| 6 | 1f | Type II carrier squelch and low-speed data filter |
+| 7 | 1g | Deadlock fix by deferred requests - withdrawn (the 10:36 build, stopped twice at Cambridge) |
+| 8 | 1h | Deadlock fix the P25 way (the 11:45 build) |
+| 9 | edacs-9 | Same code as build 8; adds the build number only |
+| 10 | edacs-10 | TEST: RTL tuners keep their sample stream running between channels (Monson crash) |
+| 11 | edacs-11 | ProVoice DEBUG line: damaged voice frames by position in the transmission; docs |
+| 12 | edacs-12 | Airspy / HydraSDR dropped-sample warning and Diagnostics box; tests; docs |
+| 13 | edacs-13 | jRTL 1.4.0.3: upstream's driver fix for the Monson crash; upstream C4FM test; docs |
+| 14 | edacs-14 | RSP recovery (Daly); log lines when a channel hunts for its control channel (MBTA); docs |
+| 15 | edacs-15 | ProVoice: the header at the start of each transmission is no longer played as voice |
+| 16 | edacs-16 | ProVoice: the sign-off at the end of a transmission is not played; flag bit not counted as an error |
+| 17 | edacs-17 | ProVoice: the header is read - talkgroup checked against the call; back-to-back transmissions told apart |
+| 18 | edacs-18 | ProVoice: fix - a single bit error in two of a voice frame's code words was corrected at the wrong bit |
+| 19 | edacs-19 | ProVoice: a voice frame with corrected errors is not played when its neighbour failed the error check (never applied alone - it is the first commit of `edacs-20.patch`) |
+| 20 | edacs-20 | Type II: a calling radio is not put on a call when a control word was lost between the two words of the grant |
+| 21 | edacs-21 | Alias names in the Details tab; "Ignore Unaliased Talkgroups" for EDACS and Type II; SmartZone site number |
+| 22 | edacs-22 | Type II: digital calls (grant 0x321, P25 Phase 1 voice) are decoded as speech instead of played as analog noise |
+| 23 | edacs-23 | ProVoice: a transmission that is silence throughout is not recorded or streamed; Type II: the reception line counts the control words that were never found |
+| 24 | edacs-24 | P25: the Details tab lists the calls by talkgroup with the alias name |
+| 25 | edacs-25 | EDACS and Type II: a voice channel is no longer shut down as it starts (2.7% of MBTA calls were lost); calls by talkgroup in the Details tab for every kind of channel; two upstream fixes (P25 HDU, Golay 24) |
+
+### Migration to SDRTrunk 1.0.0 planned (2026-11-15, documents only)
+- Build 25 ran clean on Cambridge, Summit 800, Paxton and Monson: no voice channel shut down at start, no
+  ConcurrentModificationException, Cambridge EDACS calls with no audio 1.1% (was 4.2%), TUNER UNAVAILABLE 0 at
+  Cambridge with the new tuner limits (was 136).
+- The `edacs` branch is frozen here as the fallback. The next series is `1.0.0-ap-<n>` on a new branch `ap-1.0`,
+  based on upstream `v1.0.0` (`73d32386`). Inventory and order of work: `MIGRATION-1.0.md`.
+- The fork's "ThinLine Radio" stream type will be named "Code 3 Stream"; saved streams load under the new name.
+- Correction: the two upstream fixes taken early in build 25 (`74dc3253`, `7fcf0353`) are part of `v1.0.0`.
+- Found, not fixed on this branch: `C4FMSymbolProcessor.getBalance` can index -1 (seen once, Monson, DMR).
+
+### After build 25 (2026-11-15, documents only)
+- Builds 24 and 25 applied together and pushed: `edacs` = `ce2915e0`.
+- Daly's log of 11-15 stopping at 04:44:05 was a short power loss (Armen); the machine is running.
+- EDACS locks about 18 s after the program starts where P25 locks at once: the MBTA channel starts on the first
+  frequency of its list (851.1750), waits the standard 15 s for a control channel, then hunts and finds 853.9000
+  within a second. Remembering the last control frequency was offered and declined as not needed.
+- Cambridge has four Nooelec sticks and an RSP1B. Its 136 "tuner unavailable" calls of the night of 11-14 came
+  from the four sticks alone covering 851.06-859.99 MHz while the RSP1B was limited to 700-799 MHz and idle. New
+  frequency limits per device are in SESSION-STATUS.md; result not yet seen in a log.
+
+### Build 25 - voice channels shut down at start; Details list for all channels; two upstream fixes
+- **CORRECTION of build 23's "EDACS calls with no audio - verified not lost": WRONG for the 336 calls whose voice
+  channel was open under a second.** They were classed as "assigned and released at once" without checking how
+  long the control channel kept the call up. Checked now (Cambridge, 12,189 EDACS calls, 2026-11-14 10:10 to
+  11-15 07:52): 328 calls were logged "voice channel open 0.0 s, audio 0.0 s" from the voice channel's own
+  thread in the same millisecond the call started; for 321 of them the control channel kept the call up for a
+  second or more (201 for 3 s or more). Those calls were lost whole: 2.7% of the EDACS calls. The 171
+  "header only" calls stand as verified.
+- **Cause (found from the "error at start-up" on Summit 800, which is the same fault seen from the other thread):**
+  the sample source of a voice channel (`PolyphaseChannelSource`) starts its output thread when it is CREATED and
+  that thread sends a heartbeat every 20 ms. `ProcessingChain.setSource` connects the heartbeats to the chain's
+  modules before `ProcessingChain.start()` has run their `start()`. `EDACSDecoderState.heartbeat()` (and the same
+  code in `SmartNetDecoderState`) ended a voice channel when `now - mTrafficStart` exceeded the call limit - and
+  `mTrafficStart` is 0 until `start()`. A heartbeat in that gap sent END, the channel state went to TEARDOWN and
+  asked for the channel to be disabled, and the call's voice channel was stopped as it started. When the stop ran
+  on the starting thread it removed the source from the module list inside the start loop: the
+  `ConcurrentModificationException` at `ProcessingChain.start` with "Error removing polyphase channel source"
+  (Summit 800 2026-11-14 12:13:59 and 12:34:24; open since early November). The gap is longer for EDACS (the
+  voice codec is loaded while the modules are set up), hence 2.7% there against 3 of 4,396 Type II calls at
+  Paxton and none of 2,146 at Cambridge.
+- **Fix:** the heartbeat is ignored until the voice channel has started (`!mTrafficStarted`), in both decoder
+  states. Tests: `EDACSHeaderTalkgroupTest.heartbeatBeforeStartDoesNotEndTheCall`,
+  `SmartNetCallFollowingTest.testHeartbeatBeforeStart` (fail without the fix).
+- **To check in the next log:** no "voice channel open 0.0 s" line, no ConcurrentModificationException.
+- **Details tab, every kind of channel (Armen: "Add the same details for DMR and NXDN. Make sure it is available
+  for all channels"):** `CallSummary` listens to the decode events of each processing chain and counts every voice
+  call once against the talkgroup it is to; `ChannelDetailPanel` adds "Calls by talkgroup (talkgroup, alias,
+  calls)" with the alias names for any channel whose decoder does not list them itself - DMR, NXDN, NBFM, LTR,
+  MPT-1327, Passport and the rest. EDACS, Motorola Type II and P25 keep their own lists (builds 21 and 24).
+  Display only. Test: `CallSummaryTest`.
+- **Two upstream fixes** (cherry-picked with their author, Steve Pinkham): `74dc3253` P25 Phase 1 HDU - the
+  seventh Golay word of the call header was read from bit 278 instead of 378, so the header's error correction
+  worked on the wrong bits; `7fcf0353` `Golay24.checkAndCorrect` corrected the wrong bits for a word that is not
+  at the start of its message (P25 TDULC, DMR voice superframe). With upstream's `Golay24OffsetTest`.
+- **Daly:** 11-14 clean (no RSP drop). The 11-15 log stops at 04:44:05 in mid-activity with no shutdown line.
+
+### Build 24 - P25: calls by talkgroup with alias names in the Details tab
+- **Request (Armen, 2026-11-15):** show the talkgroup and its alias for P25 channels in the Details tab, as build
+  21 did for CTCSS, DCS, EDACS and Motorola Type II.
+- The P25 Phase 1 and Phase 2 activity summary ends with "Calls by talkgroup (talkgroup, alias, calls)": one line
+  per talkgroup (or patch group) that had a call since the channel started, in numeric order, with the name of
+  its alias in the channel's alias list (blank when it has none) and the number of calls.
+- A call is counted when its event is created in `P25TrafficChannelManager` - a voice channel grant from the
+  control channel (repeats of the grant do not count again), or a call first seen on the voice channel itself
+  (conventional P25, or a call whose grant was missed). Data channel grants are not counted. At most 2,000
+  different talkgroups are kept.
+- Display only: nothing about following, recording or streaming calls changes.
+- Build 23 pushed as `ad93b6a0`; running on Cambridge with the new tuner layout (two sticks 850-853 / 853-856,
+  RSP1B 856-861, two sticks 768-772 / 772-776 for CoMIRS).
+- Tests: `P25TalkgroupSummaryTest` (2).
+
+### Build 23 - silent ProVoice transmissions not saved; truer Type II reception figure
+- **Build 22 on four machines, night of 2026-11-14/15:** no errors. Digital calls decoded: Paxton 133 of 137 with P25
+  voice frames, Summit 800 58 of 61, Monson 1 of 1. Armen recorded six on Paxton (59152 FCECS Fire Disp, 59184
+  FCECS PD Disp - Franklin County dispatch tied to CoMIRS, mode D on Radio Reference): "They sound ok"; measured
+  speech-like (spectral flatness 0.09-0.31; the analog-decoder noise was 0.81-0.86). The editor switch is visible.
+- **EDACS calls with no audio (Cambridge, 2026-11-14 10:10 to 11-15 07:52, 12,189 calls) - "NOT LOST" WAS WRONG
+  FOR THE 336 SHORT ONES, SEE BUILD 25:** 511
+  had no audio. 336 had their voice channel open under a second (assigned and released at once). 171 were "no
+  voice - header only": the radio keyed up and sent the ProVoice header (median 0.72 s, at most 2.0 s) and no voice
+  frame. 3 found nothing on the channel in 1.6-1.7 s, 1 had a single voice frame. No call with speech in it is
+  among them.
+- **Silent transmissions (requested by Armen once verified):** a transmission can carry error-free voice frames
+  with no sound in them (Cambridge 2026-11-13, TO 530 FROM 11856: 94 frames, the recording peaks at 38 of 32,768
+  = the codec's comfort noise; the quietest of 20 recordings with speech peaks at 10,271). `ProVoiceAudioModule`
+  tracks the loudest sample of each audio segment; below `SILENCE_PEAK` (0.01 of full scale) the segment is
+  flagged (`AudioSegment.isSilent()`): no recording, no upload to a file-based stream, and the log says
+  "ProVoice transmission TO:.. FROM:.. was silence throughout ... - not recorded, not streamed" /
+  "SILENT - no sound in it, not streamed". A live stream (Zello) has already carried the silence by the time the
+  transmission ends; that cannot be taken back. How often it happens is not known - the INFO line will show.
+- **Type II reception line:** "N OSWs decoded, M failed the check (x%)" counted only the control words found by
+  their sync and so understated the loss (Central MA 2026-11-14: 4% by that line, 15% of the words sent were in
+  fact missing). A control channel sends one OSW every 84 bits; the line is now
+  "13111 of about 15429 OSWs decoded - 15.0% lost (529 failed the check, 1789 not found)", or "0 OSWs decoded - no
+  signal". Scripts that read the old line need the new pattern.
+- **Summit 800 Airspy, 2026-11-14 night (not a code matter, recorded for the next reader):** OSW failures jumped at
+  23:41 when Armen changed the gain; after that the Airspy's delivered rate slid from 10.000 to about 9.86 MHz by
+  04:00 and failures kept rising. He is not concerned (restart pending, the machine will be moved to nearer
+  sites).
+- Tests: `ProVoiceSilentSegmentTest` (3), `SmartNetControlChannelTest.testStatistics`.
+
+### Build 22 - Type II: digital calls are decoded with the P25 voice decoder
+- **Why it was missing:** the Type II work was built from recordings of two sites (Monson, Metro Boston) that carry
+  analog calls only, and Radio Reference's "System Voice: Analog and APCO-25 Common Air Interface" for the system
+  was not read. Central MA showed it on 2026-11-14.
+- **Measured (Summit 800, Central MA site 8, 2026-11-14 12:03:30-12:09:30, files in
+  `logs\reference\summit_central_p25`):** talkgroups 59152 and 59184 are granted with OSW `0x321` (group flag,
+  address = calling radio) followed straight away by the channel OSW (talkgroup, status 0); updates are the channel
+  OSW alone and do not say whether the call is digital. The voice channel (854.7375, 857.2375) carries P25 Phase 1:
+  4800 symbols/s, frame sync, and the fork's `P25P1DecoderC4FM` reads NAC x144, HDU (talkgroup 3697 = 59152 >> 4,
+  unencrypted), LDU1/LDU2 voice frames. The link control inside the voice frames is not a usable talkgroup or radio
+  ("Motorola group regroup ... [65535, 47783]"). Until now these calls went through the analog decoder: 143 audio
+  files of noise in 7 hours, none with a radio ID.
+- **Change:** `0x321` + channel OSW is a grant like `0x308` + channel (radio from the first word, not taken across a
+  lost word), marked digital. Its voice channel is started with the P25 Phase 1 decoder and P25 audio module
+  (`DecodeConfigSmartNet.copyForTrafficChannel(true)`, 12.5 kHz channel as a P25 channel); the Type II decoder
+  state stays in charge of the call, so talkgroup and radio remain those of the control channel and aliases,
+  streaming and file names work as for analog calls. Events show "DIGITAL".
+- **Calls first seen from an update:** each talkgroup is remembered as digital or analog from its last grant, and
+  a call joined late is started that way. A talkgroup not granted since the program started is assumed analog; if
+  the digital grant then arrives while the call is up, the analog voice channel is stopped and a P25 one started
+  ("the call is digital - voice channel restarted with the P25 decoder").
+- **Replay of the six minutes of Central MA control channel through the call following:** all five digital calls
+  get a P25 voice channel (four with the radio, one joined from an update without it); the first one starts analog
+  for 7 s because its talkgroup had not been seen yet, then restarts as digital. Analog calls unchanged.
+- **Not tested here:** the audio itself (needs the JMBE library and the running program). The P25 decoder output
+  on the recording was checked; the audio module is the one every P25 channel uses. Listen to 59152 / 59184 on
+  Central MA after installing.
+- **Log:** the voice channel line ends ", digital (P25 voice frames N)"; "call start ... DIGITAL"; Details tab
+  "Channel grants: N of them digital (P25 voice): M".
+- **Cost:** a P25 voice channel uses more CPU than an analog one (about 20 digital calls an hour on Central MA).
+  Encrypted digital calls stay not followed, as before.
+- Tests: `SmartNetCallFollowingTest` testDigitalGrant, testDigitalRememberedPerTalkgroup,
+  testAnalogStartRestartedAsDigital, testDigitalGrantAcrossALostWord.
+
+### Build 21 - alias names in Details, ignore unaliased talkgroups, SmartZone site number
+Three requests from Armen, 2026-11-14. Nothing changes for an existing playlist: both new settings are off by default.
+- **Build 20 pushed as `b146ec4c`**; on Summit 800 (7.1 h) and Cambridge (10.1 h) without errors. Calling radios
+  not used at Summit 800: Control 54, Central 541, Boston 293; one-off radios in grant lines 20 of 17,357 (604 of
+  21,270 before).
+- **Details tab (Now Playing):** the talkgroup list of an EDACS or Motorola Type II channel shows the alias name
+  beside each talkgroup and its count; an NBFM channel shows the alias name beside each detected CTCSS tone or DCS
+  code. Names come from the channel's alias list; no alias, no name.
+- **"Ignore Unaliased Talkgroups"** switch in the EDACS and Motorola Type II channel editors (the same idea as
+  the P25 switch). On: a call to a talkgroup with no alias in the channel's alias list is still listed in the
+  events ("NO ALIAS - NOT FOLLOWED") but gets no voice channel - no audio, no tuner used. The Details tab counts
+  them. Saved as `ignore_unaliased_talkgroups`.
+- **SmartZone site number.** Each site announces its number about every 3 s (command 0x360 + site - 1; checked
+  against Radio Reference for MSP: Boston 1, Metro Boston 5, Central MA 8, Monson 14). It is logged when first
+  heard ("announces site N") and shown in the Details tab. New "Site (0 = any)" box in the Motorola Type II
+  channel editor (decimal, as Radio Reference lists it), saved as `site`. When set: calls are followed only while
+  the control channel is known to be that site (so nothing is followed for the first seconds on a frequency,
+  until the site announces itself); when the control channel announces ANOTHER site twice in a row its calls are
+  not followed and it no longer counts as this channel's control channel, so a channel with several control
+  frequencies goes on to the next one after the usual 15 s. One stray announcement (a misread) changes nothing.
+  For sites that share a control frequency (MSP: 854.3625 Boston / Upper Cape / Shelburne, 854.5625 Metro Boston /
+  Greylock, 855.9125 and 859.2875 Bristol-Plymouth / Brimfield, and others).
+- **What it cannot do:** two sites on one frequency at similar strength arrive mixed and neither decodes well;
+  that is an antenna matter.
+- **Not in this build:** the digital (P25) calls on Central MA - build 22.
+- Tests: `SmartNetCallFollowingTest` (testIgnoreUnaliasedTalkgroups, testUnaliasedFollowedByDefault, testSite,
+  testNoSiteSet), `EDACSCallFollowingTest` (testIgnoreUnaliasedTalkgroups, testUnaliasedFollowedByDefault),
+  `PlaylistCompatibilitySmartNetTest.testSiteAndIgnoreUnaliasedSettings`.
+
+### Build 20 - Type II: the calling radio is not taken across a lost control word
+- **Build 19 was never applied by itself** (Armen heard little difference in the before/after clips, 2026-11-13).
+  `edacs-20.patch` holds both commits, build 19 first; `edacs-19.patch` is superseded.
+- **Measured (Summit 800, MSP Metro Boston, log of 2026-11-12, 763 minutes):** a grant is two control words in a
+  row - the calling radio, then talkgroup and channel. The decoder paired the channel word with the previous
+  DECODED word, so when a word was lost in between (14-27% are lost at Summit) the radio of one call was put on
+  another. 604 of 21,270 grant lines named a radio that no other line of that call named, in 579 of 5,069 calls;
+  89 of 4,524 calls with three or more grant lines STARTED with such a radio, i.e. went out with the wrong FROM.
+  Monson (clean reception, 297 grant lines, 68 calls): none.
+- **Fix:** the framer marks an OSW that does not come exactly one frame (84 bits) after the previous decoded OSW
+  (`SmartNetOSW.followsPrevious()`); the decoder state uses the calling radio only when it does. The call is still
+  followed; it starts with no radio and learns it from the next complete grant (median 0.10 s later), as a
+  late-joined call already did.
+- **Cost:** none found. A call whose only complete grant is never received shows no radio instead of a wrong one.
+- **Log:** the DEBUG "OSW commands last minute" line ends with "calling radios not used so far: N"; the activity
+  summary has the same count.
+- **MSP analog or digital (question from the decode brief board, 2026-11-14):** command 321 (digital grant) does
+  not appear once in the per-minute command lists of 1.7 million OSWs at Summit 800 or 270,000 at Monson; every
+  grant is 308. Both sites are analog. (CORRECTED in build 21: that was the Metro Boston site; Central MA does
+  carry 321 digital calls.) (The lists show the 12 most frequent commands per minute, and single
+  occurrences do show up in them.)
+- **Decode brief board (Whiteboard artifact, 2026-11-14) checked against the fork:** its EDACS and ProVoice items
+  are done or measured. Its ProVoice header layout ("64 + 16 + 64, radio ID in the middle 16") is NOT what MBTA
+  sends: in the 20 rated clips those 16 bits are `0x6969` in every frame of every call.
+- Tests: `SmartNetControlChannelTest.testFollowsPrevious`, `SmartNetCallFollowingTest
+  .testRadioNotTakenAcrossALostWord`.
+
+### Build 19 - ProVoice: voice frames that pass the error check by chance are not played
+- **Build 18 pushed as `6530f233`**, on Cambridge and Summit 800 since 2026-11-12 21:23.
+- **From 21 calls Armen rated on Cambridge, 2026-11-13 18:58-19:03** (audio files matched to the baseband
+  recordings by correlating the audio; all 110 recordings of the window decoded):
+  - Reception was strong and steady on every one of them (level 61-70 dB, envelope ripple 2-5%). None of the
+    complaints is reception.
+  - **"Data at the end", "digital sounds", "not understandable"** (533 from 11457 at 19:00:28; 536 from 3531 at
+    18:58:49): frames that are not voice - what follows the end of a transmission when it does not end in dotting,
+    and a radio whose transmission broke up - in which one of the four voice frames passes the error check with 4
+    or 5 "corrected" errors and was played: 20 ms of noise each, seven in a row at 19:00:28. **This is the change.**
+  - **"Choppy"** (533 from 11457, three calls): every voice frame received without a single bit error; the gaps are
+    in the speech as encoded, and JMBE and mbelib-neo produce the same envelope. That radio.
+  - **"Can't understand", "muffled", "background noise"** (273 from 3928, 530 from 11856, 536 from 104): also free
+    of bit errors. Source, as on 11-12.
+  - **"No audio"** (530 from 11856, 19:02:38): 94 error-free voice frames of silence. The radio was keyed and
+    nothing was said.
+  - **"Background noise sounds digital", "slight digital sound"** (531 from 11424, 305 from 2606): single bit
+    errors scattered through the whole call at full signal strength - they are in the transmission (the radio's
+    path to the site). Build 18 already corrects these better; errors in the unprotected bits cannot be corrected.
+  - **"Beginning hard to understand"** (three calls: 534 from 102, 305 from 2937, 531 from 103): not explained. Found on the way: every transmission from a
+    field radio starts with the same five voice frames (`d8000...`, `d8000...`, `d840240120090000000048`,
+    `183e92321e4000240b0052`, `18406fcfe1ff009ffedff2` as 88 parameter bits, 14 of 14), and from a dispatch console
+    with the same two (`047284888844f0080002..`, `040c7f7f7fbff3fffffdf.`, 6 of 6) - the encoder starting up, 0.1 s,
+    not speech. They are played as they are; muting them is a candidate, not done here.
+- **The change.** The error check is weak against data that is not voice: Golay "corrects" any 23 bits to some code
+  word, so noise passes with 5 errors or fewer about once in a hundred voice frames. When one of a frame's four
+  voice frames fails the check, one beside it that passes with 2 or more corrected errors is now concealed like the
+  failed one (`ProVoiceDecoder.SUSPECT_ERRORS`). A voice frame that fails because it is the sign-off does not count
+  as a failure for this.
+- **Measured before building, on the 33 calls recorded at both sites on 11-12** (Cambridge's error-free copy as the
+  truth): of 75 such voice frames at Summit 800, 74 were wrong and 1 right. (3 or more errors: 66 wrong, 0 right.)
+  The rules tried for build 17 lost as much good voice as they removed bad; this one does not, because it looks at
+  the neighbours and not at the frame alone.
+- **Effect:** Cambridge 11-13, 110 recordings: 98 of 19,303 played voice frames (0.5%) no longer played; concealed
+  219 -> 317 (1.1% -> 1.6%). The 72 recordings of 11-12: concealed 605 -> 704 of 19,051 (3.18% -> 3.70%). The
+  damaged-frame percentage in the log goes UP by about half a point - those frames were counted as good before.
+- **Also in this period:** MBTA moved its control channel from 853.7250 to 853.9000 at 11:40 on 11-13 (it had left
+  853.7250 for 50 minutes at about the same time on 11-12). Cambridge's MBTA channel had the one frequency and
+  lost the system until it was given the full list at 18:32; both sites now hunt.
+- **Checked before delivery:** full suite - 363 tests in 92 classes, 362 pass; the one failure needs a display.
+  New: `ProVoiceSuspectTest` (3).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
+
+### Build 18 - ProVoice: the Hamming correction flipped the wrong bit
+- **Build 17 confirmed on the machines** (2026-11-12, 20:07-20:55, pushed as `c9c88631`): header read on 620 of 657
+  Cambridge calls and 606 of 632 at Summit 800; 635 of 635 and 620 of 620 headers named the call's
+  talkgroup; no transmission for another talkgroup. Damaged voice frames 1.28% and 1.43%.
+- **Found while comparing with mbelib-neo** (the voice library dsd-neo uses), on the call rated "mostly clear but
+  muffled" (280 from 1407, Summit 800 15:18:20). Given the same voice frames, mbelib-neo and this decoder produced
+  the same 88 voice parameter bits for every frame with no bit errors, and different ones for every frame with an
+  error in the fourth or fifth code word (11 of 272).
+- **The fault.** Those two code words are Hamming (15,11): one wrong bit can be corrected. The correction, ported
+  from the original mbelib, flipped bit "syndrome - 1" - the right bit for 4 of the 15 positions and the wrong one
+  for 11. So a single bit error there left the wrong bit wrong, damaged a second bit, and was counted as corrected.
+  mbelib-neo corrects by table. **Change:** the bit to flip is looked up from the syndrome of each position; after
+  it the 272 frames are bit-for-bit what mbelib-neo gives.
+- **What it is worth, measured on the 33 calls recorded at both sites** (Cambridge's error-free copy as the truth,
+  3,007 voice frames): of 144 Summit 800 voice frames that needed a correction, exactly right 53 -> 76; wrong
+  parameter bits in played voice 312 -> 230. The rest are errors in the last code word, which has no protection,
+  and words with two errors. It affects weak-signal reception only; a frame received without errors was and is
+  decoded the same. Which frames are concealed does not change (the error counts are the same).
+- **Part of the build 17 soft-decision result was this fault:** about a fifth of the frames counted there as
+  "accepted but wrong" (23 of 119 on this test's count). That test was run with the fault in place.
+- **The muffled call itself is the transmission, not the decoder.** Played through JMBE (both of its IMBE
+  synthesizers) and through mbelib-neo, the call has the same tone balance to within 1 dB per band. Of 37 calls
+  recorded 2026-11-12 with enough clean voice, it has the least energy above 2 kHz of all: 25 dB below the rest of
+  the band, against a median of 11 dB (range 5 to 25). The same call recorded at both sites gives the same figure.
+  A dull radio or microphone; nothing to fix here.
+- **Checked before delivery:** full suite - 360 tests in 91 classes, 359 pass; the one failure needs a display.
+  On the 72 recordings the concealed count is unchanged (605 of 19,051). New `ProVoiceHammingTest` (2): every single wrong bit of a code word is
+  corrected, and one wrong bit anywhere in a real voice frame changes at most one (unprotected) parameter bit.
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
+
+### Build 17 - ProVoice: the header is read, and its talkgroup checked against the call
+- **Build 16 confirmed on the machines** (2026-11-12, 17:52-18:42): damaged voice frames in the last 0.48 s 3.4% at
+  Cambridge and 5.2% at Summit 800 (about 20% before); over whole transmissions 1.0% and 2.7% (build 15: 5.3% and
+  5.9%). Sign-off removed on 574 of 665 Cambridge transmissions.
+- **The header word.** The header is a 48-bit word sent word / inverse / word, three times per frame. The word is
+  36 data bits and 12 check bits of the control channel's BCH code (generator 0x1539, `EDACSBCH`): all four words
+  first read on 11-12 divide by it with no remainder. Data: `A8`, six zero bits, the 16-bit talkgroup, six bits not
+  understood (they change with the talkgroup, not with the caller). The calling radio is not in the word.
+- **Change 1 - talkgroup check (measurement only).** The voice channel reads the talkgroup from the header of each
+  transmission and compares it with the talkgroup the control channel assigned the call to. The call line gains
+  `talkgroup in 3 of 3 headers`; a transmission for another talkgroup adds `(others: [280])` and one WARN line.
+  Nothing else changes: the audio is played and labelled as before. On the 71 calls recorded 11-12 at both sites
+  the header could be read in 68, and in 68 of 68 it named the call's talkgroup - so this is expected to stay quiet,
+  and what to do about a mismatch is left until one is seen.
+- **Change 2 - a header is a header wherever it is.** Until now a header was looked for only in the first 1.28 s
+  after a gap of a quarter of a second. One recorded call (Summit 800, 15:17:22, 851.9375) holds two transmissions
+  0.23 s apart: the second one's 0.64 s header was read as damaged voice. A frame that reads as a header now starts
+  a new transmission whatever came before. A header that cannot be read (weak signal, or a system whose header is
+  laid out differently) is recognized by its behaviour, as in build 15.
+- **Measured on the 72 recordings, build 16 against build 17:** voice frames concealed as damaged 631 of 19,091
+  (3.31%) -> 605 of 19,051 (3.18%); 10 more header frames not played; 1 back-to-back transmission. A small gain: the
+  purpose of this build is the check, not the audio.
+- **Tried and not built - soft-decision decoding** (the build 17 candidate of the build 16 notes). Prototype (Chase
+  decoding on the least reliable bits of each code word) scored on 3,082 Summit 800 voice frames whose Cambridge
+  copy is error free: it recovered none of the 34 rejected frames, fixed 23 wrongly corrected ones and broke 13
+  that were right. Of 126 frames accepted but different from Cambridge's, 47 were test alignment faults and 79 real,
+  mostly 1 to 3 of the least protected bits. Rules to reject those cost about as many good frames as they caught
+  (3 or more corrected errors: 38 caught, 10 good lost; soft metric: 53 / 60; weak bits: 17 / 15). After builds 15
+  and 16 Summit 800's remaining losses are reception.
+- **Also explained:** Summit 800's evening "header only" bursts (178 in 50 minutes) are false syncs on noise in
+  recordings with no signal - calls it cannot hear, nothing lost.
+- **Log:** call line `... damaged frames 2 of 180 (1.1%), talkgroup in 2 of 2 headers`; DEBUG `ProVoice
+  transmission:` line ends `, header talkgroup 273` or `, header not read`.
+- **Checked before delivery:** full suite - 358 tests in 90 classes, 357 pass; the one failure needs a display.
+  New: `ProVoiceHeaderTest` (7), `EDACSHeaderTalkgroupTest` (3).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
+
+### Build 16 - ProVoice: the sign-off is not voice, and the flag bit is not an error
+- **Build 15 confirmed on the machines** (2026-11-12, 15:05-15:32): damaged voice frames in the first 0.48 s 0.9% at
+  Cambridge and 2.5% at Summit 800 (about 60% before); header found on 279 of 282 and 201 of 204 transmissions,
+  median 0.40 s. That left the last 0.48 s as the worst part: 21.0% and 19.3%.
+- **Found, by comparing the same 33 calls recorded at both sites** (Armen's question: if both sites have the same
+  damaged frames, is it damage at all?). Summit 800 received them at 34-41 dB, Cambridge at 55-68 dB. Of 4,424 voice
+  frames, 2.9% were "damaged" at both sites and in 118 of those 130 the whole 80 ms frame was bit-for-bit identical
+  at the two sites - sent that way. 4.4% were damaged at Summit only (its reception), 0.4% at Cambridge only.
+- **Sign-off.** A transmission ends with dotting (alternating bits - the pattern edacs-fm's dot detector looks for)
+  and up to half a second of other data before the carrier drops. The dotting usually starts part way through a
+  frame. The decoder read all of it as damaged voice, repeated the last good 20 ms over it and played anything that
+  passed the error check by chance. **Change:** when a frame holds 16 or more alternating bits and both voice frames
+  of the pair they start in fail the check, the voice frames before that point are played and nothing after it,
+  until the next transmission or until a frame reads as voice again. Dotting alone is not enough: clean voice
+  frames with 17 and 18 alternating bits exist.
+- **Flag bit.** Some radios send bit 17 of the first two code words of every voice frame inverted, for the whole
+  call: at Cambridge 11 of 33 calls had no corrected bit anywhere, about 10 had exactly this bit corrected in every
+  voice frame, and of 1,570 voice frames with any correction 1,112 and 732 were this bit in the first and second
+  code word. The code words after it decode with no errors once it is corrected, so the voice is unaffected - but
+  each one was counted as an error, using one or two of the five a voice frame is allowed. **Change:** a correction
+  of that bit is not counted. (This is the constant 1-1-1-1 / 2-1-2-1 pattern seen since 11-09.)
+- **Measured on the 68 recordings, build 15 against build 16:** voice frames concealed as damaged, Cambridge 3.97%
+  -> 1.41%, Summit 800 7.81% -> 4.45%. Sign-off voice frames no longer played: 142 and 161 (about 4 per call).
+- **Not in this build:** the header read by its structure, stricter handling of real bursts, soft-decision
+  decoding for weak signals (build 17 candidate; dsd-neo issue #588 proposes the same and has no code yet).
+- **Log:** the DEBUG `ProVoice transmission:` line ends `header 0.40 s and sign-off 0.08 s not played`. The check
+  on the machines: "last 0.48 s" damage falls from about 20% towards the mid-call figure.
+- **Checked before delivery:** full suite - 348 tests in 88 classes, 347 pass; the one failure needs a display.
+  New: `ProVoiceSignOffTest` (6) on real end-of-call frames (`provoice_transmission_ends.txt`).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
+
+### Build 15 - ProVoice: the header at the start of a transmission is not voice
+- **Found:** a ProVoice transmission does not start with voice. It starts with a header frame sent three to five
+  times, bit for bit the same, then one or two frames of other data, then voice - 0.3 to 0.6 s in all (median
+  0.48 s). Every one of these frames carries the voice sync, so the decoder read them as voice. Read that way they
+  are noise: most of their 20 ms voice frames failed the error check and were silenced, but about one in seven
+  passed by chance, was played, and was then repeated by the concealment. That is the digital noise at the start of
+  MBTA calls, and it is why "first 0.48 s: 60% damaged" showed at every site whatever the reception.
+- **Measured** by replaying the MBTA LCN 5 baseband of 2026-11-09 22:04 (33 minutes, 40 transmissions) through
+  `EDACSDemodulator` and `ProVoiceFrameDecoder`: 26 of 27 real transmissions start with the repeated header; the
+  first four frames were 72-98% "damaged", frames 4-6 34-69%, frame 7 onward 4%.
+- **Change (new `ProVoiceHeaderDetector`, used by `ProVoiceDecoder`):** in the first 16 frames of a transmission a
+  frame that repeats the one before it is header; after a header, frames stay header until one reads as voice (3
+  of its 4 voice frames pass the error check); the first frame of a transmission is played only if it reads as
+  clean voice. Header frames are dropped - not played, not concealed, not counted as damaged voice. After the first
+  16 frames nothing is changed.
+- **Effect on the recording:** damaged voice frames in the first 0.48 s of voice 73.8% -> 4.0%; header voice frames
+  played as noise 77 -> 0; clean voice lost: 2 frames (160 ms) in 33 minutes, both a voice frame that repeated
+  exactly. The 13 one-to-eight-frame bursts that carry a header and no voice are now dropped whole.
+- **What changes for the listener:** calls begin at the first word instead of 0.3-0.6 s of silence and noise, so
+  each transmission's audio is that much shorter.
+- **Log:** the DEBUG `ProVoice transmission:` line ends with `header 0.48 s not played`; a burst with no voice
+  logs `no voice - 0.32 s of header only, not played`. The damage-by-position line now starts at the first voice
+  frame, so its "first 0.48 s" figure should fall to about the mid-call figure. That is the check on the machines.
+- **Not changed, seen in the same recording:** 19 of 22 transmissions end with a frame whose last voice frames are
+  not voice while the carrier stays up (errors like 0 0 8 8). Concealment repeats the last good 20 ms up to three
+  times there. Small; left for a later build. The header's contents (it differs between calls and is likely the
+  talkgroup and radio) are not decoded.
+- **Proven on one recording from one site.** Cambridge and Summit 800 logs are the confirmation.
+- **Checked before delivery:** full suite in Claude's workspace - 342 tests in 87 classes, 341 pass; the one
+  failure needs a display. New: `ProVoiceHeaderDetectorTest` (8), on the first frames of five real transmissions
+  (`src/test/resources/edacs/provoice_transmission_starts.txt`).
+- **Test line:** `.\gradlew test --tests "*ProVoice*" --tests "*EDACS*"`
+
+### Build 14 - RSP recovery, and log lines for control channel hunting
+- **Why (Daly):** RSP1B SER#24050F5260 was reported removed by the SDRplay API on 2026-11-11 18:05:53 and again on
+  2026-11-12 09:20:53, each time carrying 16 channels, which stayed down until SDRTrunk was restarted by hand (4.5
+  and 2.7 hours). Windows listed the device as present and working throughout and logged no USB or power event;
+  the second RSP1B on the same API service kept running. A restart found the device at once both times.
+- **RSP recovery (new `RspRecoveryMonitor`):** when the SDRplay API reports an RSP removed, SDRTrunk asks the API
+  for its device list 10 seconds later and then every 30 seconds. When the serial number is listed again the tuner
+  is added the same way as at startup (its saved settings apply) and, 3 seconds later, the playlist channels the
+  removal stopped are started. A channel that fails to start is tried once more after 15 seconds. Log lines start
+  with `RSP recovery:`; the removal and the return are WARN.
+  - The channels restarted are exactly those that were running before the removal and not after it. Channels on
+    other tuners are untouched; a channel someone started by hand meanwhile, or deleted, is left alone.
+  - A channel with a frequency list is not stopped by the removal: it keeps asking for a tuner and picks the
+    returned RSP up by itself.
+  - A returned RSP that is listed but will not start is taken out again and retried at the next check.
+  - **Not yet proven on a real removal.** 15.11.1 and 15.11.4 had a recovery that never saw a device return
+    because the old driver code kept it selected; the 16.x driver code releases a removed device itself, so this
+    version only lists and re-adds. What is unknown is whether the SDRplay API lists the device again while another
+    RSP in the same program is still open - the first check line after a removal says what the API listed.
+  - Does nothing unless an RSP is removed. No change to decoding, audio or streaming.
+- **Why (MBTA):** on 2026-11-12 the MBTA control channel was off the air for about 50 minutes. Summit 800 was
+  hunting through its frequency list the whole time, as it should, but hunting wrote nothing to the log, so the log
+  could not show it or where the channel locked when the signal returned.
+- **Hunting log lines (new `FrequencyHunt`, used by `MultiFrequencyTunerChannelSource`):** INFO, per channel:
+  - `Channel [18/EDACS] has had no control channel for 15 seconds (lost on 853.7250 MHz) - hunting through its [6]
+    frequencies`
+  - `... is still hunting for a control channel after 10 minutes - none found on any of its [6] frequencies`
+    (every 10 minutes)
+  - `... found a control channel on 853.7250 MHz after hunting for 49 minutes - the same frequency it lost` (or
+    `- it lost <frequency> MHz`)
+  - Hunts shorter than 15 seconds (a fade at a weak site) are not logged; they are counted and the count is given
+    with the next hunt that is logged. Rotation itself is unchanged.
+- **Checked before delivery:** compiled and the full suite run in Claude's workspace - 334 tests in 86 classes, 333
+  pass; the one failure needs a display the workspace does not have. New tests: `RspRecoveryMonitorTest` (13),
+  `FrequencyHuntTest` (5). The parts that touch the SDRplay API and a real tuner cannot be tested without an RSP.
+- **Test line:** `.\gradlew test --tests "*RspRecoveryMonitor*" --tests "*FrequencyHunt*"`
+
+### Build 13 - jRTL 1.4.0.3, upstream's fix for the RTL crash on retune
+- **Upstream found the cause of the Monson crash** (jRTL issue #4, sdrtrunk #2621): when a stream ended, the RTL
+  driver freed its USB transfers before Windows had handed all of them back, and a retune on another thread then
+  processed a transfer that no longer existed. jRTL 1.4.0.3 waits for every transfer before freeing any.
+- **Change:** `jrtl` 1.4.0.2 -> 1.4.0.3. The build 10 change (RTL stream kept running between channels) stays as a
+  second layer: it covers only the stop-then-retune path, the driver fix also covers a transfer that fails
+  mid-stream.
+- Upstream's `C4FMSymbolProcessorScoreTest` added (#2622). The code change it tests has been in the fork since
+  ap-15.10.1.
+- **Checked before delivery:** compiled and the full suite run in Claude's workspace - 316 tests, 315 pass; the one
+  failure needs a display the workspace does not have. The driver fix itself is Windows native code and can only be
+  proven on Monson.
+- **Test line:** `.\gradlew test --tests "*C4FM*" --tests "*RTL*" --tests "*WidebandStreamMonitor*"`
+
+### Build 12 - Airspy / HydraSDR stream logging (logging only)
+- **Why:** both driver libraries count the samples they drop before the application sees them, and the fork ignored
+  the count. Summit 800 (Airspy) decodes MBTA with 20% of mid-speech ProVoice frames damaged against 2-3% at
+  Cambridge, and the log could not say whether samples were being lost.
+- **Always on:** `Tuner [...] DROPPED n samples in the last 60 s (x% of its stream)` - WARN, at most once a minute
+  per tuner, and only when samples were dropped. A healthy tuner logs nothing.
+- **New Diagnostics box "Airspy / HydraSDR tuners"** (unticked by default): device opened (board, firmware, serial),
+  settings applied, each retune, stream started / stopped, and once a minute buffers received, measured against
+  nominal sample rate, largest gap between buffers and dropped samples.
+- New `WidebandStreamMonitor` (package `source.tuner.wideband`) does the counting; the two tuner controllers only
+  call it. Nothing about how the tuners run is changed.
+- `ProVoiceDamagePosition`: the build 11 position counting moved into its own class, same log line, with tests.
+- Tuner-removed warning no longer says "USB hotplug is not supported on Windows" (not true for dongles from 16.1).
+- **Tests:** `.\gradlew test --tests "*WidebandStreamMonitor*" --tests "*ProVoice*"`. The two new classes were
+  compiled and their 10 tests passed in Claude's workspace against stand-in logging and test libraries; the tuner
+  controller edits were not compiled before delivery.
+- **Build 10 result:** Monson 13.2 h and Paxton 13.7 h overnight with no crash (2026-11-10/11).
+
+### Build 11 - where ProVoice damage falls (measurement only)
+- **Why:** Cambridge build 9, 4,397 calls: damaged voice frames fit about 19 per call plus 2.4% of the rest, the same
+  on all 13 LCNs. So most of the 10.4% is a fixed ~0.4 s per call, probably at the start or the end.
+- **Change:** with "EDACS / ProVoice decoder" ticked, each transmission now also logs
+  `ProVoice damage by position: first 0.48 s X of Y, middle X of Y, last 0.48 s X of Y voice frames`. The first six
+  80 ms frames count as the start, the last six after those as the end. Audio is unchanged.
+- Not compiled or run before delivery.
+
+### Build 10 - RTL tuner crash at Monson (test build)
+- **Seen:** on 2026-11-10 Monson stopped 23 times with no shutdown in the log, on the 11-09 `smartnet` build and on
+  build 9. The Java crash reports (`hs_err_pid*.log` in the `bin` folder) all show `EXCEPTION_ACCESS_VIOLATION` in
+  `ntdll.dll`, reached from `libusb-1.0.dll` and `rtlsdr.dll` - the standard RTL driver adopted in 16.x - on a
+  scheduled thread. The two reports read in full both come from `ChannelRotationMonitor` rotating a multi-frequency
+  channel: one faults in the buffer reset inside `startRx`, the other in set frequency. With channel auto-start
+  cancelled and only the Type II channel running, Monson ran 84 minutes without a crash.
+- **Theory, not proven:** when the rotating channel is alone on its RTL tuner, removing it stops the sample stream,
+  and a control transfer sent to the device after that can fault inside libusb.
+- **Change:** `RTL2832TunerController` no longer stops the stream when the last channel leaves the tuner. The
+  stream runs from the first channel until the tuner is stopped, and samples are dropped before they are copied
+  while there is no channel. On close, the bias-T is turned off before the stream is stopped, so nothing is sent
+  between stopping the stream and closing the device.
+- **Result so far:** compiled and built by Armen; Monson ran build 10 with the full playlist for 27 and 30 minutes
+  with no crash (2026-11-10 17:40-18:40). An overnight run is still needed. Original test plan: Monson with the full
+  playlist auto-started; build 9 crashed there 15 times, 12 of them within 2.5 minutes of starting.
+
+### Added - Motorola Type II SmartNet/SmartZone (`smartnet` branch)
+- Control channel decoding (3600 baud OSWs: grants, updates, system ID, band plans incl. splinter and custom) and
+  call following: a grant starts an analog voice channel with talkgroup and calling radio; the call ends 3 s after
+  the control channel stops updating it. Shown as "Motorola Type II".
+- Several control channel frequencies are rotated through until one decodes (Monson).
+- Noise squelch and graphic EQ on voice channels; an INFO line per call (voice channel open time and audio time).
+- Playlist: Type II channels are kept out of `default.xml` (restored from `default.ap.xml`) so upstream SDRTrunk
+  can still read the playlist.
+
+### Added - EDACS Extended Addressing with ProVoice (`edacs` branch)
+- EDACS EA control channel (9600 baud): group call assignments with talkgroup and unit; voice channels followed per
+  call as ProVoice or analog, ending 1.5 s after the last update. LCN frequency list in the channel editor.
+- ProVoice voice decoding: 9600-baud frames, IMBE 7100 error correction, converted to P25 IMBE and played through
+  JMBE; damaged frames concealed like mbelib (repeat the last good frame, silence after 3).
+- Radio Reference import of EDACS EA sites: LCN list in Radio Reference order, every control channel.
+- Diagnostics checkboxes "Motorola Type II decoder" and "EDACS / ProVoice decoder" (DEBUG per call and per
+  minute); INFO per EDACS call with the damaged-frame percentage; graphic EQ on EDACS voice channels.
+
+### Fixed
+- **Motorola Type II voice: sub-audible tone and squelch tail (Monson).** The tone is the Type II low-speed data
+  (150 baud, below 250 Hz) - a new filter removes it (-55 dB to 250 Hz, flat from 350 Hz). A carrier squelch mutes
+  as soon as the carrier drops 20 dB below the call's level; the noise squelch alone let up to 1.7 s of noise
+  through. EDACS analog voice channels get the carrier squelch too.
+- **Motorola Type II: replies lost as duplicates** (MSP Metro Boston, 16 of 58 calls): a grant for a talkgroup on
+  another channel now ends its previous call.
+- **EDACS / Type II deadlock with P25** (Cambridge 2026-11-10 08:45): the EDACS manager took its lock before checking
+  whether a channel event was for one of its channels, while a P25 channel thread held the channel processing
+  manager's lock - both systems stopped. Events for other channels now return before the lock, as in the P25
+  manager. (A first fix that deferred the voice channel start/stop requests was withdrawn: that build stopped
+  twice at Cambridge right after an EDACS voice channel closed.)
+
+## [0.6.2-ap-16.1] - 2026-11-09
+
+### Fixed
+- **RTL tuner frequency range could not be moved** (16.0): the RTL editor checked a new range against the tuner's
+  current range instead of what the tuner can tune, so a range could only be narrowed - Baker's 450-459.9 MHz Nooelec
+  could not be set to 154-156.5 MHz. The controller now keeps the embedded tuner's limits for the editor.
+- **Tuner editor stopped saving after an "Invalid Frequency" message** (upstream): the editor stayed in its loading
+  state, so later changes were ignored and never saved. Rejected entries now release the editor and log a WARN;
+  saved range changes log an INFO line.
+- **Uncaught exceptions are written to the application log** (Swing/JavaFX threads included) - each distinct one in
+  full three times, then every 1000th with a count. Before, they went only to the console.
+
+### Upstream
+- #2605 jLibUSB - libusb and USB hotplug for the tuner libraries (replaces usb4java); jAirspy 1.0.12.1, jAirspyHF
+  1.8.1.1, jBladeRF 2.6.0.1, jHackRF 2026.01.3.1, jHydraSDR 1.1.4.1, jRTL 1.4.0.2. Tuner IDs unchanged.
+- #2608 DMR: voice frames with errors are not played and do not change call state (fewer squawks and false
+  encryption flags on noisy DMR).
+- #2602 P25 Phase 1 Adjacent Status Broadcast (uncoordinated band plan) handled as network configuration.
+- #2599 Bias-T for Airspy, Airspy HF and Funcube. #2603 frequency control mouse wheel. #2591 streaming editor
+  text fields expand.
+- Not taken: #2601 LimeSDR support, #2607 version 1.0.0 beta 1 label.
+
+## [0.6.2-ap-16.0] - 2026-11-08
+
+Test build for Baker, Daly and Somerville. The rest of the fleet stays on 15.11.5 until it has run cleanly.
+
+### Upstream tuner libraries (replace the fork's built-in drivers)
+
+- #2590 RTL-SDR (Nooelec, RTL-SDR Blog): jRTL 1.4.0.1 - librtlsdr from rtl-sdr-blog with libusb, both bundled.
+  RTL gain settings are now one gain value plus AGC; saved master/LNA/mixer gains are converted on first load.
+- #2595 SDRplay RSP: jsdrplay 3.15.3 - frequency, gain and sample-rate changes wait for the previous change to
+  finish and report an error if the SDRplay API rejects one. Needs the SDRplay API 3.15+ installed (as before).
+- #2573 Airspy: jAirspy 1.0.12. #2593 Airspy HF+: jAirspyHF 1.8.1. #2597 HackRF: jHackRF; #2598 HackRF bias-T.
+- #2587 HydraSDR: jHydraSDR 1.1.4.
+- Tuner IDs are unchanged (RTL "USB Bus:x Port:y", RSP "RSP1B SER#..."), so saved tuner settings still match.
+
+### Removed (re-add only if testing shows they are needed)
+
+- RSP recovery monitor (15.11.1/15.11.4) and the fork's SDRplay API startup messages - jsdrplay releases a
+  removed RSP itself; a removed RSP still needs an SDRTrunk restart to come back.
+- RTL USB transfer runaway restart (15.11.4) - its code was part of the old driver.
+- The "TUNER REMOVED FROM SYSTEM" WARN (with the channel count) is kept.
+
+### Kept
+
+- 15.11.5 tuner-settings fix - upstream still stops applying a tuner's settings when its saved frequency is
+  outside its range. Change: with the bandwidth still unknown (an RSP sets its sample rate afterwards) the
+  frequency now moves to the middle of the range instead of the edge.
+
+## [0.6.2-ap-15.11.5] - 2026-11-07
+
+### Fixed - a tuner whose saved frequency is outside its frequency range starts without its settings
+
+- Baker 2026-11-04 22:56: two RTL-2832s had a frequency range set while they were running - Port 6.2 to 150-170 MHz
+  while tuned to 483.5125 MHz (the middle of the Danvers/Salem/Manchester fire cluster), Port 6.1.1 to a 150 MHz
+  minimum while parked at 101.1 MHz. On the next start the saved frequency was re-tuned against the new range, failed
+  ("Frequency [483512500] is above the maximum [170000000]"), and the rest of the tuner configuration was never
+  applied - no gain settings, no configured sample rate, no auto-PPM setting. From then on Salem Fire and the
+  channels around it ran with the squelch held open on noise (about 35,600 tone lines an hour per channel), each
+  call started with held hiss, and Baker's log grew to 1.7 GB a day.
+- The frequency range is now applied first; a saved frequency outside it is moved inside (to the nearer edge, inset
+  by half the usable bandwidth) and logged as a WARN "saved frequency ... is outside its frequency range ... moved
+  to ...". Frequency and frequency-correction failures are logged and no longer stop the tuner's sample rate and
+  gain from being applied. An inverted range (minimum not below the maximum) is ignored with a WARN. Applies to every
+  tuner type.
+
+### Upstream
+
+- #2580: the Playlist Editor aliases tab identifier view sorts identifiers by protocol, then numeric value.
+
+## [0.6.2-ap-15.11.4] - 2026-11-04
+
+### Fixed - RSP recovery re-attaches the removed RSP
+
+- RSP recovery (15.11.1) never saw a removed RSP come back: SDRTrunk stopped using the device but never released
+  it, and the SDRplay API doesn't list a device a program still has selected. Daly 2026-11-04: both RSP1Bs were
+  reported removed (17:57, 18:42), the recovery checked for 90 minutes without seeing either, and a restart of
+  SDRTrunk found both at once. On its first check (30 s after the removal) the recovery now releases the removed
+  device back to the API - once, off the API callback thread, errors logged - before listing devices. The device
+  list is read with the device API locked, as the SDRplay specification recommends.
+
+### Added - USB transfer runaway recovery (RTL-2832)
+
+- Daly 2026-11-04 15:19: an RTL-2832 at 2.4 MSPS (73 transfers/s) started completing ~17,500 transfers/s and kept
+  it up for four hours; its channels (North Andover Fire) got nothing until SDRTrunk was restarted. When transfers
+  arrive at more than 10x the rate the sample rate allows (and over 500/s) for 3 seconds, the RTL's streaming is
+  restarted (transfers and USB event thread stopped, endpoint halt cleared, streaming started again); channels keep
+  their sources. After 3 restarts in 10 minutes the tuner is stopped with an error instead. Logged as "USB tuner
+  transfer runaway".
+- Every USB tuner logs a once-a-minute summary of its transfer statuses (completed, short, empty, timed out,
+  stall, error, cancelled) whenever anything other than full-length completed transfers occurred. Automatic
+  restart is enabled for RTL-2832 only.
+
+## [0.6.2-ap-15.11.3] - 2026-11-04
+
+### Added - Zello incident lines and a machine-wide connection limit
+
+- One "ZELLO INCIDENT" log line per connection event, with the fields Zello support asked for (2026-11-03): UTC
+  time, machine, network (Zello Work network or Zello Friends & Family), gateway username, channel, event, the
+  command and seq, the server error and full response, the WebSocket close code and reason, how long the
+  connection had been open, the last command sent, and reconnect attempt, delay and downtime. Events:
+  disconnect, socket_error, connect_failed, connection_timeout, keepalive_timeout, server_error,
+  stop_ack_timeout, reconnect_scheduled, reconnected, connect_rate_limited. Passwords are never logged and
+  token/key fields in server responses are masked.
+- Zello allows 10 new connections per minute per IP. Startup was already staggered at 9 per minute, but
+  reconnects were not limited: when the network dropped every channel at once, they all reconnected together
+  (Daly 2026-11-03 12:07: 11 channels within two minutes). All Zello channel connections on the machine now share
+  a budget of 9 per rolling minute; an attempt over the budget waits for the next free slot (logged as
+  connect_rate_limited). Nothing is refused. Shared-pool connections (not used on the fleet) are not limited.
+
+### Changed
+
+- "Zello Consumer" is now labeled "Zello Friends & Family" - Zello's name for the network - in the streaming
+  menu, the stream list and log lines. Display text only: playlists keep the same stream type, so existing
+  Zello Consumer streams load and run unchanged, and upstream SDRTrunk is unaffected.
+
+## [0.6.2-ap-15.11.2] - 2026-11-03
+
+### Added - NBFM tone coverage measurement (logging only)
+
+- For every tone-filtered (CTCSS/DCS) NBFM call, one INFO line at call end: how much of the call's audio after
+  tone confirmation passed while the target tone was still confirmed, and whether a 60% coverage rule would KEEP
+  or DROP the call. Nothing is dropped. The ~250 ms buffered before confirmation is reported separately and left
+  out of the figure, so short calls aren't penalized. Search the log for "Tone coverage". Audubon 2026-11-03,
+  Marblehead Police: real calls carried 131.8 Hz throughout; idle-channel noise fragments were released on brief
+  chance confirmations.
+
+### Fixed
+
+- Zello: a broadcaster replaced before its staggered startup ran (a reconnect from the streaming window within
+  the first minutes after startup) was disposed, but its scheduled start still ran and it retried on a closed
+  connection every 2 minutes for the rest of the session ("WebSocket connection failed: closed"; Daly 2026-11-03,
+  Lawrence MA Fire and Londonderry NH Fire/Police, 155 times each). Streaming was unaffected - the replacement
+  connection worked - but the log filled with errors. A disposed broadcaster now never starts or reconnects.
+
+## [0.6.2-ap-15.11.1] - 2026-11-03
+
+### Added - RSP recovery
+
+- When the SDRplay API reports an RSP removed (Daly 2026-11-01: RSP1B 24050F5260 removed while carrying its
+  channels, down 25 hours until SDRTrunk was restarted), SDRTrunk now checks the SDRplay API every 30 seconds for
+  the same serial number. When it is listed again the tuner is re-added and each playlist channel it was carrying
+  is stopped and started so it gets a source again. Traffic channels are recreated by their control channel.
+  Log lines start with "RSP recovery:".
+
+### Changed
+
+- SDRplay API logging: when the API can't be opened and no SDRplay USB device is connected, a single INFO line
+  instead of an ERROR (machines without an RSP). With an RSP connected the ERROR now says why and what to try
+  (restart the SDRplay API Service, close SDRuno/SDRconnect, reinstall API 3.x). A WARN when the API lists no
+  devices although SDRplay USB devices are present.
+- From upstream: #2568 mixed-radix complex FFT for the polyphase channelizer (any 2/3/5 channel count),
+  #2570 SDR# compatible baseband I/Q recordings. The baseband recorder's writes and close are now serialized,
+  which fixes the ClosedChannelException seen on Cambridge when a recording rolled over or stopped. The fork's
+  recorder queue bound (2000) and WAV rollover fix are kept.
+
+## [0.6.2-ap-15.11] - 2026-11-02
+
+### Changed - channelizer, P25 Phase 2, tuners and AM from upstream
+
+- Polyphase channelizer (#2527, #2534, #2538): two-channel synthesis fixed for signals that straddle a channelizer
+  channel boundary, channel count limited to 2/3/5 factors, batch handling and buffer reuse reworked, vector
+  oscillator lanes no longer drift apart, half-band decimation filters normalized to unity gain.
+- P25 Phase 2 (#2525): same soft-symbol architecture as Phase 1/DMR/NXDN, improved timeslot and ISCH handling,
+  Reed-Solomon erasure decoding for FACCH/SACCH/LCCH and ESS (corrections in shortened symbols are still rejected).
+- HydraSDR (#2541): driver replaced by the jHydraSDR library (libhydrasdr, HIGH_DEFINITION decimation by default).
+- bladeRF tuner support (#2543, #2545), waterfall updates at all zoom levels (#2546), AM decoder squelch and filter
+  enhancements (#2556).
+- Build: the jHydraSDR and jBladeRF libraries are GitHub releases; their repositories are in build.gradle.
+
+### Kept from the fork
+
+- Dispatcher: receive() on a full queue still discards the oldest elements (ap-15.8); upstream's offer(), which
+  refuses new elements, is added for the channelizer's whole-batch drops. Polyphase buffer dispatcher keeps its
+  tuner name and rate-derived bound.
+- NBFM channel filter: upstream's ChannelFilterDesigner gives a different 135-tap filter for a 12.5 kHz channel at
+  50 kHz (the fork's design is 87 taps) and moved squelch decisions (Brookline Fire replay: 64 call events became
+  58), so NBFMDecoder keeps its own design.
+- Not taken: #2564 (TornadoVM experiment in the NBFM noise squelch), #2565 (dark mode alias colors).
+
+### Tested
+
+- Wideband test: a 150 s, 2.4 MSPS composite of four recordings (Lowell and Rockingham West LSM, Troop B and
+  Methuen C4FM), each placed centred on a channelizer channel and on a channel boundary, played through the
+  recording tuner and PolyphaseChannelManager. 15.11 boundary channels now decode the same as centred ones (Troop B
+  1,151/1,151 valid messages, 15.10.10 1,141/1,145; Methuen 795/795, 15.10.10 792/794).
+- Baseband replays against 15.10.10: Rockingham West +45 voice frames, Salem State DMR full recording 1,348 -> 1,364
+  valid messages, NXDN unchanged, other P25 unchanged apart from sync-loss timing; Brookline Fire NBFM 61 of 64 call
+  events identical (three short ones in a flickering weak transmission move).
+- 212 unit tests pass.
+
+## [0.6.2-ap-15.10.10] - 2026-11-02
+
+### Added - per-channel JMBE audio settings (upstream #2483, #2485, #2488, #2502, #2505, #2511, #2530)
+
+- New "AMBE/IMBE Audio (JMBE 2.x)" pane in the P25 Phase 1, P25 Phase 2, DMR and NXDN channel editors: comfort
+  noise volume, AGC, tone volume and legacy tone levels, each slider with its value and a reset button. The settings
+  are applied to the channel's JMBE codec (previously the fork stored them but ran every channel with fixed fleet
+  values) and carry over to traffic channels and copied channels, including across P25 phases.
+- Defaults: AGC on, tone volume 1.0, comfort noise 0.05 (JMBE's own default; upstream's since #2530). The fork used
+  comfort noise 1.0 on every channel and wrote 1.0 to every playlist: the first time 15.10.10 loads a playlist on a
+  machine, a stored 1.0 becomes 0.05 (logged; values set afterwards are kept).
+- Built against JMBE API 2.1.0. JMBE 2.1 has upstream's redesigned AGC; use JMBE > Create JMBE Library to build the
+  latest library (2.1.1) and select it in User Preferences. JMBE 1.x and 2.0 still load; settings a library doesn't
+  support are logged as n/a. The legacy 5x P25 Phase 1/NXDN gain stays bypassed for JMBE 2.x.
+- JMBE creator logs more detail (#2488).
+
+### Fixed - from upstream
+
+- #2554: P25 Phase 1 "message under assembly is full - can't add additional dibits" (Cambridge CoMIRS, 2026-11-01)
+  and multi-block TSBKs lost at a new NID. Replay: 3-6 more valid control channel messages per CoMIRS recording, in
+  place of CRC-failed blocks.
+- #2550: a channel swapping tuner source could feed its decoder from two threads at once.
+- #2553: DMR talker alias no longer carries over to the next talker. #2551: Motorola talker alias with Cyrillic.
+- #2555: local playback - a higher-priority call no longer waits behind a queued lower-priority call; linked audio
+  continues ahead of queued calls.
+- #2547: NXDN Type-D radio/talkgroup aliases and TO identifiers tagged correctly in some NXDN messages.
+- #2467: Broadcastify duplicate-rejected calls tracked. #2470: Icecast 2.5 HTTP PUT connect.
+- Already in the fork: #2446 (RadioReference NXDN repeater channels), #2468 (MDC1200 emergency summary loop).
+
+### Tested
+
+- Replays against 15.10.9: P25 LSM (Lowell x5, Rockingham E/W), P25 C4FM (13), DMR (Salem State, OneVoice), NXDN
+  (24 Georgetown/MASCO) and NBFM (Brookline Fire) output identical; CoMIRS control channels gain the #2554 messages.
+- JMBE 2.1.0 library: AGC, comfort noise, tone volume and legacy tone level settings verified in the P25 (IMBE) and
+  DMR (AMBE) codecs.
+- 88 unit tests pass (upstream's new tests; upstream's PolyphaseChannelSourceTest from #2550 needs the #2534
+  channelizer and is left for 15.11).
+
+## [0.6.2-ap-15.10.9] - 2026-10-31
+
+### Changed - P25 Phase 1 LSM decoder replaced by upstream #2523; NXDN talkgroup 0 valid (#2532)
+
+- Upstream DSheirer/sdrtrunk #2523 (Denny Sheirer): new `P25P1DifferentialDemodulatorLSM` and
+  `P25P1SymbolProcessorLSM` (4th-power carrier offset estimate, offset range search, reliability-weighted Viterbi,
+  shared C4FM symbol processor), fewer phantom TDUs, filter designers consolidated into `FilterFactory`, baseband
+  filter designed once and shared by I and Q. `P25P1DemodulatorLSM`, `P25P1DemodulatorC4FM`, `P25P1FilterDesigner`
+  and `NXDNFilterDesigner` are removed - this retires the fork's own LSM rotated-sync fixes, including the 15.10.6
+  correction threshold.
+- Upstream #2532: NXDN talkgroup 0 is a valid talkgroup.
+- Fork changes kept on top: sync waveform bounds guard and health counters (`C4FMSymbolProcessor`), NAC tracker
+  eviction by fewest observations then oldest (15.9.32; upstream evicts the least recently seen NAC, so its
+  `testLeastRecentlyObservedEvicted` test is replaced by `testWeakestNACEvicted`), allowed-NAC filter in the framer,
+  tuner frequency error no-measurement warning.
+- P25 C4FM baseband filter is now upstream's 5200/6500 Hz (was 3600/5000 Hz from #2520): the two tied on replay.
+- Replay against 15.10.8, voice frames: LSM Lowell 2,844 -> 2,898; Lowell 10/28 at -754 / +754 / +1000 / -1000 Hz
+  offset 1,962 / 2,088 / 2,088 / 1,953 -> 2,124 / 2,106 / 2,106 / 2,106; Rockingham West 8,010 -> 8,361; Rockingham East
+  2,556 -> 2,637; CoMIRS Cambridge/Boston control channel unchanged. C4FM: same voice frames on all 13 recordings,
+  fewer TDUs. DMR (Salem State, OneVoice Haverhill/Boston) and NXDN (24 Georgetown/MASCO) output byte-identical.
+- 53 unit tests pass (upstream's new P25 LSM/framer/NAC/Viterbi tests, DMR tests).
+
+## [0.6.2-ap-15.10.8] - 2026-10-31
+
+### Fixed - NBFM transmissions split into several short calls (tone-filtered channels)
+
+- Somerville, 2026-10-31 00:00-10:27: the noise squelch closed and reopened within 0.5 s, with the channel's CTCSS
+  target confirmed <= 150 ms before the close, 430 times on Brookline Fire (MBTA Transit Police 1 260, Brookline
+  Police 196, Somerville Police 152, Everett Police 106). A 3.5-minute Brookline Fire recording shows a strong carrier
+  and a clean 131.8 Hz tone through those closes (322 of 329 half-second windows 131.8 Hz, 7 Wakefield 146.2 Hz): loud
+  or sibilant speech above 3 kHz reads as noise to the noise squelch. Each close ended the call and the reopen
+  started a new one - the short "bits of audio" heard on the streams.
+- `NBFMDecoder`: when the squelch closes while the target tone was confirmed within the last 0.25 s of audio, the call
+  end is deferred for 0.5 s; if the squelch reopens in that time (holdover branch) the same call continues. The
+  squelch itself is unchanged: holding it open instead was tried and added ~0.24 s of noise after the carrier dropped
+  at 7 of 20 transmission ends. Real call ends are reported 0.5 s later, with no extra audio. Timed in audio samples.
+  Squelch OPEN/CLOSE debug lines now carry the audio position and whether the call end was deferred; a "Call
+  continues" debug line counts each rejoin.
+- Replay (Brookline Fire, real time, default squelch thresholds): one split joined, all other calls unchanged, seven
+  call ends 0.5 s later. Live Brookline Fire uses its own squelch settings, so the field count is the real measure.
+
+## [0.6.2-ap-15.10.7] - 2026-10-30
+
+### Fixed - DMR color code filter let CRC-failed headers through
+
+- 15.10.6's color code filter only checked valid data bursts. Salem State Police (Audubon, first half hour on
+  15.10.6) still logged a junk data packet: data headers framed from noise with color code 10 failed their CRC, but
+  the packet assembler doesn't check header validity and built a "valid" defined short data packet from them.
+- `DMRMessageProcessor`: once the color code is established, invalid data bursts with a different color code are
+  discarded as well. Only valid data bursts establish or change the color code, as before.
+- Replays, Salem State: tonight's 19 minutes 38 -> 37 valid packets (the junk packet gone), wrong color code invalid
+  bursts 64 -> 0; 17 and 19 minute recordings 26 and 27 -> 0, with voice, radio IDs, talker aliases and Hytera
+  registrations unchanged. OneVoice Haverhill and Boston control channels identical to 15.10.5. DMR unit tests: 18 pass.
+- Field check of 15.10.6 on Salisbury (first half hour): LSM corrections 48 -> 21 per hour with no wrong-way
+  corrections (13 in the previous 1.5 hours on 15.10.5). Rockingham Sheriff East and West replays (28 minutes)
+  unchanged versus 15.10.5.
+
+## [0.6.2-ap-15.10.6] - 2026-10-30
+
+### Fixed - DMR false messages from noise (color code filter)
+
+- The new DMR decoder (15.10.4, upstream #2517) uses lower sync thresholds, so it frames more bursts from noise, and
+  about 1 per minute of those passes its CRC by chance. On Salem State Police (Audubon, 16 hours on 15.10.5) these
+  showed up as 9 garbage SMS messages, a false 90 ms EMERGENCY group call and false channel grants. Each carries a
+  random color code (Salem State uses 12).
+- `DMRMessageProcessor`: on conventional and control channels, once 3 consecutive valid data bursts carry the same
+  color code, valid data bursts with a different color code are discarded; 5 consecutive valid data bursts with a
+  new color code switch to it. Tracked per channel (bursts from noise often have no timeslot yet). Not applied to
+  traffic channels or when Ignore CRC Checksums is enabled.
+- Replays, Salem State: valid wrong color code messages 18 -> 0 (17 min) and 23 -> 0 (19 min); voice frames, radio
+  ID link control, talker aliases and Hytera registrations unchanged. OneVoice Haverhill and Boston control channels
+  identical to 15.10.5. DMR unit tests: 18 pass.
+
+### Fixed - P25 LSM false-lock recovery firing on noise (Lowell Police)
+
+- 15.10.3's rotated sync recovery corrected Lowell Police's PLL 690 times in 20 hours on Bailey UHF. The 512 made at
+  key-up rescued a false lock, but 193 were made on noise in the idle time between calls (median 56 seconds after
+  the last call) and moved a correctly locked PLL 1200 Hz away. Until another correction recovered it, the channel
+  decoded 21 calls per hour instead of 190 - about 5.8 of the 21 hours.
+- `P25P1DemodulatorLSM`: rotated sync threshold raised from 90 to 120. In replays every correction that led to
+  decoding had a rotated correlation of 134.9 - 138.0; those made on noise scored 93.4 - 105.6.
+- Replays, Lowell Police voice frames 15.10.5 -> 15.10.6: today (3.5 min) 2,844 -> 2,844; 2026-10-28 recording as
+  recorded (-754 Hz) 1,953 -> 1,962, shifted to 0 Hz 2,070 -> 2,088, +246 Hz 2,079 -> 2,088, -1,754 Hz 1,953 ->
+  1,953, with fewer corrections. Cambridge and Boston Simulcast CoMIRS control channels (LSM) identical to 15.10.5.
+
+### Changed - P25 graphic equalizer bands
+
+- Bands replaced: 70 Hz - 3.2 kHz became 200, 280, 390, 550, 770 Hz, 1.1, 1.5, 2.1, 2.9 and 3.5 kHz. Sliders are
+  unchanged: -12 to +12 dB, 0 (middle) is flat. The equalizer is still off by default.
+- Band Q raised from 2.0 to 3.0 for the closer band spacing. With Q 2.0, +5 to +7 dB on the 390 Hz - 3.5 kHz bands
+  added up to +11.2 dB at 1.5 kHz; with Q 3.0 the same settings peak at +9.2 dB.
+- Gains are stored as `graphic_eq_band_gains_200_3500`. The old `graphic_eq_band_gains` values were for different
+  bands and aren't used, so every channel starts flat; whether the equalizer is enabled is kept. The old element
+  stays in the playlist (unknown elements are preserved), so rolling back to 15.10.5 keeps its settings.
+
+## [0.6.2-ap-15.10.5] - 2026-10-29
+
+### Fixed - DMR regressions from the 15.10.4 decoder rework (found on Salem State Police, Audubon)
+
+- Talker IDs and talker aliases lost on some calls. Salem State Police sends voice EMB words that are always 2 bits
+  from a valid word. The new soft decision EMB decoder chose a word 4 bits away (different link control start/stop)
+  for about a third of the voice E frames, so those embedded link control messages were never reassembled. `EMB` now
+  takes the closest valid word and uses the soft bits only to choose between equally close words, and marks the word
+  valid with 1 corrected bit, or 2 when the soft decision agrees (the valid flag gates the encryption flag).
+- Phantom calls with no radio ID, about 2 per minute on Salem State Police (about 1.5 s each in the call events).
+  Upstream lowered the DMR sync thresholds, and a false sync in noise produced a lone voice frame A, which has no
+  error detection. `DMRMessageProcessor` now holds each voice frame A until the next burst on that timeslot is a
+  voice frame B, and discards it otherwise.
+- Upstream test `BPTC_128_77SoftTest.testEMBSoftDecode`: 4-bit EMB errors are no longer expected to be corrected
+  (only marked invalid).
+- Replays, Salem State Police: 17 min before the upgrade (strong, with group calls) - 15.10.3: 25 radio ID link
+  control messages, 6 talker aliases, 39 voice super frames; 15.10.4: 18, 0, and 38 lone voice A frames;
+  15.10.5: 25, 6, 39, no lone frames. 12 min after the upgrade (weaker, short mobile/direct bursts) - complete voice
+  super frames 15.10.3: 12, 15.10.5: 41, with no lone voice A frames (15.10.4: 32). OneVoice Haverhill and Boston
+  control channels decode the same as 15.10.4. DMR unit tests: 18 pass.
+
+## [0.6.2-ap-15.10.4] - 2026-10-29
+
+### Changed - DMR decoder rework, upstream PR #2517 (merged upstream as f2c98cdb, Denny Sheirer)
+
+- DMR now uses the shared C4FM demodulator/framer framework that P25 Phase 1 and NXDN already use
+  (`DMRSymbolProcessor` replaces `DMRSoftSymbolProcessor`), with soft-decision decoding for BPTC(196,96),
+  BPTC(128,77) embedded signalling, CACH and short link control, and corrected error detection (a hard-decision
+  decode that miscorrects is retried soft). New `SoftBlockCode` / `SoftProductCodeDecoder` in `edac.soft`.
+- Fork changes kept: the C4FM processor health counters and the two sync-buffer bounds guards from 15.10.1,
+  and the fork's DMR OTA channel-frequency announcement handling in `DMRMessageProcessor`.
+- Not included: upstream PR #2511 (JMBE legacy tone levels). It depends on upstream's per-channel JMBE 2 settings
+  UI, which this fork doesn't have, and stock JMBE ignores it.
+- Tests: upstream's 18 DMR unit tests pass. Replays are unchanged from 15.10.3: twelve P25 C4FM recordings and four
+  Lowell Police LSM offsets decode byte-for-byte the same, and 23 Georgetown NXDN recordings produce identical
+  message output.
+
+## [0.6.2-ap-15.10.3] - 2026-10-29
+
+### Changed - P25 Phase 1 LSM (simulcast) false-lock recovery, upstream PR #2478 (unmerged), adapted
+
+- `P25P1DemodulatorLSM`: the decision-directed PLL can only resolve the carrier offset modulo 90 degrees and was
+  clamped to +/-800 Hz, so past ~600-700 Hz it settled on a false lock 90 degrees away and stopped decoding (and
+  reported the offset to auto-PPM with the wrong sign). Adds +/-90 and 180 degree rotated sync detectors that correct
+  the PLL only when no valid NID has been seen for 1 s and two rotated detections agree, widens the PLL range to
+  +/-2000 Hz, resets a PLL pinned at the clamp, and leaks the PLL toward the last valid estimate while not decoding
+  (faster traffic-channel key-up). Applies to every channel set to LSM: conventional, and Phase 1 control and traffic
+  channels on trunked simulcast systems. Phase 2 TDMA is not affected.
+- `P25P1MessageFramer`: rejects an over-corrected NID whose NAC is not the channel's tracked NAC (upstream's rule).
+  A second NAC seen on a channel is usually another system on the same frequency (Manchester BTS Police uses only
+  0x526; 0x625 was also established on it under 15.9.32). A channel that really uses several NACs can list them in
+  the P25 Phase 1 channel editor's Allowed NACs.
+- Replay, Lowell Police (LSM, Bailey UHF, 10 min, 2026-10-28), voice frames (clean) 15.10.2 -> 15.10.3: as recorded
+  (-754 Hz) 1,654 (1,625) -> 1,922 (1,908); shifted to 0 Hz 671 (644) -> 2,027 (2,006); +246 Hz 660 (620) -> 2,029
+  (2,003); -1,754 Hz 605 (576) -> 1,902 (1,871). Twelve C4FM recordings (Troop A, Troop B, Methuen, Tewksbury,
+  Burlington on Bailey UHF and Audubon) decode byte-for-byte the same as 15.10.2.
+
+## [0.6.2-ap-15.10.2] - 2026-10-29
+
+### Fixed - baseband I/Q recordings stopped at 4 GiB
+
+- Every machine: `IOException ... Unable to create a unique file name for recording - exceeded 20 versioning attempts`
+  about 6 hours into each 50 kHz channel baseband recording (4 GiB, the WAV size limit), after which the recorder
+  stopped. `WaveWriter` rolls over to `<name>_2`, `_3`, ... at the size limit, but both its rollover and its
+  duplicate-name versioning only renamed files ending in `.tmp` (call audio is written as `.tmp` then renamed).
+  Baseband recordings are written straight to `.wav`, so every new name equalled the old one.
+- Fix: the series number and the version are inserted before the file's own extension, whatever it is. Call audio
+  `.tmp` names are unchanged (`X.tmp`, `X_2.tmp`, `X_3.tmp`); a name collision now gives `X_3.tmp` rather than
+  `X_2_3.tmp`. Tested with a 100,000-byte limit: 15.10.1 throws exactly the field exception at the first rollover;
+  15.10.2 writes `rec.wav`, `rec_2.wav`, `rec_3.wav`, `rec_4.wav`, each with a valid RIFF header and every byte kept.
+
+### Fixed - NBFM audio dropped at squelch open when the opening burst is large
+
+- Bailey UHF, MA Fire District 6 - Admin (483.6375), 8 times on 10-28/29: `BufferOverflowException` in
+  `RealResampler$BufferManager.load`. The squelch hands the resampler the buffered audio for the start of a
+  transmission in one block; a block longer than the resampler's 4,192-sample input buffer was rejected whole, so
+  the start of that transmission was lost. The resampler now loads its input in pieces that fit. Tested: a
+  10,000-sample burst between smaller blocks throws on 15.10.1 and resamples fully on 15.10.2 (15,000 samples at
+  25 kHz -> 5,120 at 8 kHz, ten 512-sample blocks).
+
+### Added - DMR diagnostics logging switch
+
+- Preferences > Diagnostics gets a "DMR decoder" checkbox (`io.github.dsheirer.module.decode.dmr`), off by default.
+  The file log accepts DEBUG from every logger that no checkbox controls, so DMR's `processChannelGrant` line, logged
+  on every grant update, was 84% of Audubon's log (27,892 lines between midnight and 13:49 on 10-29). With the box
+  off it is no longer written; turn it on to trace a DMR issue.
+
+## [0.6.2-ap-15.10.1] - 2026-10-28
+
+### Fixed - P25 Phase 1 decoder exception on a sync detection just after a buffer reload
+
+- Daly, first night on 15.10: `ArrayIndexOutOfBoundsException: Index -1 out of bounds for length 1155` in
+  `C4FMSymbolProcessor.score()` on Windham Fire (03:44) and Windham Police (05:47), both while the channel was
+  idle. The exception drops the rest of that sample buffer for the channel; it does not stop the decoder.
+- Cause: the decoder keeps 25 symbols of history (131 samples at 25 kHz) at the start of its sample buffer. A
+  lagging-detector sync detection on the first symbol after a reload starts its 24-symbol window about 3.6 samples
+  into the buffer, and the timing optimizer probes up to 3/4 of a symbol (3.9 samples) further left, reaching index
+  -1. `score()` checked only the upper end of the buffer. Reproduced directly: the 15.10 `score()` throws exactly
+  this exception at that offset with the live buffer length of 1155.
+- Fix: `score()` treats samples before the start of the buffer as zero, as it already did past the end and as
+  `getCorrection()` and `getEqualizedSymbol()` already do. `validateSyncWaveform()` gets the same bounds check at
+  both ends. Upstream master (f2c98cdb) has the same code.
+- Replay: the eight Troop A, Troop B and Methuen recordings decode byte-for-byte the same as 15.10.
+
+### Fixed - corrupted P25 Phase 1 headers accepted as error-corrected, muting clear calls
+
+- Salisbury, first night on 15.10: eight "unknown encryption algorithm" warnings on Rockingham Sheriff East and
+  West (IDs 0x3B, 0x6A, 0xE4, 0x9A, 0x46, 0x90, 0x72, 0xBF), each on a different talkgroup, with up to 44 voice
+  frames of a clear call dropped as encrypted in one 10 minutes. Bailey VHF on 15.9.32 logged the same on Troop B
+  and Boxborough Police, and Daly on 15.10 on North Andover Police and Derry Fire. Scattered one-off IDs are
+  mis-decoded encryption sync words, not encrypted traffic. The audio module sets a call's encryption state from
+  the first valid header, so one bad LDU2 can mute the rest of the call.
+- Cause: the P25 Reed-Solomon codes are shortened (RS(24,16,9) for the LDU2 encryption sync, RS(24,12,13) for link
+  control, RS(36,20,17) for the HDU, RS(44,16,29) for the Phase 2 ESS), but they are decoded as the full RS(63,k)
+  code with the unused symbols set to zero. The decoder never checked whether a correction landed in those zero
+  symbols. When it does, the received word was beyond the code's correction capability and the decoder found a
+  different codeword. Measured on 200,000 random RS(24,16,9) words: 3.34% were reported correctable, 3.28% of
+  them through corrections in the padding.
+- Fix: `ReedSolomon_63_P25` takes the shortened length and reports a correction in the padding as irrecoverable.
+  Random RS(24,16,9) words reported correctable: 3.34% -> 0.056%; RS(24,12,13): 0.086% -> 0. Codewords with up
+  to 4 (RS(24,16,9)) or 6 (RS(24,12,13)) symbol errors still correct in every trial.
+- Replay: the eight Troop A, Troop B and Methuen recordings decode byte-for-byte the same as 15.10.
+
+## [0.6.2-ap-15.10] - 2026-10-27
+
+### Changed - P25 Phase 1 C4FM and NXDN decoders replaced by upstream's October 2026 rework, with two unmerged fixes
+
+- Upstream #2494 / PR #2514 (5635341d, 2026-10-25): P25 Phase 1 C4FM moves to the C4FM symbol processor and
+  equalizer built for NXDN - Gardner timing tracking, decision-directed balance tracking between syncs, a multi-tap
+  symbol equalizer, a band-limiting receive filter in place of the RRC, soft error correction, and tuner PPM reports
+  only after two consecutive syncs with a CRC-valid message. Sync validity no longer depends on the NID or NAC; the
+  first two syncs after a sync loss must also match the reference sync waveform. When unsynchronized, a sync applies
+  its full correction, so a channel cannot stay parked the way 15.9.31 and earlier did. NXDN filters change too.
+- Upstream PR #2519 (unmerged): re-score a lagging sync detection at its own offset. Without it the rework never
+  acquires some transmissions at all.
+- Upstream PR #2520 (unmerged): C4FM baseband filter passband 5,200 -> 3,600 Hz, replacing what #2461 did for the
+  old RRC filter.
+
+Kept from the fork: the NID buffer bounds check in the message framer; the 8-slot least-seen NAC tracker from
+15.9.32 (the message framer still uses it); the 10-minute "P25 Phase 1 sync health" line, now reporting syncs
+applied, rejected by the sync waveform check, sync losses, equalizer recalibrations, balance (Hz), gain and the
+channel mixer correction. The 15.9.32 trusted-sync logic lived in P25P1DemodulatorC4FM, which C4FM no longer uses.
+
+Replay, same samples (messages / voice frames): Troop B 09:37 2,758/296 (15.9.32) -> 2,795/296; Troop B 11:01
+1,359/150 -> 1,432/165; Methuen Police - Test 1,419/367 -> 1,454/367; Methuen Police +585 Hz 1,414/367 ->
+1,454/367; Troop A 2026-10-26 night 932/104 -> 943/104; Troop B night 804/70 -> 846/72; Methuen Police night
+1,018/217 -> 1,030/216. The rework without #2519/#2520 lost whole transmissions (Troop A night 533/34).
+NXDN (Audubon, County Communications Georgetown, NXDN 9600, 2026-10-27): 22 traffic-channel recordings
+replayed through 15.9.33 and 15.10 - valid messages 9,600 -> 13,171, voice frames 1,532 -> 2,126, CRC-failed
+2,393 -> 38; the 15.9.33 replay matched what the live channels logged (for example 1,949 vs 1,938 valid). The
+weakest traffic frequencies gained most (463.875 MHz: 82 -> 378 valid, 5 -> 55 voice). Georgetown control
+channel, 3.7 min: 5,308 -> 5,485 valid, CRC-failed 191 -> 4. DMR is unchanged (upstream's DMR rework, #2517, is not
+included).
+
+## [0.6.2-ap-15.9.33] - 2026-10-27
+
+### Fixed - the channel table selection moved to another channel after Save
+
+Saving a channel clears and restores the table filter and briefly renames the channel to force the table to refresh
+(upstream behaviour). The table keeps its selection by row, not by channel, and since ap-14.6 the table's sort is
+remembered, so after a save the selected row often held the neighbouring channel and the editor loaded that one.
+The editor now remembers the channel it saved and selects it again after the save and after an accepted restart.
+
+The restart prompt after Save also read the channel from the editor after the save, so when the selection had moved
+it asked about - and on Yes restarted - the neighbouring channel. It now uses the channel that was saved.
+
+### Added - a log line for every playlist save
+
+"Playlist saved - N channel(s), N alias(es), N stream(s) - written in N ms, N ms after the change that requested
+it". Saving wrote nothing to the log before, so an edit that did not seem to stick (Beauport alias, 2026-10-27)
+could not be checked.
+
+## [0.6.2-ap-15.9.32] - 2026-10-26
+
+### Fixed - conventional P25 channels going silent for hours or days until the channel is restarted
+
+Salisbury NH State Police Troop A and Seabrook Police, Bailey VHF NH State Police Troop B, Daly Methuen Police and
+Beauport Gloucester Police / Rockport Fire stopped decoding for hours or days while the signal kept arriving: on
+2026-10-26 Salisbury Troop A logged nothing from 08:54 to 11:13, yet its own Baseband I/Q recording held 257 s of
+carrier 25 dB above the noise, and a fresh decoder decoded 5,154 messages from those samples.
+
+Cause, measured by replaying the channel recordings through the C4FM decoder with its state logged:
+
+- Noise regularly produces a sync pattern whose NID decodes. Each such NID's random NAC entered the NAC tracker,
+  which kept only three NAC values and threw out the oldest. A few minutes of silence filled it with three random,
+  once-seen NACs and threw out the channel's own NAC, which switched the NAC check off.
+- With the check off, a noise sync carrying a random NAC was accepted as valid. Its equalizer correction exceeded
+  PI/8, so it was applied in full instead of through the loop gain, and the equalizer landed at or near its +/-800 Hz
+  limit (Troop B 09:54:00 and 11:14:15, Methuen Police - Test 09:02:22, all in pure noise).
+- The equalizer only moves on a valid sync, and with it parked there no real transmission could produce one, so the
+  channel stayed dead until restarted. A locked-out channel also stops feeding its channel mixer correction: Methuen
+  Police's recording sat 510 Hz further off than Methuen Police - Test's on the same tuner. Under 15.9.32 both
+  channels' mixers settled at -611 Hz (the RSP1B's own error at 482 MHz) with both recordings at +130 Hz, so the
+  difference was a mixer that never finished converging, not one that false syncs walked away. Keeping false syncs
+  out of the mixer is a precaution, not a measured cause.
+
+Changes:
+
+- `NACTracker`: holds 8 NAC values and, when full, throws out the one seen least often (then the oldest), so a NAC
+  the channel uses is never displaced by random ones.
+- `P25P1DemodulatorC4FM`: an NID whose DUID P25 does not define is rejected; once the channel has an established NAC
+  (seen 3 times), any established NAC is accepted and others rejected (previously only the single most frequent one
+  was accepted, and nothing was rejected once it had been evicted).
+- `P25P1DemodulatorC4FM`: only a trusted NID - decoded without the NAC-assist retry, with at most 15 bit errors
+  across sync and NID - may train the NAC tracker, move the equalizer, or steer the channel mixer. Other valid syncs
+  still frame messages as before. Threshold from 5,775 accepted syncs in four recordings: the 5,769 made during a
+  carrier needed at most 13 corrections (99% none) and never the NAC assist; the 6 made in noise needed 19-26.
+- Logging: every 10 minutes each C4FM channel logs "P25 Phase 1 sync health on [channel] ...": syncs trusted,
+  withheld, rejected for NAC and for DUID, equalizer recalibrations, the equalizer's current signal offset and gain,
+  the established NACs, and the channel mixer correction. A recalibration by a trusted sync (a correction above
+  PI/8) logs its own INFO line with the offset before and after.
+
+Replay results (same samples, before -> after): Troop B 09:37 2,758 messages instead of 1,233 (decoding no longer
+stops at 09:54); Troop B 11:01 1,359 instead of 809; Methuen Police - Test 1,419 instead of 135; Methuen Police,
+from its recording 510 Hz off-centre, 1,414 instead of 135. Per 10-minute window the fixed replay matches what the live
+channels logged while they were working (Troop B 09:50 1,599 vs 1,646, 10:00 326 vs 326, 11:10 891 vs 891; Methuen
+Police - Test 09:10 985 vs 987). Before each original stall point the voice frame counts are identical.
+
+Not changed: no playlist or settings change, nothing upstream cannot read. The equalizer has no separate recovery
+timer: with noise unable to move it, none of the recordings needs one, and the sync health line will show it if a
+channel still ends up parked.
+
+## [0.6.2-ap-15.9.31] - 2026-10-25
+
+### Added - P25 Phase 1 channel health line (measurement only, no behaviour change)
+
+Conventional P25 channels have gone silent for hours while the rest of the machine kept working: Daly Methuen
+Police 482.4625 (2026-10-25 10:29-13:07 and 14:20-21:32, the second ending without a restart) and Salisbury NH State
+Police (no call since 06:30). A tuner recording during a working period showed Methuen's signal 51 dB above the
+noise and decoded completely by the fork's C4FM decoder, so the signal and decoder are not the problem - but the
+log showed nothing at all for the channel during the silences.
+
+Every 10 minutes each P25 Phase 1 audio module now logs one INFO line, "P25 Phase 1 health on [channel] ...":
+messages received (HDU / LDU1 / LDU2 / other), voice frames played, dropped as encrypted, and held while the
+encryption state is unknown; calls marked encrypted and the last algorithm ID; call starts and ends from the channel
+state; and the state right now (call open, encryption state, frames held) with how long ago the last message, voice
+frame and call start/end were. A silent stretch then shows whether messages stopped arriving, voice arrived but was
+dropped, or the channel held a call open.
+
+## [0.6.2-ap-15.9.30] - 2026-10-25
+
+### Fixed - playlists with a multi-frequency tuner source (trunked systems with several control channels) unreadable
+
+Metro-25 2026-10-25 (15.9.17 -> 15.9.29): "PLAYLIST COULD NOT BE READ ... Cannot deserialize value of type
+ArrayList<Long> from String ... SourceConfigTunerMultipleFrequency["frequency"]". 15.9.26-15.9.29 pass the playlist
+through an XML document before reading it, and that writes attributes in alphabetical order, so `type` was no longer
+first. Jackson then buffers the element to find its type, and in that mode cannot read an unwrapped list - the
+multi-frequency source's `<frequency>` list. The file itself was fine (the nightly read it); saving was blocked, so
+nothing was overwritten.
+
+- The type attribute is written first again, on load and in both saved files. Reproduced with a three-frequency P25
+  source: 15.9.29 fails, 15.9.30 reads it and keeps all three frequencies through fork -> nightly -> fork; 0.6.1 reads
+  the fork's file too.
+- Safety net: if the merged playlist ever cannot be read but the file itself can, the fork now runs on the file as it
+  is (without the companion's streams and fork-only settings), blocks saving and logs "PLAYLIST MERGE FAILED", instead
+  of starting empty.
+
+All compatibility tests unchanged (19/19 against nightly and 0.6.1; scenarios A-D 0 differences; Baker case 34/34).
+
+## [0.6.2-ap-15.9.29] - 2026-10-23
+
+### Fixed - streams of upstream types (Rdio Scanner, Broadcastify, Icecast, OpenMHz...) lost on the second start
+
+Roger Baker 2026-10-23 (15.9.7 -> 15.9.28): its two Rdio Scanner ingest streams ("Essex County - Live/Test") vanished
+on the second start; the seven Zello streams stayed and the aliases still named the lost streams. The first save was
+correct (Rdio streams in `default.xml`, all nine in the companion). On load the Zello streams from the companion were
+appended at the end of the playlist, but that save had written its streams before its channels (Jackson's property
+order varies between runs), so the streams were split into two runs - and Jackson keeps only the last run of an
+unwrapped list, silently dropping the Rdio streams. The next save then wrote them out of both files.
+
+Elements of the same name are now made adjacent before the merged playlist is read. Reproduced with the Somerville
+playlist plus two Rdio streams written before the channels: 15.9.28 loads 32 of 34 streams, 15.9.29 all 34 on three
+consecutive starts. Two-sided multi-round tests 19 of 19 (nightly and 0.6.1); scenarios A-D 0 differences.
+
+Machines whose playlist has only Zello/ThinLine streams (Somerville) were not affected. Baker's streams are in
+`playlist\history\default-20261023-155543.xml` and are restored by putting that file back (see release notes).
+
+## [0.6.2-ap-15.9.28] - 2026-10-23
+
+### Fixed - the 0.6.1 final release no longer switches off the fork's NBFM tone filters
+
+15.9.26/27 were tested against upstream master (nightly). Tested now against the 0.6.1 release too. 0.6.1 has no
+CTCSS/DCS squelch, so it drops it on save; the fork read that as "tone removed by the user" and restored every NBFM tone
+filter disabled. A tone removed in the other program is now only assumed when that program writes squelch decoders
+(the nightly writes them on every NBFM channel; 0.6.1 never does).
+
+Results with 0.6.1 as the other program: the two-sided multi-round test passes 19 of 19 (before: 18); a fork playlist
+through 0.6.1 and back keeps every channel, alias, stream and setting - the only additions are 0.6.1's own NBFM
+`squelch` and `autoTrack` values, carried along for it; a 0.6.1 user's own playlist through fork -> 0.6.1 -> fork ->
+0.6.1 is unchanged. The nightly results are unchanged (19 of 19, scenarios A-D 0 differences).
+
+In 0.6.1 itself, NBFM channels run without tone squelch and on 0.6.1's own squelch level - it has neither the tone
+squelch nor the fork's squelch thresholds. The fork's values are kept and return when the fork runs again.
+
+## [0.6.2-ap-15.9.27] - 2026-10-22
+
+### Fixed - playlist edits made in either program are kept, including renames and things turned off
+
+Tested further after 15.9.26 with edits made on both sides over several rounds (fork -> upstream -> fork -> upstream ->
+fork, Somerville playlist). 15.9.26 lost three kinds of edit; 15.9.27 keeps them:
+
+- A channel renamed in upstream lost its fork-only settings (AGC, hiss reduction, noise gate and the like), and an alias
+  renamed there lost its NAC/CTCSS identifiers - both were matched by name only. Now a channel with no name match is
+  paired by decoder type and frequency, and an alias by alias list and talkgroup/radio identifiers, when exactly one
+  companion entry matches.
+- A setting both programs know, turned off in upstream (event logging, recording, preferred tuner), came back on in the
+  fork, because upstream leaves it out of the file and the fork refilled it from the companion. The fork now refills only
+  settings the other program wrote nowhere in the playlist - settings it does not know - and never those four.
+
+Two-sided multi-round test (both programs' save/load code compiled together, upstream master b0428a1d): 19 of 19 checks
+pass - renamed channel/alias keep fork-only settings, NAC and tone labels; channels and aliases deleted or added in
+upstream stay deleted/added; Zello streams added or deleted in the fork stay so; a fork edit (AGC, NAC 611 -> 612, alias
+assigned to a new stream) survives an upstream save; an upstream edit (bandwidth, logging/recording/preferred tuner off)
+survives the return to the fork; a further no-edit cycle in either direction changes nothing. 15.9.26 fails 5 of them.
+The 15.9.26 round-trip scenarios A-E are unchanged (0 differences).
+
+Still not carried: a channel renamed in upstream *and* retuned or with a duplicate frequency (it is new to the fork, its
+fork-only settings return to default).
+
+## [0.6.2-ap-15.9.26] - 2026-10-22
+
+### Changed - one playlist for both this fork and upstream SDRTrunk, in either direction
+
+Upstream rejects a whole playlist that contains an element type it does not know and then saves an empty one over it
+(Somerville 2026-10-22: the release and the nightly both wiped the fork playlist on its Zello streams). And this fork
+dropped the settings it did not know when it saved an upstream playlist - upstream's CTCSS/DCS squelch, per-channel JMBE
+settings, audio ALC and de-emphasis.
+
+The fork now saves two files:
+
+- `default.xml` - the playlist, minus the element types only this fork has: Zello, Zello Consumer and ThinLine streams,
+  and CTCSS and NAC alias identifiers. Upstream can open it. Fork-only settings stay in it as extra attributes, which
+  upstream ignores. The NBFM tone filter is also written in upstream's form (`squelchDecoders`, upstream's code names),
+  so upstream applies the same tone squelch.
+- `default.ap.xml` - the companion: the complete playlist as the fork holds it. Upstream never reads it.
+
+On load the fork takes from the companion only what the playlist lacks - the fork-only streams (by name) and alias
+identifiers (by alias list and name) always, and, when another program saved the playlist last, the fork-only settings
+it dropped, matched by channel system/site/name and alias list/name. Whatever the other program wrote is kept, including
+edits made there: a CTCSS/DCS tone changed in upstream is adopted; a tone removed there leaves the fork filter disabled.
+Channels and aliases are never added or removed from the companion. One INFO line per load says who saved last and what
+was restored.
+
+A playlist made by upstream loads with its CTCSS/DCS squelch converted into the fork's tone filter (enabled), and every
+setting the fork does not recognise is kept and written back: channels, decode/source/record/event-log configurations,
+aliases and streams carry them through. Upstream's per-channel JMBE settings (`jmbeAGC`, `jmbeToneGain`,
+`jmbeNoiseGain`, upstream #2482/#2484) are read and written - `DecodeConfigJMBE` is taken from upstream - but not yet
+applied: the fork still runs every DMR/NXDN/P25 channel with AGC on, the level measured in ap-15.9.24.
+
+Verified with the save/load code of both programs compiled together (fork 15.9.26 and upstream master b0428a1d), on
+Somerville's playlist (60 channels, 53 aliases, 30 Zello Work and 2 Zello Consumer streams, 36 tone squelches) and an
+upstream playlist with CTCSS and DCS:
+
+| Round trip | Result |
+|---|---|
+| fork 15.9.24 playlist -> 15.9.26 -> upstream opens and saves -> fork | identical; upstream sees all 36 tone squelches |
+| fork -> fork, twice | identical |
+| upstream playlist -> fork -> upstream | identical, including its squelch and JMBE settings |
+| ... upstream saves again -> fork -> upstream | identical |
+| edits in upstream (tone changed, tone removed, bandwidth) -> fork | each kept; fork-only settings and alias ids restored |
+
+Limits: a channel renamed in upstream does not get its fork-only settings back. Upstream never streams to Zello or
+ThinLine; the streams return when the fork next loads. A fork version older than this one reads only `default.xml`, so
+it runs without the Zello/ThinLine streams; the companion is untouched and 15.9.26 restores them.
+
+## [0.6.2-ap-15.9.25] - 2026-10-22 (built only as part of 15.9.26)
+
+### Fixed - a P25 Phase 1 call stayed open for minutes or hours after its audio ended
+
+A P25 Phase 1 call ends when the channel state leaves CALL. The state only enters CALL on a decoded HDU, LDU1 link
+control or LDU2 encryption sync, but the audio module decodes voice from every LDU. A weak transmission whose voice
+survives and whose signalling does not therefore opened a segment that nothing closed until a later call on the
+channel ended - and every transmission in between was added to it.
+
+Measured (calls that completed more than 20 s after their audio ended):
+
+| Machine | Period | Calls | Longest |
+|---|---|---|---|
+| Somerville | 10-19 (15.9.21-15.9.23) | 20 | 68 min (Malden Police) |
+| Somerville | 10-20 07:37 - 10-21 15:07 (15.9.24) | 38 | 9.4 h (Chelsea Police - Sec) |
+| Audubon | 10-20 | 14 | 8.5 h (Winchester Police) |
+
+All P25 Phase 1 conventional channels; no NBFM channel is affected. Effects:
+
+- Zello: the stream opened for the call sat silent until the stale-stream watchdog stopped it (25-32 s). Medford
+  10-20 11:32:45: a 0.5 s fragment opened the stream; the first second of the next transmission (~11:36:00) went
+  into the same segment after the watchdog had stopped it, and is absent from the Zello vault.
+- Recordings and ThinLine: a call is handed over when it completes, so these arrived minutes to hours late.
+- Merged calls: Woburn Police (Audubon) was open from 10-19 22:34 to 10-20 06:51; the night's transmissions are one
+  321.6 s recording filed under 22:34 and the first talker.
+
+`AbstractAudioModule` gains an opt-in idle close: a segment that receives no audio for a set time plus any audio
+hangtime is closed without waiting for the call-end. `P25P1AudioModule` enables it at 2000 ms. Voice arrives every
+180 ms while a radio is keyed and a normal call is closed by the 1.2 s channel fade, so it fires only on calls the
+channel state did not end. A transmission that drops out for more than 2 s mid-call becomes two recordings.
+
+After an idle close the encryption state and LDU cache are reset on the next message, since the call-end that
+normally resets them did not arrive.
+
+### Fixed - an unreadable playlist was replaced with an empty one
+
+When the playlist failed to load, the application started an empty playlist and saved it over the file. The fork
+inherited this from upstream. Somerville 2026-10-22: the upstream release and nightly each wiped the fork playlist this
+way, because they do not know the Zello and ThinLine stream types; it was recovered from a manual backup. Upstream
+cannot be changed from here, but the fork no longer does it:
+
+- A playlist that exists but cannot be read is left untouched. The fork starts with an empty playlist in memory only,
+  blocks saving for the session, keeps a copy as `default.xml.unreadable-<date-time>`, and logs an ERROR starting
+  `PLAYLIST COULD NOT BE READ`. Only a missing playlist is created new.
+- A leftover lock file (`default.xml.lck`) no longer replaces a readable playlist with the backup. The backup is used
+  only when the playlist itself is unreadable and the backup is readable, and the file it replaces is kept. After
+  another program's failed load the backup can be an empty playlist.
+- The playlist is written to `default.xml.tmp` and moved into place, so it is never left half-written.
+- Dated copies are kept in `playlist\history\` (`default-<date-time>.xml`): one at the first save of a session and then
+  at most one an hour, newest 20 kept.
+
+### Fixed - the NBFM stuck-call watchdog discarded real calls on a carrier that stays up
+
+The 180 s stuck-call timer started at a call start but was cleared only when the carrier dropped, not when the tone
+gate ended the call. On a channel whose carrier stays up between tone-gated transmissions it kept counting from the
+last call start, tripped with no call in progress, and a tripped watchdog suppresses every call start until the carrier
+drops - so each transmission the gate released afterwards was thrown away.
+
+Audubon 2026-10-20, Lynnfield Police (471.0875, 131.8): carriers of 4 to 36 minutes carrying other energy between
+transmissions. 14 trips, each 180 s after the previous gated call began (15:48:42 -> 15:51:42). 22 transmissions
+released by the gate after a trip produced no call, recording or upload; the 9 between 15:55:39 and 15:59:00 are all in
+the Lynnfield MA Police Zello vault, which is fed by another machine. `notifyCallEnd()` now clears the timer and the
+tripped flag, so the watchdog times a call rather than a carrier and still ends a single gated call that runs past
+180 s.
+
+### Added - one INFO line per idle close
+
+`P25 Phase 1 call on [channel] to [talkgroup] closed after N ms without audio - <state> - open N ms with N ms of
+audio`, where `<state>` says whether the channel state had registered the call at all. Its count is the rate of the
+defect; the state shows which signalling is failing.
+
+## [0.6.2-ap-15.9.24] - 2026-10-19
+
+JMBE audio library 2.0 support. No change to tone squelch, the TDMA detector, the confirmation hold or mute.
+
+### Fixed - P25 Phase 1 and NXDN audio loud and clipped with JMBE 2.x
+
+JMBE 2.0 rewrote the IMBE/AMBE synthesizers and added automatic gain control, on by default. The fork still applied
+its fixed 5x gain (with a 0.95 limiter) to P25 Phase 1 and NXDN audio after decoding, so the AGC output was driven
+into the limiter. Upstream removed the same stage in #2489. Audubon 2026-10-19, same channels (Lexington, Burlington
+and Woburn Police, P25 Phase 1) and same build, only the library changed:
+
+| Library | Calls | Median active level | Calls with >1% of samples above 0.89 FS |
+|---|---|---|---|
+| JMBE 2.0.2 (17:17-17:58) | 74 | -8.3 dBFS | 85% |
+| JMBE 1.0.9 (after 17:58) | 147 | -16.0 dBFS | 6% |
+| Somerville, JMBE 1.0.9 (Arlington, Medford, Malden, Chelsea) | 536 | -16.3 dBFS | 2% |
+
+The 5x stage is now skipped when the loaded library is version 2 or later and kept for 1.x, so machines still on
+JMBE 1.0.9 sound the same as before.
+
+### Changed - JMBE library loading
+
+- Builds against `jmbe:api:v2.0.0` (was `jmbe-api:1.0.0`). The 1.x interfaces are unchanged, so a JMBE 1.0.9 jar
+  still loads.
+- Loads `jmbe.JMBEAudioLibraryV2` when the jar has it, falling back to `jmbe.JMBEAudioLibrary`. Upstream loads only
+  the 1.x class, so its codecs never expose the 2.x feature controls and its per-channel JMBE settings have no effect.
+- Fleet-wide 2.x settings: AGC on, tone gain 1.0, noise gain 1.0 (the library defaults, applied explicitly). No
+  per-channel editor yet.
+- Logs once per codec, e.g. `JMBE IMBE codec: AGC=on, tone gain=n/a, noise gain=1.0 - legacy 5x gain (P25 Phase 1,
+  NXDN) bypassed`.
+- Changing the JMBE library path in User Preferences now reloads the library without a restart. Previously the first
+  loaded jar stayed in use until restart.
+- Library loading is serialized, which also removes the duplicate `JMBE audio conversion library loaded` lines when
+  several channels start together.
+
+## [0.6.2-ap-15.9.23] - 2026-10-18
+
+Two fixes from Audubon, 2026-10-17/18. No change to tone squelch, the TDMA detector or the confirmation hold; the
+ap-15.9.22 survey lines stay in.
+
+### Fixed - right-click mute did nothing on digital conventional channels between calls
+
+The Now Playing mute is a shortcut to the governing alias's Listen toggle. It found that alias from the live TO
+identifier, the configured talkgroup of an analog channel, or an alias list holding exactly one alias. A P25 or DMR
+conventional channel has no configured talkgroup and its TO identifier clears when a call ends, so between calls none
+of those matched and the mute went to the per-channel store, which does not gate audio whose segment carries an
+alias. Audubon 2026-10-17, Woburn Police (P25, talkgroup 17250): every right-click logged `(no alias)` and the audio
+stayed muted or unmuted regardless; only the alias editor worked.
+
+`ChannelMetadataPanel` now remembers the alias each channel's most recent call was addressed to and uses it when no
+call is in progress. The menu tooltip names the alias that will be toggled. The memory is not saved: after a restart a
+channel needs one call before its mute can find the alias.
+
+### Fixed - an RSP whose SDRplay service stopped answering left its channels silently dead
+
+When `initStream` failed with `Service Not Responding`, `ControlRsp` logged one ERROR line and carried on: the tuner
+stayed in the tuner list as healthy and its channels stayed "running" with no samples. Audubon: the SDRplay API
+service stopped answering at the 2026-10-17 20:43 restart (and crashed with 0xc0000005 at 2026-10-18 19:16), and
+Wenham Police, Stoneham Fire, North Reading Fire, Marblehead Police, Lexington Fire - Ch 2, Bedford Fire and Newton
+Police were silent for 23.5 hours, until a reboot.
+
+`Service Not Responding` is now handled like `Fail`: the tuner is removed, its channels stop, and
+`TUNER REMOVED FROM SYSTEM` is logged with the number of channels affected, preceded by an ERROR saying to restart the
+SDRplay API Service (or reboot) and then SDRTrunk. Same change in `ControlRspDuo`.
+
+## [0.6.2-ap-15.9.22] - 2026-10-16
+
+Measurement only - no change to what is released, held or discarded. Two candidate rules for the DMR bursts that
+still reach Audubon's police channels on ap-15.9.21, logged side by side with today's decisions so a day of logs and
+recordings can decide between them.
+
+Audubon 2026-10-16 00:00-06:46 on ap-15.9.21: the hold discarded about 1,100 burst openings on Wakefield, Danvers,
+Swampscott, Middleton and Saugus Police, but 290 releases were still cut by the TDMA veto within 1 s, and 141 of the
+239 Swampscott Police calls released after the hold were bursts (median 1.4 s, 33.33 Hz throughout). Those bursts
+produce a steady run of TDMA windows at 33.33 Hz scoring 6-19 - never the single window of 20 the veto latches on,
+and rarely an H1 of 20 inside the 300 ms hold.
+
+### Added - upstream's CTCSS standout test, measured on our blocks
+
+Upstream's channel CTCSS (DSheirer/sdrtrunk #2425) accepts a block only when its strongest bin is 3 standard
+deviations above the mean of all bins, and opens after 3 such target blocks in a row. Ours judges the strongest bin
+against total energy and confirms on 3 target hits that need not be consecutive. `CTCSSDetector` now applies the
+upstream test to every block. Swampscott: requiring 3 consecutive target hits alone would have stopped 36 of 112
+bursts and 8 of 56 real calls; the standout test itself cannot be measured from recordings (the tone is notched out)
+or from older logs.
+
+### Added - slot-cadence persistence count
+
+`TdmaInterferenceDetector` counts windows since squelch open whose winner sits at 32.5-34.0 Hz with a comb score of
+6 or more. On Swampscott, two such windows within 300 ms of a weak confirmation marked 56 of 108 bursts and none of
+22 real calls, but also 16 of 59 unverified calls on other Audubon channels.
+
+### New DEBUG lines
+
+- `Confirmation survey: max target SNR=... ; CTCSS target max in N blocks, K of them 3 sigma above the mean ...,
+  longest run R - upstream's 3-in-a-row rule would (NOT) have opened (yet); TDMA W of N windows at the slot cadence
+  with score >= 6 (strongest H1 ...)` - once per confirmation that opens the gate, before the hold decision.
+- `Carrier CTCSS survey: ...` - once per carrier at squelch close on CTCSS channels, including carriers that never
+  confirmed.
+
+## [0.6.2-ap-15.9.21] - 2026-10-15
+
+Logging only - no change to what is released, held or discarded. Measured on Somerville with ap-15.9.20 from
+2026-10-14 14:15 to 2026-10-15 18:19 (28.1 h).
+
+### Changed - a tone confirmation during a TDMA latch is no longer logged as a discard
+
+When 131.8 confirmed in the middle of a burst the TDMA veto was already throwing away, the weak-confirmation hold
+discarded an empty buffer and logged `Discarded 0ms of held audio`. 872 of the 1,549 discard lines in those 28 h were
+this case, so the count read as far more bursts stopped than there were. It is now logged at TRACE as `Ignored a tone
+confirmation with nothing buffered`, and `Discarded Nms of held audio` counts only audio actually thrown away.
+
+### ap-15.9.20 results (Somerville, 28.1 h)
+
+- Bursts that leaked and were then cut by the TDMA veto: 3.9 an hour, against 97 an hour on ap-15.9.19 the same
+  morning (08:02-14:15) and 17 an hour across 2026-10-13.
+- Recorded bursts: MetroFire Red 13 of 35 calls (210 of 254 in the 6.2 h before), Somerville Fire Ch 2 15 of 60
+  (147 of 217), Somerville Fire 11 of 753 (122 of 500), MetroFire White 5 of 41 (56 of 133).
+- 936 of 28,170 call starts (3.3%) were held up to 300 ms and released.
+- At most 7 real calls lost a held opening of 256-512 ms (4 Everett Police, 2 Somerville Fire, 1 Brookline Police).
+- 57 bursts were released after the hold, 15 on Brookline Fire and 14 on MBTA Transit Police 2. Lowering
+  `SUSPECT_FUNDAMENTAL` to 15 would stop 8 more and discard 21 real calls, so it stays at 20.
+- Malden Fire still leaks about one burst an hour; they confirm 131.8 at around 24 dB, so no hold applies.
+
+## [0.6.2-ap-15.9.20] - 2026-10-14
+
+One change: a weak CTCSS confirmation is held for one TDMA window before its audio is released. Decided by the
+Somerville ap-15.9.19 logs of 2026-10-13 and 2026-10-14 (00:00-08:01) and 2,583 recordings from Somerville Fire,
+Somerville Fire Ch 2 and the MetroFire channels.
+
+### Fixed - the opening of a DMR burst leaked through the tone gate
+
+DMR bleed sprays chance hits across every CTCSS bin. Now and then three land on the target and confirm it, the gate
+releases its buffered audio (192-448 ms) and the call starts; the TDMA detector latches on its next window and cuts
+it. On 2026-10-13, 418 releases were cut this way within 1 s - 221 on MetroFire Red, 113 on Brookline Fire. Some
+bursts never latch at all: Somerville Fire Ch 2 07:49:30 on 2026-10-14 confirmed 131.8 at 12.6 dB and went LIVE to
+Zello with comb scores of 5.9-11.5, because the burst's energy sat in the fundamental (H1 21-59) and the score is a
+geometric mean of H1-H3.
+
+Those confirmations are weak. Matched against recordings, bursts confirmed 131.8 at a median 13.1 dB on MetroFire
+Red, 12.9 dB on MetroFire White and 12.6 dB on Somerville Fire Ch 2; real calls at 16.4, 21.4 and 16.0 dB.
+
+When the target's strongest block is below 16 dB (`WEAK_CONFIRM_SNR_DB`), `NBFMDecoder` now holds the buffered audio
+for 300 ms more (`CONFIRM_HOLD_SAMPLES`) and discards it if the TDMA detector latches, or if any window since squelch
+opened reached the survey floor with a fundamental of 20 or more at 32.5-34.0 Hz
+(`TdmaInterferenceDetector.isSlotCadenceSuspected()`). Otherwise the call starts and everything held is released.
+A strong confirmation is released at once, as before. DCS channels are unchanged.
+
+| rule, 2026-10-13/14, 1,179 releases matched to recordings | bursts stopped | voice discarded |
+|---|---|---|
+| hold until TDMA latches only | 86 of 315 | 1 of 864 |
+| hold, latch or slot-cadence fundamental (this release) | 226 of 315 | 9 of 864 |
+
+Most of the 9 "voice" discards are MetroFire Red calls the TDMA detector cut seconds later anyway. 1,064 of the
+21,854 releases on 2026-10-13 confirmed weakly and would start up to 300 ms later. A discard drops only the held
+opening: the CTCSS detector and the suspicion are re-armed, so a real call that keeps transmitting confirms again.
+If the carrier drops during the hold the audio is released unless the TDMA detector has already seen the cadence.
+
+Not fixed: 45 bursts on MetroFire Red confirmed 131.8 at 16 dB or more - DMR riding on real Red traffic - and are
+left to the TDMA veto.
+
+New DEBUG lines: `Holding confirmed audio for a TDMA check`, `Released held audio after TDMA check`,
+`Discarded Nms of held audio` (with the latch score or the H1 and rate that decided it) and `Abandoned held audio`.
+
+## [0.6.2-ap-15.9.19] - 2026-10-12
+
+Four changes, none touching tone squelch, the TDMA detector or the squelch logging: a Zello routing fix, stream
+deletion that cleans up its aliases, and two P25 decoding fixes from upstream. Decided by the ap-15.9.18 logs from
+Summit and Somerville (2026-10-11 23:13 to 2026-10-12 18:58).
+
+### Fixed - a Zello stream that was not ready when a call began missed the whole call
+
+`AudioStreamingManager.forwardRealTimeAudio()` built a call's list of real-time (Zello) streams once, on the first
+250 ms pass where any of them was ready, and never looked at the others again. A stream still waiting for the
+server to acknowledge the previous call's stop was skipped for the entire next call.
+
+Somerville 2026-10-12 18:38:19: a 40 s Brookline Fire call arrived while the previous call was still streaming on
+both its Zello streams (Brookline Fire - Work and Brookline Fire - F&F). Both stopped at 18:38:19.605; Work's stop
+was acknowledged at .649 and the next pass started the call on it at .869; F&F's acknowledgement arrived at .977,
+108 ms later, and F&F never carried the call.
+
+Measured from the ap-15.9.18 call line over 19.7 h (Summit and Somerville, 15,600 live stream-calls, 22.4 h of audio):
+
+| | stream-calls | audio |
+|---|---|---|
+| not streamed, another stream of the same call went live, 2 s or longer | 33 | 275 s |
+| not streamed, another stream of the same call went live, under 2 s | 18 | 24 s |
+| not streamed, no stream of the call went live, 2 s or longer | 10 | 44 s |
+| not streamed, no stream of the call went live, under 2 s | 275 | 77 s |
+
+Every pass now offers the call to each of its Zello streams that is not yet carrying it. A stream that becomes ready
+later starts then and is sent the call from its first buffer - or its last 1.5 s if it is later than that
+(`MAX_LATE_START_BACKLOG_MS`), which keeps the backlog inside the 30-frame pending buffer and the paced burst/drain the
+CTCSS-confirmation flush already uses at every call start. Each stream keeps its own buffer position.
+
+The call line now reports `LIVE (late Nms)` for a stream that started late, and `NOT READY` means the stream was not
+ready at any point while the call lasted. The sub-second fragments arriving within ~0.3 s of the previous call on the
+same stream mostly finish before the stream is free and will still show as `NOT READY`.
+
+### Changed - deleting a stream removes it from its aliases
+
+Renaming a stream has always updated the aliases (`AliasModel.updateBroadcastChannel()`); deleting one did not, and
+every alias kept the dead name. On Somerville the ap-15.9.18 call line shows 33,018 stream references to names that
+no longer exist (Middlesex County, Suffolk County and Norfolk County with their APM variants; MetroFire - Thin, Red,
+White and Central).
+
+The Streaming editor's Delete now removes the stream from every alias, then deletes it, so one playlist save captures
+both. The confirmation says how many aliases will be updated, and each deletion logs
+`Stream [name] deleted - removed from [n] alias(es)`. `BroadcastModel.removeBroadcastConfiguration()` is deliberately
+untouched: `BroadcastModel.clear()` uses it when a playlist is cleared or reloaded, and cleaning aliases there would
+strip every stream from every alias. Names left by earlier deletions are not removed automatically.
+
+### Upstream fixes (DSheirer/sdrtrunk master, merged 2026-09-26, not yet in a tagged release)
+
+- **`9305abc7` P25 Phase 2** (Steve Pinkham) - `SuperFrameFragment.getTimeslotOffset()` tested I-ISCH 1 twice, so
+  I-ISCH 2 was never consulted and a fragment whose first I-ISCH failed was descrambled at timeslot offset 0.
+- **`7ee3c5d2` P25 Phase 1** (Denny Sheirer, #2473) - bad frequency band messages no longer contaminate the map used
+  to calculate traffic channel frequencies.
+
+Both applied cleanly and are kept as their own commits with their original authors.
+
+### Not verified
+
+The routing change cannot be run here (`AudioSegment` depends on JavaFX); the build is its first compile and the
+next Somerville log its test - expect `LIVE (late` entries on Brookline Fire, Massport and Everett, and far fewer
+`NOT READY` calls of 2 s or more. The Delete change is UI code and was compiled here without JavaFX.
+
+### Files
+
+- `AudioStreamingManager.java` - per-stream `RealTimeStream` state, retry each pass, `getLateStartIndex()`
+- `AliasModel.java`, `StreamingEditor.java` - stream deletion
+- P25: `SuperFrameFragment.java`, `P25P1MessageProcessor.java`, `IFrequencyBand.java`, `P25FrequencyBand.java`,
+  `FrequencyBandUpdate*.java`
+
+## [0.6.2-ap-15.9.18] - 2026-10-11
+
+One behaviour change - the TDMA detector removes DC from the audio before squaring it - plus two logging additions
+and a corrected warning. The 15.9.17 limits (`FUNDAMENTAL_FLOOR` 20, `HARMONIC_EXCESS` 10) are unchanged.
+
+### The cause behind the TDMA false hits: the channel's own CTCSS tone
+
+15.9.17 screened the false hits out; this removes what was producing them. The detector builds its envelope by
+squaring the audio, and audio with a DC offset plus a steady tone squares to a component at the tone's own
+frequency: `(dc + a*sin(wt))^2` contains `2*dc*a*sin(wt)`. FM demodulation turns any carrier frequency error into
+exactly such an offset, and every tone-filtered channel carries a steady CTCSS tone.
+
+Three CTCSS tones land on or near the comb: 100.0 Hz is 3 x 33.33, 67.0 Hz is 2 x 33.5, and 74.4 Hz leaks into the
+2nd harmonic of the 34.0-35.0 candidates.
+
+Measured on the ap-15.9.17 survey:
+
+- **Lawrence Fire 154.445 (Daly) and Littleton Fire 460.2625 (Summit)** are the only channels in either log on
+  100.0 Hz, and the only ones where H3 dominates. On Lawrence, H3 was the strongest harmonic in all 3,493 windows
+  scoring 20 or more, and all 18 of its remaining cuts had H3 above H1 (median 3.4x). Real digital on Somerville
+  has H3/H1 at a median of 0.2-1.1 per channel.
+- **Bolton Fire 453.600 (74.4 Hz)** carries a steady H2 of 30-80 at rates 33.0-35.0 with H1 near 1.5 - the "steady
+  66 Hz component" left unexplained in 15.9.17.
+
+Reproduced against this class with synthetic audio (15.9.17 vs 15.9.18):
+
+| case | 15.9.17 | 15.9.18 |
+|---|---|---|
+| 100 Hz tone + DC 0.2 | H3 = 6,164 | H3 = 11.5, no latch |
+| 67 Hz tone + DC 0.2 | H2 = 7,916 | H2 = 10.8 |
+| 74.4 Hz tone + DC 0.2 | H2 = 317 | H2 = 30 |
+| 30 ms cadence, 50% duty | latches, score 381 | latches, score 324 |
+| 30 ms cadence, 20% duty + DC 0.3 | latches, score 147 | latches, score 747 |
+| 30 ms cadence + 100 Hz tone + DC 0.3 | **does not latch** | latches, score 188 |
+
+The last row is a second defect the offset was causing: on a channel with a carrier offset, 15.9.17 could miss real
+digital as well. The field offset itself has not been measured; the correlation and the reproduction are the
+evidence.
+
+### Changed
+
+- **`TdmaInterferenceDetector`** - a one-pole DC blocker (`DC_BLOCK_HZ = 5`) on the audio ahead of the envelope.
+  Gain 0.991 at 33 Hz and 0.999 at 67 Hz, so no CTCSS tone or slot harmonic is touched; settles in about 30 ms
+  after a reset. A steady tone alone squares to twice its frequency (200, 134, 149 Hz for those three), all off the
+  comb. The TDMA cadence is a modulation of the noise power, which DC removal does not touch.
+
+### Added (logging only)
+
+- **One line per call** from `AudioStreamingManager` as the call leaves it (INFO; stream names and the `to` value
+  below are illustrative - the real ones depend on the playlist):
+
+  ```
+  Call [Bolton Fire] to [none] started 2026-10-12 14:03:07.512 ran 8450ms - complete - streams [Bolton FD Zello=LIVE, Summit ThinLine=FILE]
+  ```
+
+  The start time is the one ThinLine files the call under, so any log event can be matched to a recording: a
+  refused or vetoed window at time T on channel C belongs to the call on C that spans T. Per stream: `LIVE` = a
+  Zello stream was started; `FILE` = handed to ThinLine and similar at completion; `NOT READY` = a real-time
+  broadcaster that was not ready, so not streamed live; `MISSING` = no broadcaster by that name. Calls with no stream
+  configured, and duplicates suppressed, are logged as such. This is what tells a silent channel from one still
+  receiving whose audio reaches no stream.
+- **Noise squelch transitions on tone-filtered channels** (DEBUG): `Squelch OPEN` with the branch taken (holdover
+  or full reset), how long ago the tone was last confirmed, and the target-won latch; `Squelch CLOSE` with how long
+  it was open and how long the gate had been unconfirmed. This is the instrumentation the end-of-call pause and the
+  inert 15.9.15 holdover veto have both been waiting for.
+
+### Fixed
+
+- **`TUNER REMOVED FROM SYSTEM` said the channels would restart "when the device returns".** They do not: RSP tuners
+  are discovered once at startup (`TunerManager.discoverSdrPlayTuners()`) and USB hotplug is not supported on
+  Windows, so a returning device is never re-attached. The warning now says to restart SDRTrunk, and that the
+  removal is reported by the driver/API rather than necessarily being a physical disconnect. Daly 2026-10-10: RSP1B
+  SER 24050F5260 dropped at 15:57 carrying 16 channels, which stayed down 29 hours until a restart, and Windows
+  logged no USB, PnP or power event at either of its two drops.
+
+### Not verified
+
+No real DMR burst has been checked against the DC blocker; Somerville is where to confirm real digital still
+latches. The 15.9.17 limits stay until a log shows whether they are still needed.
+
+### Files
+
+- `TdmaInterferenceDetector.java` - `DC_BLOCK_HZ`, DC blocker in `process()`, state reset in `reset()`
+- `NBFMDecoder.java` - `logSquelchOpen()`, `logSquelchClose()`, `mSquelchOpenTimeMs`
+- `AudioStreamingManager.java` - `logCallSegment()`
+- `DiscoveredTunerModel.java` - corrected removal warning
+
+## [0.6.2-ap-15.9.17] - 2026-10-06
+
+The TDMA veto now requires the slot-rate fundamental. Decided by the ap-15.9.16 survey on Summit VHF/UHF
+(13:36-21:33, 7.9 h).
+
+### What the survey showed
+
+The question was whether Bolton Fire's high-scoring windows are a true 33.33 Hz comb with all three harmonics
+strong (real digital energy, an RF problem) or an off-rate artifact carried by some harmonics (a detector
+defect). It is the second, for every window that cut a call.
+
+| | Bolton Fire 453.600 | Littleton Fire 460.2625 |
+|---|---|---|
+| latches | 147 | 205 |
+| latches that closed an open gate (cut a call) | 31 | 69 |
+| H1 of the cutting windows, median / p90 / max | 3.8 / 9.0 / 16.2 | 1.5 / 3.6 / 11.6 |
+| winning rate 33.33 among cutting windows | 2 of 31 | 4 of 69 |
+
+Across all 147 Bolton latches the winning rate wandered 32.0-35.0 (34.00 in 62, 33.00 in 34, 33.33 in 25) and
+H1 was the weakest harmonic in 111. A typical cut, 20:30:46.848: score 23.4 at 33.33 from H1=2.4 H2=208.5
+H3=26.1. During Bolton audio the envelope carries a steady component near 66 Hz (H2 30-80, H1 about 1.5)
+that keeps the score at 5-13 and occasionally pushes it over 20. Its source is not measured.
+
+Bolton also has 34 latches with H1 >= 20, 23 of them at 33.33 with all three harmonics strong (15:21:33,
+H1=78.3 H2=252.1 H3=71.9). Every one fell while the gate was closed and cut nothing. They are the only windows
+that look like a real cadence, and they still latch after this change.
+
+### The change
+
+A window over `DETECTION_THRESHOLD` latches only if the winning candidate's H1 is at least
+`FUNDAMENTAL_FLOOR = 20.0` and neither H2 nor H3 exceeds `HARMONIC_EXCESS = 10` times H1. Otherwise it
+counts as below threshold and logs at DEBUG:
+
+```
+TDMA veto refused: comb score=23.4 rate=33.33 has no fundamental - H1=2.4 H2=208.5 H3=26.1 (needs H1 >= 20.0 and H2,H3 <= 10x H1)
+```
+
+Why the fundamental rather than each harmonic individually: in a rectangular pulse train harmonic n has
+amplitude |sin(n pi d)|/n, which never exceeds the fundamental at any duty cycle. A real cadence cannot lack
+H1, but it can lack H2 (zero at 50% duty), so requiring every harmonic would reject real cadences.
+
+Simulated against the same log, deciding on the same winner the survey logs:
+
+| channel | latches now | latches after | cuts now | cuts after |
+|---|---|---|---|---|
+| Bolton Fire | 147 | 34 | 31 | 0 |
+| Littleton Fire | 205 | 21 | 69 | 0 |
+| Acton Police | 27 | 18 | 7 | 2 |
+| Maynard Fire | 36 | 19 | 0 | 0 |
+| Ayer Fire | 28 | 12 | 0 | 0 |
+| Acton Fire | 20 | 9 | 0 | 0 |
+| Maynard Police | 16 | 8 | 0 | 0 |
+
+Two guards because each alone has thin margin on the real cuts: H1 max 16.2 against a floor of 20, and
+max(H2,H3)/H1 min 11.3 against an allowance of 10. A synthetic envelope modulated at 66.7 Hz only reached
+H1=23.5 with H2=2204 in one window and latched on the floor alone; the excess guard refuses it. Synthetic
+30 ms pulse trains at 20% and 50% duty still latch.
+
+### Not verified
+
+No real DMR burst was in the measuring log, so this has not been checked against a true positive. The
+calibration bursts in the class note were scored without per-harmonic ratios. The `TDMA veto refused` line
+is there so the next log shows anything this lets through.
+
+`DETECTION_THRESHOLD` (20.0), `CONFIRMATION_WINDOWS` (1), `RELEASE_WINDOWS` (3) and the survey line are
+unchanged.
+
+### Files
+
+- `TdmaInterferenceDetector.java` - `FUNDAMENTAL_FLOOR`, `HARMONIC_EXCESS`, the fundamental gate in
+  `evaluate()`, `updateState()` takes the gate result; class note and survey comment corrected
+
+## [0.6.2-ap-15.9.16] - 2026-10-06
+
+One change, and like ap-15.9.11 it deliberately fixes nothing: it logs what the TDMA detector actually
+measures per window, because that number cannot be recovered any other way and three different fixes have
+now been proposed for it without anyone having seen it.
+
+### What went wrong
+
+Bolton Fire 453.600 is analog NBFM with an analog neighbour (PrideStar/Trinity 453.6125). It has no digital
+signal anywhere near it. Yet `TdmaInterferenceDetector` latched 1,072 times on it on 2026-10-05 and cut one
+transmission into five files, losing roughly 3 seconds out of 15 — confirmed against the recordings, which
+hold 11.7 s of audio across a 14.9 s span.
+
+Two proposed fixes were measured against the log and both failed:
+
+| proposal | why it fails |
+|---|---|
+| raise `DETECTION_THRESHOLD` | Bolton's analog comb scores reach **127.3**, p90 40.9 across 1,072 latches. The class note claims real DMR peaks at 64+. No threshold separates them. |
+| raise `CONFIRMATION_WINDOWS` | Not one latch on any channel holds under 300 ms. Bolton's minimum is 350 ms, median 450 ms. Every one of its 955 latches would satisfy a 3-window requirement and still cut the call. |
+
+A third proposal — making the veto per-channel opt-out — would have worked but is a standing maintenance
+burden with two silent failure modes, and was reached by declaring the problem unsolvable after testing
+exactly two knobs. That is not a diagnosis.
+
+### What the recordings could and could not show
+
+Reimplementing this exact algorithm in Python against the six Bolton recordings produced a maximum score of
+**11.1** across all of them, and 1.1–4.7 on the five that were cut. Nothing reached 20.
+
+That does not exonerate the detector. It taps at `NBFMDecoder:646`, ahead of the gate decisions at 653, so
+it sees the whole demodulated stream while the recordings hold only what passed the gate. The windows that
+scored 24–127 are in the gaps the veto cut and were never written to disk.
+
+Two things the exercise did establish. Clean analog Bolton voice reaches 11.1 against a threshold of 20,
+where the calibration note puts synthetic "speech-like AM" at 13 — the margin on real audio is far thinner
+than the note implies, and the note itself admits its negatives were synthetic. And the winning candidate
+rate wanders (32.5, 33.33, 34.0, 35.0) with lopsided harmonic ratios — one window scored with H1=0.3,
+H2=7.2, H3=6.1. The note says requiring three harmonics separates a real cadence from "broad modulation that
+merely happens to have energy near 33 Hz"; because the score is their geometric mean, one strong harmonic
+carries a window where the fundamental is absent. It averages the missing harmonic away instead of
+rejecting it.
+
+### The change
+
+`evaluate()` now retains which candidate rate won and the three harmonic ratios behind it, and logs them
+per window at DEBUG:
+
+```
+TDMA survey: score=27.4 rate=33.33 H1=41.2 H2=18.9 H3=12.6 noiseFloor=3.21e-07 latched=false
+```
+
+Gated on `SURVEY_FLOOR = 5.0` or the detector already being latched, so the quiet majority costs nothing;
+measured median on clean Bolton voice is 1.2–1.7. Windows evaluate roughly every 150 ms per channel.
+
+Nothing else changes. `DETECTION_THRESHOLD` stays 20.0, `CONFIRMATION_WINDOWS` stays 1, `RELEASE_WINDOWS`
+stays 3, and the veto keeps closing gates exactly as before — including on Bolton. One evening of this says
+whether the high scores come from a true comb at 33.33 with all three harmonics strong, which would mean
+real digital energy and an RF problem, or from a lopsided off-rate artifact, which would mean the harmonic
+test needs to require each harmonic individually rather than their product.
+
+### Files
+
+- `TdmaInterferenceDetector.java` — added `SURVEY_FLOOR`, winner tracking in `evaluate()`, the survey line
+
+## [0.6.2-ap-15.9.15] - 2026-10-05
+
+The holdover path no longer passes audio on a gate that has no evidence behind it. 15.9.14 fixed the tone
+decision; this fixes the gate, which turns out to have been opening independently of it.
+
+### The defect
+
+15.9.14 works. The Summit 2026-10-05 log, with the fork running from 10:09:09, shows the win score pinned
+at `-8` on Bolton Fire and the suppression line firing 378–812 times an hour. The detector is correctly
+refusing to convert Trinity's 77.0 Hz into Bolton's 74.4 Hz.
+
+The gate opened anyway. Every one of the 977 `gate OPEN via holdover` lines on Bolton that day carried
+`confirmed=null` — not one fired with a tone confirmed. By raw winner: 361 at 74.4, 352 at 71.9, 191 at
+77.0, 21 other. Four of the six recordings produced in that window were Trinity splashover admitted by
+this path. Acton Police 154.8150 shows the identical pattern with 745 unconfirmed opens, so this is not
+specific to Bolton.
+
+This is the path 15.9.11 instrumented and deliberately left open, logging `WOULD CLOSE` rather than
+closing. The instrumentation did its job: it identified the cause.
+
+### Why the obvious fix was rejected
+
+Closing the gate once the raw winner has been a non-target for some interval does not work, and the log
+says so. Across the 16 confirmed-real episodes, the longest stretch in which the raw winner was not the
+target ran to a median of 1249 ms and a maximum of 2100 ms — real calls spend long periods losing the bin
+contest to noise and to Trinity. Replayed against the log:
+
+| grace period | real calls truncated | bleed episodes closed |
+|---|---|---|
+| 600 ms | 14 of 16 | 10 of 12 |
+| 1000 ms | 13 of 16 | 10 of 12 |
+| 1500 ms | 5 of 16 | 9 of 12 |
+
+No value separates the populations. The 600 ms deadline carried since 15.9.11 would have cut 14 of 16
+real calls had it ever been allowed to fire.
+
+### The change
+
+Evidence, not elapsed time. `CTCSSDetector.isTargetCode()` is exposed, and `NBFMDecoder` latches
+`mRawTargetWonThisEpisode` the first time one of the channel's configured tones wins the Goertzel bin
+contest outright in the current squelch episode — or is confirmed, including a DCS confirmation. When the
+holdover is passing audio with nothing confirmed and that flag has never been set, the gate closes.
+
+The flag resets in the full-reset branch at squelch-open and is deliberately preserved across a
+holdover-opened episode: holdover means trusting the previous call's confirmation, so it inherits that
+call's bin-contest evidence too. A keyup arriving more than `TONE_HOLDOVER_MS` after the previous call
+starts with no evidence, which is what makes an isolated splashover keyup close.
+
+Replayed against the Summit log: **0 of 16 real episodes affected, 9 of 12 bleed episodes closed**,
+including all four recordings identified as splashover (13:52:56, 15:46:28, 16:21:01, 16:56:23). Both real
+recordings (13:14:04, 13:14:10) sit in episodes where 74.4 won a bin and are preserved. The three
+surviving bleed episodes each had 74.4 genuinely win a bin briefly; those are ambiguous, and an ambiguous
+gate is left open.
+
+The `WOULD CLOSE` / `TRUE POSITIVE` / `FALSE POSITIVE` deadline logging is retained for continued
+measurement, but no longer drives any decision. The `gate OPEN via holdover` line gains `targetWon=`.
+
+### Files
+
+- `CTCSSDetector.java` — added `isTargetCode(CTCSSCode)`
+- `NBFMDecoder.java` — added `mRawTargetWonThisEpisode`, its latch points, its reset, and the veto
+
+## [0.6.2-ap-15.9.14] - 2026-10-05
+
+The adjacent-tone leakage preference no longer overrules the detector unconditionally. This is the actual
+cause of the Bolton Fire bleed, and of the 127.3/131.8 limitation that has been on the books since the
+start of this work.
+
+### The defect
+
+Summit's 2026-10-05 log, Bolton Fire 453.600 (CTCSS 74.4) against Trinity 453.6125 (CTCSS 77.0). The tone
+survey, which scans every bin, reports the truth through whole episodes:
+
+```
+092131.711  CTCSS survey: #1 77.0 Hz (77.0 Hz) 25.2 dB
+092147.011  CTCSS survey: #1 77.0 Hz (77.0 Hz) 24.0 dB
+092154.461  CTCSS survey: #1 77.0 Hz (77.0 Hz) 25.2 dB
+```
+
+While the detector reports, and **confirms**, something else:
+
+```
+092145.861  CTCSS tone 74.4 Hz (74.4 Hz) detected: SNR=24 ...
+092145.962  Flushed 3 buffered audio chunks (192ms) after tone confirmation
+```
+
+Those are confirmed detections opening the gate — not holdover. The Goertzel identifies Trinity's 77.0
+correctly and then this heuristic in `analyzeBlock` overrules it:
+
+```java
+// If a target tone is within 2 bins of the winner and within 2 dB,
+// prefer the target tone — it's almost certainly the real tone.
+if(diffDB < 2.0f) { detected = mScanCodeArray[belowIdx]; }
+```
+
+**2 dB is wider than the separation between any adjacent CTCSS pair** — 74.4 against 77.0 is 0.7 dB,
+127.3 against 131.8 is 2.1 dB. So for an adjacent neighbour the override fired every block,
+unconditionally. An adjacent-channel transmitter using the neighbouring PL was indistinguishable from our
+own station by construction. That is the 127.3/131.8 problem: not the 12 Hz bin width alone, but this
+heuristic erasing what the bins did resolve.
+
+### Fixed
+- **The preference is now gated on evidence that the target is really present.** A tone that is present
+  wins its OWN bin outright, because leakage into a neighbour is always a fraction of the peak. So a
+  per-target score rises when the target wins outright and falls when a contested neighbour wins, clamped
+  to ±8, and the override applies only while that score is positive.
+
+  Simulated against the measured behaviour before shipping:
+
+  | scenario | reported |
+  |---|---|
+  | Trinity present, 77.0 wins every block | 77.0 → **rejected** |
+  | real 74.4, occasional noise flip to 77.0 | 74.4 throughout — preference still rescues the flipped blocks |
+  | real 74.4 from cold start | 74.4 immediately |
+  | genuinely ambiguous, target never wins its own bin | rejected |
+  | Trinity, then a real Bolton call starts | switches to 74.4 **in the same block** |
+
+  The last row is the safety property: **the score gates only the override, never direct detection.** A
+  tone that is actually present wins its own bin and never needs rescuing, so a negative score cannot lock
+  out a real call. The original purpose of the preference — noise flipping which bin wins when a real
+  target is leaking — is preserved, as the second row shows.
+
+  A DEBUG line reports suppression on transition only: `CTCSS NOT preferring target X over winner Y` with
+  the dB gap and the score.
+
+### Why the earlier releases did not fix this
+- ap-15.9.11's holdover deadline measured nine false positives to one true positive and was never enabled.
+  Correctly so: the gate was not riding holdover for these calls, it was being opened by confirmed
+  detections of the wrong tone.
+- ap-15.9.13's windowed confirmation cut deadline breaches from 6.0/h to ~1.1/h and holdover-carried gates
+  from 410/h to ~190/h, which is a real improvement to a real defect — but it made confirmation easier,
+  so for this particular path it was marginally more permissive. Both releases were treating symptoms
+  downstream of this.
+
+### Unchanged
+- The RF half is not fixable here. Trinity's signal spans roughly 453.607 to 453.618 with skirts past
+  453.605, putting real energy inside Bolton Fire's passband at the narrowest FM bandwidth SDRTrunk
+  offers. What changes is that the tone filter now rejects it instead of adopting it.
+- The holdover deadline remains measurement-only and closes nothing.
+
+## [0.6.2-ap-15.9.13] - 2026-10-05
+
+CTCSS confirmation becomes a sliding window instead of a consecutive run. The holdover deadline is still
+measurement-only and still closes nothing.
+
+### Why the deadline is not being enabled
+
+ap-15.9.11's measurement ran on Summit and returned **nine false positives to one true positive**, and the
+single true positive passed **1 ms** of unconfirmed audio before the gate shut anyway. Closing at 600 ms
+would have suppressed one millisecond of interference at the cost of clipping nine legitimate calls. The
+deadlines the false positives asked for — 700, 703, 749, 850, 901, 1100, 1298, 1601, 1950 ms — overlap the
+true positive completely, so no threshold separates the two populations. The deadline is the wrong
+instrument and stays disarmed.
+
+That measurement run is why nothing was shipped blind, and it is also what pointed at the real defect.
+
+### Fixed
+- **CTCSS confirmation no longer requires three strictly consecutive blocks.** Any different code reset
+  the counter to 1 and replaced the tracked code:
+
+  ```java
+  else
+  {
+      // Different tone — restart confirmation.
+      mDetectedCode = code;
+      mConfirmationCounter = 1;
+  }
+  ```
+
+  An adjacent transmitter putting energy into the channel lights up random CTCSS bins between genuine
+  detections of the real tone, so the sequence becomes 74.4, 151.4, 74.4, 82.5, 74.4 … and the counter
+  never reaches three. Summit's log shows the mechanism in the act, episodes reading
+  `107.2(0) 74.4*(1)` over and over, with consecutive-target runs of 26 at length one against 16 reaching
+  three. Every legitimate Bolton Fire call rode on holdover from start to finish — which is exactly why
+  the deadline measured nine false positives.
+
+  Confirmation is now **three of the last five blocks**, held as a bitmask whose population count is the
+  confirmation counter. A spurious block between genuine detections is a miss in the window rather than a
+  reset.
+
+  Simulated against the observed sequences before shipping:
+
+  | sequence | old | new |
+  |---|---|---|
+  | alternating spurious/target (the field case) | never confirms | confirms at block 5 |
+  | clean target | block 2 | block 2 — no added latency |
+  | target 1 block in 3 (interference only) | never | **never** |
+  | target 2 blocks in 3 | block 3 | block 3 |
+  | pure interference, target absent | never | **never** |
+  | confirmed, then silence | loses it | loses it |
+
+  The third and fifth rows are the ones that matter: **this does not relax the ap-15.8 property.** That
+  change made the loss counter reset only on a *confirmed* detection, so interference that merely lights
+  the target bin now and then still cannot hold the gate open — it has to actually produce the target
+  three times in five blocks, which needs better than one block in two.
+
+  Because the count is a population over a window rather than a run length it can fall as well as rise, so
+  a confirmed tone that stops being detected loses confirmation with no separate decay path. A silent
+  block now also counts as a miss, so loss behaves the same whether the tone is displaced by interference
+  or simply absent.
+
+- **Rejection tracking moved to its own state.** Counting repeats of a wrong tone shared `mDetectedCode`
+  and `mConfirmationCounter` with the confirmation path, which is what made a spurious tone destroy
+  confirmation progress. It now uses `mRejectCode` / `mRejectCounter` and cannot disturb a confirmation
+  in flight.
+
+- **`getRawDetectedCode()` keeps meaning what it says.** `mDetectedCode` is now the code being confirmed
+  rather than whatever the last block saw, so diagnostics read a new `mLastRawCode`. The `raw=` field in
+  the holdover log — the field that diagnosed all of this — still reports what the last block actually
+  detected.
+
+### Corrected
+- An earlier note in this work described the raw detections as **DCS** codes and suggested removing DCS
+  from the channel. They are not DCS. `WA`, `4A`, `5Z` are `CTCSSCode` tags — `74.4 Hz (WA)` is the target
+  itself. There is no DCS involved and nothing to remove.
+
+### Still not addressed
+- The RF half is unchanged and not fixable here: Trinity's signal spans roughly 453.607 to 453.618 with
+  skirts past 453.605, so real energy lands inside Bolton Fire's passband at the narrowest FM bandwidth
+  SDRTrunk offers.
+- CTCSS still cannot distinguish 74.4 from 77.0 — 12 Hz bins, 2.6 Hz apart, about 0.7 dB. Unchanged, and
+  not what this release is about.
+
+### What to watch
+`CTCSS holdover WOULD CLOSE` is a WARN and therefore an unbiased count, unlike the DEBUG detection stream
+which drops to TRACE once a tone is stable. If windowed confirmation works, that count should collapse
+toward zero because gates will be standing on real confirmations rather than on holdover. The deadline
+still closes nothing, so a wrong guess costs another day and no audio.
+
+## [0.6.2-ap-15.9.12] - 2026-10-05
+
+### Reverted
+- **The "To" column no longer holds the configured talkgroup between transmissions.** Reverts the
+  `AnalogDecoderState` change from ap-15.9.10; the file is byte-identical to its ap-15.9.9 state and the
+  column blanks at call end as it did before.
+
+  Reverted at Armen's request: there is no need for the Now Playing row to carry the talkgroup, since
+  the row is the talkgroup, and he does not want that behaviour as a precedent for trunked systems whose
+  talkgroup legitimately changes call to call.
+
+  Note on how it got in. He reported the column blanking as a fault; the analog mechanism was found while
+  investigating and offered alongside the ap-15.9.10 mute fix because the two share a root cause — only
+  the live identifier is ever consulted, never the configured one. Sharing a cause is not the same as
+  being one change, and presenting them together implied a dependency that did not exist. The mute fix
+  reads the talkgroup directly from `DecodeConfigAnalog` and never depended on this.
+
+  **The Now Playing mute is unaffected** and still resolves the governing alias from the channel's
+  configured talkgroup. Atlantic 4 and Littleton Fire both keep working.
+
+  Also still open: the original report was Salisbury on ap-15.7 with a **P25** channel showing no
+  talkgroup. P25 does not use `AnalogDecoderState`, and ap-15.7 predates every fork change to the
+  metadata panel, so that was never addressed by this and remains unexplained.
+
+## [0.6.2-ap-15.9.11] - 2026-10-04
+
+One change, and it deliberately does not fix anything yet: it arms a dead backstop and records what that
+backstop would have done, so the next release can set its threshold from data rather than from a guess.
+
+### The defect
+
+On the Summit machine, Bolton Fire (453.600, CTCSS 74.4) gargles whenever PrideStar/Trinity transmits on
+453.6125 with CTCSS 77.0. The waterfall shows Trinity's signal with a solid core spanning roughly 453.607
+to 453.618 and skirts reaching past 453.605, so real energy lands inside Bolton Fire's 7.5 kHz passband —
+already the narrowest FM option, and gain reduction did not help, so this is not front-end overload. That
+part is RF and cannot be fixed in software.
+
+What *is* ours is that the tone gate lets it through. Bolton Fire has tone filtering enabled on 74.4, and
+the 2026-10-04 log carries 99 of these:
+
+```
+CTCSS gate OPEN via holdover: confirmed=null raw=WA lossCounter=2 holdoverAge=1248ms
+```
+
+`confirmed=null` means no tone is currently confirmed — the gate is standing on a stale `mToneMatch` from
+an earlier genuine confirmation. A backstop for exactly this already existed,
+`HOLDOVER_CONFIRM_DEADLINE_MS = 600`, and it fired **zero times** in that log while holdover ages ran to
+652, 800, 1051 and 1248 ms.
+
+It could not fire. `mHoldoverOpenTime`, the field that arms the deadline, was set in exactly one place —
+the squelch-open path, when the gate opens via holdover — and was zeroed by **every** genuine tone
+confirmation, including the one that legitimately opened the gate:
+
+```java
+mToneMatch = true;
+mLastToneMatchTime = System.currentTimeMillis();
+// Confirmed detection — the gate no longer rests on holdover trust
+mHoldoverOpenTime = 0;
+```
+
+So the common case had no clock at all. A real transmission confirms the target; `mToneMatch` stays true
+after it ends; an adjacent signal later opens the squelch during a *continuous* transmission, so the
+squelch-open path never re-runs; and the gate passes audio for the whole of it with the deadline
+permanently disarmed. The backstop was structurally unable to see the case it was written for.
+
+### What this release does
+
+- **Arms the clock on any unconfirmed gate**, not only one opened by the holdover branch. This is the
+  actual fix and it is one line.
+
+- **Does not close the gate.** Arming the clock makes that deadline live on every tone-filtered NBFM
+  channel in the fleet for the first time, and 600 ms has never run in production, so it has never been
+  tested against real traffic. If it is too tight the failure mode is audio clipped mid-call, which is
+  worse than the interference it suppresses. The detector is also logging `confirm=1/3` repeatedly for
+  74.4 — reaching one confirmation of three and resetting — and nothing in this log says whether that is
+  Trinity's interference or how the channel behaves normally. That difference decides the threshold.
+
+- **Reports both outcomes at WARN**, so one day of logs settles it without DEBUG enabled:
+  - `CTCSS holdover WOULD CLOSE gate: Nms unconfirmed (deadline 600ms) raw=X — measurement only`
+  - `CTCSS holdover FALSE POSITIVE: target re-confirmed Nms after the deadline would have closed the
+    gate — a deadline of Nms or more would have kept this call` — a legitimate call that closing would
+    have cut short, with the margin by which 600 ms missed.
+  - `CTCSS holdover TRUE POSITIVE: gate passed Nms of unconfirmed audio past the deadline and the target
+    was never re-confirmed` — the interference case, counted at squelch close.
+
+  The false-positive line is the one that matters: it names the deadline that would have been safe for
+  each call it would have clipped. Take the maximum across a day and the threshold picks itself.
+
+### Also worth trying on that channel, no code needed
+The raw detections come back as DCS codes (`WA`, `YZ`, `NZ`) and a spurious 107.2 Hz reads 12.6 dB while
+the real 74.4 reads 7.6 dB — the garbled signal being decoded as tones that are not there. If Bolton Fire
+has DCS codes configured alongside CTCSS, removing them cuts off one source of spurious matches.
+
+### Not addressed
+- **CTCSS cannot distinguish 74.4 from 77.0 and this is not the fix for it.** The detector's block is
+  `max(5 cycles of the lowest tone, sampleRate/12)` = 666 samples at 8 kHz, so bins are 12 Hz wide. The
+  two tones are 2.6 Hz apart, 0.22 of a bin: a 77.0 tone measured by the 74.4 detector returns about 92%
+  of full response, **0.7 dB** down. For comparison the 127.3/131.8 pair is 4.5 Hz apart, about 2.1 dB,
+  matching the 2.0 dB measured previously. Resolving 2.6 Hz needs roughly 3,100 samples, 385 ms per
+  block, over a second with the three-block confirmation — unusable for dispatch audio.
+- **Alias deletion requiring a restart** (reported on ap-15.7, selecting an alias list from the dropdown
+  with no search text). `AliasConfigurationEditor.java` is pristine upstream — one commit, the initial
+  import — so this is not a fork regression and will reproduce on any version. The suspect is the
+  `FilteredList` whose single long-lived `AliasPredicate` is mutated in place, which is why `update()`
+  has to do `setPredicate(null)` then set it back to force re-evaluation. Not yet reproduced here.
+
+## [0.6.2-ap-15.9.10] - 2026-10-04
+
+Corrects two mistakes in ap-15.9.9, fixes the Now Playing mute on channels whose alias list holds more
+than one alias, and stops the "To" column blanking between transmissions.
+
+### Context: what ap-15.9.9 achieved
+
+Over 14 hours on 2026-10-04, three machines logged **20,592 stream stops and one "channel busy"
+rejection**. Zero ghost streams (6 over the preceding two days), zero `session appears dead`, 8 watchdog
+trips. Missing stop acks improved — Somerville 1.94 per thousand stops against 3.23 on 10-03, Stoneham
+0.33 against 0.95. Only 8 close-1006 events fleet-wide, because every connection was under 24 hours old
+following the 23:15 restart, which independently confirms Zello's 24-hour connection cap.
+
+### Fixed — corrections to ap-15.9.9
+- **`START_STREAM_RETRY_MS` raised from 750 ms to 3000 ms.** 750 ms was described in the ap-15.9.9 notes
+  as "a large multiple of a plausible round trip". It is not — it sits inside the normal latency tail.
+  Measured over 20,592 streams on 2026-10-04, from `stream started` to the `stream_id=` flush line:
+
+  | broadcaster | median | p99 | max |
+  |---|---|---|---|
+  | Work | 43–51 ms | 77–89 ms | 330–1390 ms |
+  | Consumer | 43–55 ms | 523–662 ms | 523–922 ms |
+
+  All seven retries that fired were on healthy-but-slow starts, each opening a second stream that the
+  duplicate and orphan guards then closed. No audio was lost, but nothing was recovered either — the
+  retry was pure churn. 3000 ms is above every healthy start observed and below every genuinely silent
+  one (the six ghost cases ran 1.7 s to 5.0 s), so it separates the two populations.
+
+  The ap-15.9.9 comment also claimed normal latency "was never measured directly" because `stream_id`
+  arrival is not logged. It is logged, by `flushPendingFramesPaced`, in a method that had already been
+  read. The claim was simply not checked.
+
+- **Already-closed-stream errors now dispatch on the error string.** ap-15.9.9 dispatched on the origin
+  command, reasoning that any error answering a `stop_stream` is an already-closed stream by definition.
+  The field logs refuted it: the server sends these **unsolicited, with no seq** —
+  `error="failed to stop stream" seq=-1 command=unknown` — so there was no origin command to match and
+  the branch never fired. All eight occurrences on 2026-10-04 took the old path and still applied the
+  cooldown. Matching the string is correct and is what `isTransientStreamError` already does; Zello's
+  caution was against retrying by numeric **code**, which this does not do.
+
+  One ordering detail preserved: `bad mid` can also answer a `start_stream`, where it is a genuine start
+  failure (Boston MA EMS, 2026-10-04 13:42, seq=4617). That origin-command check now runs first.
+
+### Fixed — Now Playing mute
+- **The mute toggle now works on channels whose alias list holds more than one alias.** On Stoneham,
+  Atlantic 4 could be muted and unmuted from Now Playing with no effect on the audio and no
+  correspondence to the alias Listen toggle, while Littleton Fire on another machine worked correctly.
+  The difference was the alias list: Littleton's holds one alias, Stoneham's Wakefield list holds three
+  (Wakefield MA Fire, Wakefield MA Police, Atlantic Amb 4).
+
+  `resolveChannelAlias` consulted only the **live** TO identifier, which for NBFM exists solely during a
+  transmission — and since ap-15.9.7's squelch-close fix that identifier is cleared promptly at the end
+  of each one instead of lingering, so a right-click between transmissions reliably found nothing.
+  Resolution then fell to the rule requiring the alias list to hold exactly one alias, which fails on a
+  three-alias list, and the mute went to the per-channel store. That store does not gate the audio:
+  `AudioSegment` takes the **lowest** playback priority across every attached alias, so one alias at
+  `DO_NOT_MONITOR` silences the channel and nothing in the Now Playing menu could see or clear it.
+
+  For a conventional analog channel the governing alias is not something to guess from the alias list —
+  it is the channel's **configured talkgroup**, which `DecodeConfigAnalog` holds as static configuration
+  and which `NBFMDecoderState`/`AMDecoderState` publish on every call. `resolveConfiguredTalkgroupAlias`
+  now looks that up directly, so right-click and the alias Listen toggle are two switches on one state
+  regardless of list size or whether anyone is talking.
+
+  Scope is narrow by construction. `AliasList` keys talkgroup lookup by **protocol first** and returns at
+  most one alias per talkgroup, so an NBFM talkgroup can only match an NBFM alias in that channel's own
+  list — never a P25 or DMR alias at the same number, and never more than one. Trunked channels have no
+  configured talkgroup, so they are unaffected and keep resolving from the live TO, which is correct for
+  them. A channel with no matching alias — one being auditioned before an alias exists — still falls
+  through to the per-channel store and stays independent of everything else.
+
+  **Behaviour change worth knowing:** on an analog channel with an alias, right-click mute now writes
+  `DO_NOT_MONITOR` into the playlist exactly as the Listen toggle does, so it persists across restarts.
+  Previously it was a session-local per-channel flag. A stale per-channel entry from the old behaviour is
+  discarded the first time a channel is toggled.
+
+- **The mute menu item is now just "Mute" / "Unmute".** The row already names the talkgroup, so repeating
+  it said nothing, and `getShortTitle()` is System/Site/Name — long enough to run off the menu edge.
+  What the click will change moved to the tooltip, which also distinguishes a persisted alias toggle from
+  a channel-local mute.
+
+### Fixed — Now Playing display
+- **The "To" column no longer blanks between transmissions on analog channels.** `endCallEvent()` calls
+  `resetState()`, which is `mIdentifierCollection.remove(IdentifierClass.USER)` — and a
+  `TalkgroupIdentifier` is USER class, so the talkgroup went with it. The column showed `-----` the
+  instant a transmission ended, against a row still highlighted through the CALL-to-FADE hang period.
+
+  The configured talkgroup is re-applied after `resetState()`, on `REQUEST_RESET`, and at `start()`.
+  For a conventional channel it describes what the channel **is**, not a decoded identity that arrives
+  and departs with each call; clearing it is right for a trunked system and wrong here.
+
+  This also explains why it appeared to work before ap-15.9.7: the swallowed `SquelchState.SQUELCH` meant
+  `notifyCallEnd()` often never ran, so the talkgroup stayed on screen because the state machine was
+  broken. Fixing the squelch close made the column blank correctly, which is when this surfaced.
+
+  Note this is **not** the cause of the Salisbury report on ap-15.7, where a P25 channel showed no
+  talkgroup. P25 does not use `AnalogDecoderState`, and 15.7 predates every fork change to the metadata
+  panel. That remains open.
+
+### Known residuals
+- Pooled mode still gets none of the Zello fixes; `use_shared_pool` is default-false and unused.
+- A response to a superseded `start_stream` can still be adopted by a later segment — the success handler
+  tests `mStreamActive` but not `mStreamSessionEpoch`.
+- Missing stop acks remain concentrated on a few channels, worst on Massport (consumer network). Raised
+  with Zello.
+- No RSP1B removal verification. Daly logged no device-removal callbacks on 10-02, 10-03 or 10-04 — three
+  clean days after the 33-callback burst on 10-01, so the fault is intermittent rather than resolved.
+- `tools/fleetcheck.py` still parses none of the log lines added since ap-15.9.7, and its CTCSS section
+  still counts transition events against a counter that drops to TRACE on success — the measurement that
+  produced the retracted tone-confusion percentages. It should be fixed or removed.
+
+## [0.6.2-ap-15.9.9] - 2026-10-03
+
+Acts on Zello Support's second round of answers (2026-10-03) and on the ap-15.9.8 field result. Four
+changes to the Zello client, all small; no tuner or decoder changes.
+
+### Context: what ap-15.9.8 achieved
+
+Across 2026-10-02 and 10-03, three machines on ap-15.9.8 logged **92,774 stream stops and one
+"channel busy" rejection**. Stoneham is the strongest evidence: it ran ap-15.9.7 through 10-01 (720
+rejections in 10,003 stops, 72.0 per thousand) and ap-15.9.8 from then on (0 in 15,976 stops). Somerville
+was 24.6 per thousand before, Daly 11.4; both are now zero. Ghost streams fell from 1,687 in a day across
+three machines to 6 in two days, and `session appears dead` no longer fires at all.
+
+### Fixed
+- **An error answering our own `stop_stream` no longer gates the next transmission.** `bad mid`,
+  `invalid stream id`, `failed to stop stream` and `failed to stop sending message` all mean the server
+  had already closed that stream. Zello Support confirmed there is nothing to retry and that these must
+  not block the next `start_stream`. They were falling into the generic transient branch, which ends in
+  `scheduleStreamCooldown(...)` and so restarted `mPauseUntilTime` and `mStreamGuardUntilTime` from the
+  moment the error arrived — a second cooldown for a stream that had already ended, delaying the next
+  transmission on that channel by the configured pause all over again. About 22 a day fleet-wide.
+
+  Dispatch is on the **origin command**, not the error string or its numeric code: any error answering a
+  `stop_stream` is an already-closed stream by definition, so a new error string for this condition needs
+  no code change. `mStreamActive` and `mCurrentStreamId` are deliberately left alone — the error can
+  arrive after a new stream has started on the channel, and clearing them would kill it.
+
+- **A late `start_stream` response no longer orphans a stream.** On success we adopted the `stream_id`,
+  reset the ghost counter and flushed buffered audio into it, with no check that the segment still
+  existed. The server can take seconds to answer — all six surviving ghost cases ran 1.7 s to 5.0 s — by
+  which time the squelch segment is long over. The adopted stream then had no owner and nothing ever
+  stopped it, so it stayed open server-side; and since one sender may hold only one stream, that orphan
+  is what makes the *next* transmission on the channel fail. Same family as the orphaned-stream
+  collisions fixed in ap-15.4. The stream is now closed immediately instead.
+
+- **An unanswered `start_stream` is retried once.** Zello Support confirmed that on an established
+  session a `start_stream` always returns either the `stream_id` or a seq-keyed error, that a response
+  with neither is unusual, and that one retry after a short backoff is the right handling since the
+  socket is healthy. The retry is timed from the start (`START_STREAM_RETRY_MS` = 750 ms), not from the
+  ghost warning, which fires at stop time when a retry could only open a stream nobody owns.
+
+  **Correction to the ap-15.9.8 notes.** This condition looked common on ap-15.9.7 — 1,687 ghosts in a
+  day — but the median interval from `stream started` to ghost detection was **13 to 16 ms** against an
+  `ENCODER_DRAIN_MS` of 15, so those were transmissions shorter than a network round trip, not a silent
+  server. The ap-15.9.8 race fix removed that entire population. The 6 survivors are the real condition.
+  Zello was told the inflated figure and has been corrected.
+
+  Because the retry can put two `start_stream` commands on the wire, a second answered `stream_id` is now
+  closed as a duplicate rather than overwriting `mCurrentStreamId` — otherwise the retry would trade one
+  orphan for another.
+
+- **The Work broadcaster's liveness deadline now resets on any inbound frame.** Zello's keepalive is
+  server-driven: they ping every 30 s and close the connection if a Pong does not return within 30 s.
+  The pong itself was already correct on both Work and Consumer, which is why we never saw mass closures.
+  What was missing is the reset: `ZelloConsumerBroadcaster` already treated an inbound ping as proof of
+  life, while `ZelloBroadcaster` counted only acks to its own JSON `keepalive` command, so a channel
+  receiving Zello's pings could still accumulate missed acks toward the reconnect threshold.
+
+- **`unable to decrypt` is named as a session error.** Zello Support warned it shares a numeric code with
+  `bad mid` but is a session fault, and that a client must not blanket-retry by code. This fork never
+  dispatched on the number — `isTransientStreamError` matches the error string and `mapBridgeErrorCode`
+  is display-only — so the behaviour was already correct. It is now checked first and explicitly, so the
+  intent is recorded and it cannot be swept into `TRANSIENT_STREAM_ERRORS` later.
+
+### Confirmed, no change needed
+- **Close code 1006 is expected.** The Channel API caps any single WebSocket at 24 hours and tears it
+  down with no close frame; connections may also be drained during maintenance. One connection per
+  channel means roughly one teardown per channel per day, which is what the logs show — Somerville 31 and
+  38, Stoneham 32 and 38, Daly 19 and 25 over the two days. Our reconnect has base-plus-jitter backoff
+  already, which is what Zello asks for to avoid a fleet-wide drain becoming a retry storm, and the
+  staggered cold start keeps the 24-hour expiries spread out rather than simultaneous.
+- **No TCP keepalive on the socket.** `java.net.http.HttpClient` exposes no socket-option API, so
+  `SO_KEEPALIVE` cannot be set without replacing the WebSocket client. The read-deadline reset above
+  catches the same half-open condition.
+
+### Measured, not changed
+- **Daly tuner PPM baseline**, from the per-serial logging added in ap-15.9.8:
+  `RSP1B SER:24040A4B60` −601.8 Hz mean at 483.5625 MHz (**−1.245 PPM**, n=12);
+  `RSP1B SER:24050F5260` −159.9 Hz at 154.9850 MHz (**−1.032 PPM**, n=354);
+  `RTL-2832/R820T 00002005` +127.7 Hz at 483.7625 MHz (**+0.264 PPM**, n=188, range −694 to +428).
+
+  **Deliberately not corrected.** 600 Hz is about 5% of a 12.5 kHz channel and sits well inside the
+  channel filter, and an FM carrier offset appears as a DC bias in the demodulated output — removed
+  downstream — not as a shift in audio or CTCSS tone frequency. This is a different order of problem from
+  the Daly dongle at 10 PPM, where 4.8 kHz was comparable to the filter's half-bandwidth. A hand-entered
+  PPM is also a value nothing re-measures, which is how that dongle sat wrong for weeks. These figures
+  are recorded as a baseline so a future drift is visible.
+
+### Known residuals
+- **Pooled mode gets none of these fixes.** `handlePooledMessage` has its own copy of the `stream_id`
+  handling and the pool cannot resolve a seq back to a command, so neither the orphan guard nor the
+  stop-ack path applies there. `use_shared_pool` is default-false and unused on the fleet.
+- **A response to a superseded `start_stream` can still be adopted by a later segment.** The success
+  handler tests `mStreamActive` but not `mStreamSessionEpoch`, so a very late answer arriving after a new
+  segment has begun would be taken as that segment's stream. The ap-15.9.8 stop-begin guard and the
+  750 ms retry both narrow the window; closing it properly needs the epoch carried through the command
+  map.
+- **Missing stop acks are rising on specific channels.** 132 fleet-wide over the two days; Somerville went
+  from 1.6 to 3.2 per thousand stops. Not volume-driven (Everett MA Police: 2,079 stops, zero) and not
+  the 1006 teardowns (1 of 45 within a minute of one). Concentrated on a few channels, worst on Massport
+  at 24.3 per thousand, which is on the consumer network. Raised with Zello; the watchdog catches each
+  one, so it costs latency rather than audio.
+- **No RSP1B removal verification.** Still deferred. Daly logged no device-removal callbacks at all on
+  10-02 or 10-03, two clean days after the 33-callback burst on 10-01, so the fault is intermittent
+  rather than resolved.
+
+## [0.6.2-ap-15.9.8] - 2026-09-30
+
+Acts on Zello Support's answers of 2026-09-30. Two Zello streaming defects are fixed — one of them a
+five-hundred-millisecond wait on an acknowledgement that, we now know, is never sent — and the tuner
+frequency-error lines finally name the tuner.
+
+### Fixed
+- **We waited 500 ms after every stream stop for an acknowledgement the server never sends.** Zello Support
+  confirmed that `on_stream_stop` is sent only for server-initiated stops and for incoming streams from other
+  senders; it is **never** sent to acknowledge the sender's own `stop_stream`. That matches the field
+  evidence exactly: 43,745 stops across the fleet with zero `on_stream_stop` acknowledgements, and 28–32% of
+  follow-up transmissions delayed. Every stop fell through to the `PENDING_STOP_TIMEOUT_MS` watchdog, so the
+  next transmission on a channel waited a fixed 500 ms whether the server was ready or not.
+
+  The authoritative confirmation is the seq-keyed `{"seq":n,"success":true}` response to the `stop_stream`
+  command itself, and the stop is processed server-side as soon as it arrives. **We were already receiving
+  that ack and discarding it.** `sendStopStream` records the command against its seq, and `handleTextMessage`
+  resolves the ack back to `stop_stream(id=…)`, asks `isKeepaliveAckCommand` whether it is a keepalive, gets
+  no, and drops it. A new `handleStopStreamAck` branch now releases the pending stop, cancels the watchdog and
+  releases any queued start. A 500 ms fixed wait becomes one round trip.
+
+  The watchdog stays as a safety net for a lost ack, but its log line moves from DEBUG to **WARN**: it now
+  fires only on a genuine anomaly, and its rate is the signal that the ack path is working. If these return
+  to soak-log volume (~53,000 per 3 days on ap-15.6), `handleStopStreamAck` is not being reached.
+
+- **A stream stop left a window in which a new stream could open on top of it.** `doStopRealTimeStream` set
+  `mStreamActive` false, then scheduled `finishStopRealTimeStream` `ENCODER_DRAIN_MS` (15 ms) later, and only
+  there marked `mPendingStopStreamId` — after the tail-frame send loop. For that whole window `mStreamActive`
+  was already false and `mPendingStopStreamId` was still `-1`, so both guards in `beginStreamInternal` passed
+  and a second stream opened while the first was still closing. The server rejected one of the two as
+  "channel busy" (3008). Stoneham lost roughly 740 transmissions a day to this, Somerville roughly 440.
+
+  The pending mark and its watchdog now happen at stop-begin. Zello Support independently confirmed the
+  diagnosis: these channels have exactly one sender, so the busy rejections cannot be floor contention, and
+  extra channel priority — which we had on the remedy list — makes no difference at any configuration. The
+  3008s were ours.
+
+### Diagnostics
+- **Tuner frequency-error log lines now name the tuner, not its controller class.** The lines added in
+  ap-15.9.7 identified a tuner by `getClass().getSimpleName()`, so a machine with four RTL-2832 dongles
+  produced four streams of reports all labelled `RTL2832TunerController` and a fleet-wide PPM audit could not
+  say which physical dongle was off. They now carry the device name and its serial, e.g.
+  `RSP1B SER#24050F5260`.
+
+  `TunerController` gains a `getTunerLabel()` that prefers the owning `Tuner`'s preferred name and falls back
+  to the class name. `Tuner`'s constructor registers itself with the controller; the name is resolved lazily
+  at log time rather than cached at construction, because the controller is built before the `Tuner` that
+  wraps it and `getPreferredName()` is abstract. All four call sites in `TunerFrequencyErrorManager` use it.
+
+### Confirmed, no change needed
+- Zello's published limits match what we already do. New connections are capped at **10 per minute per IP**,
+  which is the figure `BroadcastModel.computeStartupDelayMs` already batches against, so a 20-channel machine
+  already ramps legally at cold start. One connection may **receive** up to 100 channels but **sends** one
+  stream at a time, serialized — which confirms one-connection-per-channel was the right design rather than a
+  workaround. Inbound audio is paced to **≤1.5x real time**, which the 8-immediate/55 ms scheme respects.
+  These are identical for Zello Work and Zello Consumer.
+
+### Not in this release
+- **No RSP1B removal verification.** Deferred by decision, not oversight. The Daly evidence is that the
+  SDRplay API raises spurious `processDeviceRemoval` callbacks — Windows Event Viewer was empty for both the
+  03:16 and 07:16 windows on 09-28, both devices reported `Status: OK`, and the API service was running —
+  and that our permanent removal with no rescan turns a spurious callback into an 11 h 20 min outage across
+  eight feeds. The remedy under consideration is to query the API's device list before acting on the
+  callback. It is not here yet.
+- **No pooled-mode equivalent of the stop-ack fix.** In pooled mode the seq comes from
+  `ZelloConnectionPool.nextSequenceFor` and `trackPendingCommand` is not called, so the pool cannot resolve
+  an ack back to a command. `use_shared_pool` is default-false and unused on the fleet; this is recorded as a
+  known gap rather than fixed blind.
+
+## [0.6.2-ap-15.9.7] - 2026-09-26
+
+Ships the squelch-close fix that was lost from ap-15.9.6, takes one upstream P25 filter correction, and adds
+two diagnostics for failures that were previously invisible.
+
+### Fixed
+- **The ap-15.9.6 squelch-close fix was never in the build.** `NoiseSquelch.java` does not appear in
+  `ap-15.9.6.patch` at all. The change was recovered from a reverted commit with `git apply --3way`, which
+  failed on `NBFMDecoder.java` and — being atomic — rolled back the `NoiseSquelch.java` hunk that had already
+  applied cleanly. Only the other half was re-applied, and the delivered patch was never checked against the
+  files it claimed to touch. The ap-15.9.6 changelog entry and release notes both state this fix is present;
+  they are wrong.
+
+  The diagnostic that *did* ship is what caught it. On 2026-09-25, across five machines on ap-15.9.6: 11
+  stuck-call watchdog trips, **10 flagged `STALE CALL TIMER`** — Somerville 8 (7 stale), Baker 2 (2), Stoneham
+  1 (1), Beauport 0, Daly 0. Somerville is unchanged from its 09-22 baseline of exactly 8 trips, which is what
+  a missing fix predicts. Idle times on the stale trips ran 194 s to 977 s.
+
+  The fix itself is unchanged from its description in ap-15.9.6: `broadcast(SquelchState.SQUELCH)` moves out of
+  the `if(mSquelchOpenIndex < squelchCloseIndex)` guard so the close is always announced, symmetric with
+  `UNSQUELCH`. `mSquelchOpenIndex` comes from `findTransition()`, which indexes the delay buffer and can exceed
+  `squelchCloseIndex`; when it did, the state went squelched with no listener told, `mCallStartTimeMs` was never
+  cleared, and the next squelch opening tripped the 180-second watchdog at once.
+
+- **P25 Phase 1 C4FM matched filter designed for the wrong symbol rate.** Adopted from upstream PR #2461,
+  unmerged at the time of writing. `FilterFactory.getRootRaisedCosine()` halves its samples-per-symbol argument
+  on its first line, so `P25P1DecoderC4FM` passing the actual value (4.0) designed a **9600 baud, alpha 0.2**
+  filter instead of the intended ~4800 baud one, admitting roughly twice the noise bandwidth of the signal.
+  Now passes 1.5x the actual value with alpha 0.5, designing at 6400 baud.
+
+  Upstream measured a sweep of design rate and roll-off against an independent IQ oracle and by
+  control-channel content corroboration: a plateau at 6400 baud with alpha 0.5 to 0.7 recovered +8.7 to 9.4%
+  corroborated TSBKs on the weakest control channel in their set, no change on the stronger one, marginal and
+  clean voice recall unchanged, refuted claims unchanged. A true 4800 baud alpha 0.2 design is too narrow for
+  C4FM and costs about 4 points of marginal voice recall.
+
+  **Verifiable on this fleet:** the ap-15.9.6 unknown-ALG-ID warning showed scattered one-off algorithm IDs on
+  marginal talkgroups — Somerville Arlington Police 10 distinct IDs, Watertown 9, Winthrop 5; Daly North
+  Andover 7. Those are corrupt encryption sync fields from bad symbol decisions. If this filter is right those
+  counts should fall, and `tools/fleetcheck.py` reports them.
+
+  **Deliberately not applied to `P25P1DecoderLSM` or `DMRDecoder`**, which call the same method the same way
+  and carry the same mis-design. LSM is not C4FM and DMR is 4FSK, so these constants do not transfer; each
+  needs its own measurement. Cambridge CoMIRS is P25 Phase 1 Simulcast (LSM) and is the system to measure
+  against.
+
+### Diagnostics
+- **Tuner frequency error is now logged.** A Daly RTL-2832 was running at 10 PPM — about 4.8 kHz at 483 MHz,
+  roughly twice the peak deviation of a narrowband channel — which put the carrier near the edge of the channel
+  filter, distorted the demodulated audio, and collapsed the CTCSS tone discrimination margin. Methuen Fire,
+  Andover Fire and Lawrence Fire were all affected; setting the PPM to 0 fixed them. **Nothing logged this at
+  any level.** The measured error was already computed and handed to the tuner controller, and then discarded.
+
+  It is now reported at INFO every 5 minutes per tuner, with the implied residual PPM against the configured
+  value and whether auto-PPM is enabled. Additionally, a tuner that receives **no** frequency error measurement
+  for 5 minutes now warns once, explaining that auto-PPM cannot correct it: frequency error is measured only by
+  decoders that track a carrier, and `NBFMDecoder` has no such measurement because FM has no reference carrier
+  phase to lock to. An NBFM-only tuner's PPM can only be set by hand, and previously nothing said so.
+
+- **The TDMA interference gate closure now reports the score that latched it.** It logged
+  `getLastScore()`, which decays while the latch is held, so the 09-23 Daly log shows closures reporting comb
+  scores as low as 0.4 against a `DETECTION_THRESHOLD` of 20.0 — which reads as a broken threshold and is only
+  a stale figure. The line now gives the latching score, the current score and the threshold, so a reader can
+  tell live interference from a latch running out its `RELEASE_WINDOWS`. No behaviour change: the latch, the
+  threshold and the 1-window-to-confirm / 3-windows-to-release asymmetry are untouched pending measurement of
+  whether the detections are correct. Daly logged 5,324 closures on Lawrence Fire and 370 on Andover Fire in a
+  day, and some of that may have been the off-tune audio above.
+
+### tools/fleetcheck.py
+- **ThinLine / Rdio Scanner call upload.** The script missed 63,414 upload failures on Cambridge across four
+  days because it had no such section. It now counts failures per endpoint with the error code, names
+  Cloudflare codes (1033, 530, 521, 522) as origin-side rather than SDRTrunk faults, and reports whether the
+  feed ever connected at all.
+- **Per-serial tuner reliability** — sessions, removals, uptime and removals per hour, broken out by serial
+  number. On Daly 09-25 this separates `RSP1B SER#24040A4B60` at 15.5 removals per hour of uptime from
+  `SER#24050F5260` at 0.79, on the same machine and the same bus, which is how a faulty device is told from a
+  faulty port.
+- Reports the new frequency-error and no-measurement lines, so a fleet-wide PPM audit is a log analysis rather
+  than a visit to ten machines.
+
+### Not in this release
+- **No Rdio Scanner retry backoff.** Proposed after the Cambridge finding; the BAPERN channel was enabled
+  accidentally and has been disabled, so the 15,700 retries per day were a misconfiguration, not a defect.
+- **No CTCSS detector resolution change.** The measurement that justified it — Andover Fire's 146.2 Hz at
+  16.7 dB against 141.3 Hz at 16.3 dB — was taken on a signal roughly 4.8 kHz off tune and is contaminated.
+  Re-measure on a correctly tuned signal before deciding whether the longer window and its added confirmation
+  latency are needed at all.
+- **No P25 Phase 2 changes.** Upstream PRs #2460 and #2459 apply, and Cambridge does allocate 35 to 70 Phase 2
+  traffic channels a day, but both PRs were measured at 0 dB SNR and reported no change on clean signals, and
+  it is not yet established whether Cambridge's Phase 2 audio decodes at all.
+
+## [0.6.2-ap-15.9.6] - 2026-09-24
+
+Four changes, each measured before it was written. Two correct a silent failure, one corrects a filter that
+was attenuating the wrong part of the spectrum, and one reduces a heap ceiling that was never protection.
+
+### Fixed
+- **A squelch close could be swallowed, stranding the stuck-call timer.** `NoiseSquelch` broadcast
+  `SquelchState.SQUELCH` only from inside the guard around emitting a trailing audio segment.
+  `mSquelchOpenIndex` is set by `findTransition()`, which indexes the delay buffer and can therefore exceed
+  `squelchCloseIndex`; when it did, the internal state went squelched with no listener told. Downstream that
+  meant `NBFMDecoder` never saw the close, so `mCallStartTimeMs` was never cleared, the squelch tail remover
+  never closed and the tone holdover never started. A stale `mCallStartTimeMs` then makes the *next* squelch
+  opening trip the 180-second watchdog immediately.
+
+  All eight watchdog trips on Baker and Audubon on 2026-09-22 carry that signature: the channel was silent
+  for the whole "call" — zero CTCSS survey lines where roughly fifty were due — with the last real activity
+  160 seconds to 29 minutes earlier. `UNSQUELCH` was already broadcast unconditionally; `SQUELCH` is now
+  symmetric with it.
+
+- **DCS rumble was being notched at the one frequency where it is not present.** ap-15.9.4 notched 134.4 Hz,
+  the DCS bit rate, reasoning that a 134.4 bit/second bitstream puts its energy there. That is backwards. For
+  an NRZ bitstream the bit rate is the *first null* of the sinc envelope — the quietest part of the spectrum.
+  DCS-125 sends a 23-bit codeword at 134.4 bit/s, so the word repeats at 134.4/23 = 5.843 Hz and the energy
+  appears as a comb of 5.843 Hz harmonics concentrated well below the bit rate.
+
+  Measured against ten Lynn Fire FG 3 (DCS-125) recordings on 2026-09-24: in the pauses, 13 of 13 measurable
+  peaks between 10 and 320 Hz landed on a 5.843 Hz harmonic, the strongest being the 10th through 13th at
+  58.6, 64.5, 70.3 and 76.2 Hz. The notch band (118–151 Hz at Q=4) measured −89 dBFS while 50–90 Hz measured
+  −57 dBFS. The notch was removing a slice that was already 30 dB down and leaving the actual rumble intact.
+
+  A high-pass is the right shape for spread energy — twenty harmonics cannot be notched. Filter choice was
+  measured against the same recordings:
+
+  | filter | DCS 20–300 Hz (pause) | 50–90 Hz (pause) | voice 300–3k (talk) |
+  |---|---|---|---|
+  | as shipped (notch only) | −51.5 | −57.2 | −16.5 |
+  | + 4-pole high-pass @ 250 Hz | −56.8 | **−102.9** | −16.6 (−0.1 dB) |
+  | + 4-pole high-pass @ 300 Hz | −60.2 | −109.3 | −16.7 (−0.2 dB) |
+
+  250 Hz was chosen: 45.7 dB of rumble removal for 0.1 dB of voice-band cost, and it stays further from the
+  voice band than 300 Hz. Implemented as two cascaded biquads (Butterworth section Q 0.54119610 and
+  1.30656296) in double precision — at 250 Hz on an 8 kHz stream the poles sit close enough to the unit
+  circle that float rounding in the feedback path shifts the corner. CTCSS channels are unaffected; this
+  path runs only when a channel is configured for DCS and no CTCSS tone is set.
+
+### Added
+- **P25 Phase 1 now warns on an unknown encryption algorithm ID.** `Encryption.fromValue()` collapses every
+  unrecognised 8-bit algorithm ID to `Encryption.UNKNOWN`, `isEncryptedAudio()` treats UNKNOWN as encrypted,
+  and `P25P1AudioModule.processAudio()` then drops every IMBE frame for the call. Muting on an ID that cannot
+  be identified is the correct default — decoding an actually-encrypted call produces noise — but the mute
+  left no trace at all. A channel went silent with nothing in the log saying why, and there was no way to
+  separate a genuinely encrypted talkgroup from a mis-decoded header.
+
+  A WARN now names the raw algorithm ID, the message type it came from (HDU or LDU2) and the talkgroup, once
+  per distinct ID per audio module so a fully encrypted talkgroup costs one line rather than one per call.
+  The two cases read differently: a real encrypted system repeats one ID call after call on the same
+  talkgroups, while a marginal signal produces scattered one-off values, and a talkgroup reporting several
+  different unknown IDs is almost certainly decode error rather than encryption.
+
+### Changed
+- **Heap ceiling reduced from 10 GB to 4 GB.** Fleet steady state peaks at about 1 GB — Somerville, the
+  busiest box, at 1005 MB. A 10 GB ceiling was runway, not protection: it lets a leak or a runaway queue
+  grow for minutes before anything fails, and the 2026-09-05 Paxton event spent 6.5 minutes frozen filling
+  it. 4 GB leaves roughly four times headroom for a busy system and still fails fast enough to be diagnosed.
+  Applied to both the Windows and Linux argument lists.
+
+### Diagnostics
+- The stuck-call watchdog WARN now reports the call age alongside the time since audio last reached the
+  resampler, and says `STALE CALL TIMER, not a stuck carrier` when the two disagree. A genuinely stuck
+  carrier delivers audio continuously, so the idle figure stays near zero. This is what would distinguish
+  the two cases if the squelch fix above ever proves incomplete.
+
+## [0.6.2-ap-15.9.5] - 2026-09-21
+
+Two silent-failure fixes plus one new warning. The theme is the same as ap-15.9: each of these failed with
+no log line at any level, which is why the Zello wedge below ran for four days across two machines before
+anyone could point at it.
+
+### Fixed
+- **Zello feed could wedge silently on an orphaned stream.** `AudioStreamingManager` stops a real-time
+  stream only when the audio segment that requested it completes. When a segment completed while its
+  requested start was still queued — as `mPendingStreamStart` behind a pending stop, or as a guard-delayed
+  `beginStreamInternal()` — `stopRealTimeStream()` returned early because no stream was active yet, and the
+  queued start then fired and opened a stream that no segment owned. Nothing ever stopped it, so
+  `isRealTimeReady()` stayed false and every later call on that channel was skipped **with no log line**;
+  recording and ThinLine were unaffected, so it presented as "Zello only".
+
+  Measured on Daly across five separate events on ap-15.9.4, every one with the same signature — a final
+  `Zello stream started` almost exactly 500 ms (`PENDING_STOP_TIMEOUT_MS`) after the preceding stop, on a
+  channel that had been streaming 1–5 times a minute:
+
+  | Feed | Wedged | Recovered | Dark |
+  |---|---|---|---|
+  | Lawrence MA Fire | 09-17 19:24:40 | 09-18 13:12 restart | ~17.8 h |
+  | Test Channel 1 | 09-17 22:53:00 | 09-18 13:12 restart | ~14.3 h |
+  | Andover MA Police | 09-19 17:18:21 | 09-20 02:52:57 | 9 h 34 m |
+  | Lawrence MA Fire | 09-20 13:23:25 | 09-21 02:54:39 | 13 h 31 m |
+  | Londonderry NH Fire | 09-19 10:48:27 | 09-19 11:40:40 | 52 m |
+
+  **A wedge is not permanent** — an earlier note in this project claimed it was, and the 9/19–9/21 logs
+  disprove it. It clears whenever the broadcaster's WebSocket next drops and reconnects, because the
+  reconnect path resets `mStreamActive`. Both September 19–21 cases recovered that way, unprompted, at
+  02:52 and 02:54 — Zello appears to cycle idle connections in the early morning. The Londonderry case
+  cleared differently again, when the Zello server itself ended the stream after 52 minutes
+  (`Zello server stopped our stream`). So the failure is bounded by luck rather than by anything in this
+  code, which is the reason to fix it rather than wait for the reconnect.
+
+  Two changes: `stopRealTimeStream()` now cancels a queued start when the stream never became active
+  (DEBUG line when it does), and the broadcaster watchdog — which since ap-15.1 only checked for
+  *disconnected* — now force-stops a stream that has been active with no audio for 15 s
+  (`STALE_STREAM_TIMEOUT_MS`; every real call delivers buffers continuously and the relaxation hold-over is
+  700 ms), logging a WARN with stream age, stream id and pending flags so the next occurrence explains
+  itself. The stale check runs in pooled mode too; the disconnect check remains direct-mode only.
+  Detection latency is 15 s plus up to the 60 s watchdog tick, against the 52 m to 17.8 h above.
+  **Watch for `Watchdog: stream active for` in fleet logs — each one is a feed that would otherwise have
+  been dark until the next reconnect.**
+- **MDC-1200 activity summary looped forever and OOM'd the GUI thread.** `MDCDecoderState.getActivitySummary()`
+  iterated `mEmergencyIdents` with `while(it.hasNext())` and never called `it.next()`, so once a channel with
+  the MDC-1200 decoder enabled had decoded one emergency ident, selecting that channel in the channel table
+  appended the ident list to a `StringBuilder` until it exceeded 2 GB and threw
+  `OutOfMemoryError: Required array length 2147483644 + 5 is too large` on `AWT-EventQueue-0`. Seen twice on
+  Daly 2026-09-18 13:08 via `ChannelMetadataPanel.valueChanged → ChannelDetailPanel.receive`. Decoding and
+  streaming were unaffected; only the click handler unwound. The loop also printed every ident instead of the
+  emergency ones. Present in upstream master — PR candidate.
+
+### Added
+- **A tuner leaving the bus is now a WARN that names it and the channels it took with it.** Device removal
+  was logged only as `INFO Tuner removal detected - stopping and removing: <tuner>`, followed by a burst of
+  `Stopping traffic channel` INFO lines. Daly 2026-09-21 08:05:21: the RSP1B (`SER#24050F5260`) dropped out
+  carrying **13 channels**, and eleven Zello feeds — every NH system plus Lawrence MA — produced **zero**
+  streams until the 10:04 restart, one hour 59 minutes later. The four RTL-served MA feeds kept running
+  normally throughout, which is exactly what makes this hard to spot from the outside. Nothing anywhere in
+  the log was above INFO. `DiscoveredTunerModel` now logs
+  `TUNER REMOVED FROM SYSTEM [<tuner>] while carrying [n] channel(s)` at WARN, stating that it is a device
+  or USB level disconnect rather than a decoder fault. The channel count is read best-effort and never
+  suppresses the warning.
+
+## [0.6.2-ap-15.9.4] - 2026-09-17
+
+Released: https://github.com/actionpagezello/sdrtrunk/releases/tag/v0.6.2-ap-15.9.4 — deployed to Daly and
+Baker on 2026-09-17. Release notes for that tag cover the whole ap-15.9.1 → ap-15.9.4 arc; ap-15.9.1/.2/.3
+were same-day iterations and are superseded by this build.
+
+Field confirmation on both machines: Now Playing mute works as intended, and ap-15.9.1's RSP1B fix is
+confirmed by measurement rather than inference (see that entry). The CTCSS notch below is validated against a
+real recording but has not yet been confirmed by ear in production, and the DCS path remains unmeasured.
+
+### Added
+- **CTCSS/DCS tone notch in the NBFM audio path.** Fixes the reported "60 Hz hum", which measurement
+  showed is not hum and not 60 Hz: it is the channel's own CTCSS squelch tone leaking into the audio.
+
+  Measured from a recording of District 5/15 (configured CTCSS 131.8 Hz), 9.8 seconds, 48 analysis
+  blocks at 8 kHz:
+
+  | | 50 Hz | 60 Hz | 100 Hz | 120 Hz | 180 Hz | 240 Hz | **131.8 Hz** |
+  |---|---|---|---|---|---|---|---|
+  | mean dBFS | −93.4 | −84.9 | −74.6 | −69.8 | −78.6 | −75.4 | **−49.1** |
+
+  Voice sat at −19.4 dBFS, so every mains frequency was 50–75 dB down and inaudible. The USB hub and
+  the SDR were not involved. A 60 Hz notch, which is what was originally asked for, would have done
+  nothing at all.
+
+  The reason it reads as hum during pauses is that the tone level does not change while everything
+  else does. Measured pause-versus-speech by band:
+
+  | band | pause | speech | change |
+  |---|---|---|---|
+  | 100–200 Hz (holds the tone) | −46.6 | −46.0 | **−0.6** |
+  | 200–300 Hz | −66.6 | −47.1 | −19.5 |
+  | 300–600 Hz | −49.2 | −17.3 | −31.9 |
+  | 1–2 kHz | −47.2 | −17.7 | −29.5 |
+
+  CTCSS is transmitted continuously for the whole transmission, so when the talking stops the tone
+  becomes the loudest thing left in the audio. The `AudioModule` 200/300 Hz high-pass is enabled on
+  every channel — the ap-15.9.1 startup line confirms it — but its stop band gives only about 32 dB,
+  which is not enough against a strongly deviated tone.
+
+  A notch places a zero on the tone instead. One cascaded biquad section per configured CTCSS tone,
+  Q = 12 (11 Hz bandwidth), derived from the channel's own `ChannelToneFilter` so there is nothing to
+  detect and nothing to guess. It engages only on channels that actually filter on a tone.
+
+  **Verified by running the filter over the real recording**, not by trusting the design math:
+
+  | | before | after | change |
+  |---|---|---|---|
+  | 131.8 Hz tone, during pauses | −48.4 | **−82.1** | **−33.7 dB** |
+  | 131.8 Hz tone, all blocks | −48.2 | −73.4 | −25.1 dB |
+  | voice at 300 / 500 / 800 / 1500 / 2500 Hz | — | — | **0.0 dB** |
+  | voice-band RMS above 300 Hz | −19.4 | −19.4 | **0.0 dB** |
+
+  After the notch the loudest thing in the pauses is ordinary residual noise at 395 Hz and −60 dBFS,
+  so the tone is no longer the dominant artifact. The smaller 22.7 dB figure measured during speech
+  is a measurement floor rather than a filter limit — speech energy leaks into the 131.8 Hz analysis
+  bin, so the "after" number there reflects voice, not tone.
+
+  Safe for tone squelch: the CTCSS and DCS detectors are fed from the resampler output ahead of the
+  audio filter chain, so removing the tone from what the listener hears cannot affect detection. The
+  notch runs as stage 0 of `NBFMAudioFilters`, before any gain or shelving stage can lift the tone
+  back up.
+
+  Coefficients and filter state are `double` rather than the `float` used elsewhere in that class. At
+  131.8 Hz on an 8 kHz stream the poles sit very close to the unit circle, where `float` rounding in
+  the feedback path is enough to shift the notch off the tone and defeat the filter.
+
+- **DCS channels get a wider notch at the 134.4 Hz symbol rate, and the log says the reduction is
+  partial.** DCS transmits a continuous 23-bit NRZ codeword rather than a steady tone, so its energy
+  is spread across a band and a notch removes the middle of it rather than the whole thing. Q = 4.
+  Whether this is enough on a DCS channel has not been measured — no DCS recording was available.
+
+### Note
+- The `HumAnalyzer` diagnostic from ap-15.9.1 stays in place. It did its job here by ruling mains out
+  rather than confirming it, which is why the 50 Hz family is measured alongside the 60 Hz family.
+
+## [0.6.2-ap-15.9.3] - 2026-09-17
+
+### Fixed
+- **Now Playing mute now works on a channel with no alias, which is the case it was asked for.**
+  ap-15.9.2 made the alias the only store for mute state, so a channel with no alias and no talkgroup
+  had nowhere to keep it and the menu greyed out. That is exactly the situation the feature was
+  wanted for: a channel added with default info and monitored for quality before being made
+  permanent, which needs silencing while other channels are talking.
+
+  Mute is now backed by **two stores with one authority rule** — for any given channel exactly one is
+  written, so they cannot disagree, which is the defect that broke ap-15.9 and ap-15.9.1 in opposite
+  directions:
+
+  - **An identifiable alias governs the channel** → that alias's playback priority is the state, the
+    same state the alias editor's Listen toggle writes. Aliases here are keyed by talkgroup, so on a
+    trunked channel carrying a call the live TO identifier resolves to exactly one alias.
+  - **No alias can be identified** → a per-channel entry in `NowPlayingPreference`, applied through
+    the audio modules and re-applied when the channel's processing chain is rebuilt.
+
+  Reads take the **union** of the two. A channel can be muted while no alias is identifiable — a
+  trunked channel between calls — and acquire one when the next call arrives. Reading the alias alone
+  at that moment would report the channel unmuted while its audio modules were still silenced, and
+  the menu would offer "Mute" on a channel the user cannot hear. Unmute clears both stores and
+  releases any sticky module-level mute, so the state cannot get stuck. Simulated across four
+  transition sequences, including both directions of a channel gaining and losing an identifiable
+  alias; in every case the menu label matches what is actually audible.
+
+  The menu now names what it changes: `Mute alias: Camb PD 12` versus `Mute channel: 483.7000 NBFM`.
+  ap-15.9.2's greyed-out "Mute unavailable" item is gone, since there is no longer a case where mute
+  cannot be applied.
+
+  One asymmetry worth recording: unmuting while an alias resolves clears that alias's Listen
+  setting, but unmuting while no alias resolves clears only the per-channel entry. An alias mute is a
+  deliberate, persisted playlist setting, so a channel-level unmute does not silently discard it — it
+  takes effect again when the alias next resolves. The menu stays truthful throughout because reads
+  are the union.
+
+### Changed
+- `AbstractAudioModule.flushAudioSegment()`, added in ap-15.9.2, is removed. `setMuted(false)`
+  already ends the segment in progress, so the alias path uses that and clears any sticky module
+  mute in the same call.
+- `ChannelMetadataPanel.getAliasListSize()` removed with the "Mute unavailable" item it explained.
+
+### Note
+- ap-15.9.2's changelog claimed `NowPlayingPreference`'s per-channel mute entries had been removed.
+  They had not — an earlier revert restored the file, the removal never reached the commit, and the
+  code shipped as unused. It is in use again now, deliberately, for the no-alias case.
+- Mute remains **local speaker audio only**; Zello and ThinLine keep streaming a muted channel.
+  `AudioStreamingManager` never consults monitor priority, gating only on whether the alias carries
+  broadcast channels and on duplicate suppression. This is the intended behaviour, not a gap.
+
+## [0.6.2-ap-15.9.2] - 2026-09-17
+
+### Changed
+- **Now Playing mute is now a shortcut to the alias editor's Listen toggle, which is what it was
+  always meant to be.** ap-15.9.1 fixed the data corruption by decoupling channel mute from alias
+  priority entirely, and stored mute state separately. That was the wrong call: it removed the
+  linkage the feature exists to provide. Toggling mute from the Now Playing window left the alias
+  editor's Listen switch unmoved and vice versa, so the two disagreed by construction — the same
+  class of defect as before, in the opposite direction.
+
+  Mute now reads and writes exactly one thing: the governing alias's playback priority, the same
+  state the Listen toggle writes. There is no second copy of the mute state anywhere. Consequences
+  worth noting:
+
+  - `NowPlayingPreference`'s per-channel mute entries are gone, as is the channel identity built
+    from system, site and name. The playlist is the only store.
+  - `ChannelAddListener` no longer re-applies mute to new processing chains. It does not need to:
+    `AudioSegment` resolves monitor priority from its aliases every time a segment is created, so
+    new chains, traffic channels spun up for the next call, and restarts all pick the state up on
+    their own. The re-apply block only existed because earlier versions kept state outside the
+    playlist.
+  - `AliasPriorityChangedEvent` has a publisher again, so `AliasItemEditor` updates its Listen
+    switch live when mute is used from the Now Playing window.
+
+  The original defect is still fixed, because the fix was never "stop touching aliases" — it was
+  "stop touching the *wrong* aliases." The governing alias is resolved most-specific-first: the live
+  TO identifier's alias when it resolves to exactly one, then the live FROM identifier's alias on the
+  same condition, then the sole alias in the channel's configured alias list when that list holds
+  exactly one. Anything else is ambiguous and resolves to nothing.
+
+  The FROM rule matters more than it looks: `CTCSSIdentifier` carries `Role.FROM` and `AliasList`
+  keeps a 1:1 map from CTCSS code to alias, so a conventional channel whose aliases are keyed by
+  tone resolves precisely even when its alias list holds several — which is the case that previously
+  caused the damage. That resolution needs a detected tone, so between transmissions such a channel
+  falls through to the ambiguous case.
+
+  When no single alias can be identified the menu shows a **disabled** item naming the reason and the
+  alias count, e.g. `Mute unavailable - 3 aliases in list "Salem", use the Aliases tab`. It never
+  guesses, and it never silently does something other than what the label says.
+
+  The menu item is now labelled with the **alias** name rather than the channel's, since the alias is
+  what is being changed. An alias priority change only affects segments created afterwards, so every
+  running processing chain governed by that alias has its current audio segment flushed, making the
+  change audible immediately rather than at the end of the call in progress.
+  `AbstractAudioModule.flushAudioSegment()` was added for this — it ends the segment in progress
+  without setting any sticky mute flag on the module.
+
+### Note
+- **Mute stops local speaker audio only. It does not stop Zello or ThinLine streaming.** This was
+  true before these changes and is unchanged, but it was never written down. `AudioPlaybackManager`
+  skips segments flagged do-not-monitor; `AudioStreamingManager` accepts every segment it is given
+  and never consults that flag, gating only on whether the alias carries broadcast channels and on
+  duplicate suppression. Taking a channel off a feed is a different operation — removing the
+  broadcast channel from the alias — and no shortcut for it exists yet.
+
+## [0.6.2-ap-15.9.1] - 2026-09-17
+
+### Fixed
+- **Buffer queue bound was derived before the tuner reported a sample rate, starving high-rate tuners.**
+  This is the real cause of the RSP1B starvation that ap-15.9 was supposed to fix, and ap-15.9 did not fix it.
+
+  `PolyphaseChannelSourceManager` constructs `PolyphaseChannelManager` at tuner-discovery time, before the tuner
+  is started and applies a sample rate, so `TunerController.getSampleRate()` returns **zero**. Both ap-15.8.1 and
+  ap-15.9 derived the queue bound once, in the constructor, from that zero — and both collapsed onto the
+  32-element floor for **every tuner**, by different arithmetic:
+
+  - ap-15.8.1: `getBufferDuration()` = `1000.0/(0/128)` = infinity, truncated to `Long.MAX_VALUE`;
+    `2000/Long.MAX_VALUE` = 0; floored to 32.
+  - ap-15.9: `buffersPerSecond` = `0/128` = 0; `0 × 2.0` = 0; floored to 32.
+
+  At an RSP1B's 78,125 buffers/second a 32-element queue is **0.41 ms**. Measured on Daly under ap-15.9:
+  **262,638,170 buffers discarded on 2026-09-16 alone** across 30,452 overflow warnings, all of them the RSP1B —
+  the RTL-2832 tuners never overflowed once, because 32 buffers is 0.44 s at their 73/second.
+
+  The ap-15.9 claim that 15.8.1 gave the RSP1B a 25.6 ms queue was wrong; the truncation was real but incidental,
+  and the actual bound was 0.41 ms in both releases. The `getBufferDuration()` analysis pointed at the right line
+  for the wrong reason.
+
+  Fixed properly: `Dispatcher.setMaxQueueSize()` is added so the bound can be re-derived, and
+  `PolyphaseChannelManager.updateBufferQueueBound()` is now called from the `NOTIFICATION_SAMPLE_RATE_CHANGE`
+  handler alongside the existing `mChannelCalculator.setRates()` call. Until the rate arrives the dispatcher runs
+  with a deliberately generous provisional bound of 160,000 elements rather than a tight one — an over-sized bound
+  costs memory for a moment, an under-sized one discards the sample stream. Resulting bounds:
+
+  | Tuner | Buffers/sec | Bound | Backlog |
+  |---|---|---|---|
+  | RTL-2832 @ 2.4 MSPS | 73 | 146 | 1.99 s |
+  | RSP1B @ 10 MSPS | 78,125 | 156,250 | 2.00 s |
+
+  A WARN now fires if any dispatcher ends up pinned to its minimum bound, stating explicitly that this indicates a
+  sizing defect rather than an overload condition. The ap-15.9 per-tuner startup line — which is the only reason
+  this was found at all, since it printed `at [0.00000] MSPS ... bounded at [32] elements (Infinity seconds)` —
+  now also reports the buffer sample count.
+
+- **Now Playing channel mute wrote into alias playback priority, silencing unrelated channels.**
+  Reported as mute "not working at times, more noticeable when channels and aliases are created."
+
+  `ChannelMetadataPanel` stored mute state in two places and read it from a third. Three separate defects:
+
+  1. **Mute mutated shared alias objects.** `setChannelMuted()` resolved a channel's "aliases" via
+     `getChannelAliases()`, whose third fallback returns *every alias in the channel's configured alias list* —
+     not the aliases of that channel. It then wrote `Priority.DO_NOT_MONITOR` into all of them and saved the
+     playlist. Muting one conventional channel therefore muted **every channel sharing that alias list**, and
+     unmuting reset them all to `DEFAULT_PRIORITY`, destroying whatever priorities the user had configured. An
+     alias is a global, persisted, per-talkgroup object; channel mute is local and per-channel. Conflating them
+     was the root defect.
+
+  2. **The read path could disagree with the write path.** Mute on a channel with no aliases was tracked in an
+     in-memory `mMutedChannelIds` set. Creating an alias afterwards switched `isChannelMuted()` onto the alias
+     branch, which saw `DEFAULT_PRIORITY` and reported *unmuted* while the channel ID was still in the set — so
+     the menu offered "Mute" on an already-muted channel. This is why the symptom tracked alias creation.
+
+  3. **Re-apply asked a different question again.** The `ChannelAddListener` re-apply block muted a channel if
+     **any** alias anywhere in its alias list carried `DO_NOT_MONITOR`, which is neither what `isChannelMuted()`
+     checked nor what the user asked for.
+
+  Mute is now single-sourced and never touches aliases. State is keyed on a channel identity built from system,
+  site and name, persisted in `NowPlayingPreference` as one entry per channel. `Channel.getChannelID()` was
+  unusable for this — it is assigned from an incrementing counter at construction, so it changes every run and
+  every traffic channel receives a fresh one.
+
+  Because traffic channels are created as `"T-"` plus the parent channel's name and carry the parent's system and
+  site, stripping that prefix folds a trunked channel and all of its traffic channels onto one identity. Muting a
+  trunked channel now actually silences it — its audio is produced by the traffic channels, not by the control
+  channel whose row the user clicks — and the mute survives traffic channels being torn down between calls, as
+  well as application restarts. A conventional channel whose name genuinely begins with `T-` is unaffected, since
+  the prefix is only stripped from channels of type `TRAFFIC`.
+
+  `ChannelProcessingManager.getProcessingChains()` is added so the mute can be applied to every running chain
+  sharing an identity rather than only the one clicked. `AliasItemEditor`'s `AliasPriorityChangedEvent`
+  subscriber is left in place but now has no publisher, since mute no longer changes alias priority.
+
+### Added
+- **Mains hum diagnostic for NBFM audio** (`io.github.dsheirer.dsp.audio.HumAnalyzer`), for the reported 60 Hz hum
+  that is most noticeable during pauses in speech. This measures; it does not filter. No filter is designed until
+  there is a measurement to design it against.
+
+  Runs a Goertzel evaluation at 50, 60, 100, 120, 180 and 240 Hz over Hann-windowed 1600-sample blocks — 200 ms at
+  8 kHz, a 5 Hz bin spacing chosen so that **every** analyzed frequency lands on an exact bin centre, leaving no
+  scalloping loss to correct for and putting 50 and 60 Hz two bins apart rather than in one bin. Amplitude recovery
+  validated numerically: a 0.01-amplitude 60 Hz tone reads −40.01 dBFS against a −40.00 dBFS expectation, a
+  0.02-amplitude 120 Hz tone reads −33.98 against −33.98, mixed tones are separated correctly, and a 59.9 Hz tone
+  still reads −40.01 so a slightly off-nominal mains frequency is not missed.
+
+  At the end of each transmission it reports, per channel, three things chosen because each one changes the
+  remedy:
+
+  - **Which mains family the energy is in.** The 50 Hz set is measured alongside the 60 Hz set specifically so the
+    result can come back negative. Energy in the 50 Hz family on a 60 Hz mains region would mean this is not mains
+    hum and the filter would be the wrong fix.
+  - **Fundamental versus second harmonic.** A dominant 120 Hz is the signature of full-wave rectifier ripple,
+    consistent with a power supply or USB hub, and is the case in which a 60 Hz notch alone disappoints. A
+    dominant 60 Hz points instead at a coupled magnetic field or a ground loop.
+  - **Hum level during speech versus during pauses**, which tests the reported symptom directly. Blocks are
+    classified against the transmission's own peak voice level. A hum level that is *constant* and merely more
+    audible in the gaps is additive hum that a filter removes; one that genuinely *rises* in the gaps is a gain
+    stage lifting the noise floor, where filtering treats a symptom of the gain control.
+
+  Hum is reported against a voice-band reference taken through three cascaded 300 Hz high-pass sections, measured
+  at 84 dB of rejection at 60 Hz so the reference is not itself mostly hum.
+
+  The measurement is taken after the tone/squelch gate has decided to pass the audio but before any audio filter
+  touches it, so it reflects what the demodulator delivered and never measures squelched noise. Output is at DEBUG
+  and every measurement is skipped when that logger is not at DEBUG, so the cost when switched off is one boolean
+  check per audio buffer. The analyzer is created on demand, so enabling it affects channels that are already
+  running. Toggle it from the Diagnostics preferences panel under "Mains hum analysis (audio)"; a new
+  `DiagnosticsCategory.HUM_ANALYSIS` was added for it.
+
+- **Startup report of each NBFM channel's audio high-pass setting.** The 200/300 Hz Remez high-pass that
+  attenuates hum and rumble lives in `AudioModule` and is driven by the per-channel "Audio Filter" checkbox, which
+  is easy to leave unticked without noticing. An enabled channel now logs at INFO and a disabled one at **WARN**
+  naming the setting, so a channel with no hum protection is visible in the log rather than only audible. This
+  costs nothing and may on its own explain hum on specific channels.
+
+  Note for context: the digital (P25/DMR) audio path has **no** high-pass at any point — `JmbeAudioModule` extends
+  `AbstractAudioModule` directly and never reaches `AudioModule`'s filter. P25 adds only gain and a 10-band
+  peaking equalizer. Nothing was changed there, but any hum on a digital channel is unfiltered by design, and
+  since vocoded audio is reconstructed from bits rather than carried as a waveform, supply noise in the receiver
+  cannot put hum into it — that would produce bit errors and garble instead. Hum on a digital channel therefore
+  points upstream, at the radio system or dispatch console, not at local hardware.
+
+### Changed
+- `NowPlayingPreference` gained persisted per-channel mute state. Keys are sanitized and, when a channel identity
+  exceeds `Preferences.MAX_KEY_LENGTH`, truncated with a hash of the full identity appended so two channels with
+  a long shared prefix cannot collapse onto one entry. Unmuting removes the entry rather than storing `false`.
+
+## [0.6.2-ap-15.9] - 2026-09-13
+
+### Fixed
+- **Polyphase buffer queue bound starved high-rate tuners (RSP1B)**
+  > **CORRECTION (ap-15.9.1):** the diagnosis below is wrong and this change did not fix the problem. The bound
+  > was collapsing to the 32-element floor, not the 2000-element ceiling, because the tuner reports a sample rate
+  > of zero at construction time — and ap-15.9 reproduced that defect. The truncation described below is real but
+  > incidental. See ap-15.9.1. Figures below (25.6 ms, 2,700 buffers/second, 12.6 M over 80 minutes) are
+  > understated: the actual bound was 0.41 ms.
+
+  The ap-15.8.1 queue bound was derived
+  from `TunerController.getBufferDuration()`, which returns a `long` and truncates to zero for any tuner
+  delivering buffers faster than 1 kHz. `RspTunerController.getBufferSampleCount()` returns 128, so an RSP1B
+  at 10 MSPS produces **78,125 buffers/second** — a buffer duration of 0.0128 ms. That truncated to 0, the
+  `Math.max(1, ...)` guard turned it into 1, and the bound collapsed onto its 2000-element ceiling:
+  **25.6 ms of queue against a 10 ms dispatch interval**, where two seconds was intended.
+
+  With only 2.5 dispatch intervals of headroom, ordinary scheduling jitter overflowed the queue continuously
+  rather than at startup. On Paxton the dispatcher discarded roughly 2,700 buffers/second indefinitely — about
+  3% of the sample stream, removed at arbitrary points — and the RSP1B could not hold a frequency lock.
+  Measured 2026-09-12 across a single session: 12.6 million buffers discarded over 80 minutes with the RSP1B
+  fitted, and zero overflow in every run without it.
+
+  RTL-2832 tuners were never affected: 32,768-sample buffers at 2.4 MSPS give 13.65 ms, which truncates to 13
+  and yields the intended ~2 seconds.
+
+  The bound is now derived from sample rate and buffer sample count in floating point, with explicit floor and
+  ceiling constants: RTL-2832 at 2.4 MSPS gets 146 elements (1.99 s, ~10 MB); RSP1B at 10 MSPS gets 156,250
+  (2.00 s, ~80 MB). Each buffer dispatcher is also now named after its tuner — all tuners previously shared the
+  thread name `sdrtrunk polyphase buffer processor`, so overflow warnings identified the stage but not the
+  device — and the computed bound and buffer rate are logged at startup.
+
+- **Frequency error correction could be cancelled permanently and silently** — `TunerFrequencyErrorManager.process()`
+  averages channel measurements with `requestedChangeHz /= count`. The guard above it is
+  `if(!mChannelManagers.isEmpty())`, which checks that managers *exist*, not that any reported a measurement
+  during the interval, so `count` is zero whenever the tuner has a quiet five-second window and the division
+  throws `ArithmeticException`.
+
+  `process()` had a `try`/`finally` for the tuner lock but no `catch`, and it runs via
+  `ThreadPool.SCHEDULED.scheduleAtFixedRate()` — where an uncaught throwable cancels all future executions. The
+  exception is captured in the `Future` and never read, so frequency error correction stopped for that tuner for
+  the rest of the session with nothing logged at any level.
+
+  Now guarded explicitly, and the scheduled entry point catches everything and logs at ERROR so a future failure
+  announces itself instead of silently disabling correction. **This defect is also present upstream** and is a
+  clean PR candidate.
+
+- **PPM baseline latch disabled correction permanently after drift (ap-fork)** — the ap-fork sanity clamp rejects
+  any proposed PPM more than `SANITY_CLAMP_PPM` (10) from the baseline, but the baseline is only updated when a
+  measurement is *accepted*, so a wrong baseline can never correct itself.
+
+  Gradual drift is not the problem — the EMA follows it. The failure mode is a baseline that starts wrong or is
+  displaced in one step: the first measurement is latched **unconditionally** (`isNaN` → accept), so a reading
+  taken while the tuner was still settling poisons the baseline for the entire session and every subsequent
+  correction is rejected forever. Simulated with a poisoned first measurement of 40 ppm against a true error of
+  2 ppm: before the fix the baseline stays pinned at 40.000 and no correction is ever applied again; after it,
+  the baseline re-acquires to 2.115 and tracking resumes. Rejections logged at DEBUG in a package no Diagnostics
+  category covers, so this was invisible in practice.
+
+  After `BASELINE_REACQUIRE_AFTER_REJECTIONS` (12, one minute at the 5-second interval) consecutive rejections,
+  the baseline is now discarded and re-acquired from the next measurement, with a WARN naming the tuner and the
+  stale baseline.
+
+  Note: these two correction defects predate ap-15.8.1 and match reports of occasional tuner lock difficulty on
+  ap-15.7 and earlier. They are code-reading findings — both fail silently, so no log evidence exists either way.
+
+## [0.6.2-ap-15.8.1] - 2026-09-07
+
+### Fixed
+- **GUI freezes while decoding continues (channel metadata table row sorter)** — Monson froze on
+  2026-08-30 at 17:07 and kept decoding normally for more than five hours with a dead interface.
+  Console capture showed two uncaught exceptions on the Swing event dispatch thread, both from
+  `ChannelMetadataModel.remove()` at line 196:
+
+  ```
+  IllegalArgumentException: Comparison method violates its general contract!
+    ... DefaultRowSorter.sort -> rowsDeleted -> fireTableRowsDeleted
+  ArrayIndexOutOfBoundsException: Index 38 out of bounds for length 38
+    ... DefaultRowSorter.setModelToViewFromViewToModel -> rowsDeleted
+  ```
+
+  Cause: the clickable column-header sorting added to the channel metadata table (fork feature,
+  not upstream) means removing a channel triggers a full re-sort. Every column in that table is
+  updated live by decoder threads, so values change underneath TimSort mid-sort; it detects the
+  resulting inconsistency and throws. The aborted sort leaves the sorter's model-to-view index
+  arrays inconsistent, so the next row change throws `ArrayIndexOutOfBoundsException`, and from
+  there every table change kills the EDT. Sites running P25 trunked systems are most exposed,
+  since traffic channels are created and destroyed constantly.
+
+  Fix: new `SafeTableRowSorter` (`gui/control/`) guards every model-change notification and, on
+  failure, clears the sort keys and rebuilds a clean identity mapping. The symptom degrades from
+  "the GUI is frozen" to "the table stopped being sorted", recovery is logged at WARN, and the
+  user can click a column header to re-apply sorting.
+
+  Verified by reproduction: with a model whose values mutate during sorting, a stock
+  `TableRowSorter` dies with the identical `IllegalArgumentException` while `SafeTableRowSorter`
+  survives and recovers.
+
+  Note this bug is unrelated to the DMR work in ap-15.8 — Monson was running ap-15.7 when it froze,
+  and the two failures share no code. The ap-15.8 build carrying only the DMR changes
+  was deployed to Somerville on 2026-08-22 and predates this fix.
+
+- **"Show in Waterfall" displays the wrong tuner** — right-clicking a channel and choosing *Show
+  in Waterfall* sometimes zoomed to a spectrum with a different noise floor and no green channel
+  column. Reported for Lawrence Fire New P25 (453.5125) while the analog channel on the same
+  frequency worked correctly, plus one other channel.
+
+  Cause: `ChannelMetadataPanel.showChannelInWaterfall()` resolved the tuner from the channel's
+  configured **preferred tuner** first, and accepted it merely for existing — no check that the
+  tuner was carrying the channel or even tuned to cover its frequency. The preferred tuner is
+  only a request; when it has no spare bandwidth or is tuned elsewhere, the tuner manager sources
+  the channel from a different tuner and says so in the log (*"Unable to source channel [x] from
+  preferred tuner [y] - searching for another tuner"*). The authoritative lookup — matching the
+  channel frequency against each tuner's `center ± sampleRate/2` — only ran when no preferred
+  tuner was set at all, which is why setting the channel's tuner to *None* made it work.
+
+  Fix: resolution order reversed. The live processing chain's `TunerChannelSource` is now
+  consulted first and is authoritative for a running channel, for both the serving tuner and the
+  frequency to center on (a trunked traffic channel is often not on its configured frequency).
+  The configured preferred tuner is used only as a fallback for a channel that isn't decoding,
+  and only when its current tuned range actually covers the channel frequency; otherwise the
+  frequency-range search runs. Rejections and outright failures now log at DEBUG instead of
+  silently doing nothing.
+
+- **ThinLine Radio and Rdio Scanner upload failures were silently swallowed** — the `whenComplete`
+  callback on the audio upload tested `throwable1 != null || fileResponse.statusCode() != 200` and
+  then dereferenced `fileResponse` in every branch. When the request fails at the network level
+  (connection refused, timeout, socket reset) the throwable is non-null and the response is
+  **null**, so the error handler itself threw a `NullPointerException` — inside a
+  `CompletableFuture` callback, where it was discarded without ever reaching a log. The result was
+  a feed that could fail indefinitely while producing no log output whatsoever.
+
+  The throwable case is now handled separately from a non-200 response, and unwraps
+  `CompletionException` to report the underlying cause. The same defect exists upstream in
+  `BroadcastifyCallBroadcaster` and `OpenMHzBroadcaster` and is a candidate for an upstream PR.
+
+- **Unbounded `Dispatcher` queue caused a 10 GB heap exhaustion (Paxton, 2026-09-05)** — SDRTrunk
+  died at 09:44:46 with `java.lang.OutOfMemoryError: Java heap space` on eleven threads at once,
+  taking down all sixteen Zello streams.
+
+  The log shows the shape clearly. Heap sat between 455 and 832 MB inside a 912 MB committed heap
+  for the preceding 56 minutes. At 09:37:11 logging stopped completely — not just DSP threads, but
+  the scheduled pool and the HttpClient workers too, which had been writing several lines per
+  second. Fifty-seven seconds later the next line appears already reading `[9GB/10GB 99%]`, then
+  one line in the following six and a half minutes, then the OOM cascade. Measured from closely
+  spaced heap samples, this machine allocates at roughly 1 GB/s (mean 1030 MB/s, peak 1429 MB/s
+  between rising samples), so ten seconds of consumer stall is enough to fill a 10 GB heap.
+
+  Cause: `Dispatcher.receive()` added to an unbounded `LinkedTransferQueue` and never blocked or
+  dropped, while the producers are USB transfer callback threads that keep running regardless of
+  consumer state. `process()` then drained unbounded into a freshly allocated `ArrayList` on every
+  interval, copying a backlogged queue into a second structure of the same size before dispatching
+  anything. Queued elements are strongly reachable, so they are live objects the collector cannot
+  reclaim — which is why the process spent six minutes making no progress rather than recovering.
+  The 10 GB maximum heap was not protection here; it was runway.
+
+  Fix: the queue is now bounded and discards the oldest elements on overflow, which is the correct
+  policy for real-time DSP where the newest samples are the useful ones. Occupancy is tracked in an
+  `AtomicInteger` rather than by calling `LinkedTransferQueue.size()`, which is O(n) and would
+  become a hotspot under exactly the backlog this bound exists to handle. `drainTo` is bounded and
+  targets a reused list instead of allocating one per interval. Overflow logs a WARN with the
+  discarded count, rate limited to one message per ten seconds, and recovery logs at INFO.
+
+  Bounds are derived rather than guessed. The polyphase buffer dispatcher takes two seconds of
+  tuner buffers, computed from the tuner's own buffer duration, so it scales across tuner types
+  (~150 buffers for an RTL-2832 at 2.4 MSPS). The IFFT and per-channel channel-results dispatchers
+  take 25 batches, which is about one second: batch rate is a constant ~24/second for any tuner
+  because channel count scales with sample rate, so a fixed element bound is a fixed time bound.
+  Recorders get a much larger bound since disk writes stall longer and dropping recorded audio is
+  worse than a backlog. Every bound was checked against its callsite's real arrival rate and has
+  between 20x and 209x headroom over normal per-interval traffic.
+
+  Verified by a concurrency harness: under a fully stalled consumer with 500,000 elements produced,
+  observed queue size never exceeded the bound, and consumed + dropped + queued accounted for every
+  element with none lost or double counted. At realistic arrival rates the tightest bound dropped
+  nothing.
+
+- **Null response dereferenced in Broadcastify Calls and OpenMHz upload callbacks** — the same
+  defect fixed for ThinLine and Rdio Scanner earlier in this release. Both wrote
+  `if(throwable != null || response.statusCode() != 200)` and then dereferenced `response` inside
+  that branch, but `whenComplete` passes a null response whenever the throwable is non-null, so any
+  upload failure that was not an `IOException` or `CompletionException` threw a
+  `NullPointerException` from inside the completion handler and lost the real error. OpenMHz was
+  worse — both of its branches dereferenced the response, so its socket-reset path threw every
+  time. The throwable case is now handled separately and logs the underlying cause.
+
+- **Zello `HttpClient` never closed** — `AbstractZelloBroadcaster` builds an `HttpClient` per
+  broadcaster and `BroadcastModel` destroys and recreates broadcasters on reconnect, so the
+  client's selector and worker threads accumulated for the life of the application. Now closed on
+  dispose.
+
+- **Leftover squelch debug output** — a `System.out.printf` in `NBFMAudioFilters` printed squelch
+  level, threshold, gate state and gain to stdout every 1000 samples. Left in from 2026-03-16
+  (`ae6dc745`) and never removed.
+
+- **Eclipse build (upstream #2434, `9dcebb49`)** — `OpenMHzEditor` sits in
+  `audio/broadcast/openmhz/` but still declared `package io.github.dsheirer.gui.playlist.streaming`.
+  Gradle's flat source set tolerates the mismatch; Eclipse does not. Package declaration corrected,
+  `AbstractBroadcastEditor` imported, and `StreamEditorFactory` now imports `OpenMHzEditor`. The
+  `BroadcastModel` half of that upstream commit is cosmetic and was not taken — the fork has two
+  call sites there because of staggered broadcaster startup.
+
+### Added
+- **ThinLine Radio and Rdio Scanner diagnostics** — the `THINLINE` and `RDIO` categories already
+  existed in the Diagnostics panel but had nothing behind them: `ThinLineRadioBroadcaster` carried
+  seven `error` calls and no `debug`, `info` or `warn` statements at all, so switching either
+  category to DEBUG produced no output.
+
+  Both broadcasters now log the upload lifecycle at DEBUG — recording queued with queue depth,
+  upload starting with talkgroup and byte count, upload accepted with elapsed milliseconds,
+  duplicate rejected by the server, and aged-off recordings discarded without upload. Connection
+  state changes log at INFO on (re)connect and WARN on a failed connection test, including the
+  server's response text and the retry interval. Queue-depth and aged-off events were previously
+  invisible at any log level.
+
+## [0.6.2-ap-15.8] - 2026-08-22
+
+Pre-release build deployed to Somerville only. Contains the DMR/TDMA work and nothing
+else — no GUI freeze fix, no waterfall fix, none of the streaming or Dispatcher work
+in 15.8.1. A machine reporting `0.6.2-ap-15.8` is running exactly this.
+
+### Fixed
+
+- **DMR digital bleed recorded as calls on CTCSS-filtered NBFM channels** — Somerville Fire
+  (483.3875, target 131.8 Hz) was recording multi-second bursts of digital buzz. Spectral
+  analysis of four captured bursts identified them as 2-slot TDMA (DMR): constant envelope,
+  no voice, and a hard 29.9 ms slot cadence (33.4 Hz) in every clip. Three separate defects
+  combined to let them through:
+
+  1. **Loss counter reset on unconfirmed detection.** `CTCSSDetector.handleDetection()` reset
+     `mLossCounter` on a single raw block-level match of the target tone. A DMR carrier
+     demodulated as FM sprays broadband noise across the CTCSS bins and lights up the target
+     bin often enough to keep resetting it, so the gate never closed. The counter now resets
+     only once a detection is CONFIRMED (`CONFIRMATION_COUNT` consecutive blocks). Log evidence:
+     3,206 holdover-carried gate opens against 791 confirmed opens on a single day.
+
+  2. **Unbounded holdover.** The 500 ms holdover was only checked at squelch-open; once opened
+     the gate stayed open until the loss counter expired, which defect 1 prevented. Added
+     `HOLDOVER_CONFIRM_DEADLINE_MS` (600 ms): a gate opened on holdover that fails to re-confirm
+     the tone within the deadline is force-closed. Applies to CTCSS and DCS channels alike.
+
+  3. **No defence against digital carriers.** CTCSS analysis cannot reject interference whose
+     energy genuinely lands on the target frequency — worsened by ~12 Hz Goertzel bin resolution,
+     which cannot separate 127.3 Hz from 131.8 Hz (observed as `raw=127.3` in 710 holdover opens).
+
+### Added
+
+- **`TdmaInterferenceDetector`** — rejects DMR / P25 Phase 2 bleed on tone-filtered NBFM
+  channels. Builds a 500 Hz RMS envelope, high-passes it at 15 Hz to strip syllabic speech
+  rates, then scores a harmonic comb (f0, 2·f0, 3·f0) across candidate 30 ms slot cadences via
+  Goertzel, against an off-comb noise reference. Requiring all three harmonics is what separates
+  a true TDMA cadence from broad modulation that merely has energy near 33 Hz. While
+  interference is present the tone gate is vetoed and any open call is ended.
+
+  Validated against the four captured DMR bursts (per-window peaks 64, 76, 182, 354 — all
+  vetoed) and synthetic negatives (speech-like AM 13, white noise 8, CTCSS tone + speech 9,
+  60 Hz hum 5, squelch flutter 1 — none vetoed). Threshold 20 sits 1.5x above the worst
+  negative and 3.2x below the weakest real burst. Vetoes log their score at DEBUG for auditing.
+
+## [0.6.2-ap-15.7] - 2026-08-01
+
+### Fixed
+- **Zello "audio data sent too fast" wedges channel in Configuration Error** — The async
+  stream-kill error (and "bad mid") was not classified as transient, so it fell through to the
+  terminal error branch and set `CONFIGURATION_ERROR` — a state that blocks automatic
+  reconnects. ap-15.6 soak logs showed this wedged Brookline MA Fire, Winchester MA Police,
+  Watertown MA Police, Everett MA Police, Saugus MA Police, and Atlantic EMS 1 until a manual
+  restart or a later disconnect let the watchdog recover them. Both errors are now in
+  `TRANSIENT_STREAM_ERRORS`: stream state resets cleanly with a backoff (1s for
+  "audio data sent too fast") and the channel keeps running.
+
+- **Zello unpaced pending-frame flush triggers server stream kills** — Frames buffered while
+  waiting for `stream_id` (inflated by the ap-15.6 CTCSS confirmation flush pushing ~250-500ms
+  of audio through the encoder faster than real time) were sent in one unpaced burst when the
+  stream opened. Soak logs: bursts of 13+ frames intermittently drew the server's
+  "audio data sent too fast" [3008] stream kill (18 occurrences); bursts ≤12 were always
+  accepted. Now `flushPendingFramesPaced()` sends 8 frames immediately (evidence-based safe
+  burst) and drains the remainder at 55ms per frame. On stream stop, up to 8 undrained frames
+  are sent as a final bounded burst so short calls keep their tail audio.
+
+- **Zello pending-frame cap raised 15 → 30** — At the old cap, ~11% of stream starts hit the
+  limit and silently evicted the oldest frames — the start-of-call audio the CTCSS buffering
+  fix was meant to preserve. 30 frames (~1.8s) covers the CTCSS flush plus server latency
+  without eviction; the paced drain makes the larger backlog safe to send.
+
+- **Zello pending-stop timeout log spam** — The server never sends `on_stream_stop` for
+  client-initiated stops, so the 500ms timeout fires on essentially every stop by design
+  (~53,000 WARN lines per 3 days across two machines). Demoted to DEBUG.
+
+### Fixed (upstream ports)
+- **SampleNativeBuffer wrong SIMD implementation selection (upstream #2398)** — Ported upstream
+  fix e2d9c4c. `getNonInterleaved()` switched on `mInterleavedImplementation` instead of
+  `mNonInterleavedImplementation`, so the non-interleaved sample path could select the wrong
+  vector implementation. Fields are now `final`, matching upstream.
+
+### Added (upstream ports)
+- **NXDN radio reference editor support (upstream #2446)** — Manually merged into the fork's
+  customized `FrequencyEditor` (which adds CTCSS/DCS/NAC tone filter auto-import): the radio
+  reference importer now creates NXDN repeater channel configurations from non-trunked county
+  entries. `ModeDecoderType` NXDN split into NXDN48/NXDN96 mapping to 4800/9600 transmission
+  modes.
+- **Playlist file name sorting (upstream #2342)** — Playlist manager path column is now
+  sortable (case-insensitive).
+- **Gradle JVM autoprovisioning (upstream #2427)** — `foojay-resolver-convention` plugin in
+  settings.gradle plus `JvmVendorSpec.BELLSOFT` in the toolchain spec: Gradle now downloads
+  the correct Bellsoft Liberica JDK 25 automatically on machines that lack it. Also removed
+  the redundant sourceSets block, matching upstream.
+- **NXDN talker alias log spam removal (upstream #2442)** — Removed the "Unexpected NXDN
+  Talker Alias Fragment sequence" INFO logging.
+- **Extended DCS code list (upstream #2424)** — Ported upstream commit 3c01c64, which extends
+  `DCSCode` beyond the original ETSI-spec list to cover the codes supported by most modern
+  radios: 43 new entries (21 normal + 22 inverted, e.g. N036/I036, N053/I053, N122/I122).
+  New codes are inserted within the existing `N023..N754` / `I023..I754` enum ranges, so they
+  appear automatically in the NBFM tone filter DCS combo box and are recognized by the
+  DCS detector's code map.
+
+## [0.6.2-ap-15.6] - 2026-07-30
+
+### Fixed
+- **Noise blanker kills audio on weak NBFM signals** — The `NoiseBlanker` had a self-reinforcing
+  feedback loop: only non-blanked samples updated the running average power, so on weak signals the
+  average stayed artificially low and legitimate voice peaks exceeded the 225× blanking threshold.
+  Once triggered, the blanker suppressed more and more of the signal, eventually gating all audio
+  (e.g., Cataldo Ambulance). Fix: blanked samples now update the running average at 1/10th normal
+  weight (`ALPHA_BLANKED`), allowing the average to gradually rise to match the actual signal level.
+  A safety valve checks the blanking rate every 2000 samples and boosts the average by 50% if more
+  than 5% of samples are being blanked.
+
+- **CTCSS tone filter clips first ~250ms of NBFM calls** — The CTCSS detector requires 3
+  confirmation blocks (~83ms each) before allowing audio to pass. During that window,
+  `processResampledAudio()` discarded the audio entirely instead of buffering it. Fix: audio is now
+  buffered (up to 500ms / 4000 samples at 8 kHz) during tone confirmation and flushed through the
+  normal audio pipeline when the detector confirms the correct tone. The 500ms tone holdover for
+  rapid squelch flutter is unchanged — calls that re-open within the holdover window still pass
+  audio immediately.
+
+- **Zello pending stop timeout too long (5s → 500ms)** — The Zello server does not send
+  `on_stream_stop` in response to client-initiated `stop_stream`, so every stream hit the 5-second
+  safety timeout before allowing the next stream to start. Log analysis showed 31 deferred stream
+  starts on Stoneham and 9 on Somerville from this delay. Reduced `PENDING_STOP_TIMEOUT_MS` from
+  5000 to 500ms.
+
+## [0.6.2-ap-15.5] - 2026-07-28
+
+### Fixed
+- **Zello orphaned stream collisions (3008 "channel busy")** — Three changes to
+  `AbstractZelloBroadcaster` stream lifecycle to eliminate orphaned streams that leave the Zello
+  server in a "channel busy" state:
+  1. **Server-acknowledged stream closure** — After sending `stop_stream`, the broadcaster now tracks
+     the pending stop and blocks new `start_stream` requests until the server confirms with
+     `on_stream_stop` (matched on stream_id). Previously, local state was cleared immediately after
+     sending `stop_stream`, so the `on_stream_stop` response arrived with "not ours" and was ignored,
+     allowing a new stream to race the server's cleanup. A 5-second safety timeout prevents permanent
+     blocking if the server never responds.
+  2. **Stop-before-retry on 3008** — When the server rejects `start_stream` with "channel busy", the
+     broadcaster now sends `stop_stream` for the last known `stream_id` before scheduling the retry.
+     This clears the orphaned server-side stream instead of blindly retrying into the same collision.
+  3. **WebSocket reset on repeated 3008s** — After 3 consecutive "channel busy" failures on the same
+     connection, the broadcaster disconnects and reconnects the WebSocket. Since Zello allows only one
+     outbound stream per connection, a fresh socket guarantees the stuck stream is cleared.
+
+## [0.6.2-ap-15.4] - 2026-07-26
+
+### Fixed
+- **Zello audio distortion when graphic EQ is enabled** — The float-to-short conversion in
+  `AbstractZelloBroadcaster.processAudioBuffer()` had no clipping protection. When the P25 graphic
+  equalizer boosted frequency bands, audio peaks could exceed the ±1.0f range after
+  NonClippingGain + EQ, causing the raw `(short)(sample * 32767)` cast to overflow and wrap —
+  producing hard clipping distortion audible on Zello streams but not on local speakers (which
+  handle float samples natively). Added a `tanh` soft clipper that smoothly compresses peaks
+  exceeding ±1.0f before the short conversion, preserving audio quality through the Opus encoder.
+
+## [0.6.2-ap-15.3] - 2026-07-24
+
+### Fixed
+- **AliasFactory cannot copy CTCSS or NAC alias IDs** — `AliasFactory.copyOf()` switch was missing
+  cases for `CTCSS` and `NAC` alias ID types, causing a "cannot make copy of instance" warning and
+  silently dropping those IDs when the alias editor creates a working copy. This prevented adding or
+  editing streaming actions on any alias that contained a CTCSS tone filter. Also added `INVERT` to
+  the legacy/unsupported fall-through (no implementation class exists).
+
+## [0.6.2-ap-15.2] - 2026-07-22
+
+### Fixed
+- **RealResampler buffer overflow crash** — `dispatchOutputBuffer()` contained a `mLastBatch`
+  tail-flush block that attempted to copy all remaining output samples into a fixed-size
+  `float[512]` array without checking the count. When the resampler produced a large output burst
+  (e.g., 1040 samples), the `dispatchFullOutputBuffers` loop would extract 512, leaving 528 — and
+  the tail-flush block would try `FloatBuffer.get(float[512], 0, 528)`, throwing
+  `IndexOutOfBoundsException`. This fired on every NBFM squelch close (`lastBatch=true`) and was
+  suppressed 4-of-5 by log suppression, creating continuous exception garbage that contributed to
+  GC pressure and UI freezes. Fix: removed the redundant `mLastBatch` tail-flush from
+  `dispatchOutputBuffer` (already handled by `flushPartialOutput()` after the dispatch loop) and
+  changed `dispatchFullOutputBuffers` from `>` to `>=` to dispatch exact-512 buffers immediately.
+
+## [0.6.2-ap-15.1] - 2026-07-18
+
+Zello silent channel death fix and upstream channelizer performance optimization.
+
+### Fixed
+- **Zello silent channel death on code=1006 disconnect** — `onClose` and `onError` WebSocket
+  callbacks now wrap `setBroadcastState()` in try-catch so `scheduleReconnect()` always executes,
+  even if a listener exception propagates through the event bus and kills the callback. Previously,
+  channels like Boston MA EMS and Massport Fire would silently die on code=1006 disconnects with no
+  reconnect scheduled and no stack trace in the logs. Confirmed across 7 days of production logs
+  (July 11-17) affecting 7 channels total.
+- **Watchdog blind spot for disconnected channels** — `watchdogTick()` previously only caught
+  channels in `TEMPORARY_BROADCAST_ERROR` state with no pending reconnect. Now catches any channel
+  where `!mConnected && !mStopped && noReconnectPending`, regardless of broadcast state. This
+  covers the edge case where the async `Platform.runLater` state update hasn't propagated yet,
+  leaving the state stale as `CONNECTED` while the channel is actually dead.
+
+### Changed
+- **Reconnect scheduling logged at WARN** — `scheduleReconnect` in both `AbstractZelloBroadcaster`
+  and `ZelloSharedConnection` now logs at WARN instead of DEBUG, making reconnect events visible in
+  production logs without enabling debug output.
+
+### Upstream
+- **Fused multiply-accumulate in polyphase channelizer** — Ported upstream optimization to
+  `ComplexPolyphaseChannelizerM2.process()`. The multiply and per-sub-channel accumulation are now
+  fused into a single pass with a pre-allocated reusable accumulator buffer (`mFilterAccumulator`),
+  eliminating two per-call array allocations (~194 MB/sec of GC garbage per tuner at 2.4 MSPS).
+  Instance fields are cached into `final` locals to avoid virtual method dispatch in the inner loop.
+  Output is bit-for-bit identical to the previous implementation.
+
+## [0.6.2-ap-15] - 2026-07-11
+
+Major upstream merge: NXDN decoder, frequency error management redesign, and fork customization port.
+
+### Added
+- **NXDN 4800/9600 decoder** — Complete NXDN protocol support from upstream PR #2431 including
+  4FSK demodulation, Layer 1/2/3 message stack, AMBE audio decoding, trunk tracking with traffic
+  channel management, channel map configuration, and GUI configuration editor.
+- **NXDN Type-C/D support** — Includes conventional repeater (SCCH) decoding alongside trunked modes.
+- **Two-tier frequency error management** — New `ChannelFrequencyErrorManager` (per-channel, 500ms
+  loop, mixer adjustment) and `TunerFrequencyErrorManager` (per-tuner, 5s loop, multi-channel
+  averaging, PPM adjustment) replace the old single-tier `FrequencyErrorCorrectionManager`.
+- **P25 ChannelEventTracker refactoring** — `P25TrafficChannelEventTracker` replaced by generic
+  `ChannelEventTracker<T>` base class with `P25ChannelEventTracker` and `NXDNChannelEventTracker`
+  subclasses.
+- **jdk.charsets module** — Added for NXDN BIG5 character encoding support in talker aliases.
+
+### Changed
+- **PPM sanity clamp ported to new architecture** — The AP-fork's `SANITY_CLAMP_PPM = 10.0` rejection
+  threshold and baseline EMA tracking (0.8/0.2 weighting) have been ported from the deleted
+  `FrequencyErrorCorrectionManager` to the new `TunerFrequencyErrorManager`. Wild PPM swings from
+  PLL lock-on errors are still rejected; baseline is preserved across corrections.
+- **FeedbackDecoder API** — `processPLLError(float, int)` replaced with `processPLLError(float)` using
+  stored decimated sample rate. New `setDecimatedSampleRate(double)` method.
+- **TunerChannelSource** — Constructor now takes `TunerFrequencyErrorManager` parameter. New abstract
+  `setFrequencyCorrection(long)` method for per-channel mixer correction.
+
+### Removed
+- **FrequencyErrorCorrectionManager** — Replaced by two-tier system (see Added).
+- **CarrierOffsetProcessor** — Removed by upstream.
+- **TunerFrequencyErrorMonitor** — Replaced by `TunerFrequencyErrorManager`.
+
+### Upstream
+- Merged DSheirer/sdrtrunk PR #2431 (NXDN decoder + frequency error redesign, 30,854 additions,
+  445 files) and PR #2433 (NXDN cleanup, jdk.charsets + tooltip fixes).
+
+## [0.6.2-ap-14.10] - 2026-07-02
+
+Zello WebSocket reliability, connection rate-limiting, and multi-channel cleanup release.
+
+### Fixed
+- **WebSocket Ping/Pong bug in shared pool mode** — `ZelloSharedConnection.onPing()` was overriding
+  the default Java `WebSocket.Listener` without sending a Pong reply or requesting the next message.
+  The Zello server sends a WebSocket Ping every 30 seconds and closes connections that don't Pong back
+  within 30 seconds. This was likely the primary cause of shared-pool connections dropping after 30–60
+  seconds. Now correctly calls `ws.sendPong(msg)` and `ws.request(1)`.
+- **JavaFX playlist editor white screen on GPU failure** — Added `-Dprism.order=d3d,sw` to Windows JVM
+  args so JavaFX falls back to software rendering when the Direct3D pipeline fails (e.g. after a GPU
+  driver crash). Previously the playlist editor window stayed permanently white until reboot.
+
+### Changed
+- **Exponential backoff on reconnects** — Normal (non-kicked) reconnects in both
+  `AbstractZelloBroadcaster` and `ZelloSharedConnection` now use exponential backoff: 15s, 30s, 60s,
+  120s (capped), plus 0–5s random jitter. Previously used a flat 15–20s delay regardless of how many
+  consecutive failures had occurred. With 20–30 channels dropping at once, the old fixed delay would
+  exceed Zello's 10 connections/minute/IP limit. The backoff counter resets on successful logon.
+- **Heap increased from 6GB to 10GB** — Both Windows and Linux JVM args in `build.gradle` now use
+  `-Xmx10g` to prevent GC pressure from freezing the waterfall and playlist editor on machines with
+  many decoders and streams.
+
+### Removed
+- **Zello Multi-Channel Configuration** — Removed the `ZelloMultiChannelConfiguration` parent/child
+  auto-generation system (`expandMultiChannelConfig()`, `syncMultiChannelChildren()`,
+  `persistToParent()`, `mAutoGenerated`, `mParentConfigName`). Each channel now requires its own
+  individual `ZelloConfiguration` with explicit credentials. The `ZELLO_WORK_MULTI` broadcast type
+  has been removed from `BroadcastServerType`, `BroadcastFactory`, `StreamEditorFactory`, and
+  `@JsonSubTypes`. Stub classes remain for backward compatibility with existing playlist XML files.
+
+### Added
+- **CTCSS guard tones** — 65.0 Hz and 260.0 Hz guard frequencies added to `CTCSSDetector` to catch
+  low-frequency interference and harmonic artifacts that could false-trigger tone detection.
+- **Zello shared WebSocket pool** — `ZelloSharedConnection` allows multiple channels with the same
+  credentials to share a single WebSocket connection, reducing connection count. Configurable per
+  channel via the "Shared Connection" checkbox in the Zello editor.
+
+## [0.6.2-ap-14.9.14] - 2026-06-18
+
+Zello streaming table UX and configuration editor alignment.
+
+### Fixed
+- Stream-level Zello API errors (`channel busy`, server `on_stream_stop`, etc.) no longer linger in
+  the streaming table error column while the broadcaster status is Connected.
+- Zello Work and Consumer editor empty-form defaults aligned with configuration class defaults
+  (`stream_guard_ms`, `pause_time_ms`, `relaxation_time_ms`).
+
+### Changed
+- Connection-level errors (handshake failure, timeout, kicked, channel offline) still display in the
+  error column; stream-level issues are logged but cleared from the UI during healthy sessions.
+
+## [0.6.2-ap-14.9.13] - 2026-06-18
+
+Zello reconnect and rate-limit reliability release.
+
+### Fixed
+- Manual Reconnect no longer waits on the cold-start slot counter (~34s delay after startup).
+- Rejected `start_stream` (`channel busy`, etc.) no longer increments ghost-stream counter or forces session reconnect.
+- Ghost-stream detection limited to streams that never received a `stream_id` (pending id -1), not explicit failures (-2).
+
+### Changed
+- Cold-start connections batched at 9 per minute to stay under Zello's documented 10/min/IP WebSocket limit.
+- `channel busy` treated as transient with 750ms minimum retry backoff plus configured pause/guard times.
+- Manual reconnect stagger uses 2s spacing instead of reusing cold-start batch delays.
+
+## [0.6.2-ap-14.9.12] - 2026-05-29
+
+Zello architecture refactor and broadcast reliability release.
+
+### Added
+- `AbstractZelloBroadcaster` shared base class for Zello Work and Consumer real-time streaming.
+- `ZelloProtocolUtil` for shared Opus constants and Bridge error-code mapping.
+- `ZelloChannelConfiguration` interface for shared timing/channel settings.
+- Zello unit tests: `ZelloProtocolUtilTest`, `ZelloBroadcasterTimingTest`, `ZelloSessionEpochTest`.
+
+### Fixed
+- `BroadcastModel` startup stagger counter no longer grows unbounded across manual reconnects.
+- Separate reconnect-batch slot counter with 3s gap reset between reconnect waves.
+- Missing `break` in `BroadcastModel` aged-off/error table update switch.
+- Zello Consumer keepalive, channel-offline reconnect, and encoder shutdown aligned with Work.
+- Stream guard and pause time no longer block real-time audio threads (`Thread.sleep` removed).
+
+### Changed
+- `ZelloBroadcaster` and `ZelloConsumerBroadcaster` reduced to thin subclasses (~100 lines each).
+- Stream guard and pause use scheduled timers; `isRealTimeReady()` respects pending delays.
+- Successful Zello streams now increment parent `incrementStreamedAudioCount()` correctly.
+
+## [0.6.2-ap-14.6] - 2026-04-11
+
+Runtime-diagnostics release. Adds per-category DEBUG toggles, persistent channel table sort,
+and ThinLine Radio debug-by-default.
+
+### Added
+- Diagnostics preferences panel (Application -> Diagnostics (Logging)) with per-category
+  DEBUG toggles for Zello, ThinLine Radio, Rdio Scanner, SDRPlay, RTL-SDR, the channelizer,
+  the tuner manager, the P25 decoder, and NBFM/audio output.
+- Master "Enable ALL diagnostics categories" checkbox with a warning about log volume.
+- Runtime Logback level control (`LogLevelController`) that applies persisted preference
+  state on startup and immediately when a checkbox is toggled, with no application restart.
+- `FxTableColumnMonitor` helper that persists JavaFX TableView column widths, visible
+  order, and sort order across restarts. Wired into the Channels editor with stable column
+  ids (`channelTable.system`, `.site`, `.name`, `.frequency`, `.protocol`, `.playing`,
+  `.autoStart`).
+- ThinLine Radio logger defaults to DEBUG in `logback.xml` so live streaming sessions get
+  full diagnostic output without user action.
+
+### Fixed
+- Channel table sort order and column widths are no longer lost when reopening the
+  Channels menu. Previously the view reverted to the default ordering on every show.
+
+### Changed
+- `DiagnosticsPreference` is initialized by `UserPreferences` and immediately pushes its
+  state into the Logback context via `LogLevelController.applyAll`, guaranteeing the user's
+  last diagnostics selection is active from the first log line after startup.
+- `.github/ISSUE_TEMPLATE/config.yml` now enables blank issues so fork issues can be filed
+  without going through the upstream support wiki template.
+
+## [0.6.2-ap-14.5] - 2026-04-10
+
+- Treat "failed to start sending message" and "failed to stop sending message" as transient
+  Zello server errors that trigger reconnect rather than broadcaster shutdown.
+- Bumped `projectVersion` for the fix above.
+
+## [0.6.2-ap-14.4] - 2026-04-09
+
+- NBFM hiss reduction: wire new post-demod audio filters into the NBFM path.
+- Default filter updates to reduce clipping on loud voice channels.
+- Zello reconnect button on the broadcaster status panel for manual recovery.
+- Verbose Zello diagnostic logging (session epoch, stream ids, opus state).
+- Fix Opus encoder crash when frame size changed mid-session.
+- Updated Zello broadcaster default configuration values.
+
+## [0.6.2-ap-14.3] - 2026-04-07
+
+- Earlier Zello reliability improvements (initial transient-error handling).
+- Audio pipeline tuning for Cambridge COMIRS P25 trunking system.
+- Rdio Scanner stream wiring and API-key reporting improvements.
+
+[0.6.2-ap-14.10]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.10
+[0.6.2-ap-14.9.14]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.14
+[0.6.2-ap-14.9.13]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.13
+[0.6.2-ap-14.9.12]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.9.12
+[0.6.2-ap-14.6]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.6
+[0.6.2-ap-14.5]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.5
+[0.6.2-ap-14.4]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.4
+[0.6.2-ap-14.3]: https://github.com/actionpagezello/sdrtrunk/releases/tag/v14.3
