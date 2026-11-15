@@ -3,7 +3,51 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-15 14:30: `edacs` = build 25, pushed as `ce2915e0`; documents brought up to date
+## Current state 2026-11-15 15:30: build 25 clean on four machines; migration to SDRTrunk 1.0.0 planned, not started
+
+**Start here in a new session.** `CLAUDE.md` (local, not in git) opens with a handoff block; `MIGRATION-1.0.md`
+(in this repository) is the inventory.
+
+**Branches on GitHub:** `edacs` = build 25 plus documents (version `0.6.2-ap-16.1-edacs-25`), now frozen as the
+fallback. `master` `18b0ae4e` (ap-16.1). `smartnet` superseded. No `ap-1.0` branch yet.
+
+**Build 25 in service (logs of 2026-11-15, about 80 minutes each):** Cambridge, Summit 800, Paxton, Monson. No
+"voice channel open 0.0 s" (one intended analog-to-P25 restart at Summit), no ConcurrentModificationException,
+Cambridge EDACS calls with no audio 1.1% (was 4.2%), TUNER UNAVAILABLE 0 at Cambridge with the tuner limits
+below (was 136), CoMIRS decoding. Daly on build 14.
+
+**Migration - decided by Armen 2026-11-15:**
+- Base on upstream `v1.0.0` (`73d32386`). New branch `ap-1.0`. Versions `1.0.0-ap-1`, `1.0.0-ap-2`, ...
+- One build with everything, trialled at the same time on Somerville (P25, NBFM, Zello) and Cambridge (P25
+  trunking, EDACS, SmartZone). Every other machine stays on build 25 until both are clean.
+- The fork's "ThinLine Radio" stream type becomes "Code 3 Stream" (his new app; he runs no ThinLine servers).
+  Saved ThinLine streams must load as Code 3 Stream with their settings; the upload format does not change.
+  Upstream's "Thinline Radio" type (`aad971db`, after the release) is imported beside it.
+- The fork's CTCSS/DCS stays. Playlists must keep loading. No GitHub releases of the fork.
+
+**Not yet done:** Armen has reviewed the inventory twice but has not said "approved". Needed from him: that
+approval, the Somerville and Cambridge playlist files (never print credentials), Java 27 on the build PC.
+
+**Measured for the inventory (merge base `b385a42b`, 2026-07-11):** upstream changed 991 files, the fork 1,019,
+831 in common, 724 of those already identical. 447 files differ between build 25 and `v1.0.0`: 153 upstream only
+(36 the fork lacks), 162 fork-only files, 25 fork-changed and untouched upstream, 107 changed on both sides (the
+hand merge). Compare with `git diff -w --ignore-cr-at-eol` - the fork has CRLF files and a plain diff overstates.
+
+**Corrections made on 2026-11-15 (do not repeat):**
+- The first inventory said "keep the fork's" for every shared feature without comparing the code. Compared, it
+  is three lists: fork better, upstream better (bounded `Dispatcher`, NXDN traffic manager, JMBE audio controls,
+  editor layout, MDC-1200 loop), merge both (`NoiseSquelch`, P25 Phase 1 decoder state, DMR traffic manager, RTL).
+- `74dc3253` and `7fcf0353` are inside `v1.0.0` (checked with `git merge-base --is-ancestor`); nothing to carry.
+- Fork features left off the first list: P25 NAC filter and talkgroup override; DMR colour code filter, voice
+  frame A confirmation, channel numbers learned over the air, Ignore Unaliased Talkgroups for DMR. Before porting
+  an area, list the fork's differences from the diff itself, not from memory or this changelog.
+- A fault to fix in the migration: `C4FMSymbolProcessor.getBalance` can index -1 (Monson DMR, once); upstream's.
+
+**Port order:** base and build files; playlist compatibility; NBFM; streaming (Zello, Code 3 Stream, Thinline
+Radio); P25 / DMR / NXDN fixes; tuners; EDACS and Type II; screens, tools, documents. Then replay of the kept
+recordings on build 25 and on the new build.
+
+## Previous state 2026-11-15 14:30: `edacs` = build 25, pushed as `ce2915e0`; documents brought up to date
 
 **Branches on GitHub (actionpagezello/sdrtrunk):** `edacs` `ce2915e0` (build 25, version
 `0.6.2-ap-16.1-edacs-25`), `master` `18b0ae4e` (ap-16.1, unchanged), `smartnet` `6fc43fa9` (older Type II work,

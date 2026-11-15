@@ -44,6 +44,16 @@ and can only be told apart by the "Build Timestamp" log line.
 | 24 | edacs-24 | P25: the Details tab lists the calls by talkgroup with the alias name |
 | 25 | edacs-25 | EDACS and Type II: a voice channel is no longer shut down as it starts (2.7% of MBTA calls were lost); calls by talkgroup in the Details tab for every kind of channel; two upstream fixes (P25 HDU, Golay 24) |
 
+### Migration to SDRTrunk 1.0.0 planned (2026-11-15, documents only)
+- Build 25 ran clean on Cambridge, Summit 800, Paxton and Monson: no voice channel shut down at start, no
+  ConcurrentModificationException, Cambridge EDACS calls with no audio 1.1% (was 4.2%), TUNER UNAVAILABLE 0 at
+  Cambridge with the new tuner limits (was 136).
+- The `edacs` branch is frozen here as the fallback. The next series is `1.0.0-ap-<n>` on a new branch `ap-1.0`,
+  based on upstream `v1.0.0` (`73d32386`). Inventory and order of work: `MIGRATION-1.0.md`.
+- The fork's "ThinLine Radio" stream type will be named "Code 3 Stream"; saved streams load under the new name.
+- Correction: the two upstream fixes taken early in build 25 (`74dc3253`, `7fcf0353`) are part of `v1.0.0`.
+- Found, not fixed on this branch: `C4FMSymbolProcessor.getBalance` can index -1 (seen once, Monson, DMR).
+
 ### After build 25 (2026-11-15, documents only)
 - Builds 24 and 25 applied together and pushed: `edacs` = `ce2915e0`.
 - Daly's log of 11-15 stopping at 04:44:05 was a short power loss (Armen); the machine is running.
