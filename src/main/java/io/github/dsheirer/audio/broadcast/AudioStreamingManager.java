@@ -213,10 +213,12 @@ public class AudioStreamingManager implements Listener<AudioSegment>
                 if(audioSegment.completeProperty().get())
                 {
                     it.remove();
-                    logCallSegment(audioSegment, audioSegment.hasBroadcastChannels() ? "complete" :
+                    logCallSegment(audioSegment, audioSegment.isSilent() ? "SILENT - no sound in it, not streamed" :
+                            audioSegment.hasBroadcastChannels() ? "complete" :
                             "complete - no stream configured for this call");
 
-                if(mAudioRecordingListener != null && audioSegment.hasBroadcastChannels())
+                //AP-fork (edacs-23): a segment that is silence throughout is not uploaded
+                if(mAudioRecordingListener != null && audioSegment.hasBroadcastChannels() && !audioSegment.isSilent())
                 {
                     IdentifierCollection identifiers =
                             new IdentifierCollection(audioSegment.getIdentifierCollection().getIdentifiers());

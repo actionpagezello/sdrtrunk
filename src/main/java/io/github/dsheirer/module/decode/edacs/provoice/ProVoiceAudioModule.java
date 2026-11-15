@@ -19,6 +19,9 @@
 
 package io.github.dsheirer.module.decode.edacs.provoice;
 
+import io.github.dsheirer.audio.AudioSegment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.ImbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
@@ -35,11 +38,22 @@ import io.github.dsheirer.sample.Listener;
  */
 public class ProVoiceAudioModule extends ImbeAudioModule
 {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProVoiceAudioModule.class);
     private static final int SILENCE_SAMPLES = 160; //20 ms at 8 kHz
     private final NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
     private final Listener<SquelchStateEvent> mSquelchStateListener = this::squelch;
     private volatile GraphicEqualizer mGraphicEQ;
     private long mFrameCount;
+
+    /**
+     * A segment whose loudest sample stays below this (full scale = 1.0) is silence.  Measured on Cambridge,
+     * 2026-11-13: a transmission of 94 error-free frames with no sound peaked at 0.0012 (the codec's comfort
+     * noise); the quietest of 20 transmissions with speech peaked at 0.31.
+     */
+    public static final float SILENCE_PEAK = 0.01f;
+    private float mSegmentPeak;
+    private int mSegmentFrames;
+    private long mSilentSegmentCount;
 
     public ProVoiceAudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
@@ -65,6 +79,7 @@ public class ProVoiceAudioModule extends ImbeAudioModule
                 {
                     addAudio(new float[SILENCE_SAMPLES]); //damaged frame, concealed as silence
                     mFrameCount++;
+                    mSegmentFrames++;
                     continue;
                 }
 
@@ -83,10 +98,49 @@ public class ProVoiceAudioModule extends ImbeAudioModule
                     audio = equalizer.process(audio);
                 }
 
+                for(float sample : audio)
+                {
+                    float magnitude = Math.abs(sample);
+
+                    if(magnitude > mSegmentPeak)
+                    {
+                        mSegmentPeak = magnitude;
+                    }
+                }
+
                 addAudio(audio);
                 mFrameCount++;
+                mSegmentFrames++;
             }
         }
+    }
+
+    /**
+     * A segment that is silence from start to finish is flagged so that it is not recorded or streamed.
+     */
+    @Override
+    protected void segmentClosing(AudioSegment audioSegment)
+    {
+        if(mSegmentFrames > 0 && mSegmentPeak < SILENCE_PEAK)
+        {
+            audioSegment.setSilent(true);
+            mSilentSegmentCount++;
+            LOGGER.info(String.format("ProVoice transmission TO:%s FROM:%s was silence throughout (%.1f s, loudest " +
+                    "sample %.4f of full scale) - not recorded, not streamed",
+                audioSegment.getIdentifierCollection().getToIdentifier(),
+                audioSegment.getIdentifierCollection().getFromIdentifier(), mSegmentFrames * 0.02, mSegmentPeak));
+        }
+
+        mSegmentPeak = 0;
+        mSegmentFrames = 0;
+    }
+
+    /**
+     * Number of audio segments flagged as silence
+     */
+    public long getSilentSegmentCount()
+    {
+        return mSilentSegmentCount;
     }
 
     /**

@@ -282,6 +282,15 @@ public class SmartNetOSWFramer
         return mFrameCount;
     }
 
+    /**
+     * Number of bits processed.  One OSW is sent every FRAME_LENGTH bits, so this gives the number of OSWs the
+     * control channel sent, including the ones that were never found.
+     */
+    public long getBitCount()
+    {
+        return mBitCount;
+    }
+
     public long getValidCount()
     {
         return mValidCount;

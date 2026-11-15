@@ -3,7 +3,17 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-14 22:40: `edacs` build 22 (Type II digital calls decoded as P25 voice)
+## Current state 2026-11-15 09:40: `edacs` build 23 (silent ProVoice transmissions; Type II reception line)
+
+- **Build 23** (CHANGELOG build 23): `edacs-23.patch`, one commit on `13e270fd` (build 22).
+- **Build 22 confirmed by ear** (Armen, six Paxton recordings of 59152 / 59184). EDACS no-audio calls verified as
+  key-ups without speech - none lost.
+- **Armen's decisions 11-15:** Summit 800 Airspy loss not a concern; Zello "kicked" is the same account logged in on
+  several computers - not a bug; the Paxton multi-site channels were a test, no more work on them; Cambridge gets
+  more Nooelec sticks later (7 in all for the 800 band plus CoMIRS Metro Boston Overlay 769-775 MHz) - not soon.
+- **EDACS left:** nothing to build. Clean days on Cambridge, then the upstream alignment.
+
+## Previous state 2026-11-14 22:40: `edacs` build 22 (Type II digital calls decoded as P25 voice)
 
 - **Build 22** = digital grant 0x321 -> P25 voice channel (CHANGELOG build 22). `edacs-22.patch`, one commit on
   top of build 21. Audio not tested in the workspace - Armen listens to 59152 / 59184 on Central MA.

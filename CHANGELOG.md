@@ -40,6 +40,36 @@ and can only be told apart by the "Build Timestamp" log line.
 | 20 | edacs-20 | Type II: a calling radio is not put on a call when a control word was lost between the two words of the grant |
 | 21 | edacs-21 | Alias names in the Details tab; "Ignore Unaliased Talkgroups" for EDACS and Type II; SmartZone site number |
 | 22 | edacs-22 | Type II: digital calls (grant 0x321, P25 Phase 1 voice) are decoded as speech instead of played as analog noise |
+| 23 | edacs-23 | ProVoice: a transmission that is silence throughout is not recorded or streamed; Type II: the reception line counts the control words that were never found |
+
+### Build 23 - silent ProVoice transmissions not saved; truer Type II reception figure
+- **Build 22 on four machines, night of 2026-11-14/15:** no errors. Digital calls decoded: Paxton 133 of 137 with P25
+  voice frames, Summit 800 58 of 61, Monson 1 of 1. Armen recorded six on Paxton (59152 FCECS Fire Disp, 59184
+  FCECS PD Disp - Franklin County dispatch tied to CoMIRS, mode D on Radio Reference): "They sound ok"; measured
+  speech-like (spectral flatness 0.09-0.31; the analog-decoder noise was 0.81-0.86). The editor switch is visible.
+- **EDACS calls with no audio - VERIFIED NOT LOST (Cambridge, 2026-11-14 10:10 to 11-15 07:52, 12,189 calls):** 511
+  had no audio. 336 had their voice channel open under a second (assigned and released at once). 171 were "no
+  voice - header only": the radio keyed up and sent the ProVoice header (median 0.72 s, at most 2.0 s) and no voice
+  frame. 3 found nothing on the channel in 1.6-1.7 s, 1 had a single voice frame. No call with speech in it is
+  among them.
+- **Silent transmissions (requested by Armen once verified):** a transmission can carry error-free voice frames
+  with no sound in them (Cambridge 2026-11-13, TO 530 FROM 11856: 94 frames, the recording peaks at 38 of 32,768
+  = the codec's comfort noise; the quietest of 20 recordings with speech peaks at 10,271). `ProVoiceAudioModule`
+  tracks the loudest sample of each audio segment; below `SILENCE_PEAK` (0.01 of full scale) the segment is
+  flagged (`AudioSegment.isSilent()`): no recording, no upload to a file-based stream, and the log says
+  "ProVoice transmission TO:.. FROM:.. was silence throughout ... - not recorded, not streamed" /
+  "SILENT - no sound in it, not streamed". A live stream (Zello) has already carried the silence by the time the
+  transmission ends; that cannot be taken back. How often it happens is not known - the INFO line will show.
+- **Type II reception line:** "N OSWs decoded, M failed the check (x%)" counted only the control words found by
+  their sync and so understated the loss (Central MA 2026-11-14: 4% by that line, 15% of the words sent were in
+  fact missing). A control channel sends one OSW every 84 bits; the line is now
+  "13111 of about 15429 OSWs decoded - 15.0% lost (529 failed the check, 1789 not found)", or "0 OSWs decoded - no
+  signal". Scripts that read the old line need the new pattern.
+- **Summit 800 Airspy, 2026-11-14 night (not a code matter, recorded for the next reader):** OSW failures jumped at
+  23:41 when Armen changed the gain; after that the Airspy's delivered rate slid from 10.000 to about 9.86 MHz by
+  04:00 and failures kept rising. He is not concerned (restart pending, the machine will be moved to nearer
+  sites).
+- Tests: `ProVoiceSilentSegmentTest` (3), `SmartNetControlChannelTest.testStatistics`.
 
 ### Build 22 - Type II: digital calls are decoded with the P25 voice decoder
 - **Why it was missing:** the Type II work was built from recordings of two sites (Monson, Metro Boston) that carry

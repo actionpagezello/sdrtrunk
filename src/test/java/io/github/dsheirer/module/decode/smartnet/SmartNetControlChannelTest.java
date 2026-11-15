@@ -217,4 +217,18 @@ public class SmartNetControlChannelTest
         demodulator.process(i, q, samples);
         assertTrue(osws.size() >= 190, "Decoded " + osws.size() + " of 199 OSWs");
     }
+
+    /**
+     * Test (edacs-23): the reception line counts the OSWs that were never found, not only the ones that failed their
+     * check.  Numbers of the MSP Central MA recording of 2026-11-14 (6 minutes).
+     */
+    @Test
+    void testStatistics()
+    {
+        assertEquals("13111 of about 15429 OSWs decoded - 15.0% lost (529 failed the check, 1789 not found)",
+            SmartNetDecoder.statistics(13111, 529, 360 * 3600));
+        assertEquals("43 of about 43 OSWs decoded - 0.0% lost (0 failed the check, 0 not found)",
+            SmartNetDecoder.statistics(43, 0, 3600));
+        assertEquals("0 OSWs decoded - no signal", SmartNetDecoder.statistics(0, 12, 216000));
+    }
 }

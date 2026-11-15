@@ -98,9 +98,33 @@ public class SmartNetDecoder extends Decoder implements IComplexSamplesListener,
         }
     }
 
+    /**
+     * Decode statistics for the log.  The control channel sends one OSW every 84 bits whether or not it is found, so
+     * the bits processed give the number sent; counting only the OSWs that were found and failed their check
+     * understates the loss (MSP Central MA at Summit 800, 2026-11-14: 4% failed the check, 15% were lost in all).
+     * @param valid OSWs decoded
+     * @param invalid OSWs found by their sync words that failed the error check
+     * @param bits processed
+     */
+    static String statistics(long valid, long invalid, long bits)
+    {
+        long sent = Math.round(bits / (double)SmartNetOSWFramer.FRAME_LENGTH);
+
+        if(valid == 0 || sent <= 0)
+        {
+            return "0 OSWs decoded - no signal";
+        }
+
+        sent = Math.max(sent, valid + invalid);
+        long lost = sent - valid;
+        return String.format("%d of about %d OSWs decoded - %.1f%% lost (%d failed the check, %d not found)", valid, sent,
+            100.0 * lost / sent, invalid, lost - invalid);
+    }
+
     private long mStatisticsTimestamp;
     private long mStatisticsValid;
     private long mStatisticsInvalid;
+    private long mStatisticsBits;
 
     /**
      * Diagnostics (DEBUG): decode statistics once a minute
@@ -116,13 +140,14 @@ public class SmartNetDecoder extends Decoder implements IComplexSamplesListener,
         {
             long valid = getValidCount() - mStatisticsValid;
             long invalid = getInvalidCount() - mStatisticsInvalid;
-            LOGGER.debug("Motorola Type II control channel last minute: " + valid + " OSWs decoded, " + invalid + " failed the check" +
-                (valid + invalid > 0 ? String.format(" (%.1f%%)", 100.0 * invalid / (valid + invalid)) : " - no signal"));
+            LOGGER.debug("Motorola Type II control channel last minute: " + statistics(valid, invalid,
+                getBitCount() - mStatisticsBits));
         }
 
         mStatisticsTimestamp = mTimestamp;
         mStatisticsValid = getValidCount();
         mStatisticsInvalid = getInvalidCount();
+        mStatisticsBits = getBitCount();
     }
 
     private void dispatch(SmartNetOSW osw)
@@ -133,6 +158,11 @@ public class SmartNetDecoder extends Decoder implements IComplexSamplesListener,
     public long getValidCount()
     {
         return mFramer.getValidCount();
+    }
+
+    public long getBitCount()
+    {
+        return mFramer.getBitCount();
     }
 
     public long getInvalidCount()

@@ -139,6 +139,14 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     /**
      * Immediately closes the current audio segment without delay.
      */
+    /**
+     * AP-fork (edacs-23): called just before an audio segment is completed, for a module that has something to say
+     * about the segment as a whole.  Does nothing by default.
+     */
+    protected void segmentClosing(AudioSegment audioSegment)
+    {
+    }
+
     private void closeAudioSegmentNow()
     {
         synchronized(this)
@@ -148,6 +156,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
 
             if(mAudioSegment != null)
             {
+                segmentClosing(mAudioSegment);
                 mAudioSegment.completeProperty().set(true);
                 mIdentifierUpdateNotificationBroadcaster.removeListener(mAudioSegment);
                 mAudioSegment.decrementConsumerCount();
