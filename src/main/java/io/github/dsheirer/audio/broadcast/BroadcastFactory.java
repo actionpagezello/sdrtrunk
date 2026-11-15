@@ -25,6 +25,9 @@ import io.github.dsheirer.audio.broadcast.broadcastify.BroadcastifyFeedConfigura
 import io.github.dsheirer.audio.broadcast.rdioscanner.RdioScannerBroadcaster;
 import io.github.dsheirer.audio.broadcast.rdioscanner.RdioScannerConfiguration;
 import io.github.dsheirer.audio.broadcast.rdioscanner.RdioScannerFeedConfiguration;
+import io.github.dsheirer.audio.broadcast.thinline.ThinlineRadioConfiguration;
+import io.github.dsheirer.audio.broadcast.code3stream.Code3StreamBroadcaster;
+import io.github.dsheirer.audio.broadcast.code3stream.Code3StreamConfiguration;
 import io.github.dsheirer.audio.broadcast.openmhz.OpenMHzBroadcaster;
 import io.github.dsheirer.audio.broadcast.openmhz.OpenMHzConfiguration;
 import io.github.dsheirer.audio.broadcast.openmhz.OpenMHzFeedConfiguration;
@@ -36,6 +39,10 @@ import io.github.dsheirer.audio.broadcast.shoutcast.v1.ShoutcastV1AudioBroadcast
 import io.github.dsheirer.audio.broadcast.shoutcast.v1.ShoutcastV1Configuration;
 import io.github.dsheirer.audio.broadcast.shoutcast.v2.ShoutcastV2AudioStreamingBroadcaster;
 import io.github.dsheirer.audio.broadcast.shoutcast.v2.ShoutcastV2Configuration;
+import io.github.dsheirer.audio.broadcast.zello.ZelloBroadcaster;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConsumerBroadcaster;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConsumerConfiguration;
 import io.github.dsheirer.audio.convert.ISilenceGenerator;
 import io.github.dsheirer.audio.convert.InputAudioFormat;
 import io.github.dsheirer.audio.convert.MP3Setting;
@@ -68,7 +75,11 @@ public class BroadcastFactory
                     return new BroadcastifyCallBroadcaster((BroadcastifyCallConfiguration)configuration,
                             inputAudioFormat, mp3Setting, aliasModel);
                 case RDIOSCANNER_CALL:
+                case THINLINE_RADIO: //upstream #2626: Thinline Radio is an Rdio Scanner upload under its own name
                     return new RdioScannerBroadcaster((RdioScannerConfiguration)configuration,
+                            inputAudioFormat, mp3Setting, aliasModel);
+                case CODE3_STREAM:
+                    return new Code3StreamBroadcaster((Code3StreamConfiguration)configuration,
                             inputAudioFormat, mp3Setting, aliasModel);
                 case OPENMHZ:
                     return new OpenMHzBroadcaster((OpenMHzConfiguration)configuration,
@@ -87,6 +98,12 @@ public class BroadcastFactory
                             mp3Setting, aliasModel);
                 case SHOUTCAST_V2:
                     return new ShoutcastV2AudioStreamingBroadcaster((ShoutcastV2Configuration) configuration,
+                            inputAudioFormat, mp3Setting, aliasModel);
+                case ZELLO_WORK:
+                    return new ZelloBroadcaster((ZelloConfiguration) configuration,
+                            inputAudioFormat, mp3Setting, aliasModel);
+                case ZELLO:
+                    return new ZelloConsumerBroadcaster((ZelloConsumerConfiguration) configuration,
                             inputAudioFormat, mp3Setting, aliasModel);
                 case UNKNOWN:
                 default:
@@ -113,6 +130,10 @@ public class BroadcastFactory
                 return new BroadcastifyCallConfiguration(format);
             case RDIOSCANNER_CALL:
                 return new RdioScannerConfiguration(format);
+            case THINLINE_RADIO:
+                return new ThinlineRadioConfiguration(format);
+            case CODE3_STREAM:
+                return new Code3StreamConfiguration(format);
             case BROADCASTIFY:
                 return new BroadcastifyFeedConfiguration(format);
             case OPENMHZ:
@@ -125,6 +146,10 @@ public class BroadcastFactory
                 return new ShoutcastV1Configuration(format);
             case SHOUTCAST_V2:
                 return new ShoutcastV2Configuration(format);
+            case ZELLO_WORK:
+                return new ZelloConfiguration(format);
+            case ZELLO:
+                return new ZelloConsumerConfiguration(format);
             case UNKNOWN:
             default:
                 mLog.info("Unrecognized broadcastAudio server type: " + serverType.name());

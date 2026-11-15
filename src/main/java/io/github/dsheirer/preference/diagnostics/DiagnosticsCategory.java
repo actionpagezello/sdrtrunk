@@ -27,8 +27,9 @@ package io.github.dsheirer.preference.diagnostics;
 public enum DiagnosticsCategory
 {
     ZELLO("Zello streaming", "io.github.dsheirer.audio.broadcast.zello"),
-    THINLINE("ThinLine Radio streaming", "io.github.dsheirer.audio.broadcast.thinlineradio"),
-    RDIO("Rdio Scanner streaming", "io.github.dsheirer.audio.broadcast.rdioscanner"),
+    //1.0.0-ap-1: the constant keeps its name so the saved tick box carries over; the stream is now Code 3 Stream
+    THINLINE("Code 3 Stream streaming", "io.github.dsheirer.audio.broadcast.code3stream"),
+    RDIO("Rdio Scanner / Thinline Radio streaming", "io.github.dsheirer.audio.broadcast.rdioscanner"),
     SDRPLAY("SDRPlay / RSP tuners", "io.github.dsheirer.source.tuner.sdrplay"),
     RTLSDR("Nooelec / RTL-SDR tuners", "io.github.dsheirer.source.tuner.rtl"),
     //edacs-12: both tuner types log through WidebandStreamMonitor, whose loggers are all named under this prefix

@@ -113,7 +113,8 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
         }
         else
         {
-            mLog.error("Error connecting to Rdio Scanner server on startup [" + response + "]");
+            mLog.error("Error connecting to " + getBroadcastConfiguration().getServiceName() +
+                " server on startup [" + response + "]");
             setBroadcastState(BroadcastState.ERROR);
         }
 
@@ -166,17 +167,30 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
         if(getBroadcastState() != BroadcastState.CONNECTED &&
             (System.currentTimeMillis() - mLastConnectionAttempt > mConnectionAttemptInterval))
         {
+            BroadcastState previousState = getBroadcastState();
             setBroadcastState(BroadcastState.CONNECTING);
+
+            mLog.debug(getBroadcastConfiguration().getServiceName() + " connection test to [{}] - previous state [{}] queue depth [{}]",
+                getBroadcastConfiguration().getHost(), previousState, mAudioRecordingQueue.size());
 
             String response = testConnection(getBroadcastConfiguration());
             mLastConnectionAttempt = System.currentTimeMillis();
 
             if(response != null && response.toLowerCase().startsWith("incomplete call data: no talkgroup"))
             {
+                if(previousState != BroadcastState.CONNECTED)
+                {
+                    mLog.info(getBroadcastConfiguration().getServiceName() + " reconnected to [{}] after state [{}]",
+                        getBroadcastConfiguration().getHost(), previousState);
+                }
+
                 setBroadcastState(BroadcastState.CONNECTED);
             }
             else
             {
+                //Previously silent - a failing feed produced no log output at all between uploads.
+                mLog.warn(getBroadcastConfiguration().getServiceName() + " connection test failed for [{}] - response [{}] - retrying in {} ms",
+                    getBroadcastConfiguration().getHost(), response, mConnectionAttemptInterval);
                 setBroadcastState(BroadcastState.ERROR);
             }
         }
@@ -194,6 +208,14 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
     public void receive(AudioRecording audioRecording)
     {
         mAudioRecordingQueue.offer(audioRecording);
+
+        if(mLog.isDebugEnabled())
+        {
+            mLog.debug(getBroadcastConfiguration().getServiceName() + " queued recording - {}s audio - queue depth now [{}] state [{}]",
+                String.format("%.1f", audioRecording.getRecordingLength() / 1E3f),
+                mAudioRecordingQueue.size(), getBroadcastState());
+        }
+
         broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_QUEUE_CHANGE));
     }
 
@@ -249,7 +271,8 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
                     }
                     catch(IOException e)
                     {
-                        mLog.error("Rdio Scanner API - audio recording file not found - ignoring upload");
+                        mLog.error(getBroadcastConfiguration().getServiceName() +
+                            " API - audio recording file not found - ignoring upload");
                     }
 
                     if(audioBytes != null)
@@ -277,26 +300,39 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
                             .POST(bodyBuilder.build())
                             .build();
 
+                        final long uploadStartTime = System.currentTimeMillis();
+                        final int uploadByteCount = audioBytes.length;
+
+                        mLog.debug(getBroadcastConfiguration().getServiceName() + " upload starting - talkgroup [{}] radio [{}] {} bytes -> [{}]",
+                            talkgroup, radioId, uploadByteCount, getBroadcastConfiguration().getHost());
+
                         mHttpClient.sendAsync(fileRequest, HttpResponse.BodyHandlers.ofString())
                             .whenComplete((fileResponse, throwable1) -> {
-                                if(throwable1 != null || fileResponse.statusCode() != 200)
+                                long elapsed = System.currentTimeMillis() - uploadStartTime;
+
+                                //A non-null throwable means the request never produced a response, so fileResponse
+                                //is null here and must not be dereferenced.
+                                if(throwable1 != null)
                                 {
-                                    if(throwable1 instanceof IOException || throwable1 instanceof CompletionException)
-                                    {
-                                        //We get socket reset exceptions occasionally when the remote server doesn't
-                                        //fully read our request and immediately responds.
-                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("Rdio Scanner API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
-                                    }
-                                    else
-                                    {
-                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("Rdio Scanner API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
-                                    }
+                                    Throwable cause = (throwable1 instanceof CompletionException &&
+                                        throwable1.getCause() != null) ? throwable1.getCause() : throwable1;
+
+                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                    mLog.error(getBroadcastConfiguration().getServiceName() + " API upload failed - talkgroup [" + talkgroup +
+                                        "] no response from [" + getBroadcastConfiguration().getHost() +
+                                        "] after " + elapsed + "ms - " + cause.getClass().getSimpleName() +
+                                        ": " + cause.getMessage());
+
+                                    incrementErrorAudioCount();
+                                    broadcast(new BroadcastEvent(RdioScannerBroadcaster.this,
+                                        BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                }
+                                else if(fileResponse.statusCode() != 200)
+                                {
+                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                    mLog.error(getBroadcastConfiguration().getServiceName() + " API upload rejected - talkgroup [" + talkgroup +
+                                        "] HTTP [" + fileResponse.statusCode() + "] after " + elapsed +
+                                        "ms - response [" + fileResponse.body() + "]");
 
                                     incrementErrorAudioCount();
                                     broadcast(new BroadcastEvent(RdioScannerBroadcaster.this,
@@ -308,33 +344,34 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
 
                                     if(fileResponseString.contains("Call imported successfully."))
                                     {
+                                        mLog.debug(getBroadcastConfiguration().getServiceName() + " upload accepted - talkgroup [{}] {} bytes in {} ms",
+                                            talkgroup, uploadByteCount, elapsed);
                                         incrementStreamedAudioCount();
                                         broadcast(new BroadcastEvent(RdioScannerBroadcaster.this,
-                                            BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE)); 
-                                        audioRecording.removePendingReplay(); 
+                                            BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
+                                        audioRecording.removePendingReplay();
                                     }
                                     else if(fileResponseString.contains("duplicate call rejected"))
                                     {
                                         //Rdio Scanner is telling us to skip audio upload - someone already uploaded it
+                                        mLog.debug(getBroadcastConfiguration().getServiceName() + " duplicate rejected by server - talkgroup [{}] ({} ms)",
+                                            talkgroup, elapsed);
                                         audioRecording.removePendingReplay();
                                     }
                                     else
                                     {
                                         setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("Rdio Scanner API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
+                                        mLog.error(getBroadcastConfiguration().getServiceName() + " API unexpected response - talkgroup [" + talkgroup +
+                                            "] HTTP [" + fileResponse.statusCode() + "] after " + elapsed +
+                                            "ms - response [" + fileResponse.body() + "]");
                                     }
-
-
                                 }
-                         
                             });
                     }
                     else
                     {
                         //Register an error for the file not found exception
-                        mLog.error("Rdio Scanner API - upload file not found [" +
+                        mLog.error(getBroadcastConfiguration().getServiceName() + " API - upload file not found [" +
                             audioRecording.getPath().toString() + "]");
                         incrementErrorAudioCount();
                         broadcast(new BroadcastEvent(RdioScannerBroadcaster.this,
@@ -366,6 +403,11 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
             else
             {
                 //Remove the recording from the queue, remove a replay, and peek at the next recording in the queue
+                //Previously silent - recordings were discarded without any indication.
+                mLog.debug(getBroadcastConfiguration().getServiceName() + " aged off recording - older than {} ms, discarded without upload - " +
+                    "queue depth [{}]", getBroadcastConfiguration().getMaximumRecordingAge(),
+                    mAudioRecordingQueue.size());
+
                 mAudioRecordingQueue.poll();
                 audioRecording.removePendingReplay();
                 incrementAgedOffAudioCount();

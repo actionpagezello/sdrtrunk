@@ -59,7 +59,7 @@ public class DiagnosticsPreference extends Preference
      */
     public boolean isEnabled(DiagnosticsCategory category)
     {
-        //Zello and ThinLine default to enabled (matching logback.xml defaults).
+        //Zello and Code 3 Stream default to enabled (matching logback.xml defaults).
         boolean defaultValue = category == DiagnosticsCategory.ZELLO || category == DiagnosticsCategory.THINLINE;
         return mPreferences.getBoolean(KEY_PREFIX + category.name(), defaultValue);
     }

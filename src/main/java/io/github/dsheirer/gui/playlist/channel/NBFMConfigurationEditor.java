@@ -422,7 +422,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
             Label hangtimeLabel = new Label("Hangtime (ms)");
             hangtimeLabel.setTooltip(new Tooltip("Delay before closing audio segment after transmission ends.\n" +
-                    "Prevents cutting off the end of audio in ThinLine/Zello streams.\n" +
+                    "Prevents cutting off the end of audio in Code 3 Stream/Zello streams.\n" +
                     "0 = immediate close (default), 100-300 = recommended for streaming"));
             GridPane.setHalignment(hangtimeLabel, HPos.RIGHT);
             GridPane.setConstraints(hangtimeLabel, 4, 1);

@@ -34,4 +34,12 @@
   <!-- Apache Mina TCP/HTTP library -->
   <logger name="org.apache.mina" level="INFO" />
 
+  <!-- Zello: DEBUG exposes all activity including transient server errors
+       (invalid stream id, failed to start/stop stream, opus hiccups, reconnects,
+       session-epoch drops). Change to INFO if the log becomes too noisy. -->
+  <logger name="io.github.dsheirer.audio.broadcast.zello" level="DEBUG" />
+
+  <!-- Code 3 Stream: DEBUG for streaming diagnostics. Change to INFO if noisy. -->
+  <logger name="io.github.dsheirer.audio.broadcast.code3stream" level="DEBUG" />
+
 </configuration>

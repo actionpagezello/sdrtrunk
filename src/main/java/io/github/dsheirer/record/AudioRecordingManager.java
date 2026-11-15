@@ -140,7 +140,11 @@ public class AudioRecordingManager implements Listener<AudioSegment>
 
         while(audioSegment != null)
         {
-            if(audioSegment.isDuplicate() && mUserPreferences.getCallManagementPreference().isDuplicateRecordingSuppressionEnabled())
+            if(audioSegment.isSilent())
+            {
+                audioSegment.decrementConsumerCount(); //AP-fork (edacs-23): silence throughout - no file
+            }
+            else if(audioSegment.isDuplicate() && mUserPreferences.getCallManagementPreference().isDuplicateRecordingSuppressionEnabled())
             {
                 audioSegment.decrementConsumerCount();
             }

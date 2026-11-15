@@ -49,7 +49,13 @@ public class BinaryRecorder extends Module implements IByteBufferListener
     private final static Logger mLog = LoggerFactory.getLogger(BinaryRecorder.class);
     private static final int MAX_RECORDING_BYTE_SIZE = 524288;  //500 kB
 
-    private Dispatcher<ByteBuffer> mBufferProcessor = new Dispatcher<>("sdrtrunk binary recorder", 250);
+    /**
+     * Generous queue bound for recorders.  Disk writes can stall for far longer than a DSP consumer, and
+     * discarding recorded samples is worse than a brief backlog, so this is sized well above the DSP paths.
+     */
+    private static final int RECORDER_MAX_QUEUE_SIZE = 2000;
+
+    private Dispatcher<ByteBuffer> mBufferProcessor = new Dispatcher<>("sdrtrunk binary recorder", 250, RECORDER_MAX_QUEUE_SIZE);
     private AtomicBoolean mRunning = new AtomicBoolean();
     private Path mBaseRecordingPath;
     private String mRecordingIdentifier;

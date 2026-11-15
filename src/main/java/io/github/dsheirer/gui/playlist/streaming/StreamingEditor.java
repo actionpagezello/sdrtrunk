@@ -25,9 +25,11 @@ import io.github.dsheirer.audio.broadcast.BroadcastFormat;
 import io.github.dsheirer.audio.broadcast.BroadcastServerType;
 import io.github.dsheirer.audio.broadcast.ConfiguredBroadcast;
 import io.github.dsheirer.audio.broadcast.broadcastify.BroadcastifyFeedConfiguration;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.rrapi.type.UserFeedBroadcast;
 import io.github.dsheirer.util.ThreadPool;
+
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -221,6 +223,11 @@ public class StreamingEditor extends SplitPane
         BroadcastConfiguration broadcastConfiguration = configuredBroadcast != null ?
             configuredBroadcast.getBroadcastConfiguration() : null;
 
+        // Auto-generated children open in their own editor (ZelloEditor) so
+        // the user can configure per-channel streaming settings and restart
+        // channels independently.  The parent multi-channel editor is reached
+        // by clicking the parent row in the table.
+
         getCurrentEditor().setItem(broadcastConfiguration);
         getStreamAliasSelectionEditor().setBroadcastConfiguration(broadcastConfiguration);
     }
@@ -372,16 +379,30 @@ public class StreamingEditor extends SplitPane
 
                 if(config != null)
                 {
-                    Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
-                        "Do you want to delete the selected stream?", ButtonType.NO, ButtonType.YES);
+                    //AP-fork: deleting a stream also removes it from the aliases that stream to it, as renaming already
+                    //updates them. Say so before the user confirms. See AliasModel.removeBroadcastChannelFromAllAliases().
+                    String streamName = config.getName();
+                    int aliasCount = mPlaylistManager.getAliasModel().getBroadcastChannelAliasCount(streamName);
+                    String message = "Do you want to delete the selected stream?";
+
+                    if(aliasCount > 0)
+                    {
+                        message += "\n\nIt is assigned to " + aliasCount + (aliasCount == 1 ? " alias" : " aliases") +
+                            ". It will also be removed from " + (aliasCount == 1 ? "that alias." : "those aliases.");
+                    }
+
+                    Alert alert = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.NO, ButtonType.YES);
                     alert.setTitle("Delete Stream Configuration");
                     alert.setHeaderText("Are you sure?");
                     alert.initOwner(((Node)getDeleteButton()).getScene().getWindow());
 
                     Optional<ButtonType> result = alert.showAndWait();
 
-                    if(result.get() == ButtonType.YES)
+                    if(result.isPresent() && result.get() == ButtonType.YES)
                     {
+                        //AP-fork: aliases first, so the playlist save scheduled by the stream deletion below captures
+                        //both changes together.
+                        mPlaylistManager.getAliasModel().removeBroadcastChannelFromAllAliases(streamName);
                         mPlaylistManager.getBroadcastModel().removeBroadcastConfiguration(config);
                     }
                 }
@@ -399,7 +420,8 @@ public class StreamingEditor extends SplitPane
             mConfiguredBroadcastTableView.setAccessibleText("Streams");
             mConfiguredBroadcastTableView.setPlaceholder(new Label("Click the New button to create a new " +
                 "audio streaming configuration"));
-            mConfiguredBroadcastTableView.setItems(mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts());
+            mConfiguredBroadcastTableView.setItems(
+                mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts());
 
             TableColumn<ConfiguredBroadcast,Boolean> enabledColumn = new TableColumn("Enabled");
             enabledColumn.setCellValueFactory(new PropertyValueFactory<>("enabled"));
@@ -444,7 +466,8 @@ public class StreamingEditor extends SplitPane
             stateColumn.setCellValueFactory(new PropertyValueFactory<>("broadcastState"));
 
             TableColumn errorColumn = new TableColumn("Last Error");
-            errorColumn.setCellValueFactory(new PropertyValueFactory<>("lastBadBroadcastState"));
+            errorColumn.setPrefWidth(300);
+            errorColumn.setCellValueFactory(new PropertyValueFactory<>("lastErrorDetail"));
 
             mConfiguredBroadcastTableView.getColumns().addAll(enabledColumn, nameColumn, typeColumn, stateColumn, errorColumn);
 

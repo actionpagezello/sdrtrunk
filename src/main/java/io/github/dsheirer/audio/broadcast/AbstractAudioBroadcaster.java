@@ -20,8 +20,11 @@
 package io.github.dsheirer.audio.broadcast;
 
 import io.github.dsheirer.sample.Listener;
+import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +38,7 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     private T mBroadcastConfiguration;
     protected ObjectProperty<BroadcastState> mBroadcastState = new SimpleObjectProperty<>(BroadcastState.READY);
     protected ObjectProperty<BroadcastState> mLastBadBroadcastState = new SimpleObjectProperty<>();
+    protected StringProperty mLastErrorDetail = new SimpleStringProperty();
     protected int mStreamedAudioCount = 0;
     protected int mDuplicateRejectedAudioCount = 0;
     protected int mErrorAudioCount = 0;
@@ -74,19 +78,34 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     }
 
     /**
-     * Sets or changes the broadcast state
+     * Sets or changes the broadcast state.  Property updates are dispatched to the JavaFX
+     * Application Thread to prevent SortedList corruption when called from background threads
+     * (e.g., WebSocket callbacks, ForkJoinPool tasks).
      */
     public void setBroadcastState(BroadcastState broadcastState)
     {
-        if(broadcastState == BroadcastState.CONNECTED)
+        Runnable update = () -> {
+            if(broadcastState == BroadcastState.CONNECTED)
+            {
+                mLastBadBroadcastState.setValue(null);
+                mLastErrorDetail.setValue(null);
+            }
+            else if(broadcastState.isErrorState() || broadcastState.isWarningState())
+            {
+                mLastBadBroadcastState.setValue(broadcastState);
+            }
+            mBroadcastState.setValue(broadcastState);
+        };
+
+        if(Platform.isFxApplicationThread())
         {
-            mLastBadBroadcastState.setValue(null);
+            update.run();
         }
-        else if(broadcastState.isErrorState() || broadcastState.isWarningState())
+        else
         {
-            mLastBadBroadcastState.setValue(broadcastState);
+            Platform.runLater(update);
         }
-        mBroadcastState.setValue(broadcastState);
+
         broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STATE_CHANGE));
     }
 
@@ -96,6 +115,40 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     public BroadcastState getLastBadBroadcastState()
     {
         return mLastBadBroadcastState.get();
+    }
+
+    /**
+     * Observable last error detail string — provides specific error info
+     * (e.g., "[3007] invalid stream id — stop_stream(id=42)")
+     */
+    public StringProperty lastErrorDetailProperty()
+    {
+        return mLastErrorDetail;
+    }
+
+    /**
+     * Sets a detailed error description for display in the streaming table.
+     * Property update is dispatched to the JavaFX Application Thread to prevent
+     * SortedList corruption when called from background threads.
+     */
+    public void setLastErrorDetail(String detail)
+    {
+        if(Platform.isFxApplicationThread())
+        {
+            mLastErrorDetail.setValue(detail);
+        }
+        else
+        {
+            Platform.runLater(() -> mLastErrorDetail.setValue(detail));
+        }
+    }
+
+    /**
+     * Gets the last error detail string
+     */
+    public String getLastErrorDetail()
+    {
+        return mLastErrorDetail.get();
     }
 
     /**

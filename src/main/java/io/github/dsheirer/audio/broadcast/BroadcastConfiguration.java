@@ -25,10 +25,14 @@ import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import io.github.dsheirer.audio.broadcast.broadcastify.BroadcastifyCallConfiguration;
 import io.github.dsheirer.audio.broadcast.rdioscanner.RdioScannerConfiguration;
+import io.github.dsheirer.audio.broadcast.code3stream.Code3StreamConfiguration;
+import io.github.dsheirer.audio.broadcast.thinline.ThinlineRadioConfiguration;
 import io.github.dsheirer.audio.broadcast.openmhz.OpenMHzConfiguration;
 import io.github.dsheirer.audio.broadcast.icecast.IcecastConfiguration;
 import io.github.dsheirer.audio.broadcast.shoutcast.v1.ShoutcastV1Configuration;
 import io.github.dsheirer.audio.broadcast.shoutcast.v2.ShoutcastV2Configuration;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConsumerConfiguration;
 import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.IntegerProperty;
@@ -49,14 +53,39 @@ import java.net.SocketAddress;
 @JsonSubTypes({
     @JsonSubTypes.Type(value = BroadcastifyCallConfiguration.class, name="broadcastifyCallConfiguration"),
     @JsonSubTypes.Type(value = RdioScannerConfiguration.class, name="RdioScannerConfiguration"),
+    @JsonSubTypes.Type(value = ThinlineRadioConfiguration.class, name="ThinlineRadioConfiguration"), //upstream #2626
+    //AP-fork (1.0.0-ap-1): Code 3 Stream is the fork's stream type that was called ThinLine Radio up to edacs build 25.
+    //A playlist saved by those builds stores it as "ThinLineRadioConfiguration", which still loads as this type.
+    @JsonSubTypes.Type(value = Code3StreamConfiguration.class, name="code3StreamConfiguration",
+        names={"ThinLineRadioConfiguration"}),
     @JsonSubTypes.Type(value = OpenMHzConfiguration.class, name="OpenMHzConfiguration"),
     @JsonSubTypes.Type(value = IcecastConfiguration.class, name="icecastConfiguration"),
     @JsonSubTypes.Type(value = ShoutcastV1Configuration.class, name="shoutcastV1Configuration"),
     @JsonSubTypes.Type(value = ShoutcastV2Configuration.class, name="shoutcastV2Configuration"),
+    @JsonSubTypes.Type(value = ZelloConfiguration.class, name="zelloConfiguration"),
+    @JsonSubTypes.Type(value = ZelloConsumerConfiguration.class, name="zelloConsumerConfiguration"),
 })
 @JacksonXmlRootElement(localName = "stream")
 public abstract class BroadcastConfiguration
 {
+    /**
+     * AP-fork (ap-15.9.26): playlist settings this version does not recognise - written by upstream SDRTrunk or a newer
+     * fork - kept as read and written back on save, so opening another program's playlist here never drops them.
+     */
+    private final java.util.Map<String,Object> mUnrecognisedSettings = new java.util.LinkedHashMap<>();
+
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    public void setUnrecognisedSetting(String name, Object value)
+    {
+        mUnrecognisedSettings.put(name, value);
+    }
+
+    @com.fasterxml.jackson.annotation.JsonAnyGetter
+    public java.util.Map<String,Object> getUnrecognisedSettings()
+    {
+        return mUnrecognisedSettings;
+    }
+
     private final static Logger mLog = LoggerFactory.getLogger(BroadcastConfiguration.class);
     // Static unique channel identifier tracking
     private static int UNIQUE_ID = 0;
@@ -163,6 +192,11 @@ public abstract class BroadcastConfiguration
         return mValid;
     }
 
+    /**
+     * Returns true if this config was auto-generated from a multi-channel parent.
+     * Auto-generated configs are not persisted to the playlist file.
+     */
+    @JsonIgnore
     /**
      * Broadcast server type
      */

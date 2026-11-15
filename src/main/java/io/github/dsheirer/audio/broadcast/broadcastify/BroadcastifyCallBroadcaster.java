@@ -327,8 +327,10 @@ public class BroadcastifyCallBroadcaster extends AbstractAudioBroadcaster<Broadc
 
                                         mHttpClient.sendAsync(fileRequest, HttpResponse.BodyHandlers.ofString())
                                             .whenComplete((fileResponse, throwable1) -> {
-                                                if(throwable1 != null || fileResponse.statusCode() != 200)
+                                                if(throwable1 != null)
                                                 {
+                                                    //Note: fileResponse is null whenever throwable1 is non-null - it
+                                                    //must not be dereferenced on this path.
                                                     if(throwable1 instanceof IOException || throwable1 instanceof CompletionException)
                                                     {
                                                         //We get socket reset exceptions occasionally when the remote server doesn't
@@ -337,10 +339,19 @@ public class BroadcastifyCallBroadcaster extends AbstractAudioBroadcaster<Broadc
                                                     else
                                                     {
                                                         setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                                        mLog.error("Broadcastify calls API file upload fail [" +
-                                                            fileResponse.statusCode() + "] response [" +
-                                                            fileResponse.body() + "]");
+                                                        mLog.error("Broadcastify calls API file upload fail - no response from server", throwable1);
                                                     }
+
+                                                    incrementErrorAudioCount();
+                                                    broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,
+                                                        BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                                }
+                                                else if(fileResponse.statusCode() != 200)
+                                                {
+                                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                                    mLog.error("Broadcastify calls API file upload fail [" +
+                                                        fileResponse.statusCode() + "] response [" +
+                                                        fileResponse.body() + "]");
 
                                                     incrementErrorAudioCount();
                                                     broadcast(new BroadcastEvent(BroadcastifyCallBroadcaster.this,

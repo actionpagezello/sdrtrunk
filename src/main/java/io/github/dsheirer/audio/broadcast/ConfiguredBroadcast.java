@@ -23,6 +23,7 @@ import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.util.Callback;
 import org.slf4j.Logger;
@@ -38,6 +39,7 @@ public class ConfiguredBroadcast
     private AbstractAudioBroadcaster mAudioBroadcaster;
     private ObjectProperty<BroadcastState> mBroadcastState = new SimpleObjectProperty<>();
     private ObjectProperty<BroadcastState> mLastBadBroadcastState = new SimpleObjectProperty<>();
+    private StringProperty mLastErrorDetail = new SimpleStringProperty();
 
     /**
      * Constructs an instance
@@ -99,6 +101,14 @@ public class ConfiguredBroadcast
     }
 
     /**
+     * Last error detail string from the broadcaster
+     */
+    public StringProperty lastErrorDetailProperty()
+    {
+        return mLastErrorDetail;
+    }
+
+    /**
      * Sets the audio broadcaster
      * @param audioBroadcaster to use for this configuration
      */
@@ -106,12 +116,14 @@ public class ConfiguredBroadcast
     {
         mBroadcastState.unbind();
         mLastBadBroadcastState.unbind();
+        mLastErrorDetail.unbind();
         mAudioBroadcaster = audioBroadcaster;
 
         if(audioBroadcaster != null)
         {
             mBroadcastState.bind(mAudioBroadcaster.broadcastStateProperty());
             mLastBadBroadcastState.bind(mAudioBroadcaster.lastBadBroadcastStateProperty());
+            mLastErrorDetail.bind(mAudioBroadcaster.lastErrorDetailProperty());
         }
         else
         {
@@ -132,6 +144,7 @@ public class ConfiguredBroadcast
                 mBroadcastState.setValue(BroadcastState.CONFIGURATION_ERROR);
             }
             mLastBadBroadcastState.setValue(null);
+            if(!mLastErrorDetail.isBound()) mLastErrorDetail.setValue(null);
         }
     }
 
@@ -157,6 +170,6 @@ public class ConfiguredBroadcast
     public static Callback<ConfiguredBroadcast, Observable[]> extractor()
     {
         return (ConfiguredBroadcast b) -> new Observable[] {b.nameProperty(), b.enabledProperty(),
-            b.broadcastStateProperty(), b.getBroadcastConfiguration().validProperty()};
+            b.broadcastStateProperty(), b.getBroadcastConfiguration().validProperty(), b.lastErrorDetailProperty()};
     }
 }

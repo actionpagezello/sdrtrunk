@@ -32,10 +32,23 @@ public enum BroadcastServerType
 
     ICECAST_HTTP("Icecast 2 (v2.4+)", "images/icecast.png"),
     RDIOSCANNER_CALL("Rdio Scanner", "images/rdioscanner.png"),
+    THINLINE_RADIO("Thinline Radio", "images/rdioscanner.png"), //upstream #2626
     OPENMHZ("OpenMHz", "images/openmhz.png"),
     ICECAST_TCP("Icecast (v2.3)", "images/icecast.png"),
     SHOUTCAST_V1("Shoutcast v1.x", "images/shoutcast.png"),
     SHOUTCAST_V2("Shoutcast v2.x", "images/shoutcast.png"),
+    CODE3_STREAM("Code 3 Stream", null),
+
+    /**
+     * Zello Work - real-time audio streaming to Zello Work channels
+     */
+    ZELLO_WORK("Zello Work", null),
+
+    /**
+     * Zello Consumer (Friends & Family) - real-time audio streaming
+     */
+    ZELLO("Zello Friends & Family", null),
+
     UNKNOWN("Unknown", null);
 
     private String mLabel;

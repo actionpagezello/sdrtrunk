@@ -286,24 +286,24 @@ import org.slf4j.LoggerFactory;
 
                          mHttpClient.sendAsync(fileRequest, HttpResponse.BodyHandlers.ofString())
                              .whenComplete((fileResponse, throwable1) -> {
-                                 if(throwable1 != null || fileResponse.statusCode() != 200)
+                                 if(throwable1 != null)
                                  {
-                                     if(throwable1 instanceof IOException || throwable1 instanceof CompletionException)
-                                     {
-                                         //We get socket reset exceptions occasionally when the remote server doesn't
-                                         //fully read our request and immediately responds.
-                                         setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                         mLog.error("OpenMHz API file upload fail [" +
-                                             fileResponse.statusCode() + "] response [" +
-                                             fileResponse.body() + "]");
-                                     }
-                                     else
-                                     {
-                                         setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                         mLog.error("OpenMHz API file upload fail [" +
-                                             fileResponse.statusCode() + "] response [" +
-                                             fileResponse.body() + "]");
-                                     }
+                                     //Note: fileResponse is null whenever throwable1 is non-null - it must not be
+                                     //dereferenced on this path.  We get socket reset exceptions occasionally when the
+                                     //remote server doesn't fully read our request and immediately responds.
+                                     setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                     mLog.error("OpenMHz API file upload fail - no response from server", throwable1);
+
+                                     incrementErrorAudioCount();
+                                     broadcast(new BroadcastEvent(OpenMHzBroadcaster.this,
+                                         BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                 }
+                                 else if(fileResponse.statusCode() != 200)
+                                 {
+                                     setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                     mLog.error("OpenMHz API file upload fail [" +
+                                         fileResponse.statusCode() + "] response [" +
+                                         fileResponse.body() + "]");
 
                                      incrementErrorAudioCount();
                                      broadcast(new BroadcastEvent(OpenMHzBroadcaster.this,

@@ -471,6 +471,25 @@ public class AudioSegment implements Listener<IdentifierUpdateNotification>
         }
     }
 
+    private volatile boolean mSilent;
+
+    /**
+     * AP-fork (edacs-23): true when the whole segment is silence - a transmission that carried voice frames with no
+     * sound in them.  Such a segment is not recorded and not streamed.
+     */
+    public boolean isSilent()
+    {
+        return mSilent;
+    }
+
+    /**
+     * Flags the segment as silence throughout.  Set by the audio module before the segment is completed.
+     */
+    public void setSilent(boolean silent)
+    {
+        mSilent = silent;
+    }
+
     /**
      * Indicates if this audio segment has been flagged as a duplicate audio call
      */

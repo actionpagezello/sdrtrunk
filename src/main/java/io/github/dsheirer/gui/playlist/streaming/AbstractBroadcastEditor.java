@@ -50,6 +50,7 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
     private PlaylistManager mPlaylistManager;
     private Button mSaveButton;
     private Button mResetButton;
+    private Button mReconnectButton;
     private TextField mFormatField;
     private TextField mNameTextField;
     private ToggleSwitch mEnabledSwitch;
@@ -67,7 +68,27 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         VBox buttonBox = new VBox();
         buttonBox.setPadding(new Insets(10,10,10,10));
         buttonBox.setSpacing(10);
-        buttonBox.getChildren().addAll(getSaveButton(), getResetButton());
+        buttonBox.getChildren().addAll(getSaveButton(), getResetButton(), getReconnectButton());
+
+        /**
+         * Allow column 1 (Primary input fields) to expand with editor width
+         */
+        for(Node node : getEditorPane().getChildren())
+        {
+            Integer column = GridPane.getColumnIndex(node);
+
+            if(column != null && column == 1)
+            {
+                if(node instanceof IntegerTextField)
+                {
+                    GridPane.setFillWidth(node, false);
+                }
+                else if(node instanceof TextField)
+                {
+                    GridPane.setHgrow(node, Priority.ALWAYS);
+                }
+            }
+        }
 
         /**
          * Allow column 1 (Primary input fields) to expand with editor width
@@ -93,6 +114,11 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         HBox.setHgrow(getEditorPane(), Priority.ALWAYS);
         editorBox.getChildren().addAll(getEditorPane(), buttonBox);
         getChildren().addAll(editorBox);
+
+        //Refresh the reconnect button whenever edits are made or the enabled toggle flips
+        modifiedProperty().addListener((obs, oldVal, newVal) -> updateReconnectButtonState());
+        getEnabledSwitch().selectedProperty()
+            .addListener((obs, oldVal, newVal) -> updateReconnectButtonState());
     }
 
     protected PlaylistManager getPlaylistManager()
@@ -111,6 +137,7 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
 
         getNameTextField().setDisable(item == null);
         getEnabledSwitch().setDisable(item == null);
+        updateReconnectButtonState();
 
         if(item != null)
         {
@@ -122,6 +149,18 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
             getNameTextField().setText(null);
             getEnabledSwitch().selectedProperty().set(false);
         }
+    }
+
+    /**
+     * Enables the Reconnect button only when a stream is loaded, currently enabled,
+     * and has no unsaved changes. Save changes first to reconnect with the new settings.
+     */
+    protected void updateReconnectButtonState()
+    {
+        Button btn = getReconnectButton();
+        T item = getItem();
+        boolean allow = item != null && item.isEnabled() && !modifiedProperty().get();
+        btn.setDisable(!allow);
     }
 
     public void save()
@@ -170,6 +209,7 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         }
 
         modifiedProperty().set(false);
+        updateReconnectButtonState();
     }
 
     protected Button getSaveButton()
@@ -200,12 +240,51 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         return mResetButton;
     }
 
+    /**
+     * Reconnect button - stops and restarts the streaming connection for the current
+     * configuration by firing a CONFIGURATION_CHANGE event. The BroadcastModel handles
+     * this by deleting the existing broadcaster and scheduling a new one after a brief
+     * delay (allowing the remote server time to clean up). Only available when the
+     * stream is currently enabled and there are no unsaved edits.
+     */
+    protected Button getReconnectButton()
+    {
+        if(mReconnectButton == null)
+        {
+            mReconnectButton = new Button("Reconnect");
+            mReconnectButton.setDisable(true);
+            mReconnectButton.setMaxWidth(Double.MAX_VALUE);
+            mReconnectButton.setTooltip(new javafx.scene.control.Tooltip(
+                "Stop and restart the streaming connection. Save any pending changes first."));
+            mReconnectButton.setOnAction(event -> reconnect());
+        }
+
+        return mReconnectButton;
+    }
+
+    /**
+     * Stops and restarts the broadcaster for the current configuration.
+     */
+    protected void reconnect()
+    {
+        BroadcastConfiguration configuration = getItem();
+
+        if(configuration == null || !configuration.isEnabled())
+        {
+            return;
+        }
+
+        mPlaylistManager.getBroadcastModel().process(new BroadcastEvent(configuration,
+            BroadcastEvent.Event.CONFIGURATION_CHANGE));
+    }
+
     protected TextField getNameTextField()
     {
         if(mNameTextField == null)
         {
             mNameTextField = new TextField();
             mNameTextField.setDisable(true);
+            mNameTextField.setPrefWidth(300);
             mNameTextField.textProperty().addListener(mEditorModificationListener);
         }
 
