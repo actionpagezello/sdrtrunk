@@ -17,7 +17,7 @@
  * ****************************************************************************
  */
 
-package io.github.dsheirer.module.decode.squelch.dcs;
+package io.github.dsheirer.module.decode.dcs;
 
 import java.util.EnumSet;
 import java.util.HashMap;

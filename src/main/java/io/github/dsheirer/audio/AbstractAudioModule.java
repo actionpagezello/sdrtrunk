@@ -20,12 +20,16 @@
 package io.github.dsheirer.audio;
 
 import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.identifier.IdentifierUpdateListener;
 import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.util.ThreadPool;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +41,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     private final static Logger mLog = LoggerFactory.getLogger(AbstractAudioModule.class);
     public static final long DEFAULT_MAX_SEGMENT_LENGTH_MILLIS = 60_000; // 1 minute
     public static final int DEFAULT_TIMESLOT = 0;
+    public static final int DEFAULT_AUDIO_HANGTIME_MS = 0;
     private final int mMaxSegmentAudioSampleLength;
     private Listener<AudioSegment> mAudioSegmentListener;
     protected MutableIdentifierCollection mIdentifierCollection;
@@ -45,7 +50,21 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     private AudioSegment mAudioSegment;
     private int mAudioSampleCount = 0;
     private boolean mRecordAudioOverride;
+    private volatile boolean mMuted;
     private int mTimeslot;
+    private int mAudioHangtimeMs = DEFAULT_AUDIO_HANGTIME_MS;
+    private volatile ScheduledFuture<?> mPendingClose;
+
+    /**
+     * AP-fork: idle close.  When greater than zero, a segment that receives no audio for this long (plus any audio
+     * hangtime) is closed here, without waiting for the decoder's call-end.  Off by default; a subclass opts in with
+     * setIdleCloseMs().  See P25P1AudioModule for why it exists.
+     */
+    private static final long IDLE_CHECK_INTERVAL_MS = 250;
+    private long mIdleCloseMs = 0;
+    private volatile long mLastAudioTime;
+    private volatile long mSegmentStartTime;
+    private volatile ScheduledFuture<?> mIdleCheck;
 
     /**
      * Constructs an abstract audio module
@@ -79,14 +98,65 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     }
 
     /**
-     * Closes the current audio segment
+     * Closes the current audio segment.  If a hangtime is configured, the close is delayed
+     * to allow any remaining audio buffers to be flushed.  If new audio arrives during the
+     * hangtime period, the pending close is cancelled.
      */
     protected void closeAudioSegment()
     {
+        if(mAudioHangtimeMs > 0)
+        {
+            synchronized(this)
+            {
+                if(mAudioSegment != null && mPendingClose == null)
+                {
+                    mPendingClose = ThreadPool.SCHEDULED.schedule(() -> {
+                        closeAudioSegmentNow();
+                    }, mAudioHangtimeMs, TimeUnit.MILLISECONDS);
+                }
+            }
+        }
+        else
+        {
+            closeAudioSegmentNow();
+        }
+    }
+
+    /**
+     * Immediately ends the audio segment in progress, without delay and without changing any mute
+     * state on this module.
+     *
+     * An audio segment's monitor priority is resolved from its aliases when the segment is created,
+     * so changing an alias's playback priority only affects segments created afterwards.  Calling
+     * this makes a priority change take effect on the transmission already in progress rather than
+     * at the end of it.
+     */
+    public void flushAudioSegment()
+    {
+        closeAudioSegmentNow();
+    }
+
+    /**
+     * Immediately closes the current audio segment without delay.
+     */
+    /**
+     * AP-fork (edacs-23): called just before an audio segment is completed, for a module that has something to say
+     * about the segment as a whole.  Does nothing by default.
+     */
+    protected void segmentClosing(AudioSegment audioSegment)
+    {
+    }
+
+    private void closeAudioSegmentNow()
+    {
         synchronized(this)
         {
+            cancelPendingClose();
+            cancelIdleCheck();
+
             if(mAudioSegment != null)
             {
+                segmentClosing(mAudioSegment);
                 mAudioSegment.completeProperty().set(true);
                 mIdentifierUpdateNotificationBroadcaster.removeListener(mAudioSegment);
                 mAudioSegment.decrementConsumerCount();
@@ -95,10 +165,118 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         }
     }
 
+    /**
+     * Cancels any pending delayed close.  Called when new audio arrives during hangtime.
+     */
+    private void cancelPendingClose()
+    {
+        if(mPendingClose != null)
+        {
+            mPendingClose.cancel(false);
+            mPendingClose = null;
+        }
+    }
+
+    /**
+     * AP-fork: enables the idle close.  A segment that receives no audio for idleCloseMs plus the audio hangtime is
+     * closed by this module even though the decoder never signalled the end of the call.
+     *
+     * @param idleCloseMs milliseconds without audio before the segment is closed, 0 to disable
+     */
+    protected void setIdleCloseMs(long idleCloseMs)
+    {
+        mIdleCloseMs = Math.max(0, idleCloseMs);
+    }
+
+    /**
+     * AP-fork: called after the idle close has closed a segment.  Runs on a scheduler thread with this module's lock
+     * held, so an override must not touch state owned by the message-processing thread directly.
+     *
+     * @param segment that was closed
+     * @param openMs how long the segment had been open
+     * @param idleMs how long it had gone without audio
+     * @param audioMs how much audio it held
+     */
+    protected void onIdleClose(AudioSegment segment, long openMs, long idleMs, long audioMs)
+    {
+    }
+
+    private void startIdleCheck(AudioSegment segment)
+    {
+        if(mIdleCloseMs <= 0)
+        {
+            return;
+        }
+
+        cancelIdleCheck();
+        mIdleCheck = ThreadPool.SCHEDULED.scheduleAtFixedRate(() -> checkIdle(segment), IDLE_CHECK_INTERVAL_MS,
+                IDLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void cancelIdleCheck()
+    {
+        ScheduledFuture<?> idleCheck = mIdleCheck;
+
+        if(idleCheck != null)
+        {
+            idleCheck.cancel(false);
+            mIdleCheck = null;
+        }
+    }
+
+    private void checkIdle(AudioSegment segment)
+    {
+        try
+        {
+            synchronized(this)
+            {
+                if(mAudioSegment != segment)
+                {
+                    return;
+                }
+
+                long now = System.currentTimeMillis();
+                long idleMs = now - mLastAudioTime;
+
+                if(idleMs >= mIdleCloseMs + mAudioHangtimeMs)
+                {
+                    long openMs = now - mSegmentStartTime;
+                    long audioMs = mAudioSampleCount / 8;
+                    closeAudioSegmentNow();
+                    onIdleClose(segment, openMs, idleMs, audioMs);
+                }
+            }
+        }
+        catch(Throwable t)
+        {
+            mLog.error("Error checking audio segment for inactivity", t);
+        }
+    }
+
+    /**
+     * Sets the audio hangtime in milliseconds.  When greater than zero, audio segment
+     * close is delayed by this amount to allow remaining audio buffers to flush.
+     * If new audio arrives during the hangtime, the pending close is cancelled.
+     *
+     * @param hangtimeMs delay in milliseconds (0 = immediate close)
+     */
+    public void setAudioHangtimeMs(int hangtimeMs)
+    {
+        mAudioHangtimeMs = Math.max(0, hangtimeMs);
+    }
+
+    /**
+     * Current audio hangtime in milliseconds.
+     */
+    public int getAudioHangtimeMs()
+    {
+        return mAudioHangtimeMs;
+    }
+
     @Override
     public void stop()
     {
-        closeAudioSegment();
+        closeAudioSegmentNow();
     }
 
     /**
@@ -121,6 +299,11 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                     mAudioSegment.recordAudioProperty().set(true);
                 }
 
+                if(mMuted)
+                {
+                    mAudioSegment.monitorPriorityProperty().set(Priority.DO_NOT_MONITOR);
+                }
+
                 if(mAudioSegmentListener != null)
                 {
                     mAudioSegment.incrementConsumerCount();
@@ -128,6 +311,9 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 }
 
                 mAudioSampleCount = 0;
+                mSegmentStartTime = System.currentTimeMillis();
+                mLastAudioTime = mSegmentStartTime;
+                startIdleCheck(mAudioSegment);
             }
 
             return mAudioSegment;
@@ -136,14 +322,23 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
 
     public void addAudio(float[] audioBuffer)
     {
+        //AP-fork: stamp before taking the segment, so the idle close cannot retire it between the two
+        mLastAudioTime = System.currentTimeMillis();
+
+        // Cancel any pending hangtime close — new audio means the call continues
+        synchronized(this)
+        {
+            cancelPendingClose();
+        }
+
         AudioSegment audioSegment = getAudioSegment();
 
         //If the current segment exceeds the max samples length, close it so that a new segment gets generated
-        //and then link the segments together
+        //and then link the segments together.  Use immediate close — segment rollover should not be delayed.
         if(mAudioSampleCount >= mMaxSegmentAudioSampleLength)
         {
             AudioSegment previous = getAudioSegment();
-            closeAudioSegment();
+            closeAudioSegmentNow();
             audioSegment = getAudioSegment();
             audioSegment.linkTo(previous);
         }
@@ -178,6 +373,51 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 }
             }
         }
+    }
+
+    /**
+     * Sets the mute state for this audio module.  When muted, audio segments produced by this module
+     * will have their monitor priority set to DO_NOT_MONITOR, causing the audio playback manager to
+     * skip playback.
+     *
+     * When muting, the current audio segment is force-closed (completed) so that any segment already
+     * playing in the audio channel is immediately stopped.  New segments created afterward will inherit
+     * the DO_NOT_MONITOR priority.
+     *
+     * When unmuting, the mute flag is cleared so that the next audio segment will use the normal priority.
+     *
+     * @param muted true to mute, false to unmute
+     */
+    public void setMuted(boolean muted)
+    {
+        mMuted = muted;
+
+        if(muted)
+        {
+            synchronized(this)
+            {
+                //Mark the current segment as DO_NOT_MONITOR so AudioPlaybackManager drops it
+                //on its next processing cycle, then close it so no more audio is added.
+                if(mAudioSegment != null)
+                {
+                    mAudioSegment.monitorPriorityProperty().set(Priority.DO_NOT_MONITOR);
+                }
+            }
+        }
+
+        //Close the current segment in both mute and unmute cases (immediately, no hangtime).
+        //On mute: stops the currently playing audio immediately.
+        //On unmute: discards the DO_NOT_MONITOR segment so the next addAudio() creates
+        //a fresh segment with normal priority that AudioPlaybackManager will play.
+        closeAudioSegmentNow();
+    }
+
+    /**
+     * Indicates if this audio module is currently muted.
+     */
+    public boolean isMuted()
+    {
+        return mMuted;
     }
 
     /**

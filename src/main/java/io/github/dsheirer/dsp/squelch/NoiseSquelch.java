@@ -408,9 +408,19 @@ public class NoiseSquelch implements INoiseSquelchController
                         {
                             broadcast(mSquelchOpenIndex, squelchCloseIndex);
                         }
-
-                        broadcast(SquelchState.SQUELCH);
                     }
+
+                    //AP-fork: the SQUELCH state change is broadcast whenever mSquelch flips to true, NOT only when
+                    //there is a trailing audio segment to emit.  mSquelchOpenIndex is set from findTransition(), which
+                    //indexes the delay buffer and can therefore exceed squelchCloseIndex; when it did, this event was
+                    //swallowed while the internal state still went squelched.  Downstream that meant NBFMDecoder never
+                    //saw the close: the stuck-call watchdog's mCallStartTimeMs was never cleared, the squelch tail
+                    //remover never closed, and the tone holdover never started.  A stale mCallStartTimeMs then makes
+                    //the next squelch opening trip the 180 s watchdog immediately (Baker and Audubon 2026-09-22,
+                    //five machines 2026-09-25).  UNSQUELCH is broadcast unconditionally; this makes SQUELCH symmetric
+                    //with it.  Not guarded on mSquelchOverride: broadcast(SquelchState) already converts SQUELCH to
+                    //UNSQUELCH while override is active.
+                    broadcast(SquelchState.SQUELCH);
 
                     mSquelchOpenIndex = 0;
                 }

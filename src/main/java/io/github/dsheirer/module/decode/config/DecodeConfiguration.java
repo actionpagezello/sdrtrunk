@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.module.decode.DecoderType;
@@ -52,6 +53,12 @@ import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 @JacksonXmlRootElement(localName = "decode_configuration")
 public abstract class DecodeConfiguration extends Configuration
 {
+    public static final int DEFAULT_AUDIO_HANGTIME_MS = 0;
+    public static final int AUDIO_HANGTIME_MINIMUM = 0;
+    public static final int AUDIO_HANGTIME_MAXIMUM = 2000;
+
+    private int mAudioHangtimeMs = DEFAULT_AUDIO_HANGTIME_MS;
+
     public static final int DEFAULT_CALL_TIMEOUT_DELAY_SECONDS = 45;
     public static final int CALL_TIMEOUT_MINIMUM = 1;
     public static final int CALL_TIMEOUT_MAXIMUM = 180;
@@ -83,5 +90,30 @@ public abstract class DecodeConfiguration extends Configuration
     public int getBitRate()
     {
         return getDecoderType().getProtocol().getBitRate();
+    }
+
+    /**
+     * Audio hangtime in milliseconds.  When greater than zero, the audio segment close
+     * is delayed by this amount to allow remaining audio buffers to flush before the
+     * segment is finalized.  Useful for ThinLine and other stream-based broadcasters
+     * that may lose the tail end of audio if the segment closes too quickly.
+     *
+     * @return hangtime in milliseconds (0 = immediate close)
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "audio_hangtime_ms")
+    public int getAudioHangtimeMs()
+    {
+        return mAudioHangtimeMs;
+    }
+
+    /**
+     * Sets the audio hangtime in milliseconds.
+     *
+     * @param hangtimeMs delay in milliseconds, clamped to [0, 2000]
+     */
+    public void setAudioHangtimeMs(int hangtimeMs)
+    {
+        mAudioHangtimeMs = Math.max(AUDIO_HANGTIME_MINIMUM,
+            Math.min(AUDIO_HANGTIME_MAXIMUM, hangtimeMs));
     }
 }

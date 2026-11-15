@@ -40,7 +40,7 @@ public enum DecoderType
 
     //Auxiliary Decoders
     DCS("Digital Coded Squelch (DCS)", "DCS", Protocol.DCS),
-    CTCSS("Continuous Tone Squelch", "CTCSS", Protocol.CTCSS),
+    CTCSS("Continuous Tone-Coded Squelch (CTCSS)", "CTCSS", Protocol.CTCSS),
     FLEETSYNC2("Fleetsync II", "Fleetsync2", Protocol.FLEETSYNC),
     LJ_1200("LJ1200 173.075", "LJ1200", Protocol.LOJACK),
     MDC1200("MDC1200", "MDC1200", Protocol.MDC1200),
@@ -66,7 +66,7 @@ public enum DecoderType
     /**
      * Auxiliary decoders that operate on in-band signalling in the decoded audio channel
      */
-    public static final EnumSet<DecoderType> AUX_DECODERS = EnumSet.of(DCS, FLEETSYNC2, LJ_1200, MDC1200, TAIT_1200);
+    public static final EnumSet<DecoderType> AUX_DECODERS = EnumSet.of(CTCSS, DCS, FLEETSYNC2, LJ_1200, MDC1200, TAIT_1200);
 
     /**
      * Decoders that produce a (recordable) bitstream

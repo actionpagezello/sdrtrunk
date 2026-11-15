@@ -43,10 +43,11 @@ import io.github.dsheirer.module.decode.am.DecodeConfigAM;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
 import io.github.dsheirer.module.decode.config.DecodeConfigJMBE;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
-import io.github.dsheirer.module.decode.nbfm.DeemphasisMode;
-import io.github.dsheirer.module.decode.squelch.dcs.DCSDecoder;
-import io.github.dsheirer.module.decode.squelch.dcs.DCSDecoderState;
-import io.github.dsheirer.module.decode.squelch.dcs.DCSMessageFilter;
+import io.github.dsheirer.module.decode.ctcss.CTCSSAuxDecoder;
+import io.github.dsheirer.module.decode.ctcss.CTCSSDecoderState;
+import io.github.dsheirer.module.decode.dcs.DCSDecoder;
+import io.github.dsheirer.module.decode.dcs.DCSDecoderState;
+import io.github.dsheirer.module.decode.dcs.DCSMessageFilter;
 import io.github.dsheirer.module.decode.dmr.DMRDecoder;
 import io.github.dsheirer.module.decode.dmr.DMRDecoderState;
 import io.github.dsheirer.module.decode.dmr.DMRTrafficChannelManager;
@@ -466,25 +467,21 @@ public class DecoderFactory
 
         DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)decodeConfig;
         NBFMDecoderState decoderState = new NBFMDecoderState(channel.getName(), decodeConfigNBFM);
+        decoderState.setAliasList(aliasList);
         NBFMDecoder decoder = new NBFMDecoder(decodeConfigNBFM);
+        decoder.setDecoderState(decoderState);
         modules.add(decoder);
         modules.add(decoderState);
+        //AP-fork: de-emphasis, gain and the other audio options are applied inside the fork's NBFMDecoder
+        //(NBFMAudioFilters), so the audio module only carries the optional high-pass filter.
         List<AbstractAudioFilter> filterList = new ArrayList<>();
         if(decodeConfigNBFM.isAudioFilter())
         {
             filterList.add(new HighPassAudioFilter());
         }
-        if(decodeConfigNBFM.getDeemphasis() != null && decodeConfigNBFM.getDeemphasis() != DeemphasisMode.NONE)
-        {
-            float cutoff = (float) decodeConfigNBFM.getDeemphasis().getCutoff();
-            filterList.add(new DeemphasisFilter(8000, cutoff, 1.0f));
-        }
-        if(decodeConfigNBFM.isAudioALC())
-        {
-            filterList.add(new AudioGainFilter(1, 10, 0.90f));
-        }
-
-        modules.add(new AudioModule(aliasList, 0, 60000, filterList));
+        AudioModule audioModule = new AudioModule(aliasList, 0, 60000, filterList);
+        audioModule.setAudioHangtimeMs(decodeConfigNBFM.getAudioHangtimeMs());
+        modules.add(audioModule);
     }
 
     /**
@@ -718,6 +715,10 @@ public class DecoderFactory
             {
                 switch(auxDecoder)
                 {
+                    case CTCSS:
+                        modules.add(new CTCSSAuxDecoder());
+                        modules.add(new CTCSSDecoderState());
+                        break;
                     case DCS:
                         modules.add(new DCSDecoder());
                         modules.add(new DCSDecoderState());

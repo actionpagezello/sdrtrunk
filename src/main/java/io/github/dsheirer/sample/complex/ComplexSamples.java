@@ -51,6 +51,18 @@ public record ComplexSamples(float[] i, float[] q, long timestamp)
     }
 
     /**
+     * Applies IQ imbalance correction to the I and Q sample arrays in-place.
+     * @param corrector to apply
+     */
+    public void correct(IQImbalanceCorrector corrector)
+    {
+        if(corrector != null)
+        {
+            corrector.correct(i(), q());
+        }
+    }
+
+    /**
      * Extracts an interleaved buffer of specified count of complex samples starting at the specified offset
      * @param offset into the I or Q sample array
      * @param length of complex samples.
