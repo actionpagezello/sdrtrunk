@@ -78,6 +78,7 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
     private Listener<IDecodeEvent> mDecodeEventListener;
     private LongSupplier mClock = System::currentTimeMillis;
     private long mLastCheck;
+    private DecodeConfigSmartNet mConfig;
 
     /**
      * One call on one voice channel
@@ -85,11 +86,13 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
     private static class Call
     {
         final DecodeEvent mEvent;
+        final boolean mDigital;
         long mLastUpdate;
 
-        Call(DecodeEvent event, long now)
+        Call(DecodeEvent event, long now, boolean digital)
         {
             mEvent = event;
+            mDigital = digital;
             mLastUpdate = now;
         }
     }
@@ -100,6 +103,7 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
 
         if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigSmartNet config)
         {
+            mConfig = config;
             for(int x = 0; x < config.getTrafficChannelPoolSize(); x++)
             {
                 Channel trafficChannel = new Channel("T-" + parentChannel.getName(), Channel.ChannelType.TRAFFIC);
@@ -138,13 +142,35 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
     public synchronized void processGrant(SmartNetChannel channel, IdentifierCollection identifiers,
                                           DecodeEventType type, String details, boolean follow, long timestamp)
     {
+        processGrant(channel, identifiers, type, details, follow, false, timestamp);
+    }
+
+    /**
+     * Processes a channel grant or a grant update from the control channel.
+     * @param digital true when the call is known to be digital (P25 Phase 1 voice): its voice channel is started with
+     * the P25 decoder instead of the analog one
+     */
+    public synchronized void processGrant(SmartNetChannel channel, IdentifierCollection identifiers,
+                                          DecodeEventType type, String details, boolean follow, boolean digital,
+                                          long timestamp)
+    {
         int key = channel.getChannelNumber();
         long now = mClock.getAsLong();
         Call call = mCalls.get(key);
 
         if(call != null)
         {
-            if(Objects.equals(getTo(call.mEvent.getIdentifierCollection()), getTo(identifiers)))
+            boolean same = Objects.equals(getTo(call.mEvent.getIdentifierCollection()), getTo(identifiers));
+
+            if(same && digital && !call.mDigital && mAllocatedTrafficChannels.containsKey(key))
+            {
+                //Joined from an update before anything said it was digital, so it is being played as analog (noise)
+                endCall(key, call, "the call is digital - voice channel restarted with the P25 decoder");
+                same = false;
+                call = null;
+            }
+
+            if(same)
             {
                 call.mLastUpdate = now;
                 call.mEvent.end(timestamp);
@@ -159,7 +185,10 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
             }
 
             //Another talkgroup on this channel - the previous call is over
-            endCall(key, call, "another talkgroup granted on the channel");
+            if(call != null)
+            {
+                endCall(key, call, "another talkgroup granted on the channel");
+            }
         }
 
         //A talkgroup is on one voice channel at a time: a new grant for it on another channel means its previous
@@ -184,7 +213,7 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
             .details(details)
             .protocol(Protocol.SMARTNET)
             .build();
-        mCalls.put(key, new Call(event, now));
+        mCalls.put(key, new Call(event, now, digital));
 
         if(!follow)
         {
@@ -214,6 +243,12 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
                 SourceConfigTuner sourceConfig = new SourceConfigTuner();
                 sourceConfig.setFrequency(channel.getDownlinkFrequency());
                 trafficChannel.setSourceConfiguration(sourceConfig);
+
+                if(mConfig != null)
+                {
+                    trafficChannel.setDecodeConfiguration(mConfig.copyForTrafficChannel(digital));
+                }
+
                 mAllocatedTrafficChannels.put(key, trafficChannel);
                 getInterModuleEventBus().post(new ChannelStartProcessingRequest(trafficChannel, channel, identifiers));
             }
@@ -222,7 +257,7 @@ public class SmartNetTrafficChannelManager extends TrafficChannelManager impleme
         if(LOGGER.isDebugEnabled())
         {
             LOGGER.debug("Motorola Type II call start " + channel + " TO:" + getTo(identifiers) + " FROM:" +
-                getFrom(identifiers) + " " + type + (event.getDetails() != null ? " [" + event.getDetails() + "]" : "") +
+                getFrom(identifiers) + " " + type + (digital ? " DIGITAL" : "") + (event.getDetails() != null ? " [" + event.getDetails() + "]" : "") +
                 (mAllocatedTrafficChannels.containsKey(key) ? " - voice channel started" : " - not followed"));
         }
 

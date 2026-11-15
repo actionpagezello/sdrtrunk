@@ -3,7 +3,14 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-14 21:15: `edacs` build 21 (alias names in Details, ignore unaliased, site number)
+## Current state 2026-11-14 22:40: `edacs` build 22 (Type II digital calls decoded as P25 voice)
+
+- **Build 22** = digital grant 0x321 -> P25 voice channel (CHANGELOG build 22). `edacs-22.patch`, one commit on
+  top of build 21. Audio not tested in the workspace - Armen listens to 59152 / 59184 on Central MA.
+- **Paxton:** build 13, one Type II channel hops between 854.3625 / 855.5375 / 859.2375 (two or three different
+  sites share those). With build 21+ and the Type II diagnostics box, the log names the site on each.
+
+## Previous state 2026-11-14 21:15: `edacs` build 21 (alias names in Details, ignore unaliased, site number)
 
 - **Build 21** = three requests (CHANGELOG build 21). `edacs-21.patch`, one commit on `b146ec4c`.
 - **Build 20** pushed `b146ec4c`, clean on Summit 800 and Cambridge (11-14).

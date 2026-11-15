@@ -429,6 +429,19 @@ public class DecoderFactory
                 modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
             }
         }
+        else if(config.isDigital())
+        {
+            //AP-fork (edacs-22): voice channel of a call granted as digital (OSW 0x321) - P25 Phase 1 voice.  The P25
+            //decoder and audio module do the voice; the talkgroup and radio stay those of the control channel (the
+            //link control inside the voice frames of MSP Central MA does not carry usable ones).
+            P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+            decoder.setLogLabel(channel.getName());
+            modules.add(decoder);
+            P25P1AudioModule p25AudioModule = new P25P1AudioModule(userPreferences, aliasList);
+            p25AudioModule.setAudioHangtimeMs(config.getAudioHangtimeMs());
+            modules.add(p25AudioModule);
+            modules.add(new SmartNetDecoderState(channelType, null, config));
+        }
         else
         {
             long maxAudioSegmentLengthMillis = config.getCallTimeoutSeconds() * 1000L + 5000;

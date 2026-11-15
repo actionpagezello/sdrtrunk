@@ -75,6 +75,7 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
     private boolean mTrafficEnded;
     private boolean mTrafficStarted;
     private long mAudioSamples;
+    private long mVoiceFrames;
     private long mLoggedControlFrequency;
     private final Listener<float[]> mAudioListener = audio -> mAudioSamples += audio.length;
 
@@ -85,10 +86,15 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
     private long mUnaliasedCount;
     private long mOtherSiteGrantCount;
     private final Map<Integer,Integer> mSiteAnnouncements = new TreeMap<>();
+    private long mDigitalGrantCount;
+    //Talkgroup -> true when its last grant was digital (0x321), false when analog (0x308).  An update OSW does not
+    //say which it is, so a call first seen from an update is started the way the talkgroup was last granted.
+    private final Map<Integer,Boolean> mDigitalTalkgroups = new java.util.HashMap<>();
 
     //Ignore unaliased talkgroups / site number
     private final boolean mIgnoreUnaliasedTalkgroups;
     private final int mConfiguredSite;
+    private final boolean mDigitalVoice;
     private AliasList mAliasList;
     private int mSite;              //site the control channel announces, 0 = not announced yet
     private int mSiteCandidate;     //a different site announced once - taken when it is announced again
@@ -109,6 +115,7 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         mCallLimitMs = config.getCallTimeoutSeconds() * 1000L;
         mIgnoreUnaliasedTalkgroups = config.getIgnoreUnaliasedTalkgroups();
         mConfiguredSite = config.getSite();
+        mDigitalVoice = config.isDigital();
     }
 
     /**
@@ -260,7 +267,8 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                 return;
             }
 
-            boolean grant = previous != null && previous.getCommand() == SmartNetOSW.CMD_UNIT_ID;
+            boolean digitalGrant = previous != null && previous.getCommand() == SmartNetOSW.CMD_DIGITAL_UNIT_ID;
+            boolean grant = previous != null && (previous.getCommand() == SmartNetOSW.CMD_UNIT_ID || digitalGrant);
 
             if(grant && !osw.followsPrevious())
             {
@@ -272,10 +280,25 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             DecodeEventType type;
             String details = null;
             boolean follow = true;
+            boolean digital = grant && digitalGrant;
 
             if(osw.isGroup())
             {
                 ic.update(SmartNetTalkgroup.createTo(osw.getTalkgroup()));
+
+                if(grant)
+                {
+                    mDigitalTalkgroups.put(osw.getTalkgroup(), digitalGrant);
+                }
+                else
+                {
+                    digital = mDigitalTalkgroups.getOrDefault(osw.getTalkgroup(), false);
+                }
+
+                if(digital)
+                {
+                    details = "DIGITAL";
+                }
 
                 if(grant)
                 {
@@ -285,7 +308,7 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                 if(osw.isEncrypted())
                 {
                     type = DecodeEventType.CALL_GROUP_ENCRYPTED;
-                    details = "ENCRYPTED - NOT FOLLOWED";
+                    details = digital ? "DIGITAL ENCRYPTED - NOT FOLLOWED" : "ENCRYPTED - NOT FOLLOWED";
                     follow = false;
                 }
                 else
@@ -297,7 +320,7 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
                     aliasName(SmartNetTalkgroup.createTo(osw.getTalkgroup())) == null)
                 {
                     type = DecodeEventType.CALL_GROUP;
-                    details = "NO ALIAS - NOT FOLLOWED";
+                    details = digital ? "DIGITAL NO ALIAS - NOT FOLLOWED" : "NO ALIAS - NOT FOLLOWED";
                     follow = false;
                     mUnaliasedCount++;
                 }
@@ -322,12 +345,14 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             {
                 LOGGER.debug("Motorola Type II grant: radio " + previous.getAddress() + " -> " +
                     (osw.isGroup() ? "talkgroup " + osw.getTalkgroup() + " status " + osw.getStatus() : "radio " +
-                        osw.getAddress()) + " on channel " + osw.getCommand() + " " + format(frequency));
+                        osw.getAddress()) + " on channel " + osw.getCommand() + " " + format(frequency) +
+                    (digital ? " DIGITAL" : ""));
             }
 
             if(grant)
             {
                 mGrantCount++;
+                mDigitalGrantCount += digital ? 1 : 0;
                 mChannelGrants.merge(osw.getCommand(), 1, Integer::sum);
 
                 if(osw.isGroup())
@@ -337,7 +362,14 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             }
 
             mTrafficChannelManager.processGrant(SmartNetChannel.create(osw.getCommand(), mBandPlan), ic, type,
-                details, follow, osw.getTimestamp());
+                details, follow, digital, osw.getTimestamp());
+        }
+        else if(mChannelType == ChannelType.TRAFFIC &&
+            message instanceof io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage)
+        {
+            //Voice channel of a digital call: one P25 voice frame is 180 ms of audio
+            mAudioSamples += 1440;
+            mVoiceFrames++;
         }
     }
 
@@ -383,6 +415,7 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             mTrafficEnded = false;
             mTrafficStarted = true;
             mAudioSamples = 0;
+            mVoiceFrames = 0;
             broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
         }
     }
@@ -403,7 +436,8 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
             LOGGER.info(String.format("Motorola Type II call TO:%s FROM:%s on %s - voice channel open %.1f s, " +
                     "audio %.1f s%s", first(Role.TO), first(Role.FROM), format(frequency),
                 (mClock.getAsLong() - mTrafficStart) / 1000.0, mAudioSamples / AUDIO_SAMPLE_RATE,
-                mTrafficEnded ? " - stopped at the call limit" : ""));
+                (mDigitalVoice ? ", digital (P25 voice frames " + mVoiceFrames + ")" : "") +
+                    (mTrafficEnded ? " - stopped at the call limit" : "")));
         }
     }
 
@@ -512,7 +546,8 @@ public class SmartNetDecoderState extends DecoderState implements IHeartbeatList
         sb.append(mConfiguredSite == DecodeConfigSmartNet.SITE_ANY ? "" : "   (site set for this channel: " +
             mConfiguredSite + (isOtherSite() ? " - NOT THIS ONE, calls are not followed)" : ")")).append("\n");
         sb.append("OSWs decoded: ").append(mOSWCount).append("\n");
-        sb.append("Channel grants: ").append(mGrantCount).append("\n");
+        sb.append("Channel grants: ").append(mGrantCount).append("   of them digital (P25 voice): ")
+            .append(mDigitalGrantCount).append("\n");
         sb.append("Calling radios not used (control word lost before the channel word): ").append(mSplitGrantCount)
             .append("\n");
         sb.append(DIVIDER2).append("Grants by channel:\n");

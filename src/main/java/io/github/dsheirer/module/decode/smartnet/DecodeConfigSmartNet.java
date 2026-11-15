@@ -47,6 +47,7 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     private int mCallTimeoutSeconds = CALL_TIMEOUT_DEFAULT_SECONDS;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private boolean mTrafficChannel = false;
+    private boolean mDigital = false;
     private boolean mIgnoreUnaliasedTalkgroups = false;
     private int mSite = SITE_ANY;
     private boolean mGraphicEQEnabled = false;
@@ -184,6 +185,25 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     @JsonIgnore
     public DecodeConfigSmartNet copyForTrafficChannel()
     {
+        return copyForTrafficChannel(false);
+    }
+
+    /**
+     * True for the voice channel of a digital call: P25 Phase 1 (IMBE) voice instead of analog FM (never saved).
+     */
+    @JsonIgnore
+    public boolean isDigital()
+    {
+        return mDigital;
+    }
+
+    /**
+     * Copy of this configuration for a voice (traffic) channel
+     * @param digital true for a call granted as digital (P25 Phase 1 voice), false for analog
+     */
+    @JsonIgnore
+    public DecodeConfigSmartNet copyForTrafficChannel(boolean digital)
+    {
         DecodeConfigSmartNet copy = new DecodeConfigSmartNet();
         copy.setBandPlan(getBandPlan());
         copy.setCallTimeoutSeconds(getCallTimeoutSeconds());
@@ -194,6 +214,7 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
         copy.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroups());
         copy.setSite(getSite());
         copy.mTrafficChannel = true;
+        copy.mDigital = digital;
         return copy;
     }
 
@@ -205,6 +226,11 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     @Override
     public ChannelSpecification getChannelSpecification()
     {
+        if(mTrafficChannel && mDigital)
+        {
+            return new ChannelSpecification(24000.0, 12500, 5750.0, 6500.0); //as a P25 Phase 1 channel
+        }
+
         if(mTrafficChannel)
         {
             return new ChannelSpecification(50000.0, 25000, 12500.0, 13500.0);

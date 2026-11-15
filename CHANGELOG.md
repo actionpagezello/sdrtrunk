@@ -39,6 +39,41 @@ and can only be told apart by the "Build Timestamp" log line.
 | 19 | edacs-19 | ProVoice: a voice frame with corrected errors is not played when its neighbour failed the error check (never applied alone - it is the first commit of `edacs-20.patch`) |
 | 20 | edacs-20 | Type II: a calling radio is not put on a call when a control word was lost between the two words of the grant |
 | 21 | edacs-21 | Alias names in the Details tab; "Ignore Unaliased Talkgroups" for EDACS and Type II; SmartZone site number |
+| 22 | edacs-22 | Type II: digital calls (grant 0x321, P25 Phase 1 voice) are decoded as speech instead of played as analog noise |
+
+### Build 22 - Type II: digital calls are decoded with the P25 voice decoder
+- **Why it was missing:** the Type II work was built from recordings of two sites (Monson, Metro Boston) that carry
+  analog calls only, and Radio Reference's "System Voice: Analog and APCO-25 Common Air Interface" for the system
+  was not read. Central MA showed it on 2026-11-14.
+- **Measured (Summit 800, Central MA site 8, 2026-11-14 12:03:30-12:09:30, files in
+  `logs\reference\summit_central_p25`):** talkgroups 59152 and 59184 are granted with OSW `0x321` (group flag,
+  address = calling radio) followed straight away by the channel OSW (talkgroup, status 0); updates are the channel
+  OSW alone and do not say whether the call is digital. The voice channel (854.7375, 857.2375) carries P25 Phase 1:
+  4800 symbols/s, frame sync, and the fork's `P25P1DecoderC4FM` reads NAC x144, HDU (talkgroup 3697 = 59152 >> 4,
+  unencrypted), LDU1/LDU2 voice frames. The link control inside the voice frames is not a usable talkgroup or radio
+  ("Motorola group regroup ... [65535, 47783]"). Until now these calls went through the analog decoder: 143 audio
+  files of noise in 7 hours, none with a radio ID.
+- **Change:** `0x321` + channel OSW is a grant like `0x308` + channel (radio from the first word, not taken across a
+  lost word), marked digital. Its voice channel is started with the P25 Phase 1 decoder and P25 audio module
+  (`DecodeConfigSmartNet.copyForTrafficChannel(true)`, 12.5 kHz channel as a P25 channel); the Type II decoder
+  state stays in charge of the call, so talkgroup and radio remain those of the control channel and aliases,
+  streaming and file names work as for analog calls. Events show "DIGITAL".
+- **Calls first seen from an update:** each talkgroup is remembered as digital or analog from its last grant, and
+  a call joined late is started that way. A talkgroup not granted since the program started is assumed analog; if
+  the digital grant then arrives while the call is up, the analog voice channel is stopped and a P25 one started
+  ("the call is digital - voice channel restarted with the P25 decoder").
+- **Replay of the six minutes of Central MA control channel through the call following:** all five digital calls
+  get a P25 voice channel (four with the radio, one joined from an update without it); the first one starts analog
+  for 7 s because its talkgroup had not been seen yet, then restarts as digital. Analog calls unchanged.
+- **Not tested here:** the audio itself (needs the JMBE library and the running program). The P25 decoder output
+  on the recording was checked; the audio module is the one every P25 channel uses. Listen to 59152 / 59184 on
+  Central MA after installing.
+- **Log:** the voice channel line ends ", digital (P25 voice frames N)"; "call start ... DIGITAL"; Details tab
+  "Channel grants: N of them digital (P25 voice): M".
+- **Cost:** a P25 voice channel uses more CPU than an analog one (about 20 digital calls an hour on Central MA).
+  Encrypted digital calls stay not followed, as before.
+- Tests: `SmartNetCallFollowingTest` testDigitalGrant, testDigitalRememberedPerTalkgroup,
+  testAnalogStartRestartedAsDigital, testDigitalGrantAcrossALostWord.
 
 ### Build 21 - alias names in Details, ignore unaliased talkgroups, SmartZone site number
 Three requests from Armen, 2026-11-14. Nothing changes for an existing playlist: both new settings are off by default.
@@ -64,8 +99,7 @@ Three requests from Armen, 2026-11-14. Nothing changes for an existing playlist:
   Greylock, 855.9125 and 859.2875 Bristol-Plymouth / Brimfield, and others).
 - **What it cannot do:** two sites on one frequency at similar strength arrive mixed and neither decodes well;
   that is an antenna matter.
-- **Not in this build:** the digital (P25) calls on Central MA - measured 2026-11-14 (grant word 0x321, P25
-  Phase 1 voice, unencrypted, decodes with the fork's P25 decoder), not built yet; they still come out as noise.
+- **Not in this build:** the digital (P25) calls on Central MA - build 22.
 - Tests: `SmartNetCallFollowingTest` (testIgnoreUnaliasedTalkgroups, testUnaliasedFollowedByDefault, testSite,
   testNoSiteSet), `EDACSCallFollowingTest` (testIgnoreUnaliasedTalkgroups, testUnaliasedFollowedByDefault),
   `PlaylistCompatibilitySmartNetTest.testSiteAndIgnoreUnaliasedSettings`.

@@ -509,4 +509,105 @@ public class SmartNetCallFollowingTest
         assertTrue(!mState.isOtherSite());
         assertTrue(mState.getActivitySummary().contains("Site announced by the control channel: 14"));
     }
+
+    private void digitalGrant(int radio, int talkgroupAddress, int channel)
+    {
+        osw(radio, true, SmartNetOSW.CMD_DIGITAL_UNIT_ID);
+        osw(talkgroupAddress, true, channel);
+    }
+
+    private static DecodeConfigSmartNet voiceConfig(ChannelStartProcessingRequest start)
+    {
+        return (DecodeConfigSmartNet)start.getChannel().getDecodeConfiguration();
+    }
+
+    /**
+     * Test (edacs-22): a digital grant (0x321 + channel, MSP Central MA: E638 G 321 / E710 G 095) starts a voice
+     * channel set up for P25 voice, with the talkgroup of the channel word and the radio of the 0x321 word; an analog
+     * grant still starts an analog voice channel.
+     */
+    @Test
+    void testDigitalGrant()
+    {
+        setup(4);
+        digitalGrant(0xE638, 0xE710, 0x095);
+        assertEquals(1, mStarts.size());
+        ChannelStartProcessingRequest start = mStarts.get(0);
+        assertTrue(voiceConfig(start).isDigital());
+        assertEquals(24000.0, voiceConfig(start).getChannelSpecification().getMinimumSampleRate(), 0.1);
+        assertEquals(854_737_500L, ((SourceConfigTuner)start.getChannel().getSourceConfiguration()).getFrequency());
+        assertEquals(59152, get(start.getIdentifierCollection(), Role.TO).getValue());
+        assertEquals(Protocol.SMARTNET, get(start.getIdentifierCollection(), Role.TO).getProtocol());
+        assertEquals(0xE638, get(start.getIdentifierCollection(), Role.FROM).getValue());
+        assertEquals("DIGITAL", mEvents.get(0).getDetails());
+
+        grant(RADIO, TALKGROUP, CHANNEL);
+        assertEquals(2, mStarts.size());
+        assertTrue(!voiceConfig(mStarts.get(1)).isDigital(), "an analog grant gets an analog voice channel");
+        assertEquals(50000.0, voiceConfig(mStarts.get(1)).getChannelSpecification().getMinimumSampleRate(), 0.1);
+    }
+
+    /**
+     * Test (edacs-22): an update does not say whether the call is digital.  A call first seen from an update is
+     * started the way its talkgroup was last granted; an analog grant for the talkgroup switches it back.
+     */
+    @Test
+    void testDigitalRememberedPerTalkgroup()
+    {
+        setup(4);
+        digitalGrant(0xE638, 0xE710, 0x095);
+        advance(SmartNetTrafficChannelManager.CALL_END_MS + 500);
+        assertEquals(1, mChannelEvents.size(), "first call over");
+
+        osw(0xE710, true, 0x0F9);                           //update only, on another channel
+        assertEquals(2, mStarts.size());
+        assertTrue(voiceConfig(mStarts.get(1)).isDigital(), "known digital talkgroup joined late - digital");
+        advance(SmartNetTrafficChannelManager.CALL_END_MS + 500);
+
+        grant(RADIO, 0xE710, 0x095);                        //the same talkgroup granted as analog
+        assertTrue(!voiceConfig(mStarts.get(2)).isDigital());
+    }
+
+    /**
+     * Test (edacs-22): a call joined from an update before anything said it was digital is being played as analog;
+     * the digital grant that follows stops that voice channel and starts one with the P25 decoder.
+     */
+    @Test
+    void testAnalogStartRestartedAsDigital()
+    {
+        setup(4);
+        osw(0xE710, true, 0x095);                           //update first: talkgroup not known yet - analog
+        assertEquals(1, mStarts.size());
+        assertTrue(!voiceConfig(mStarts.get(0)).isDigital());
+
+        advance(100);
+        digitalGrant(0xE638, 0xE710, 0x095);
+        assertEquals(1, mChannelEvents.size(), "analog voice channel stopped");
+        assertEquals(ChannelEvent.Event.REQUEST_DISABLE, mChannelEvents.get(0).getEvent());
+        assertEquals(2, mStarts.size());
+        assertTrue(voiceConfig(mStarts.get(1)).isDigital());
+        assertEquals(0xE638, get(mStarts.get(1).getIdentifierCollection(), Role.FROM).getValue());
+
+        advance(100);
+        digitalGrant(0xE638, 0xE710, 0x095);                //repeats of the grant change nothing more
+        osw(0xE710, true, 0x095);
+        assertEquals(2, mStarts.size());
+        assertEquals(1, mChannelEvents.size());
+    }
+
+    /**
+     * Test (edacs-22): the radio of a digital grant is not taken across a lost control word either.
+     */
+    @Test
+    void testDigitalGrantAcrossALostWord()
+    {
+        setup(4);
+        osw(0xE638, true, SmartNetOSW.CMD_DIGITAL_UNIT_ID);
+        SmartNetOSW update = new SmartNetOSW(TALKGROUP, true, CHANNEL, mNow[0]);
+        update.setFollowsPrevious(false);
+        mState.receive(update);
+        assertEquals(1, mStarts.size());
+        assertTrue(!voiceConfig(mStarts.get(0)).isDigital(), "not known to be digital");
+        assertNull(get(mStarts.get(0).getIdentifierCollection(), Role.FROM));
+    }
 }

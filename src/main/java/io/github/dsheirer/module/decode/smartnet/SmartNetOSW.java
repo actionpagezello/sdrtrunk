@@ -37,6 +37,7 @@ import java.util.List;
 public class SmartNetOSW implements IMessage
 {
     public static final int CMD_UNIT_ID = 0x308;        //first OSW of a two-OSW grant: calling unit / system ID
+    public static final int CMD_DIGITAL_UNIT_ID = 0x321; //first OSW of a two-OSW grant of a digital (P25 voice) call
     public static final int CMD_IDLE = 0x2F8;
     public static final int CMD_GROUP_BUSY = 0x300;
     public static final int CMD_SITE_FIRST = 0x360;     //SmartZone site announcement: command - 0x360 + 1 = site number
