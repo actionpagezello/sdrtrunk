@@ -2181,6 +2181,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         sb.append(mPatchGroupManager.getPatchGroupSummary());
         sb.append("\n");
         sb.append(mTrafficChannelManager.getTalkerAliasManager().getAliasSummary());
+        sb.append("\n");
+        sb.append(mTrafficChannelManager.getTalkgroupSummary());
         return sb.toString();
     }
 

@@ -1843,6 +1843,8 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
         sb.append(mPatchGroupManager.getPatchGroupSummary());
         sb.append("\n");
         sb.append(mTrafficChannelManager.getTalkerAliasManager().getAliasSummary());
+        sb.append("\n");
+        sb.append(mTrafficChannelManager.getTalkgroupSummary());
         return sb.toString();
     }
 

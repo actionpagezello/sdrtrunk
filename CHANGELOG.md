@@ -41,6 +41,22 @@ and can only be told apart by the "Build Timestamp" log line.
 | 21 | edacs-21 | Alias names in the Details tab; "Ignore Unaliased Talkgroups" for EDACS and Type II; SmartZone site number |
 | 22 | edacs-22 | Type II: digital calls (grant 0x321, P25 Phase 1 voice) are decoded as speech instead of played as analog noise |
 | 23 | edacs-23 | ProVoice: a transmission that is silence throughout is not recorded or streamed; Type II: the reception line counts the control words that were never found |
+| 24 | edacs-24 | P25: the Details tab lists the calls by talkgroup with the alias name |
+
+### Build 24 - P25: calls by talkgroup with alias names in the Details tab
+- **Request (Armen, 2026-11-15):** show the talkgroup and its alias for P25 channels in the Details tab, as build
+  21 did for CTCSS, DCS, EDACS and Motorola Type II.
+- The P25 Phase 1 and Phase 2 activity summary ends with "Calls by talkgroup (talkgroup, alias, calls)": one line
+  per talkgroup (or patch group) that had a call since the channel started, in numeric order, with the name of
+  its alias in the channel's alias list (blank when it has none) and the number of calls.
+- A call is counted when its event is created in `P25TrafficChannelManager` - a voice channel grant from the
+  control channel (repeats of the grant do not count again), or a call first seen on the voice channel itself
+  (conventional P25, or a call whose grant was missed). Data channel grants are not counted. At most 2,000
+  different talkgroups are kept.
+- Display only: nothing about following, recording or streaming calls changes.
+- Build 23 pushed as `ad93b6a0`; running on Cambridge with the new tuner layout (two sticks 850-853 / 853-856,
+  RSP1B 856-861, two sticks 768-772 / 772-776 for CoMIRS).
+- Tests: `P25TalkgroupSummaryTest` (2).
 
 ### Build 23 - silent ProVoice transmissions not saved; truer Type II reception figure
 - **Build 22 on four machines, night of 2026-11-14/15:** no errors. Digital calls decoded: Paxton 133 of 137 with P25

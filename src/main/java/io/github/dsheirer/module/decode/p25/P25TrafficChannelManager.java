@@ -187,6 +187,89 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         return mTalkerAliasManager;
     }
 
+    //AP-fork (edacs-24): calls by talkgroup for the activity summary (Details tab)
+    private final Map<String,Integer> mCallCounts = new java.util.HashMap<>();
+    private final Map<String,Identifier> mCallIdentifiers = new java.util.HashMap<>();
+    private static final int CALL_COUNT_LIMIT = 2000;
+
+    /**
+     * Counts a new call against the talkgroup (or patch group, or radio for a unit-to-unit call) it is to.
+     */
+    void countCall(IdentifierCollection identifiers)
+    {
+        Identifier to = identifiers != null ? identifiers.getToIdentifier() : null;
+
+        if(to != null)
+        {
+            String key = to.toString();
+
+            synchronized(mCallCounts)
+            {
+                if(mCallCounts.containsKey(key) || mCallCounts.size() < CALL_COUNT_LIMIT)
+                {
+                    mCallCounts.merge(key, 1, Integer::sum);
+                    mCallIdentifiers.putIfAbsent(key, to);
+                }
+            }
+        }
+    }
+
+    /**
+     * Calls by talkgroup with the alias name from the channel's alias list, for the activity summary.  Talkgroups in
+     * numeric order, anything else (patch groups) after them.
+     */
+    public String getTalkgroupSummary()
+    {
+        java.util.List<String> keys;
+        Map<String,Integer> counts;
+        Map<String,Identifier> identifiers;
+
+        synchronized(mCallCounts)
+        {
+            counts = new java.util.HashMap<>(mCallCounts);
+            identifiers = new java.util.HashMap<>(mCallIdentifiers);
+        }
+
+        keys = new java.util.ArrayList<>(counts.keySet());
+        keys.sort(java.util.Comparator.comparingLong((String key) -> {
+            try
+            {
+                return Long.parseLong(key);
+            }
+            catch(NumberFormatException e)
+            {
+                return Long.MAX_VALUE;
+            }
+        }).thenComparing(java.util.Comparator.naturalOrder()));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Calls by talkgroup (talkgroup, alias, calls):\n");
+
+        if(keys.isEmpty())
+        {
+            sb.append("  none yet\n");
+        }
+
+        for(String key : keys)
+        {
+            String name = "";
+
+            if(mAliasList != null)
+            {
+                java.util.List<io.github.dsheirer.alias.Alias> aliases = mAliasList.getAliases(identifiers.get(key));
+
+                if(aliases != null && !aliases.isEmpty())
+                {
+                    name = aliases.get(0).getName();
+                }
+            }
+
+            sb.append(String.format("  %8s  %-32s %d%n", key, name, counts.get(key)));
+        }
+
+        return sb.toString();
+    }
+
     /**
      * Returns true if the identifier collection's TO talkgroup has at least one alias in the parent
      * channel's alias list, or if alias-based filtering is not enabled.
@@ -756,6 +839,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                             (serviceOptions != null ? serviceOptions : ""))
                     .identifiers(ic)
                     .build();
+            countCall(callEvent.getIdentifierCollection());
 
             tracker = new P25ChannelEventTracker(callEvent);
             addTracker(tracker, frequency, timeslot);
@@ -902,6 +986,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                         .details("PHASE 1 CALL " + (serviceOptions != null ? serviceOptions : ""))
                         .identifiers(mic)
                         .build();
+                countCall(callEvent.getIdentifierCollection());
 
                 tracker = new P25ChannelEventTracker(callEvent);
                 addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
@@ -1048,6 +1133,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                             .details("PHASE 1 CALL " + (eki.isEncrypted() ? eki.toString() : ""))
                             .identifiers(mic)
                             .build();
+                    countCall(callEvent.getIdentifierCollection());
 
                     tracker = new P25ChannelEventTracker(callEvent);
                     addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
@@ -1107,6 +1193,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                             (serviceOptions != null ? serviceOptions : ""))
                     .identifiers(ic)
                     .build();
+            countCall(callEvent.getIdentifierCollection());
 
             tracker = new P25ChannelEventTracker(callEvent);
             addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
@@ -1353,6 +1440,10 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             .details(details)
             .identifiers(ic)
             .build();
+        if(!isDataChannelGrant)
+        {
+            countCall(event.getIdentifierCollection());
+        }
         tracker = new P25ChannelEventTracker(event);
         addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
 
@@ -1472,6 +1563,10 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             .identifiers(ic)
             .timeslot(apco25Channel.getTimeslot())
             .build();
+        if(!isDataChannelGrant)
+        {
+            countCall(event.getIdentifierCollection());
+        }
 
         tracker = new P25ChannelEventTracker(event);
         addTracker(tracker, frequency, timeslot);

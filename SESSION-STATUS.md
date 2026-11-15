@@ -3,7 +3,14 @@
 > NOTE: CLAUDE.md (repo root, gitignored) is the primary session context file and is kept
 > more current than this file. This file tracks build/release state at a glance.
 
-## Current state 2026-11-15 09:40: `edacs` build 23 (silent ProVoice transmissions; Type II reception line)
+## Current state 2026-11-15 11:30: `edacs` build 24 (P25 calls by talkgroup in the Details tab)
+
+- **Build 24** (CHANGELOG build 24): `edacs-24.patch`, one commit on `ad93b6a0` (build 23). Display only.
+- **Cambridge** runs build 23 with the new tuner limits and the CoMIRS 700 MHz site (P25 Phase 2) since about
+  09:55 on 11-15. Log wanted after a few hours: TUNER UNAVAILABLE count, CoMIRS decoding, "was silence
+  throughout" count.
+
+## Previous state 2026-11-15 09:40: `edacs` build 23 (silent ProVoice transmissions; Type II reception line)
 
 - **Build 23** (CHANGELOG build 23): `edacs-23.patch`, one commit on `13e270fd` (build 22).
 - **Build 22 confirmed by ear** (Armen, six Paxton recordings of 59152 / 59184). EDACS no-audio calls verified as
