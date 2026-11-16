@@ -5,6 +5,22 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-3] - 2026-11-16
+
+### Changed
+- **P25 Phase 1 editor: the "Talkgroup To Assign" box is the same width as the NAC box** (120). Upstream's voice
+  codec controls, added below that row in 1.0.0, make the grid column it sits in grow, so the box stretched across
+  the editor.
+- **Voice codec sliders (comfort noise and tone volume) have a fixed width** (200) on the DMR, NXDN and P25 Phase 1
+  and Phase 2 editors. Upstream 1.0.0 lets them stretch to fill the editor; the value and reset button now sit
+  beside the slider.
+
+### Trial
+- `1.0.0-ap-2` on Somerville, Cambridge, Monson, Summit 800 and Paxton (from 10:18 on 2026-11-16): no uncaught
+  exceptions, memory steady, Code 3 Stream uploads all accepted (Paxton 1,699 of 1,699). Paxton and Monson both
+  sign in to the Zello accounts for C-PTL-1 and C-PTL-3 and kick each other off; a playlist matter, left as it is.
+  Somerville and Cambridge Zello counts lower on the first night: night traffic.
+
 ## [1.0.0-ap-2] - 2026-11-15
 
 ### Fixed

@@ -536,7 +536,10 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         {
             mTalkgroupTextField = new javafx.scene.control.TextField();
             mTalkgroupTextField.setDisable(true);
-            mTalkgroupTextField.setPrefWidth(80);
+            //AP-fork (1.0.0-ap-3): fixed at the NAC box width.  Upstream's audio controls make grid column 3
+            //grow, which stretched this field across the editor.
+            mTalkgroupTextField.setPrefWidth(120);
+            mTalkgroupTextField.setMaxWidth(120);
             mTalkgroupTextField.setPromptText("e.g. 1001");
             mTalkgroupTextField.setTooltip(new Tooltip("Talkgroup ID override (1-65535, blank = use decoded)"));
             mTalkgroupTextField.textProperty()

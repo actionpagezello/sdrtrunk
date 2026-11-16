@@ -774,7 +774,10 @@ public abstract class ChannelConfigurationEditor extends Editor<Channel>
 
         HBox box = new HBox(5, slider, valueLabel, resetButton);
         box.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(slider, Priority.ALWAYS);
+        //AP-fork (1.0.0-ap-3): fixed slider width so the value and reset button sit beside the slider instead
+        //of the slider stretching across the whole editor.
+        slider.setPrefWidth(200);
+        slider.setMaxWidth(200);
         GridPane.setHgrow(box, Priority.ALWAYS);
         return box;
     }
