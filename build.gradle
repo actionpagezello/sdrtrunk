@@ -573,8 +573,10 @@ tasks.register('archiveVersion', Copy) {
     def versionsDir = project.hasProperty('versionsDir') ? file(project.versionsDir) : file("${rootDir}/../sdrtrunk-ap-versions")
     def projectVersion = version
 
+    //AP-fork (1.0.0-ap-2): only this version's zips.  build/image is not cleared between builds, so a plain '*.zip'
+    //also copied every older version's zip into the new version's folder (v1.0.0-ap-2 received the ap-1 zip).
     from(layout.buildDirectory.dir('image')) {
-        include '*.zip'
+        include "*-v${projectVersion}.zip"
     }
     into(new File(versionsDir, "v${projectVersion}"))
 
@@ -583,7 +585,7 @@ tasks.register('archiveVersion', Copy) {
         logger.lifecycle("AP-fork: archiving v${projectVersion} zips -> ${destinationDir}")
     }
     doLast {
-        def copied = destinationDir.listFiles()?.findAll { it.name.endsWith('.zip') } ?: []
+        def copied = destinationDir.listFiles()?.findAll { it.name.endsWith("-v${projectVersion}.zip") } ?: []
         if(copied.isEmpty()) {
             logger.lifecycle("AP-fork: no zips found in build/image (did runtimeZip* run?)")
         } else {
