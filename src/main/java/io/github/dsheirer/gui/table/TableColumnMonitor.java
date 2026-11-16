@@ -57,6 +57,7 @@ public class TableColumnMonitor<S>
     public static final String LEGACY_INDEX = "column.legacy.index";
     private static final String ORDER = ".column.order";
     private static final String HIDDEN = ".column.hidden";
+    private static final String KNOWN = ".column.known";
     private static final String WIDTH = ".column.width.";
     //AP-fork: column sort order, stored as id:ASCENDING or id:DESCENDING entries in sort priority order
     private static final String SORT = ".column.sort";
@@ -255,6 +256,7 @@ public class TableColumnMonitor<S>
         mPreferences.remove(mKey + ORDER);
         mPreferences.remove(mKey + HIDDEN);
         mPreferences.remove(mKey + SORT);
+        mPreferences.remove(mKey + KNOWN);
     }
 
     /**
@@ -353,10 +355,13 @@ public class TableColumnMonitor<S>
             if(hidden != null)
             {
                 Set<String> hiddenIds = Set.of(hidden.isEmpty() ? new String[0] : hidden.split(SEPARATOR));
+                Set<String> knownIds = getKnownIds();
 
                 for(TableColumn<S,?> column: mDefaultOrder)
                 {
-                    column.setVisible(!hiddenIds.contains(column.getId()));
+                    //Columns that weren't in the table when the visibility was stored are new, so use the default
+                    column.setVisible(knownIds.contains(column.getId()) ? !hiddenIds.contains(column.getId()) :
+                        mDefaultVisibility.get(column));
                 }
 
                 if(getVisibleColumnCount() == 0)
@@ -400,6 +405,32 @@ public class TableColumnMonitor<S>
         }
     }
 
+    /**
+     * IDs of the columns that were in the table when the visibility was stored.  Settings stored before the known
+     * columns were stored only had columns that are shown by default.
+     */
+    private Set<String> getKnownIds()
+    {
+        String known = mPreferences.get(mKey + KNOWN, null);
+
+        if(known != null)
+        {
+            return Set.of(known.isEmpty() ? new String[0] : known.split(SEPARATOR));
+        }
+
+        Set<String> ids = new HashSet<>();
+
+        for(TableColumn<S,?> column: mDefaultOrder)
+        {
+            if(mDefaultVisibility.get(column))
+            {
+                ids.add(column.getId());
+            }
+        }
+
+        return ids;
+    }
+
     private int getVisibleColumnCount()
     {
         int count = 0;
@@ -430,9 +461,12 @@ public class TableColumnMonitor<S>
     private void storeVisibility()
     {
         List<String> ids = new ArrayList<>();
+        List<String> known = new ArrayList<>();
 
         for(TableColumn<S,?> column: mDefaultOrder)
         {
+            known.add(column.getId());
+
             if(!column.isVisible())
             {
                 ids.add(column.getId());
@@ -440,6 +474,7 @@ public class TableColumnMonitor<S>
         }
 
         mPreferences.put(mKey + HIDDEN, String.join(SEPARATOR, ids));
+        mPreferences.put(mKey + KNOWN, String.join(SEPARATOR, known));
     }
 
     /**
