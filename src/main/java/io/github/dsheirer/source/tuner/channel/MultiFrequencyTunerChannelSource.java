@@ -49,7 +49,7 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
     private final static Logger mLog = LoggerFactory.getLogger(MultiFrequencyTunerChannelSource.class);
 
     private TunerManager mTunerManager;
-    private TunerChannelSource mTunerChannelSource;
+    private volatile TunerChannelSource mTunerChannelSource;
     private List<Long> mFrequencies;
     private List<Long> mLockedFrequencies = new ArrayList<>();
     private int mFrequencyListPointer = 0;
@@ -132,6 +132,17 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
         {
             mLog.error("Error checking the frequency hunt", t);
         }
+    }
+
+    /**
+     * Name of the tuner that provides the current frequency's tuner channel source, which can change as the
+     * frequencies rotate.
+     */
+    @Override
+    public String getTunerName()
+    {
+        TunerChannelSource source = mTunerChannelSource;
+        return source != null ? source.getTunerName() : null;
     }
 
     /**

@@ -46,6 +46,7 @@ import io.github.dsheirer.source.config.SourceConfigTuner;
 import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
+import io.github.dsheirer.source.tuner.channel.TunerChannelSource;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -405,6 +406,10 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
         frequency.setCellFactory(NowPlayingCells.formatted(value -> frequencyFormat.format(value / 1e6d)));
         columns.add(frequency);
 
+        //Tuner that sources the channel
+        columns.add(NowPlayingCells.column("tuner", "Tuner", null, Pos.CENTER,
+            row -> getTunerName(row.getChannelMetadata()), Row::revisionProperty));
+
         columns.add(NowPlayingCells.column("channel.name", "Channel Name", null, Pos.CENTER,
             row -> toText(row.getChannelMetadata().getChannelNameConfigurationIdentifier()), Row::revisionProperty));
 
@@ -415,7 +420,7 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
             setTextComparator(column);
         }
 
-        //Column numbers in the Swing version of the table, for its stored column widths.  Talker is a new column.
+        //Column numbers in the Swing version of the table, for its stored column widths.  Talker and Tuner are new columns.
         String[] swingColumns = {"status", "decoder", "from", "from.alias", "to", "to.alias", "channel", "frequency",
             "channel.name"};
 
@@ -430,6 +435,22 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
         }
 
         return columns;
+    }
+
+    /**
+     * Name of the tuner that sources the channel, or null if the channel isn't sourced by a tuner.
+     */
+    private String getTunerName(ChannelMetadata channelMetadata)
+    {
+        Channel channel = mChannelMetadataModel.getChannelFromMetadata(channelMetadata);
+        ProcessingChain processingChain = channel != null ? mChannelProcessingManager.getProcessingChain(channel) : null;
+
+        if(processingChain != null && processingChain.getSource() instanceof TunerChannelSource tunerChannelSource)
+        {
+            return tunerChannelSource.getTunerName();
+        }
+
+        return null;
     }
 
     /**
