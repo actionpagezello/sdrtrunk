@@ -15,6 +15,16 @@ counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is
   defaults. The build 25 defaults are applied again when the codec loads; a channel's own settings still replace them.
   Not confirmed by replay: the workspace has no JMBE library, so the codec's audio cannot be compared there.
 - Windows package made from the installed JDK (the pinned download no longer matched it).
+- The versions folder only receives the zip of the version being built (v1.0.0-ap-2 had also received the ap-1 zip,
+  left in the build folder by the earlier build). Build script only; the program is unchanged.
+
+### Trial
+- `1.0.0-ap-1` ran on Somerville from 18:13 and Cambridge from 18:09 on 2026-11-15; `1.0.0-ap-2` replaced it on both
+  at about 19:35. First-hour logs of ap-1: no uncaught exceptions, playlists complete, Zello 29 of 29 logged on at
+  Somerville (722 transmissions started in 46 min against 710 in the 46 min before on build 25), Cambridge 43 Type
+  II and 159 EDACS calls with none lost at start, no tuner unavailable.
+- The background heard on the Boston SmartZone analog calls at Cambridge is in the transmissions themselves (see
+  SESSION-STATUS.md); not changed by this build.
 
 ## [1.0.0-ap-1] - 2026-11-15
 

@@ -170,6 +170,7 @@ Approved by Armen 2026-11-15 15:36. Done the same day on branch `ap-1.0` (five c
 | Section 5.2: Code 3 Stream "takes a new internal name" | Saved as `code3StreamConfiguration`; `ThinLineRadioConfiguration` still loads as Code 3 Stream; upstream's is `ThinlineRadioConfiguration` | As planned. No machine has a ThinLine stream saved (Armen), so the conversion is covered by a test only. |
 | Section 6: one or more commits per line | Base, NBFM and streaming are separate commits; P25, DMR, NXDN, tuners, EDACS, Type II, playlist and screens are one | Those areas depend on each other and do not compile apart. |
 | Section 3: JMBE controls - upstream's | Upstream's; the fork's `JmbeSettingsPane` deleted | So the controls do not appear twice. The fork's fixed-gain skip (`hasLibraryGainControl`) is kept on upstream's codec module. |
+| Section 3: JMBE codec module - upstream's | Upstream's, plus the fork's default codec settings applied on load (`1.0.0-ap-2`) | Found on the trial: upstream's module configures the codec only from a channel's own JMBE settings. Digital Motorola Type II calls and ProVoice calls have none, so in ap-1 they ran on the library's defaults. Build 25 set gain control on and comfort noise at 0.05 for every codec. |
 
 Files upstream deleted since July stay deleted: the ThumbDV dongle code (36 files) and two LRRP token classes.
 
