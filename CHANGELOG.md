@@ -7,17 +7,55 @@ counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is
 
 ## [1.0.0-ap-3] - 2026-11-16
 
-### Changed
-- **P25 Phase 1 editor: the "Talkgroup To Assign" box is the same width as the NAC box** (120). Upstream's voice
-  codec controls, added below that row in 1.0.0, make the grid column it sits in grow, so the box stretched across
-  the editor.
-- **Voice codec sliders (comfort noise and tone volume) have a fixed width** (200) on the DMR, NXDN and P25 Phase 1
-  and Phase 2 editors. Upstream 1.0.0 lets them stretch to fill the editor; the value and reset button now sit
-  beside the slider.
+Upstream's 15 changes after the 1.0.0 release (13-16 November), with the fork carried over where they meet, and the
+two editor fixes from the ap-2 trial.
 
-### Trial
+### Added from upstream
+- **P25 "Ignore Encrypted Calls"** (#1045): Phase 1 and Phase 2 editors.  A control channel doesn't take a traffic
+  channel for a grant marked encrypted.  On the Phase 2 editor it sits where upstream put it; the fork's "Ignore
+  Unaliased TGs" moves one place right.
+- **New spectrum and waterfall** (#736), JavaFX, for tuners and the Now Playing channel tab.  The fork's "Show in
+  Waterfall" still zooms 16x on the channel.
+- **Radio Reference on the map and spectrum** (#2641), with a premium subscription.  The fork's EDACS site
+  configuration and the tone/NAC filter from a frequency's tone field are kept.
+- **DMR:** voice frames need at least one CRC-valid audio frame (#2652); Hamming and BPTC error correction (#2656,
+  #2658); corrected EMB QR(16,7,6) table (#2645).  The fork's own EMB decoder rule (edacs builds) is replaced by
+  upstream's: it made up for EMB words that were always two bits from a valid word (Salem State Police), and the wrong
+  table was the cause.  Not replayed: no DMR recording in the workspace.
+- **NXDN audio** uses the codec's gain control only (#2654).  With JMBE 2.1.1 the fork already skipped the old 5x gain,
+  so audio is unchanged.  NonClippingGain is kept for P25 Phase 1 and ProVoice with an older JMBE library.
+- **Network tuners, rtl_tcp** (#2471).
+- **Now Playing rebuilt in JavaFX** (#2660): Talker column, column chooser; Tuner column (#315); System and Site
+  columns, hidden by default (#2669).  Talker alias handling reworked in the P25, DMR and NXDN decoders.
+- **Sample drop monitor** (#2662): logs a tuner that delivers fewer samples than its sample rate.  Off for Airspy and
+  HydraSDR, whose drivers count dropped samples exactly and whose count the fork already logs once a minute
+  (WidebandStreamMonitor).  RTL-SDR and SDRplay tuners gain it; the fork had nothing for them.
+- Headless start fix (#2620); README.
+
+### Carried over to the new Now Playing
+- Right-click **Mute / Unmute** (alias Listen toggle, or this channel only when it has no alias; tooltip says which),
+  the alias of the channel's last call, and the mute of a channel without an alias re-applied when it restarts.
+- Right-click **Show in Waterfall**.
+- **Sortable columns**, text without regard to case; the sort is kept between sessions for every Now Playing table.
+- **Details tab:** channel configuration header (decoder, frequencies, alias list) and calls by talkgroup.
+- **Events and Messages:** filter choices and history size kept between sessions (message history size is new).
+- P25 Phase 1 "Talkgroup To Assign" still replaces the talkgroup on calls.
+
+### Changed
+- **P25 Phase 1 editor: the "Talkgroup To Assign" box is the same width as the NAC box** (120).  Upstream's voice
+  codec controls make its grid column grow, so the box stretched across the editor.
+- **Voice codec sliders (comfort noise and tone volume) have a fixed width** (200) on the DMR, NXDN and P25 Phase 1
+  and Phase 2 editors.  Upstream lets them stretch; the value and reset button now sit beside the slider.
+
+### Checks
+- Tests: 558, all pass (in the workspace under a virtual display; upstream's JavaFX table tests need one).
+- Replays against ap-2, identical output: P25 Phase 1, 5 Summit Central recordings, 820 messages; EDACS (MBTA),
+  30,651 messages; Motorola Type II (Monson), 5,033 messages; ProVoice, 40 recordings, 1,621 messages.
+- Not seen on screen: the new Now Playing, spectrum, map and editors.
+
+### Trial of ap-2
 - `1.0.0-ap-2` on Somerville, Cambridge, Monson, Summit 800 and Paxton (from 10:18 on 2026-11-16): no uncaught
-  exceptions, memory steady, Code 3 Stream uploads all accepted (Paxton 1,699 of 1,699). Paxton and Monson both
+  exceptions, memory steady, Code 3 Stream uploads all accepted (Paxton 1,699 of 1,699).  Paxton and Monson both
   sign in to the Zello accounts for C-PTL-1 and C-PTL-3 and kick each other off; a playlist matter, left as it is.
   Somerville and Cambridge Zello counts lower on the first night: night traffic.
 

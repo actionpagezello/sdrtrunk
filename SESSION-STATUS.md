@@ -3,6 +3,21 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-16 17:30: `1.0.0-ap-3` built in the workspace, ap-2 on five machines
+
+**ap-3** = ap-2 + upstream's 15 changes after 1.0.0 (`73fc85aa`..`6dd06288`, cherry-picked in order; each commit
+names its upstream hash and the fork's adjustments) + talkgroup box and codec slider widths + sample drop monitor
+off for Airspy/HydraSDR + these documents.  Delivered as `logs\ap-1.0.0-ap-3-series.patch` (18 commits).  The
+single-commit `ap-1.0.0-ap-3.patch` sent earlier the same afternoon is superseded and must not be applied.
+Biggest change: upstream rebuilt Now Playing in JavaFX and deleted the Swing panels; the fork's Now Playing features
+were ported to the new views (see CHANGELOG).  Tests 558 pass; P25/EDACS/Type II/ProVoice replays identical to ap-2.
+
+**ap-2 running:** Somerville, Cambridge, Monson, Summit 800, Paxton.  Daly, Baker, SDR22 still on build 25.
+
+**To check on screen in ap-3:** Now Playing (right-click Mute/Unmute with its tooltip, Show in Waterfall, sorting,
+column chooser, Details header, event/message filters kept after restart); the new waterfall; P25 editors (talkgroup
+box, sliders, Ignore Encrypted Calls).  DMR changes not replayed (no DMR recording).
+
 ## Current state 2026-11-15 19:40: `1.0.0-ap-2` running on Somerville and Cambridge
 
 **Branches:** `ap-1.0` = upstream `v1.0.0` (`73d32386`) + the fork, version `1.0.0-ap-2`, pushed. `edacs` = build 25
