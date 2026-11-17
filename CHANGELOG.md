@@ -5,6 +5,40 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-5] - 2026-11-17
+
+Upstream's four changes of 17 November (02:25-06:51) and two shutdown fixes.
+
+### Added from upstream
+- **Waterfall right-click on a signal** (#2671): Radio Reference options; the pop-up card lists matching channels,
+  playlist channels first (enabled ones first), then Radio Reference ones by distance from your location.
+- **Alias list tracks a Radio Reference system** (#2676), optional, with automatic talkgroup alias updates and a new
+  preferences page.  Alias list names stay sorted, as in the fork.  Stored in the playlist as `alias_list`; older
+  builds ignore it, so build 25 still loads the playlist.
+- **Talker aliases added to the alias list automatically** (#2680), per channel, for P25, DMR and NXDN.  Channels
+  already in a playlist keep it off; new channels have it on.  Nothing changes in an alias list until it is
+  turned on for a channel.
+- **Alias List column in Now Playing** (#2683); sorts like the other text columns.
+- README.
+
+### Fixed
+- **Error in Now Playing when channels close** (Somerville and Audubon, 2026-11-16): the table's selection could land
+  on a row whose channel had already gone; also wrong in upstream.
+- **Error stopping a multi-frequency channel while it hunts** (OneVoice Confirmed LCN, Audubon): a frequency rotation
+  and the stop could both take the same tuner channel source.  The swap is now locked, and a source that arrives after
+  the stop is handed back to the tuner.
+
+### Checks
+- Tests: 579, all pass.
+- Replays identical to ap-4: P25 Phase 1 (5 Summit Central recordings), EDACS (MBTA), Motorola Type II (Monson),
+  ProVoice, DMR (Salem State Police, OneVoice Boston) and NXDN (Georgetown).
+
+### Trial of ap-3 and ap-4
+- Somerville and Summit 800 on ap-4 from 22:15 on 2026-11-16; Cambridge on ap-2.  Overnight to 07:31: no uncaught
+  exceptions, no decoder errors, memory flat; Summit 800 Airspy 0 dropped samples in 451 minutes; three Zello
+  disconnects (server side), each back on the first attempt.  Second night for ap-2: Watertown 56 -> 135, Cambridge
+  Fire Ch 5 EMS 53 -> 128, Pro EMS 120 -> 231 Zello transmissions, so the first night's lower counts were traffic.
+
 ## [1.0.0-ap-4] - 2026-11-16
 
 ### Fixed

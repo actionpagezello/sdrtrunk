@@ -3,6 +3,18 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-17 09:30: `1.0.0-ap-5` built in the workspace
+
+**Running:** ap-4 on Somerville and Summit 800 (clean overnight); ap-2 on Cambridge, Monson, Paxton; build 25 on Daly,
+Baker, SDR22.  Audubon runs ap-4 for DMR/NXDN tests (logs still to come; the first copy was Summit 800's).
+
+**ap-5** = ap-4 + upstream `feeedb7c`..`c46b80b0` (17 November: waterfall Radio Reference right-click, alias list
+Radio Reference tracking, talker alias auto-add, Now Playing Alias List column, README) + shutdown fixes (Now Playing
+selection, multi-frequency source swap).  Delivered as `logs\ap-1.0.0-ap-5.patch` (7 commits on ap-4).
+
+**Upstream not merged:** branch `2672-dispatcher-time-adaptive-buffer-sizing` (Dispatcher queue sized by sample
+duration); the fork keeps its own Dispatcher - look at it when merged.
+
 ## Update 2026-11-16 22:10: `1.0.0-ap-4`
 
 Right-click on Now Playing channels didn't open in ap-3 (upstream bug in the new JavaFX table: an empty ContextMenu
