@@ -28,6 +28,7 @@ import io.github.dsheirer.gui.preference.diagnostics.DiagnosticsPreferenceEditor
 import io.github.dsheirer.gui.preference.directory.DirectoryPreferenceEditor;
 import io.github.dsheirer.gui.preference.mp3.MP3PreferenceEditor;
 import io.github.dsheirer.gui.preference.playback.PlaybackPreferenceEditor;
+import io.github.dsheirer.gui.preference.radioreference.RadioReferencePreferenceEditor;
 import io.github.dsheirer.gui.preference.record.RecordPreferenceEditor;
 import io.github.dsheirer.gui.preference.tuner.TunerPreferenceEditor;
 import io.github.dsheirer.preference.UserPreferences;
@@ -62,6 +63,8 @@ public class PreferenceEditorFactory
                 return new DirectoryPreferenceEditor(userPreferences);
             case JMBE_LIBRARY:
                 return new JmbeLibraryPreferenceEditor(userPreferences);
+            case RADIO_REFERENCE_ALIAS_LISTS:
+                return new RadioReferencePreferenceEditor(userPreferences);
             case SOURCE_TUNERS:
                 return new TunerPreferenceEditor(userPreferences);
             case TALKGROUP_FORMAT:

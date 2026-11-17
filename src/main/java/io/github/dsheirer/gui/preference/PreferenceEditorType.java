@@ -30,6 +30,7 @@ public enum PreferenceEditorType
     DIAGNOSTICS("Diagnostics (Logging)"),
     DIRECTORY("Directories"),
     JMBE_LIBRARY("JMBE Audio Library"),
+    RADIO_REFERENCE_ALIAS_LISTS("Alias Lists"),
     AUDIO_MP3("MP3"),
     AUDIO_RECORD("Record"),
     AUDIO_OUTPUT("Playback/Tones"),

@@ -46,6 +46,8 @@ public class AliasModel
     private ObservableList<Alias> mAliases = FXCollections.observableArrayList(Alias.extractor());
     private ObservableList<String> mAliasListNames = FXCollections.observableArrayList();
     private Map<String,AliasList> mAliasListMap = new HashMap<>();
+    private ObservableList<AliasListConfiguration> mAliasListConfigurations =
+        FXCollections.observableArrayList(AliasListConfiguration.extractor());
 
     public AliasModel()
     {
@@ -61,6 +63,99 @@ public class AliasModel
     public ObservableList<String> aliasListNames()
     {
         return mAliasListNames;
+    }
+
+    /**
+     * Observable list of persisted alias list configurations.  Only alias lists with settings, like Radio Reference
+     * system tracking, have a configuration.
+     */
+    public ObservableList<AliasListConfiguration> aliasListConfigurations()
+    {
+        return mAliasListConfigurations;
+    }
+
+    /**
+     * Bulk loading of alias list configurations from a playlist.  Ignores configurations without a name and
+     * duplicates of an earlier configuration's name.
+     */
+    public void addAliasListConfigurations(List<AliasListConfiguration> configurations)
+    {
+        if(configurations != null)
+        {
+            for(AliasListConfiguration configuration: configurations)
+            {
+                String name = configuration.getName();
+
+                if(name != null && !name.isEmpty() && getAliasListConfiguration(name) == null)
+                {
+                    mAliasListConfigurations.add(configuration);
+                    addAliasList(name);
+                }
+            }
+        }
+    }
+
+    /**
+     * Configuration for the named alias list.
+     * @param aliasListName to find
+     * @return configuration or null if the alias list doesn't have one
+     */
+    public AliasListConfiguration getAliasListConfiguration(String aliasListName)
+    {
+        if(aliasListName != null)
+        {
+            for(AliasListConfiguration configuration: mAliasListConfigurations)
+            {
+                if(aliasListName.equals(configuration.getName()))
+                {
+                    return configuration;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Configuration for the named alias list, created when the alias list doesn't have one.
+     * @param aliasListName for the configuration, not null or the (No Alias List) name
+     * @return configuration
+     */
+    public AliasListConfiguration getOrCreateAliasListConfiguration(String aliasListName)
+    {
+        if(aliasListName == null || aliasListName.isEmpty() || aliasListName.equals(NO_ALIAS_LIST))
+        {
+            throw new IllegalArgumentException("Invalid alias list name [" + aliasListName + "]");
+        }
+
+        AliasListConfiguration configuration = getAliasListConfiguration(aliasListName);
+
+        if(configuration == null)
+        {
+            configuration = new AliasListConfiguration(aliasListName);
+            mAliasListConfigurations.add(configuration);
+            addAliasList(aliasListName);
+        }
+
+        return configuration;
+    }
+
+    /**
+     * Name of the first alias list that tracks the Radio Reference system.
+     * @param systemId of the Radio Reference system
+     * @return alias list name or null
+     */
+    public String getAliasListNameTracking(int systemId)
+    {
+        for(AliasListConfiguration configuration: mAliasListConfigurations)
+        {
+            if(configuration.isTracking(systemId))
+            {
+                return configuration.getName();
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -80,6 +175,15 @@ public class AliasModel
             }
         }
 
+        //Alias lists with a configuration exist even before they have any aliases
+        for(AliasListConfiguration configuration: mAliasListConfigurations)
+        {
+            if(!mAliasListNames.contains(configuration.getName()))
+            {
+                mAliasListNames.add(configuration.getName());
+            }
+        }
+
         FXCollections.sort(mAliasListNames);
     }
 
@@ -95,7 +199,22 @@ public class AliasModel
             return;
         }
 
-        mAliases.stream().filter(alias -> alias.getAliasListName().equals(oldName)).forEach(alias -> alias.setAliasListName(newName));
+        mAliases.stream().filter(alias -> oldName.equals(alias.getAliasListName())).forEach(alias -> alias.setAliasListName(newName));
+
+        AliasListConfiguration configuration = getAliasListConfiguration(oldName);
+
+        if(configuration != null)
+        {
+            //Merging into an existing list keeps that list's configuration
+            if(getAliasListConfiguration(newName) == null)
+            {
+                configuration.setName(newName);
+            }
+            else
+            {
+                mAliasListConfigurations.remove(configuration);
+            }
+        }
     }
 
     /**
@@ -111,6 +230,7 @@ public class AliasModel
 
         mAliases.removeIf(alias -> alias.getAliasListName().equals(aliasListName));
         mAliasListMap.remove(aliasListName);
+        mAliasListConfigurations.removeIf(configuration -> aliasListName.equals(configuration.getName()));
     }
 
     /**
@@ -150,6 +270,7 @@ public class AliasModel
             removeAlias(alias);
         }
 
+        mAliasListConfigurations.clear();
         mAliasListNames.clear();
     }
 

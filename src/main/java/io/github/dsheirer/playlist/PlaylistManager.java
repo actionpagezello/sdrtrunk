@@ -25,6 +25,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.xml.JacksonXmlModule;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.alias.AliasListConfiguration;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.audio.broadcast.BroadcastModel;
 import io.github.dsheirer.controller.channel.Channel;
@@ -42,6 +43,7 @@ import io.github.dsheirer.module.log.EventLogManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.playlist.PlaylistPreference;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.service.radioreference.AliasListSynchronizer;
 import io.github.dsheirer.service.radioreference.RadioReference;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.util.ThreadPool;
@@ -84,6 +86,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
     private TunerManager mTunerManager;
     private UserPreferences mUserPreferences;
     private RadioReference mRadioReference;
+    private AliasListSynchronizer mAliasListSynchronizer;
     private AtomicBoolean mPlaylistSavePending = new AtomicBoolean();
     private ScheduledFuture<?> mPlaylistSaveFuture;
     private boolean mPlaylistLoading = false;
@@ -127,6 +130,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
 
         mBroadcastModel = new BroadcastModel(mAliasModel, mIconModel, userPreferences);
         mRadioReference = new RadioReference(mUserPreferences);
+        mAliasListSynchronizer = new AliasListSynchronizer(mAliasModel, mRadioReference, mUserPreferences);
 
         mChannelModel = new ChannelModel(mAliasModel);
         mChannelProcessingManager = new ChannelProcessingManager(mChannelMapModel, eventLogManager, mTunerManager,
@@ -151,6 +155,8 @@ public class PlaylistManager implements Listener<ChannelEvent>
         mChannelModel.addListener(this);
 
         mAliasModel.aliasList().addListener((ListChangeListener<Alias>)c -> schedulePlaylistSave());
+        mAliasModel.aliasListConfigurations()
+            .addListener((ListChangeListener<AliasListConfiguration>)c -> schedulePlaylistSave());
 
         mChannelMapModel.getChannelMaps().addListener((ListChangeListener<ChannelMap>)c -> schedulePlaylistSave());
 
@@ -280,6 +286,14 @@ public class PlaylistManager implements Listener<ChannelEvent>
     }
 
     /**
+     * Synchronizer for alias lists that track a Radio Reference system.
+     */
+    public AliasListSynchronizer getAliasListSynchronizer()
+    {
+        return mAliasListSynchronizer;
+    }
+
+    /**
      * Channel Map model managed by this playlist manager
      */
     public ChannelMapModel getChannelMapModel()
@@ -295,6 +309,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
     {
         PlaylistV2 playlist = load();
         transferPlaylistToModels(playlist);
+        mAliasListSynchronizer.start();
     }
 
     /**
@@ -432,6 +447,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
             mPlaylistLoading = true;
 
             mAliasModel.addAliases(playlist.getAliases());
+            mAliasModel.addAliasListConfigurations(playlist.getAliasListConfigurations());
 
 
             mBroadcastModel.addBroadcastConfigurations(playlist.getBroadcastConfigurations());
@@ -548,6 +564,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
         PlaylistV2 playlist = new PlaylistV2();
 
         playlist.setAliases(new ArrayList(mAliasModel.getAliases()));
+        playlist.setAliasListConfigurations(new ArrayList<>(mAliasModel.aliasListConfigurations()));
         playlist.setBroadcastConfigurations(new ArrayList(mBroadcastModel.getBroadcastConfigurations()));
         playlist.setChannels(new ArrayList(mChannelModel.getChannels()));
         playlist.setChannelMaps(new ArrayList(mChannelMapModel.getChannelMaps()));
