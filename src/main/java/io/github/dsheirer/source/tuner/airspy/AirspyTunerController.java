@@ -824,4 +824,15 @@ public class AirspyTunerController extends TunerController
             return EnumSet.range(SENSITIVITY_1, SENSITIVITY_22);
         }
     }
+
+    /**
+     * AP-fork: upstream's estimated sample drop monitor (#2662) is off for this tuner.  The Airspy driver counts the
+     * samples it drops, and the fork's WidebandStreamMonitor logs that exact count once a minute, so the estimate
+     * would only log the same drops a second time, less precisely.
+     */
+    @Override
+    protected boolean isSampleDropMonitorSupported()
+    {
+        return false;
+    }
 }
