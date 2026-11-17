@@ -272,7 +272,13 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
         if(row != null)
         {
             mUserSelectedChannel = mChannelMetadataModel.getChannelFromMetadata(row.getChannelMetadata());
-            processingChain = mChannelProcessingManager.getProcessingChain(mUserSelectedChannel);
+
+            //AP-fork: while channels are being removed (shutdown, channel stop) the selection can land on a row whose
+            //channel has already left the model.  The processing chain map can't look up a null channel.
+            if(mUserSelectedChannel != null)
+            {
+                processingChain = mChannelProcessingManager.getProcessingChain(mUserSelectedChannel);
+            }
         }
 
         mSelectedProcessingChainBroadcaster.broadcast(processingChain);

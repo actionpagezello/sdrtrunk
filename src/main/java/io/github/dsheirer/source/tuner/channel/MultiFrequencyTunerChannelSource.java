@@ -50,6 +50,10 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
 
     private TunerManager mTunerManager;
     private volatile TunerChannelSource mTunerChannelSource;
+    //AP-fork: guards swapping the current tuner channel source.  A frequency rotation (decoder thread or the retry
+    //timer) and a channel stop (GUI thread) could both take the same source, so one stopped a source the other had
+    //already set to null (NullPointerException at shutdown) and the channelizer was asked to remove it twice.
+    private final Object mSourceLock = new Object();
     private List<Long> mFrequencies;
     private List<Long> mLockedFrequencies = new ArrayList<>();
     private int mFrequencyListPointer = 0;
@@ -173,15 +177,22 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
                 return;
             }
 
-            if(mTunerChannelSource != null)
+            TunerChannelSource previous;
+
+            synchronized(mSourceLock)
+            {
+                previous = mTunerChannelSource;
+                mTunerChannelSource = null;
+            }
+
+            if(previous != null)
             {
                 //Shutdown the existing tuner channel source
-                mTunerChannelSource.stop();
-                mTunerChannelSource.setListener(null);
-                mTunerChannelSource.removeSourceEventListener();
-                mTunerChannelSource.removeHeartbeatListener(mHeartbeatListener);
-                mTunerChannelSource.dispose();
-                mTunerChannelSource = null;
+                previous.stop();
+                previous.setListener(null);
+                previous.removeSourceEventListener();
+                previous.removeHeartbeatListener(mHeartbeatListener);
+                previous.dispose();
             }
 
             //Request the next tuner channel source
@@ -202,22 +213,43 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
         {
             Source source = mTunerManager.getSource(nextChannel, mChannelSpecification, mPreferredTuner, mThreadName);
 
-            if(source instanceof TunerChannelSource)
-            {
-                mTunerChannelSource = (TunerChannelSource)source;
-                mTunerChannelSource.setSourceEventListener(mConsumerSourceEventAdapter);
-                mTunerChannelSource.setListener(mComplexSamplesListener);
-                mTunerChannelSource.addHeartbeatListener(mHeartbeatListener);
-                mTunerChannelSource.start();
-                mTunerChannel = nextChannel;
-                mChangingChannels.set(false);
+            boolean installed = false;
 
+            if(source instanceof TunerChannelSource tunerChannelSource)
+            {
+                synchronized(mSourceLock)
+                {
+                    //AP-fork: the channel may have been stopped while the tuner was being asked for the source
+                    if(mStarted)
+                    {
+                        mTunerChannelSource = tunerChannelSource;
+                        mTunerChannelSource.setSourceEventListener(mConsumerSourceEventAdapter);
+                        mTunerChannelSource.setListener(mComplexSamplesListener);
+                        mTunerChannelSource.addHeartbeatListener(mHeartbeatListener);
+                        mTunerChannelSource.start();
+                        mTunerChannel = nextChannel;
+                        installed = true;
+                    }
+                }
+
+                if(!installed)
+                {
+                    //Stopped meanwhile - hand the unused source back to its tuner.  Started and stopped like any other
+                    //source, since stop() is what tells the source manager to release it.
+                    tunerChannelSource.start();
+                    tunerChannelSource.stop();
+                    tunerChannelSource.dispose();
+                    mChangingChannels.set(false);
+                    return;
+                }
+
+                mChangingChannels.set(false);
                 getSourceEventListener().receive(SourceEvent.frequencyRotationSuccessNotification(this, nextChannel.getFrequency()));
             }
 
             //If we don't get a channel source because a tuner is not available or none of the available tuners can
             //support the frequency, then persistently attempt to get a source by iterating the frequency list
-            if(mTunerChannelSource == null)
+            if(!installed)
             {
                 getSourceEventListener().receive(SourceEvent.frequencyRotationFailureNotification(this, nextChannel.getFrequency()));
                 ThreadPool.SCHEDULED.schedule(() -> getNextSource(getTunerChannel(getNextFrequency())), 500, TimeUnit.MILLISECONDS);
@@ -239,13 +271,19 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
     @Override
     public void stop()
     {
-        mStarted = false;
+        TunerChannelSource source;
 
-        if(mTunerChannelSource != null)
+        synchronized(mSourceLock)
         {
-            mTunerChannelSource.stop();
-            mTunerChannelSource.removeSourceEventListener();
+            mStarted = false;
+            source = mTunerChannelSource;
             mTunerChannelSource = null;
+        }
+
+        if(source != null)
+        {
+            source.stop();
+            source.removeSourceEventListener();
         }
     }
 
