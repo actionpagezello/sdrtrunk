@@ -497,6 +497,9 @@ public class RTL2832TunerController extends TunerController
             //checked without the controller lock, which a thread that is stopping this stream can be holding.
             if(!mNativeBufferBroadcaster.hasListeners())
             {
+                //Still counted by the sample drop monitor: these samples arrived, they just have no channel to go to.
+                //Two 8-bit bytes (I and Q) per complex sample.
+                countDiscardedSamples(buffer.length() / 2);
                 return true;
             }
 

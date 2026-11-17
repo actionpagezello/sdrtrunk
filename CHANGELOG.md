@@ -5,6 +5,21 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-6] - 2026-11-17
+
+### Fixed
+- **False "dropping samples" warnings on RTL-SDR tuners that only carry traffic channels** (Cambridge, RTL-2832/R828D
+  20260003: 141 warnings in 4.8 hours, 36 ms to 2.9 s each).  The fork keeps an RTL tuner's stream running while it
+  has no channels and discards those samples on arrival (edacs-10, the Monson crash fix).  Upstream's sample drop
+  monitor (#2662) counts only the samples passed on to channels, so each idle gap of under 2 seconds between traffic
+  channels was reported as samples lost on the USB bus.  The discarded samples are now counted too.  A real USB
+  drop still shows, as a shortfall in the samples arriving.
+
+### Trial of ap-5
+- Somerville, Summit 800, Cambridge and Audubon from about 10:45 on 2026-11-17, 4.7-4.9 hours each: no uncaught
+  exceptions, no decoder errors; Audubon closed twice on ap-5 (10:55, 15:10) with no errors.  Audubon DMR (OneVoice
+  Haverhill, Salem State) and NXDN (Georgetown) calls decode with audio; Georgetown recordings at normal level.
+
 ## [1.0.0-ap-5] - 2026-11-17
 
 Upstream's four changes of 17 November (02:25-06:51) and two shutdown fixes.

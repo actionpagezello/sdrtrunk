@@ -851,6 +851,22 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
     }
 
     /**
+     * AP-fork: counts samples the tuner received but discarded without broadcasting, so the sample drop monitor doesn't
+     * mistake them for samples lost on the USB bus.  The fork's RTL-2832 controller keeps its stream running while the
+     * tuner has no channels and drops those samples on arrival (edacs-10).  Counting only broadcast samples, the monitor
+     * reported every short idle gap between traffic channels as dropped samples (Cambridge, 2026-11-17: 141 warnings in
+     * 4.8 hours on the tuner carrying only P25 traffic channels).
+     * @param sampleCount number of complex samples received and discarded
+     */
+    protected void countDiscardedSamples(int sampleCount)
+    {
+        if(mSampleDropMonitor != null)
+        {
+            mSampleDropMonitor.process(sampleCount);
+        }
+    }
+
+    /**
      * Broadcasts the buffer to any registered listeners
      */
     protected void broadcast(INativeBuffer complexSamples)
