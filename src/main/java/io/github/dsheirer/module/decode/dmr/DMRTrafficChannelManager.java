@@ -151,6 +151,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     /**
      * Talker alias manager
      */
+    @Override
     public TalkerAliasManager getTalkerAliasManager()
     {
         return mTalkerAliasManager;
