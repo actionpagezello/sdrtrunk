@@ -428,6 +428,10 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
         columns.add(NowPlayingCells.column("channel.name", "Channel Name", null, Pos.CENTER,
             row -> toText(row.getChannelMetadata().getChannelNameConfigurationIdentifier()), Row::revisionProperty));
 
+        //Alias list from the channel configuration
+        columns.add(NowPlayingCells.column("alias.list", "Alias List", null, Pos.CENTER,
+            row -> toText(row.getChannelMetadata().getAliasListConfigurationIdentifier()), Row::revisionProperty));
+
         //AP-fork: the columns sort, as in the fork's Swing table; text sorts without regard to case.  Unsorted, the
         //rows are in channel start order.
         for(TableColumn<Row,?> column: columns)
@@ -435,8 +439,8 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
             setTextComparator(column);
         }
 
-        //Column numbers in the Swing version of the table, for its stored column widths.  Talker, Tuner, System and Site are new
-        //columns.
+        //Column numbers in the Swing version of the table, for its stored column widths.  Talker, Tuner, System, Site and Alias
+        //List are new columns.
         String[] swingColumns = {"status", "decoder", "from", "from.alias", "to", "to.alias", "channel", "frequency",
             "channel.name"};
 
@@ -497,7 +501,7 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
     {
         switch(column.getId())
         {
-            case "decoder", "from", "talker", "to", "channel", "tuner", "system", "site", "channel.name" ->
+            case "decoder", "from", "talker", "to", "channel", "tuner", "system", "site", "channel.name", "alias.list" ->
                 ((TableColumn<Row,String>)column).setComparator((a, b) -> {
                     if(a == null || b == null)
                     {
