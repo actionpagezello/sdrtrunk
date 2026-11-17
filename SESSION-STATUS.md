@@ -3,12 +3,17 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Update 2026-11-16 22:10: `1.0.0-ap-4`
+
+Right-click on Now Playing channels didn't open in ap-3 (upstream bug in the new JavaFX table: an empty ContextMenu
+never shows, so its onShowing never ran).  ap-4 builds the menu from a right-click event filter on the row.
+
 ## Current state 2026-11-16 17:30: `1.0.0-ap-3` built in the workspace, ap-2 on five machines
 
 **ap-3** = ap-2 + upstream's 15 changes after 1.0.0 (`73fc85aa`..`6dd06288`, cherry-picked in order; each commit
 names its upstream hash and the fork's adjustments) + talkgroup box and codec slider widths + sample drop monitor
-off for Airspy/HydraSDR + these documents.  Delivered as `logs\ap-1.0.0-ap-3-series.patch` (18 commits).  The
-single-commit `ap-1.0.0-ap-3.patch` sent earlier the same afternoon is superseded and must not be applied.
+off for Airspy/HydraSDR + these documents.  Delivered as `logs\ap-1.0.0-ap-3.patch` (18 commits),
+applied and pushed 2026-11-16 21:50 (`f91b64aa`).  Running on Somerville and Summit 800 from about 21:55.
 Biggest change: upstream rebuilt Now Playing in JavaFX and deleted the Swing panels; the fork's Now Playing features
 were ported to the new views (see CHANGELOG).  Tests 558 pass; P25/EDACS/Type II/ProVoice replays identical to ap-2.
 

@@ -5,6 +5,14 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-4] - 2026-11-16
+
+### Fixed
+- **Right-click on a Now Playing channel did nothing** (Somerville and Summit 800, first minutes of ap-3).  Upstream's
+  new channel table (#2660) builds the menu as it opens, but JavaFX doesn't open a menu that is empty, so the menu
+  never opened and was never built.  The menu is now built when the row is right-clicked, before it opens.  Also wrong
+  in upstream.  Checked under a virtual display: the old way opens nothing, the new way opens the menu.
+
 ## [1.0.0-ap-3] - 2026-11-16
 
 Upstream's 15 changes after the 1.0.0 release (13-16 November), with the fork carried over where they meet, and the

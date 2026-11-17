@@ -71,6 +71,7 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -281,7 +282,10 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
     {
         TableRow<Row> tableRow = new TableRow<>();
         ContextMenu contextMenu = new ContextMenu();
-        contextMenu.setOnShowing(event -> {
+        //AP-fork: the menu is built when the user right-clicks, before the row's own handler shows it.  Upstream built
+        //it in the menu's onShowing, but ContextMenu.show() returns without showing (or firing onShowing) when the menu
+        //has no items, so the right-click never opened.
+        tableRow.addEventFilter(ContextMenuEvent.CONTEXT_MENU_REQUESTED, event -> {
             contextMenu.getItems().clear();
             Row row = tableRow.getItem();
             Channel channel = row != null ? mChannelMetadataModel.getChannelFromMetadata(row.getChannelMetadata()) : null;
