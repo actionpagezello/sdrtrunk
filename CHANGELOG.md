@@ -5,6 +5,26 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-8] - 2026-11-18
+
+Upstream's four changes of 18 November (02:12-03:47) other than the channelizer change, which is ap-9.
+
+### Added from upstream
+- **New Map tab** (#2681): rebuilt in JavaFX like the other new screens, replacing the old Swing map viewer.
+  OpenStreetMap tiles with a memory and disk cache (up to 512 MB, filled only when the Map tab is used), radio tracks,
+  the Radio Reference tower pins with their hover card and right-click menu, your location, and the map controls.
+  Map settings are kept in Java preferences, not the playlist, so build 25 and ap-7 still load the playlist.
+- **NXDN Type-D audio** (#2688): audio of new and late-joined calls handled correctly; call responses read correctly
+  on multi-system networks.
+- **Talker aliases** (#2689): the automatic talker-alias renaming (ap-5) only touches aliases in its own Talker Alias
+  group; aliases you made yourself are left alone, without duplicates.
+- **Display theme** (#2673): the font size preference works together with the display theme.
+
+### Checks
+- Tests: 595, all pass.
+- Replays identical to ap-5: DMR (Salem State Police, OneVoice Boston) and NXDN (Georgetown).  These recordings hold
+  no NXDN call responses, the message #2688 changes.
+
 ## [1.0.0-ap-7] - 2026-11-17
 
 ### Status
