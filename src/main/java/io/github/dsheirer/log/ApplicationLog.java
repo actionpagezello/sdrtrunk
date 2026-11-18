@@ -29,6 +29,7 @@ import com.google.common.eventbus.Subscribe;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.preference.PreferenceType;
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.preference.diagnostics.DiagnosticsCategory;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Path;
@@ -160,8 +161,35 @@ public class ApplicationLog
             mLog.info(" Event Log:        " + mUserPreferences.getDirectoryPreference().getDirectoryEventLog());
             mLog.info(" Playlist:         " + mUserPreferences.getDirectoryPreference().getDirectoryPlaylist());
             mLog.info(" Recordings:       " + mUserPreferences.getDirectoryPreference().getDirectoryRecording());
+            logDiagnostics();
         }
 
+    }
+
+    /**
+     * AP-fork (1.0.0-ap-7): lists the Diagnostics categories that are on.  The settings are applied when the user
+     * preferences load, before this log file opens, so without this line the log doesn't show which extra detail a
+     * machine writes.
+     */
+    private void logDiagnostics()
+    {
+        StringBuilder on = new StringBuilder();
+        StringBuilder off = new StringBuilder();
+
+        for(DiagnosticsCategory category: DiagnosticsCategory.values())
+        {
+            StringBuilder target = mUserPreferences.getDiagnosticsPreference().isEnabled(category) ? on : off;
+
+            if(!target.isEmpty())
+            {
+                target.append(", ");
+            }
+
+            target.append(category.getDisplayName());
+        }
+
+        mLog.info("Diagnostics on:   " + (on.isEmpty() ? "none" : on));
+        mLog.info("Diagnostics off:  " + (off.isEmpty() ? "none" : off));
     }
 
     /**

@@ -351,7 +351,8 @@ public class EDACSDecoderState extends DecoderState implements IHeartbeatListene
         {
             mTrafficStarted = false;
             long frequency = mFrequency != 0 ? mFrequency : getCurrentFrequency();
-            LOGGER.info(String.format("EDACS call TO:%s FROM:%s on %s - voice channel open %.1f s, " +
+            //AP-fork (1.0.0-ap-7): DEBUG - per-call detail, written when its Diagnostics category is on
+            LOGGER.debug(String.format("EDACS call TO:%s FROM:%s on %s - voice channel open %.1f s, " +
                     "audio %.1f s%s", first(Role.TO), first(Role.FROM), format(frequency),
                 (mClock.getAsLong() - mTrafficStart) / 1000.0, mAudioSamples / AUDIO_SAMPLE_RATE,
                 (mVoiceFrames > 0 ? String.format(", damaged frames %d of %d (%.1f%%)", mConcealedFrames,

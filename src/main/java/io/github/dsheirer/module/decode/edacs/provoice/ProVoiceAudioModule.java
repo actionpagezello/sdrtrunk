@@ -125,7 +125,8 @@ public class ProVoiceAudioModule extends ImbeAudioModule
         {
             audioSegment.setSilent(true);
             mSilentSegmentCount++;
-            LOGGER.info(String.format("ProVoice transmission TO:%s FROM:%s was silence throughout (%.1f s, loudest " +
+            //AP-fork (1.0.0-ap-7): DEBUG - per-call detail, written when its Diagnostics category is on
+            LOGGER.debug(String.format("ProVoice transmission TO:%s FROM:%s was silence throughout (%.1f s, loudest " +
                     "sample %.4f of full scale) - not recorded, not streamed",
                 audioSegment.getIdentifierCollection().getToIdentifier(),
                 audioSegment.getIdentifierCollection().getFromIdentifier(), mSegmentFrames * 0.02, mSegmentPeak));

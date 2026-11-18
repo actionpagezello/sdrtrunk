@@ -147,7 +147,8 @@ public class P25P1AudioModule extends ImbeAudioModule
             //Identifiers are for the log line only
         }
 
-        mLog.info("P25 Phase 1 call on [{}] to [{}] closed after {} ms without audio - {} - open {} ms with {} ms of " +
+        //AP-fork (1.0.0-ap-7): DEBUG - per-call detail, written when its Diagnostics category is on
+        mLog.debug("P25 Phase 1 call on [{}] to [{}] closed after {} ms without audio - {} - open {} ms with {} ms of " +
                 "audio", channel, to, idleMs, mCallStateOpen ? "the channel had the call open but had not ended it" :
                 "the channel never registered the call (no decoded header, link control or encryption sync)",
                 openMs, audioMs);

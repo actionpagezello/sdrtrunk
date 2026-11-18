@@ -711,7 +711,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
             setLastErrorDetail(null);
         }
 
-        mLog.info("{}Zello stream started", ch());
+        mLog.debug("{}Zello stream started", ch()); //AP-fork (1.0.0-ap-7): DEBUG - per-call detail, written when its Diagnostics category is on
     }
 
     @Override
@@ -909,7 +909,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
                 mPauseUntilTime = 0;
                 mStreamGuardUntilTime = 0;
                 mPendingStreamStart = false;
-                mLog.info("{}Zello stream stopped", ch());
+                mLog.debug("{}Zello stream stopped", ch()); //AP-fork (1.0.0-ap-7): DEBUG - per-call detail, written when its Diagnostics category is on
 
                 if(!mPooledMode)
                 {
@@ -930,7 +930,7 @@ public abstract class AbstractZelloBroadcaster<T extends BroadcastConfiguration>
 
         scheduleStreamCooldown(0);
 
-        mLog.info("{}Zello stream stopped", ch());
+        mLog.debug("{}Zello stream stopped", ch()); //AP-fork (1.0.0-ap-7): DEBUG - per-call detail, written when its Diagnostics category is on
     }
 
     /**

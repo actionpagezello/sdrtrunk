@@ -1489,7 +1489,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         double coverage = mCoverageCallSamples > 0 ? (double)mCoverageToneSamples / mCoverageCallSamples : 0.0;
         boolean keep = coverage >= TONE_COVERAGE_THRESHOLD;
 
-        mLog.info("[{}] Tone coverage (measurement only): call {}s ({}s before confirmation + {}s after), target tone " +
+        //AP-fork (1.0.0-ap-7): DEBUG - per-call detail, written when its Diagnostics category is on
+        mLog.debug("[{}] Tone coverage (measurement only): call {}s ({}s before confirmation + {}s after), target tone " +
                         "confirmed for {}s of the {}s after ({}%) - a {}% rule would {} this call", mChannelLabel,
                 String.format("%.1f", buffered + seconds), String.format("%.1f", buffered),
                 String.format("%.1f", seconds), String.format("%.1f", toneSeconds), String.format("%.1f", seconds),

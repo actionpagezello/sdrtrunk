@@ -5,6 +5,23 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-7] - 2026-11-17
+
+### Changed
+- **The log keeps only what is needed; per-call detail moves behind the Diagnostics tick boxes.**  Now DEBUG, written
+  when the category is on:
+  - Zello stream started / stopped (Zello streaming, on by default): ~17,000 lines in 5 hours on Somerville.
+  - EDACS call summary, "voice channel open ... audio ... damaged frames" (EDACS / ProVoice decoder).
+  - Motorola Type II call summary (Motorola Type II decoder).
+  - ProVoice "silence throughout - not recorded" (EDACS / ProVoice decoder).
+  - NBFM "Tone coverage (measurement only)", one per call (CTCSS / DCS squelch codes).
+  - P25 Phase 1 "call closed after ... without audio" (P25 decoder).
+  Still INFO: call lines (who, when, streams), warnings and errors, the 10-minute P25 health and sync summaries,
+  tuner frequency error, start-up and shutdown.  `tools/fleetcheck.py` needs Zello streaming on to check for wedged
+  Zello streams (it is on unless turned off).
+- **The log lists the Diagnostics categories that are on and off** after the storage directories at start-up.  They
+  are applied before the log file opens, so the log didn't show them.
+
 ## [1.0.0-ap-6] - 2026-11-17
 
 ### Fixed
