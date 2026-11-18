@@ -5,6 +5,31 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-9] - 2026-11-18
+
+Upstream's channelizer buffer change (#2672) of 18 November, on its own because it affects how samples flow from
+every tuner.  Builds on ap-8.
+
+### Changed from upstream, merged with the fork's own queue fix
+- **The queue between a tuner and its channels is sized by time, not by buffer count.**  It held 500 buffers, which
+  is about 85 ms at an RSP's buffer size but about 6.8 s at an RTL-SDR's, so a short processing stall dropped
+  samples on RSP tuners.  The queue now holds 2 seconds of samples on every tuner (upstream uses 1 second; the fork
+  keeps the 2 seconds it has run with since ap-15.9.1).
+- **Until a tuner reports its sample rate, the queue starts with a generous provisional size** (2 seconds at
+  10 MSPS), as the fork did since ap-15.9.1.  Upstream sizes it from the rate when it is still zero, which would
+  start the queue at a single sample - the cause of the RSP1B sample starvation fixed in ap-15.9.1.
+- **RSP tuners reported twice the samples they delivered** (upstream fix).  This corrects upstream's sample drop
+  monitor on RSP1B machines (Daly, Somerville, Audubon) and the spectral display's buffer handling.
+- **Channels copy only their own samples** out of the channelizer's output (upstream), so a slow channel queues only
+  its own data and the shared sample arrays go back to the channelizer straight away.
+- Queue overflow warnings still name the tuner and report the bound, now in samples.
+
+### Checks
+- Tests: 600, all pass, including upstream's queue and channel batch tests and a fork test for changing the queue
+  bound while running (provisional bound to real bound).
+- The replays feed decoders directly, so they don't exercise this change; it needs a trial on tuners - an RSP1B
+  machine (Daly or Somerville) and Cambridge (RTL-SDR and RSP).
+
 ## [1.0.0-ap-8] - 2026-11-18
 
 Upstream's four changes of 18 November (02:12-03:47) other than the channelizer change, which is ap-9.
