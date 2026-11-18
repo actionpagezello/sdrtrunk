@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.ToLongFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +46,12 @@ import org.slf4j.LoggerFactory;
  * that never block: without a bound, a consumer stall converts directly into unbounded heap growth, and because queued
  * elements are strongly reachable they are live objects that the garbage collector cannot reclaim.  Dropping the oldest
  * elements is the correct policy for real-time DSP, where the newest samples are the useful ones.
+ *
+ * AP-fork (1.0.0-ap-9): a dispatcher can instead be bounded by the total weight of its queued elements (upstream
+ * #2672), for elements whose sizes vary widely - the polyphase channelizer weighs tuner buffers by sample count so that
+ * every tuner gets the same duration of queue.  Weight-bounded queues follow upstream: an element that would take the
+ * queue past its maximum weight is refused (unless nothing is queued), and elements keep their weight until the
+ * listener has processed them.  Count-bounded queues keep the fork's discard-oldest policy above.
  */
 public class Dispatcher<E> implements Listener<E>
 {
@@ -99,6 +106,13 @@ public class Dispatcher<E> implements Listener<E>
      * backlogged queue is not copied into a freshly allocated list on every processing interval.
      */
     private final List<E> mDrainList;
+
+    /**
+     * AP-fork (1.0.0-ap-9, upstream #2672): weigher for a weight-bounded queue, or null for a count-bounded queue.
+     */
+    private final ToLongFunction<E> mWeigher;
+    private volatile long mMaximumQueuedWeight = Long.MAX_VALUE;
+    private final AtomicLong mQueuedWeight = new AtomicLong();
 
     //Overflow reporting state.  Accessed only from the processor thread.
     private long mLastDropLogTimestamp;
@@ -168,6 +182,103 @@ public class Dispatcher<E> implements Listener<E>
         mInterval = interval;
         mMaxQueueSize = maxQueueSize;
         mDrainList = new ArrayList<>(Math.min(maxQueueSize, 1024));
+        mWeigher = null;
+    }
+
+    /**
+     * AP-fork (1.0.0-ap-9, upstream #2672): constructs an instance that is bounded by the total weight of the queued
+     * elements instead of the element count, for when element sizes vary widely, for example sample buffers from
+     * different tuners.  An element is refused when adding it would exceed the maximum weight, except when nothing is
+     * queued, so that an element heavier than the maximum is still delivered.  Elements count toward the weight until
+     * the listener has processed them.
+     *
+     * @param threadName to name the dispatcher thread
+     * @param interval for processing each batch in milliseconds.
+     * @param weigher to calculate the weight of each element, for example a sample count.
+     * @param maximumQueuedWeight for the queued elements.
+     */
+    public Dispatcher(String threadName, long interval, ToLongFunction<E> weigher, long maximumQueuedWeight)
+    {
+        if(weigher == null)
+        {
+            throw new IllegalArgumentException("Weigher cannot be null");
+        }
+
+        mThreadName = threadName;
+        mInterval = interval;
+        mMaxQueueSize = Integer.MAX_VALUE;
+        mDrainList = new ArrayList<>(1024);
+        mWeigher = weigher;
+        setMaximumQueuedWeight(maximumQueuedWeight);
+    }
+
+    /**
+     * AP-fork (1.0.0-ap-9, upstream #2672): sets the maximum total weight of the queued elements, for a dispatcher
+     * that was constructed with a weigher.  Safe to call while running.
+     * @param maximumQueuedWeight for the queued elements, greater than zero.
+     */
+    public void setMaximumQueuedWeight(long maximumQueuedWeight)
+    {
+        if(maximumQueuedWeight <= 0)
+        {
+            throw new IllegalArgumentException("Maximum queued weight must be positive: " + maximumQueuedWeight);
+        }
+
+        long previous = mMaximumQueuedWeight;
+        mMaximumQueuedWeight = maximumQueuedWeight;
+
+        if(previous != Long.MAX_VALUE && previous != maximumQueuedWeight)
+        {
+            mLog.info("Dispatcher [{}] queue bound changed from [{}] to [{}]", mThreadName, previous,
+                    maximumQueuedWeight);
+        }
+    }
+
+    /**
+     * Maximum total weight of queued elements, or Long.MAX_VALUE for a count-bounded dispatcher.
+     */
+    public long getMaximumQueuedWeight()
+    {
+        return mMaximumQueuedWeight;
+    }
+
+    /**
+     * Total weight of the elements queued or being processed, zero for a count-bounded dispatcher.
+     */
+    public long getQueuedWeight()
+    {
+        return mQueuedWeight.get();
+    }
+
+    /**
+     * Adds the element to a weight-bounded queue if its weight fits.  Returns false and counts a drop if it doesn't.
+     */
+    private boolean queueWeighted(E e)
+    {
+        long weight = mWeigher.applyAsLong(e);
+        long queuedWeight = mQueuedWeight.addAndGet(weight);
+
+        if(queuedWeight > mMaximumQueuedWeight && queuedWeight > weight)
+        {
+            mQueuedWeight.addAndGet(-weight);
+            mDropCount.incrementAndGet();
+            return false;
+        }
+
+        mQueue.add(e);
+        mQueueSize.incrementAndGet();
+        return true;
+    }
+
+    /**
+     * Removes the weight of a processed element from the queued weight (weight-bounded queues only).
+     */
+    private void release(E element)
+    {
+        if(mWeigher != null)
+        {
+            mQueuedWeight.addAndGet(-mWeigher.applyAsLong(element));
+        }
     }
 
     /**
@@ -253,6 +364,11 @@ public class Dispatcher<E> implements Listener<E>
             return false;
         }
 
+        if(mWeigher != null)
+        {
+            return queueWeighted(e);
+        }
+
         if(mQueueSize.get() >= mMaxQueueSize)
         {
             mDropCount.incrementAndGet();
@@ -275,6 +391,12 @@ public class Dispatcher<E> implements Listener<E>
     {
         if(mRunning.get())
         {
+            if(mWeigher != null)
+            {
+                queueWeighted(e);
+                return;
+            }
+
             mQueue.add(e);
 
             if(mQueueSize.incrementAndGet() > mMaxQueueSize)
@@ -326,6 +448,7 @@ public class Dispatcher<E> implements Listener<E>
 
             mQueue.clear();
             mQueueSize.set(0);
+            mQueuedWeight.set(0);
             mExecutorService = Executors.newSingleThreadScheduledExecutor(new NamingThreadFactory(mThreadName));
 
             Runnable r = (mHeartbeatManager != null ? new ProcessorWithHeartbeat() : new Processor());
@@ -348,6 +471,7 @@ public class Dispatcher<E> implements Listener<E>
                 mScheduledFuture = null;
                 mQueue.clear();
                 mQueueSize.set(0);
+                mQueuedWeight.set(0);
             }
 
             if(mExecutorService != null)
@@ -402,11 +526,14 @@ public class Dispatcher<E> implements Listener<E>
                                 mListener.getClass() + "]", t);
                     }
                 }
+
+                release(element);
             }
 
             //Anything beyond the bound is discarded rather than flushed - this is a shutdown path.
             mQueue.clear();
             mQueueSize.set(0);
+            mQueuedWeight.set(0);
         }
     }
 
@@ -448,6 +575,8 @@ public class Dispatcher<E> implements Listener<E>
                             mListener.getClass() + "]", t);
                 }
             }
+
+            release(element);
         }
 
         //Release references to the dispatched batch so it can be collected before the next interval.
@@ -470,15 +599,26 @@ public class Dispatcher<E> implements Listener<E>
 
             if(!mDropEpisodeActive || (now - mLastDropLogTimestamp) >= DROP_LOG_INTERVAL_MS)
             {
-                mLog.warn("Dispatcher [{}] queue overflow - discarded [{}] oldest elements ([{}] total) - consumer is " +
-                        "not keeping pace with producer - queue bound is [{}] elements", mThreadName,
-                        (drops - mDropCountAtLastLog), drops, mMaxQueueSize);
+                if(mWeigher != null)
+                {
+                    mLog.warn("Dispatcher [{}] queue overflow - refused [{}] newest elements ([{}] total) - consumer " +
+                            "is not keeping pace with producer - queue bound is [{}] samples", mThreadName,
+                            (drops - mDropCountAtLastLog), drops, mMaximumQueuedWeight);
+                }
+                else
+                {
+                    mLog.warn("Dispatcher [{}] queue overflow - discarded [{}] oldest elements ([{}] total) - consumer is " +
+                            "not keeping pace with producer - queue bound is [{}] elements", mThreadName,
+                            (drops - mDropCountAtLastLog), drops, mMaxQueueSize);
+                }
                 mLastDropLogTimestamp = now;
                 mDropCountAtLastLog = drops;
                 mDropEpisodeActive = true;
             }
         }
-        else if(mDropEpisodeActive && mQueueSize.get() < (mMaxQueueSize * RECOVERY_THRESHOLD))
+        else if(mDropEpisodeActive && (mWeigher != null ?
+                mQueuedWeight.get() < (mMaximumQueuedWeight * RECOVERY_THRESHOLD) :
+                mQueueSize.get() < (mMaxQueueSize * RECOVERY_THRESHOLD)))
         {
             mLog.info("Dispatcher [{}] queue recovered - [{}] elements discarded in total", mThreadName, drops);
             mDropEpisodeActive = false;

@@ -68,29 +68,25 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
     private final static Logger mLog = LoggerFactory.getLogger(PolyphaseChannelManager.class);
     private static final double CHANNEL_OVERSAMPLING = 2.0;
     private static final int POLYPHASE_CHANNELIZER_TAPS_PER_CHANNEL = 9;
-    private static final int MAXIMUM_QUEUED_NATIVE_BUFFERS = 500;
-
     /**
-     * Backlog of tuner sample buffers, in seconds, that the buffer dispatcher will queue before discarding the
-     * oldest.  Sized to absorb a normal garbage collection pause without dropping samples, while bounding heap growth
-     * when the consumer stalls for longer than that.
+     * Backlog of tuner samples, in seconds, that the buffer dispatcher will queue before refusing new buffers.  Sized
+     * to absorb a normal garbage collection pause without dropping samples, while bounding heap growth when the
+     * consumer stalls for longer than that.
+     *
+     * AP-fork (1.0.0-ap-9): the queue is bounded by sample count (upstream #2672) instead of buffer count, because
+     * tuner buffer sizes vary widely - about 1,000 samples per RSP buffer, 32,768 per RTL-SDR buffer - so each tuner
+     * absorbs a delay of the same duration.  The fork keeps its 2 second backlog (upstream uses 1 second).
      */
     private static final double BUFFER_QUEUE_DURATION_SECONDS = 2.0;
 
     /**
-     * Absolute bounds on the buffer dispatcher queue size, in elements.  The upper bound exists so that a tuner
-     * reporting an implausible buffer rate cannot size the queue into an out-of-memory condition: at the RSP1B's
-     * 128-sample buffers this ceiling is roughly 100 MB.
+     * Provisional bound used before the tuner reports a sample rate, in samples.  Deliberately generous: an
+     * under-sized bound discards samples, while an over-sized one only costs memory for the short window before the
+     * real rate arrives.  Sized for the fastest tuner currently supported (10 MSPS).  Upstream #2672 derives the bound
+     * from the rate at construction, which is usually still zero, so its bound starts at one sample - the same trap
+     * that starved the RSP1B in ap-15.8.1 (fixed by the fork in ap-15.9.1).
      */
-    private static final int MINIMUM_BUFFER_QUEUE_SIZE = 32;
-    private static final int MAXIMUM_BUFFER_QUEUE_SIZE = 200_000;
-
-    /**
-     * Provisional bound used before the tuner reports a sample rate.  Deliberately generous: an under-sized bound
-     * discards samples, while an over-sized one only costs memory for the short window before the real rate arrives.
-     * Sized for the fastest tuner currently supported (an RSP at 10 MSPS with 128-sample buffers, 78,125/second).
-     */
-    private static final int UNKNOWN_RATE_BUFFER_QUEUE_SIZE = 160_000;
+    private static final long UNKNOWN_RATE_QUEUED_SAMPLES = (long)(10_000_000 * BUFFER_QUEUE_DURATION_SECONDS);
 
     private Broadcaster<SourceEvent> mSourceEventBroadcaster = new Broadcaster<>();
     private TunerController mTunerController;
@@ -100,7 +96,7 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
     private ComplexPolyphaseChannelizerM2 mPolyphaseChannelizer;
     private ChannelSourceEventListener mChannelSourceEventListener = new ChannelSourceEventListener();
     private NativeBufferReceiver mNativeBufferReceiver = new NativeBufferReceiver();
-    private Dispatcher mBufferDispatcher;
+    private Dispatcher<INativeBuffer> mBufferDispatcher;
     private boolean mRunning = true;
 
     /**
@@ -121,13 +117,14 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
 
         mChannelCalculator = new ChannelCalculator(tunerController.getSampleRate(), channelCount,
                 tunerController.getFrequency(), CHANNEL_OVERSAMPLING);
-        //Bound the queue to BUFFER_QUEUE_DURATION_SECONDS of tuner buffers, derived from the tuner's own buffer rate
-        //so that it scales correctly across tuner types.
+        //Bound the queue to BUFFER_QUEUE_DURATION_SECONDS of tuner samples.  Weighing buffers by sample count
+        //(upstream #2672) scales correctly across tuner types whatever their buffer size.
         //
         //Name the dispatcher after the tuner so that queue overflow warnings identify which device is affected -
         //every tuner previously shared the name "sdrtrunk polyphase buffer processor".
-        mBufferDispatcher = new Dispatcher("sdrtrunk polyphase buffer processor [" +
-                tunerController.getClass().getSimpleName() + "]", 10, UNKNOWN_RATE_BUFFER_QUEUE_SIZE);
+        mBufferDispatcher = new Dispatcher<>("sdrtrunk polyphase buffer processor [" +
+                tunerController.getClass().getSimpleName() + "]", 10, INativeBuffer::sampleCount,
+                UNKNOWN_RATE_QUEUED_SAMPLES);
         mBufferDispatcher.setListener(mNativeBufferReceiver);
 
         //Note: the tuner's sample rate is usually NOT known here.  PolyphaseChannelSourceManager constructs this
@@ -141,46 +138,28 @@ public class PolyphaseChannelManager implements ISourceEventProcessor
     }
 
     /**
-     * Derives and applies the buffer dispatcher's queue bound from the tuner's sample rate.
-     *
-     * The bound is BUFFER_QUEUE_DURATION_SECONDS worth of tuner buffers, computed from the buffer rate in floating
-     * point.  Do not route this through TunerController.getBufferDuration(): it returns a long and truncates to zero
-     * for any tuner delivering buffers faster than 1 kHz.
+     * Derives and applies the buffer dispatcher's queue bound from the tuner's sample rate:
+     * BUFFER_QUEUE_DURATION_SECONDS of samples.
      *
      * @param sampleRate reported by the tuner, in Hz.  Zero or negative means "not yet known" - the provisional bound
      * is left in place rather than collapsing to the floor.
      */
     private void updateBufferQueueBound(double sampleRate)
     {
-        int bufferSampleCount = Math.max(1, mTunerController.getBufferSampleCount());
-
         if(sampleRate <= 0)
         {
             mLog.info("Polyphase buffer dispatcher for [{}] - tuner has not reported a sample rate yet - holding " +
-                    "provisional queue bound of [{}] elements until it does",
-                    mTunerController.getClass().getSimpleName(), UNKNOWN_RATE_BUFFER_QUEUE_SIZE);
+                    "provisional queue bound of [{}] samples until it does",
+                    mTunerController.getClass().getSimpleName(), UNKNOWN_RATE_QUEUED_SAMPLES);
             return;
         }
 
-        double buffersPerSecond = sampleRate / bufferSampleCount;
-        int maxQueueSize = (int)Math.max(MINIMUM_BUFFER_QUEUE_SIZE, Math.min(MAXIMUM_BUFFER_QUEUE_SIZE,
-                buffersPerSecond * BUFFER_QUEUE_DURATION_SECONDS));
+        long maxQueuedSamples = Math.max(1, (long)(sampleRate * BUFFER_QUEUE_DURATION_SECONDS));
+        mBufferDispatcher.setMaximumQueuedWeight(maxQueuedSamples);
 
-        mBufferDispatcher.setMaxQueueSize(maxQueueSize);
-
-        mLog.info("Polyphase buffer dispatcher for [{}] at [{}] MSPS - [{}] buffers/second ([{}] samples each) - " +
-                "queue bounded at [{}] elements ({} seconds)", mTunerController.getClass().getSimpleName(),
-                FREQUENCY_FORMAT.format(sampleRate / 1E6d), (long)buffersPerSecond, bufferSampleCount, maxQueueSize,
-                String.format("%.2f", maxQueueSize / buffersPerSecond));
-
-        if(maxQueueSize <= MINIMUM_BUFFER_QUEUE_SIZE)
-        {
-            mLog.warn("Polyphase buffer dispatcher for [{}] is pinned to its MINIMUM bound of [{}] elements at [{}] " +
-                    "buffers/second - that is only {} ms of queue and this tuner will discard samples. This indicates " +
-                    "a sizing defect, not an overload condition.", mTunerController.getClass().getSimpleName(),
-                    maxQueueSize, (long)buffersPerSecond,
-                    String.format("%.2f", maxQueueSize / buffersPerSecond * 1000.0));
-        }
+        mLog.info("Polyphase buffer dispatcher for [{}] at [{}] MSPS - queue bounded at [{}] samples ({} seconds)",
+                mTunerController.getClass().getSimpleName(), FREQUENCY_FORMAT.format(sampleRate / 1E6d),
+                maxQueuedSamples, String.format("%.2f", BUFFER_QUEUE_DURATION_SECONDS));
     }
 
     /**

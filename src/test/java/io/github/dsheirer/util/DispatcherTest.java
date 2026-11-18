@@ -175,4 +175,87 @@ public class DispatcherTest
 
         assertEquals(101, received.size());
     }
+
+    /**
+     * Test: a weight-bounded queue drops elements that would exceed the maximum weight and keeps lighter ones.
+     */
+    @Test
+    void weightBoundedQueueDropsElementsOverMaximumWeight() throws Exception
+    {
+        //Each element weighs its own value: 1 + 2 + 3 = 6 is queued, then 4 would exceed 6 and is dropped, then 0 fits
+        Dispatcher<Integer> dispatcher = new Dispatcher<>("test", 1, Integer::longValue, 6);
+        List<Integer> received = dispatchWhileBlocked(dispatcher, 4);
+        dispatcher.receive(0);
+        awaitSize(received, 5);
+        Thread.sleep(50);
+        dispatcher.stop();
+
+        assertEquals(List.of(0, 1, 2, 3, 0), received);
+    }
+
+    /**
+     * Test: an element heavier than the maximum weight is delivered when nothing else is queued.
+     */
+    @Test
+    void weightBoundedQueueAcceptsHeavyElementWhenEmpty() throws Exception
+    {
+        Dispatcher<Integer> dispatcher = new Dispatcher<>("test", 1, Integer::longValue, 6);
+        List<Integer> received = dispatchWhileBlocked(dispatcher, 0);
+        dispatcher.receive(100);
+        dispatcher.receive(1);
+        awaitSize(received, 2);
+        Thread.sleep(50);
+        dispatcher.stop();
+
+        assertEquals(List.of(0, 100), received);
+    }
+
+    /**
+     * Test: processed elements release their weight so that the queue accepts new elements after an overflow.
+     */
+    @Test
+    void weightBoundedQueueRecoversAfterOverflow() throws Exception
+    {
+        Dispatcher<Integer> dispatcher = new Dispatcher<>("test", 1, Integer::longValue, 6);
+        List<Integer> received = dispatchWhileBlocked(dispatcher, 10);
+        awaitSize(received, 4);
+        Thread.sleep(50);
+
+        for(int x = 0; x < 3; x++)
+        {
+            dispatcher.receive(5);
+            awaitSize(received, 5 + x);
+        }
+
+        dispatcher.stop();
+
+        assertEquals(List.of(0, 1, 2, 3, 5, 5, 5), received);
+    }
+
+    /**
+     * Test: AP-fork (1.0.0-ap-9) - the polyphase channelizer starts its weight-bounded queue with a generous
+     * provisional bound and replaces it with the real bound once the tuner reports a sample rate.  Lowering the bound
+     * while running takes effect for the next element and a later raise lets heavier backlogs through again.
+     */
+    @Test
+    void weightBoundCanBeChangedWhileRunning() throws Exception
+    {
+        Dispatcher<Integer> dispatcher = new Dispatcher<>("test", 1, Integer::longValue, 1_000);
+        assertEquals(1_000, dispatcher.getMaximumQueuedWeight());
+        dispatcher.setMaximumQueuedWeight(6);
+        List<Integer> received = dispatchWhileBlocked(dispatcher, 4);
+        awaitSize(received, 4);
+        Thread.sleep(50);
+        assertEquals(List.of(0, 1, 2, 3), received);
+
+        dispatcher.setMaximumQueuedWeight(100);
+        dispatcher.receive(50);
+        dispatcher.receive(40);
+        awaitSize(received, 6);
+        Thread.sleep(50);
+        dispatcher.stop();
+
+        assertEquals(List.of(0, 1, 2, 3, 50, 40), received);
+        assertEquals(0, dispatcher.getQueuedWeight());
+    }
 }
