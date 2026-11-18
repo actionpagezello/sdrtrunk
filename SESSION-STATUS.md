@@ -3,6 +3,30 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-18 10:15: `1.0.0-ap-8` and `1.0.0-ap-9` built in the workspace
+
+**ap-7 trial (overnight to 09:12, every Diagnostics box off from 22:30):** Cambridge sample-drop warnings 225 on ap-5
+-> 0 on ap-7 (ap-6 fix confirmed); "Diagnostics on / off" logged at start-up and every box change logged, no debug
+lines after unticking; overnight logs Somerville 4.4 MB (was 263 MB/day), Cambridge 5.3, Summit 800 3.9,
+Audubon 0.4; no exceptions; clean closes.  Summit 800 control-channel hunting jumped to 50-150 an hour after its
+22:19 restart (Nashua P25, EDACS, Type II on the one Airspy) - Armen had been adjusting the Airspy gain; Cambridge,
+same build, had none.  To set the gain back (Linearity 10) and send an hour of log.  EDACS will run on Cambridge;
+Nashua is the Summit 800 concern.
+
+**ap-8** (4 upstream commits of 18 Nov + version): JavaFX map redesign (#2681), NXDN Type-D audio (#2688), talker
+alias keeps user aliases (#2689), theme font scaling (#2673).  595 tests.
+**ap-9** (#2672 channelizer queue sized by samples, merged with the fork's ap-15.9.1 provisional bound; 2 s backlog;
+RSP sample count fix).  600 tests.  Needs a tuner trial: an RSP1B machine and Cambridge.
+
+**Rollout:** ap-7 to the fleet was cleared (Summit 800 hunting was the gain, not the build).  ap-9 is the next trial.
+
+**Open**
+- Stoneham (older build): every county stream (Middlesex, Essex, Norfolk County) MISSING since at least 11-16 -
+  aliases point to streams that don't exist; the 17XXX Middlesex talkgroups seen in Code 3 Stream match Stoneham.
+  Startup report + cleanup button for dead stream names: parked by Armen.
+- Stuck-call watchdog on tone-gated channels - recheck on 1.0.0 logs; DCS notch needs a DCS recording; Baker's 7
+  muted aliases; optional NBFM thresholds Somerville Police 0.16/0.16, Everett 0.16/0.25.
+
 ## Current state 2026-11-17 22:40: `1.0.0-ap-7` running on four machines
 
 **Running:** ap-7 on Somerville, Summit 800, Cambridge and Audubon from about 22:20, every Diagnostics box off (the
