@@ -178,7 +178,7 @@ import io.github.dsheirer.util.PacketUtil;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import org.jdesktop.swingx.mapviewer.GeoPosition;
+import io.github.dsheirer.map.GeoPosition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
