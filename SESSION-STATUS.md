@@ -3,7 +3,38 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
-## Current state 2026-11-17 09:30: `1.0.0-ap-5` built in the workspace
+## Current state 2026-11-17 22:40: `1.0.0-ap-7` running on four machines
+
+**Running:** ap-7 on Somerville, Summit 800, Cambridge and Audubon from about 22:20, every Diagnostics box off (the
+production setting).  Build 25 on Daly, Baker, SDR22; ap-2 on Monson and Paxton.
+
+**Branch:** `ap-1.0` pushed at `fdb289a0` (ap-7, tree `1a157a56`) + this docs commit.  Zip:
+`sdrtrunk-ap-versions\v1.0.0-ap-7\sdr-trunk-windows-x86_64-v1.0.0-ap-7.zip`.  Upstream master is `c46b80b0`, all
+taken; nothing newer.
+
+**Builds today:** ap-5 (upstream 17 Nov batch, shutdown fixes; trial clean on all four), ap-6 (RTL discarded samples
+counted by the sample drop monitor: Cambridge false warnings), ap-7 (log trimmed, Diagnostics state logged at
+start-up).  ap-8 (noise gate) withdrawn, never applied: every noise-reduction approach for Type II/EDACS analog
+voice was rejected by ear (see CHANGELOG ap-7 "Not added"); the audio stays as is.  The next build is still ap-8.
+
+**To check in the overnight logs**
+- Cambridge: no sample-drop warnings for RTL-2832/R828D `20260003` (the ap-6 fix).
+- All four: "Diagnostics on / off" after the storage directories; much shorter logs; no errors at a normal close.
+- Somerville: NBFM "Tone coverage" lines only while the NBFM box is ticked.
+
+**Rollout once ap-7 checks out:** back up `C:\Users\Admin\SDRTrunk` (playlist) on each machine first; Daly first
+(RSP1B, never on 1.0.0), then Baker, SDR22, Monson, Paxton; one log from each after the first day.  Build 25 stays
+the fallback for a week.
+
+**Open**
+- Stuck-call watchdog trips on tone-gated channels (Danvers Fire, Salem Fire Ch 2, Essex Police, Manchester BTS
+  Fire) - recheck on 1.0.0 logs.
+- DCS tone notch unmeasured - needs a DCS channel recording (Lynn Fire FG 3, Boxford Police).
+- Baker's 7 muted aliases - Armen to review.
+- Optional: NBFM thresholds Somerville Police 0.16/0.16, Everett Police 0.16/0.25 (Now Playing > Channel).
+- Upstream branch `2672-dispatcher-time-adaptive-buffer-sizing` not merged yet; look at it when it is.
+
+## Update 2026-11-17 09:30: `1.0.0-ap-5` built in the workspace: `1.0.0-ap-5` built in the workspace
 
 **Running:** ap-4 on Somerville and Summit 800 (clean overnight); ap-2 on Cambridge, Monson, Paxton; build 25 on Daly,
 Baker, SDR22.  Audubon runs ap-4 for DMR/NXDN tests (logs still to come; the first copy was Summit 800's).

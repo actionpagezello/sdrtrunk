@@ -7,6 +7,25 @@ counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is
 
 ## [1.0.0-ap-7] - 2026-11-17
 
+### Status
+- Applied, tested (`.\gradlew test`), built (`sdrtrunk-ap-versions\v1.0.0-ap-7`) and pushed 2026-11-17 22:05.
+  Running on Somerville, Summit 800, Cambridge and Audubon from about 22:20, with every Diagnostics box off.
+  Rollout to Daly (first), Baker, SDR22, Monson and Paxton once the overnight logs are checked; build 25 stays the
+  fallback for a week.
+
+### Not added
+- **Noise reduction for Motorola Type II and EDACS analog voice** (the Boston SmartZone background).  A noise gate
+  (`1.0.0-ap-8`, never applied) left the noise audible at the start of each call and pumping with the voice.  Also
+  tried on three Boston calls and rejected by ear: spectral noise reduction (removes 15-30 dB between words but sounds
+  tinny and "gargles" under the voice), fixed filters like the NBFM chain (low-pass, hiss shelf, notch: smooth but no
+  better), and RNNoise (erases narrowband speech).  The noise is broadband hiss across the voice band about 25 dB
+  under speech; it is left as is.  The analog voice path keeps only its high-pass filter.  The gate is on the
+  workspace branch `ap-8-noise-gate-rejected` only.
+- **NBFM channel filter:** upstream's filter (#2556) and the fork's give the same trade-off once their thresholds are
+  matched (Somerville Police, 24.2 s of tone: fork at 0.16 passes 15.5 s with 7.0 s of other audio; upstream at 0.22
+  passes 15.0 s with 9.0 s).  The fork's filter stays; raising Somerville Police to 0.16/0.16 and Everett Police to
+  0.16/0.25 on Now Playing > Channel is an option.
+
 ### Changed
 - **The log keeps only what is needed; per-call detail moves behind the Diagnostics tick boxes.**  Now DEBUG, written
   when the category is on:
