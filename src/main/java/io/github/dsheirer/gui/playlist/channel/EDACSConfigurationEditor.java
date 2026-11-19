@@ -76,9 +76,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private TextArea mLcnTextArea;
     private TitledPane mGraphicEQPane;
-    private ToggleSwitch mGraphicEQEnabledSwitch;
-    private Slider[] mEQBandSliders = new Slider[GraphicEqualizer.BAND_COUNT];
-    private TextField[] mEQBandFields = new TextField[GraphicEqualizer.BAND_COUNT];
+    private GraphicEqualizerEditor mGraphicEqualizerEditor;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
     private Spinner<Integer> mCallTimeoutSpinner;
 
@@ -174,90 +172,14 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         if(mGraphicEQPane == null)
         {
             mGraphicEQPane = new TitledPane();
-            mGraphicEQPane.setText("10-Band Graphic Equalizer (200 Hz - 3.5 kHz)");
+            mGraphicEQPane.setText("20-Band Graphic Equalizer (170 Hz - 3.5 kHz)");
             mGraphicEQPane.setExpanded(false);
-
-            VBox content = new VBox(10);
-            content.setPadding(new Insets(10, 10, 10, 10));
-
-            mGraphicEQEnabledSwitch = new ToggleSwitch("Enable Graphic Equalizer");
-            mGraphicEQEnabledSwitch.setTooltip(new Tooltip("Apply a 10-band graphic EQ to the voice channel audio"));
-            mGraphicEQEnabledSwitch.selectedProperty().addListener((obs, old, val) -> {
-                modifiedProperty().set(true);
-                for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
-                {
-                    mEQBandSliders[i].setDisable(!val);
-                    mEQBandFields[i].setDisable(!val);
-                }
-            });
-            content.getChildren().add(mGraphicEQEnabledSwitch);
-
-            GridPane gridPane = new GridPane();
-            gridPane.setHgap(10);
-            gridPane.setVgap(8);
-
-            for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
-            {
-                final int band = i;
-
-                Label bandLabel = new Label(GraphicEqualizer.BAND_LABELS[i]);
-                GridPane.setHalignment(bandLabel, HPos.RIGHT);
-                GridPane.setConstraints(bandLabel, 0, i);
-                gridPane.getChildren().add(bandLabel);
-
-                mEQBandSliders[i] = new Slider(-12, 12, 0);
-                mEQBandSliders[i].setMajorTickUnit(6);
-                mEQBandSliders[i].setMinorTickCount(5);
-                mEQBandSliders[i].setShowTickMarks(true);
-                mEQBandSliders[i].setShowTickLabels(true);
-                mEQBandSliders[i].setPrefWidth(250);
-                mEQBandSliders[i].setDisable(true);
-                mEQBandSliders[i].setTooltip(new Tooltip(GraphicEqualizer.BAND_LABELS[i] +
-                    " band gain (-12 to +12 dB)"));
-                mEQBandSliders[i].valueProperty().addListener((obs, old, val) -> {
-                    mEQBandFields[band].setText(String.format("%+.1f dB", val.doubleValue()));
-                    modifiedProperty().set(true);
-                });
-                GridPane.setConstraints(mEQBandSliders[i], 1, i);
-                gridPane.getChildren().add(mEQBandSliders[i]);
-
-                mEQBandFields[i] = new TextField("+0.0 dB");
-                mEQBandFields[i].setPrefWidth(80);
-                mEQBandFields[i].setMaxWidth(80);
-                mEQBandFields[i].setDisable(true);
-                mEQBandFields[i].setOnAction(event -> commitEQBandField(band));
-                mEQBandFields[i].focusedProperty().addListener((obs, wasFocused, isFocused) -> {
-                    if(!isFocused) commitEQBandField(band);
-                });
-                GridPane.setConstraints(mEQBandFields[i], 2, i);
-                gridPane.getChildren().add(mEQBandFields[i]);
-            }
-
-            content.getChildren().add(gridPane);
-            mGraphicEQPane.setContent(content);
+            mGraphicEqualizerEditor = new GraphicEqualizerEditor("Apply the 20-band graphic EQ to the voice channel audio");
+            mGraphicEqualizerEditor.setOnModified(() -> modifiedProperty().set(true));
+            mGraphicEQPane.setContent(mGraphicEqualizerEditor);
         }
 
         return mGraphicEQPane;
-    }
-
-    /**
-     * Commits the text field value to the corresponding EQ band slider.
-     */
-    private void commitEQBandField(int band)
-    {
-        try
-        {
-            String text = mEQBandFields[band].getText().trim()
-                .replace("dB", "").replace("+", "").trim();
-            double value = Double.parseDouble(text);
-            value = Math.max(-12, Math.min(12, value));
-            mEQBandSliders[band].setValue(value);
-            mEQBandFields[band].setText(String.format("%+.1f dB", value));
-        }
-        catch(NumberFormatException e)
-        {
-            mEQBandFields[band].setText(String.format("%+.1f dB", mEQBandSliders[band].getValue()));
-        }
     }
 
     /**
@@ -266,16 +188,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     private void setGraphicEQ(boolean enabled, double[] gains)
     {
         getGraphicEQPane();
-        mGraphicEQEnabledSwitch.setSelected(enabled);
-
-        for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
-        {
-            double gain = (gains != null && i < gains.length) ? gains[i] : 0.0;
-            mEQBandSliders[i].setValue(gain);
-            mEQBandFields[i].setText(String.format("%+.1f dB", gain));
-            mEQBandSliders[i].setDisable(!enabled);
-            mEQBandFields[i].setDisable(!enabled);
-        }
+        mGraphicEqualizerEditor.setSettings(enabled, gains);
     }
 
     private TitledPane getEventLogPane()
@@ -526,13 +439,8 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedSwitch().isSelected());
 
-        config.setGraphicEQEnabled(mGraphicEQEnabledSwitch.isSelected());
-        double[] gains = new double[GraphicEqualizer.BAND_COUNT];
-        for(int i = 0; i < GraphicEqualizer.BAND_COUNT; i++)
-        {
-            gains[i] = mEQBandSliders[i].getValue();
-        }
-        config.setGraphicEQBandGains(gains);
+        config.setGraphicEQEnabled(mGraphicEqualizerEditor.isEqualizerEnabled());
+        config.setGraphicEQBandGains(mGraphicEqualizerEditor.getGains());
 
         getItem().setDecodeConfiguration(config);
     }

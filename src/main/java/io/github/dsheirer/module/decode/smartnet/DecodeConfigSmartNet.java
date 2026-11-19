@@ -52,6 +52,7 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     private int mSite = SITE_ANY;
     private boolean mGraphicEQEnabled = false;
     private double[] mGraphicEQBandGains = new double[GraphicEqualizer.BAND_COUNT];
+    private boolean mGraphicEQBandGainsLoaded;
 
     public DecodeConfigSmartNet()
     {
@@ -137,7 +138,7 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
     }
 
     /**
-     * Graphic equalizer (the same 10-band 200 Hz - 3.5 kHz equalizer as P25) applied to voice channel audio
+     * Graphic equalizer (the same 20-band 170 Hz - 3.5 kHz equalizer as P25) applied to voice channel audio
      */
     @JacksonXmlProperty(isAttribute = true, localName = "graphic_eq_enabled")
     public boolean isGraphicEQEnabled()
@@ -150,23 +151,49 @@ public class DecodeConfigSmartNet extends DecodeConfiguration implements WithCal
         mGraphicEQEnabled = enabled;
     }
 
-    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains_200_3500")
-    @JacksonXmlProperty(localName = "gain")
+    /**
+     * Graphic equalizer band gains in dB, one per band of the 20-band GraphicEqualizer (ap-11).
+     */
+    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains_20")
+    @JacksonXmlProperty(localName = "band_gain")
     public double[] getGraphicEQBandGains()
     {
         return mGraphicEQBandGains;
     }
 
     /**
-     * @param gains in dB (-12 to +12), one per band; a shorter array is padded with 0 dB
+     * Sets the graphic equalizer band gains.  Gains for the earlier 10-band equalizer are converted.
+     * @param gains in dB (-12 to +12)
      */
+    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains_20")
+    @JacksonXmlProperty(localName = "band_gain")
     public void setGraphicEQBandGains(double[] gains)
     {
         if(gains != null && gains.length > 0)
         {
-            double[] copy = new double[GraphicEqualizer.BAND_COUNT];
-            System.arraycopy(gains, 0, copy, 0, Math.min(gains.length, GraphicEqualizer.BAND_COUNT));
-            mGraphicEQBandGains = copy;
+            mGraphicEQBandGains = GraphicEqualizer.normalizeGains(gains);
+            mGraphicEQBandGainsLoaded = true;
+        }
+    }
+
+    /**
+     * Gains for the 10-band equalizer of ap-15.10.6 to ap-10, still written so that a playlist opened in one of those
+     * versions keeps an approximation of the settings.  Read only when the playlist has no 20-band gains.
+     */
+    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains_200_3500")
+    @JacksonXmlProperty(localName = "gain")
+    public double[] getLegacyGraphicEQBandGains()
+    {
+        return GraphicEqualizer.toLegacyGains(mGraphicEQBandGains);
+    }
+
+    @JacksonXmlElementWrapper(localName = "graphic_eq_band_gains_200_3500")
+    @JacksonXmlProperty(localName = "gain")
+    public void setLegacyGraphicEQBandGains(double[] gains)
+    {
+        if(!mGraphicEQBandGainsLoaded && gains != null && gains.length > 0)
+        {
+            mGraphicEQBandGains = GraphicEqualizer.fromLegacyGains(gains);
         }
     }
 

@@ -134,8 +134,8 @@ public class PlaylistCompatibilitySmartNetTest
         assertEquals(SmartNetBandPlan.BAND_800_SPLINTER, config.getBandPlan());
         assertEquals(6, config.getTrafficChannelPoolSize());
         assertTrue(config.isGraphicEQEnabled());
-        assertEquals(-6.0, config.getGraphicEQBandGains()[0]);
-        assertEquals(3.0, config.getGraphicEQBandGains()[9]);
+        assertEquals(-6.0, config.getGraphicEQBandGains()[1]);
+        assertEquals(3.0, config.getGraphicEQBandGains()[19]);
 
         List<AliasID> ids = loaded.getAliases().get(0).getAliasIdentifiers();
         assertEquals(3, ids.size());

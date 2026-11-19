@@ -22,31 +22,121 @@ package io.github.dsheirer.dsp.filter.equalizer;
 import io.github.dsheirer.dsp.filter.IIRBiQuadraticFilter;
 
 /**
- * 10-band graphic equalizer using cascaded IIR biquad peak filters, for decoded voice audio at 8 kHz.
+ * 20-band graphic equalizer using cascaded IIR biquad peak filters, for decoded voice audio at 8 kHz.
  *
- * Center frequencies are spaced about 0.47 octave apart from 200 Hz to 3.5 kHz (ap-15.10.6, previously 70 Hz to
- * 3.2 kHz with ~0.6 octave spacing):
- *   200, 280, 390, 550, 770, 1100, 1500, 2100, 2900 and 3500 Hz
+ * Center frequencies from 170 Hz to 3.5 kHz, about a quarter octave apart (ap-11; 10 bands about half an octave apart
+ * before, ap-15.10.6 to ap-10).  The ten earlier centers are kept as every other band, with a band between each pair
+ * and one below 200 Hz:
+ *   170, 200, 240, 280, 330, 390, 460, 550, 650, 770, 920, 1100, 1300, 1500, 1800, 2100, 2500, 2900, 3200 and 3500 Hz
  *
- * Each band has an adjustable gain from -12 dB to +12 dB.
- * Q (bandwidth) is fixed at 3.0, the usual value for this band spacing (previously 2.0).  With Q 2.0, neighboring
- * bands overlap enough that, for example, +5 to +7 dB on the 390 Hz - 3.5 kHz bands added up to +11.2 dB at 1.5 kHz;
- * with Q 3.0 the same settings peak at +9.2 dB.
+ * Each band has an adjustable gain from -12 dB to +12 dB.  Q (bandwidth) is fixed at 6.0, so each band covers about
+ * the quarter octave between its neighbors.  With all 20 bands at +6 dB the response peaks at about +10 dB, close to
+ * the +9 dB of the 10-band equalizer (Q 3.0) with all bands at +6 dB.
+ *
+ * Settings saved for the 10-band equalizer are converted with fromLegacyGains(): each earlier band's gain goes to the
+ * same center, the band between two earlier bands gets their average and the band below 200 Hz is left flat.
  */
 public class GraphicEqualizer
 {
-    public static final int BAND_COUNT = 10;
-    public static final double DEFAULT_Q = 3.0;
+    public static final int BAND_COUNT = 20;
+    public static final double DEFAULT_Q = 6.0;
     public static final double MIN_GAIN_DB = -12.0;
     public static final double MAX_GAIN_DB = 12.0;
 
     public static final double[] DEFAULT_CENTER_FREQUENCIES = {
-        200.0, 280.0, 390.0, 550.0, 770.0, 1100.0, 1500.0, 2100.0, 2900.0, 3500.0
+        170.0, 200.0, 240.0, 280.0, 330.0, 390.0, 460.0, 550.0, 650.0, 770.0,
+        920.0, 1100.0, 1300.0, 1500.0, 1800.0, 2100.0, 2500.0, 2900.0, 3200.0, 3500.0
     };
     public static final String[] BAND_LABELS = {
-        "200 Hz", "280 Hz", "390 Hz", "550 Hz", "770 Hz",
-        "1.1 kHz", "1.5 kHz", "2.1 kHz", "2.9 kHz", "3.5 kHz"
+        "170 Hz", "200 Hz", "240 Hz", "280 Hz", "330 Hz", "390 Hz", "460 Hz", "550 Hz", "650 Hz", "770 Hz",
+        "920 Hz", "1.1 kHz", "1.3 kHz", "1.5 kHz", "1.8 kHz", "2.1 kHz", "2.5 kHz", "2.9 kHz", "3.2 kHz", "3.5 kHz"
     };
+
+    /**
+     * Short band labels for the narrow slider columns in the editors
+     */
+    public static final String[] BAND_SHORT_LABELS = {
+        "170", "200", "240", "280", "330", "390", "460", "550", "650", "770",
+        "920", "1.1k", "1.3k", "1.5k", "1.8k", "2.1k", "2.5k", "2.9k", "3.2k", "3.5k"
+    };
+
+    /**
+     * Number of bands of the earlier equalizer (ap-15.10.6 to ap-10): 200, 280, 390, 550, 770, 1100, 1500, 2100, 2900
+     * and 3500 Hz, which are bands 1, 3, 5 ... 19 here.
+     */
+    public static final int LEGACY_BAND_COUNT = 10;
+
+    /**
+     * Converts gains saved for the 10-band equalizer to this equalizer's 20 bands.
+     * @param legacyGains 10 gains in dB
+     * @return 20 gains in dB
+     */
+    public static double[] fromLegacyGains(double[] legacyGains)
+    {
+        double[] gains = new double[BAND_COUNT];
+
+        for(int k = 0; k < LEGACY_BAND_COUNT && k < legacyGains.length; k++)
+        {
+            gains[2 * k + 1] = clamp(legacyGains[k]);
+        }
+
+        for(int k = 0; k < LEGACY_BAND_COUNT - 1 && k + 1 < legacyGains.length; k++)
+        {
+            gains[2 * k + 2] = clamp((legacyGains[k] + legacyGains[k + 1]) / 2.0);
+        }
+
+        return gains;
+    }
+
+    /**
+     * Converts this equalizer's 20 gains to the 10-band equalizer's bands (the bands at the same centers), so that a
+     * playlist opened in an earlier version keeps an approximation of the settings.
+     * @param gains 20 gains in dB
+     * @return 10 gains in dB
+     */
+    public static double[] toLegacyGains(double[] gains)
+    {
+        double[] legacy = new double[LEGACY_BAND_COUNT];
+
+        for(int k = 0; k < LEGACY_BAND_COUNT; k++)
+        {
+            int band = 2 * k + 1;
+            legacy[k] = gains != null && band < gains.length ? gains[band] : 0.0;
+        }
+
+        return legacy;
+    }
+
+    /**
+     * Returns a copy of the gains with exactly BAND_COUNT values, each clamped to the gain range.  An array of
+     * LEGACY_BAND_COUNT values is converted with fromLegacyGains(); any other length is padded with 0 dB or cut.
+     * @param gains in dB, or null
+     * @return BAND_COUNT gains in dB (all 0 dB for null)
+     */
+    public static double[] normalizeGains(double[] gains)
+    {
+        if(gains != null && gains.length == LEGACY_BAND_COUNT)
+        {
+            return fromLegacyGains(gains);
+        }
+
+        double[] normalized = new double[BAND_COUNT];
+
+        if(gains != null)
+        {
+            for(int i = 0; i < Math.min(gains.length, BAND_COUNT); i++)
+            {
+                normalized[i] = clamp(gains[i]);
+            }
+        }
+
+        return normalized;
+    }
+
+    private static double clamp(double gainDb)
+    {
+        return Math.max(MIN_GAIN_DB, Math.min(MAX_GAIN_DB, gainDb));
+    }
 
     private final IIRBiQuadraticFilter[] mBands;
     private final double[] mGainDb;
@@ -54,7 +144,7 @@ public class GraphicEqualizer
     private boolean mEnabled;
 
     /**
-     * Creates a 10-band graphic equalizer.
+     * Creates a 20-band graphic equalizer.
      *
      * @param sampleRate audio sample rate (typically 8000 Hz for decoded P25 audio)
      */
@@ -92,7 +182,7 @@ public class GraphicEqualizer
     /**
      * Gets the gain in dB for the specified band.
      *
-     * @param band index (0-9)
+     * @param band index (0-19)
      * @return gain in dB
      */
     public double getBandGain(int band)
@@ -107,7 +197,7 @@ public class GraphicEqualizer
     /**
      * Sets the gain for a specific band.
      *
-     * @param band index (0-9)
+     * @param band index (0-19)
      * @param gainDb gain in dB, clamped to [-12, +12]
      */
     public void setBandGain(int band, double gainDb)
@@ -126,7 +216,7 @@ public class GraphicEqualizer
     /**
      * Sets all band gains at once.
      *
-     * @param gains array of 10 gain values in dB
+     * @param gains array of 20 gain values in dB
      */
     public void setBandGains(double[] gains)
     {
@@ -142,7 +232,7 @@ public class GraphicEqualizer
     /**
      * Gets all band gains.
      *
-     * @return array of 10 gain values in dB
+     * @return array of 20 gain values in dB
      */
     public double[] getBandGains()
     {
@@ -162,7 +252,7 @@ public class GraphicEqualizer
     }
 
     /**
-     * Processes a single audio sample through all 10 EQ bands in series.
+     * Processes a single audio sample through all 20 EQ bands in series.
      *
      * @param sample input audio sample
      * @return filtered audio sample
