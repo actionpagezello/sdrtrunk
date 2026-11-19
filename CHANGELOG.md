@@ -19,8 +19,20 @@ Upstream's four changes of 19 November.  Builds on ap-9.
 - **No misleading warning before SIMD calibration** (#2698): the signal-processing factories treat "not calibrated
   yet" as a normal state and use the standard code without logging an "unrecognized implementation" warning.
 
+### Fixed in the fork
+- **Error when a channel stops during a tuner sample rate change** (upstream race, `ConcurrentModificationException`
+  in FrequencyController, seen once each on Paxton and Monson on 18 November and on Paxton on ap-2).  Stopping a
+  channel removed it from the list being notified of the change; the other channels on that tuner could miss the
+  notification.  The list is now copy-on-write, so each notification walks a snapshot.
+- **Dropped-sample warnings only for sustained loss.**  Since ap-9 counts RSP samples correctly, Daly's two RSP1Bs
+  warned about single 20-40 ms gaps every 15-90 minutes (0.00% of the stream).  A drop summary is now a warning only
+  when at least 0.01% of the stream was lost over the summarized period (Monson's 1.3-1.8% and Paxton's 0.04% still
+  warn); isolated short gaps go to the debug log.  Detection itself is unchanged.
+
 ### Checks
-- Tests: 609, all pass, including upstream's new history-table copy and talker-alias tests.
+- Tests: 611, all pass, including upstream's new history-table copy and talker-alias tests, a test that a channel
+  removing itself during a broadcast no longer fails (fails on ap-9), and the warning threshold checked against the
+  18 November drop summaries.
 
 ## [1.0.0-ap-9] - 2026-11-18
 

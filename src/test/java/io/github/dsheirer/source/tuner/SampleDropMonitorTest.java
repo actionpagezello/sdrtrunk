@@ -22,6 +22,7 @@ package io.github.dsheirer.source.tuner;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -142,5 +143,22 @@ public class SampleDropMonitorTest
         stream.pause(10);
         stream.run(20);
         assertEquals(0, stream.dropped());
+    }
+
+    /**
+     * AP-fork (1.0.0-ap-10): the warning threshold, checked against summaries seen on the fleet on 18 Nov 2026.
+     */
+    @Test
+    void onlySustainedLossIsReportedAsAWarning()
+    {
+        //Daly RSP1B at 10 MSPS: 222,915 samples (22 ms) over 1,583 seconds - an isolated gap
+        assertFalse(SampleDropMonitor.isReportable(222_915.0 / (10_000_000.0 * 1583) * 100.0));
+        //Daly RSP1B: 291,952 samples (29 ms) over 907 seconds
+        assertFalse(SampleDropMonitor.isReportable(291_952.0 / (10_000_000.0 * 907) * 100.0));
+        //Monson RTL-SDR at 2.88 MSPS: 1.30% over 60 seconds - sustained loss
+        assertTrue(SampleDropMonitor.isReportable(1.30));
+        //Paxton RTL-SDR: 0.04% over 60 seconds
+        assertTrue(SampleDropMonitor.isReportable(0.04));
+        assertTrue(SampleDropMonitor.isReportable(SampleDropMonitor.REPORT_PERCENT));
     }
 }

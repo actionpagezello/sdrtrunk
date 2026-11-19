@@ -13,8 +13,9 @@ Monson RTL 00009103 and 16531039 lost 1.3-1.8% from 12:44 to about 19:40 (11 RTL
 queues overflow (also on ap-2 - CPU).  Paxton RISCON East Simulcast "No Tuner Available" since 13:00 on ap-2, an RTL
 failed to start at 20:18 (EEPROM read).  Upstream race in FrequencyController (one error each, Paxton and Monson).
 
-**ap-10** = upstream #2691 (Ctrl-C copy), #2697 (talker alias), #2696 (Category label), #2698 (SIMD warning).
-Offered, not yet asked for: fix for the FrequencyController race; quieter warnings for isolated tiny RSP gaps.
+**ap-10** = upstream #2691 (Ctrl-C copy), #2697 (talker alias), #2696 (Category label), #2698 (SIMD warning), plus
+fork fixes: FrequencyController race (copy-on-write processor list) and dropped-sample warnings only at 0.01% of the
+stream or more (isolated RSP gaps to DEBUG).
 Upstream branch `2646-channel-snr` (channel signal meter) not merged yet.
 
 ## Current state 2026-11-18 10:15: `1.0.0-ap-8` and `1.0.0-ap-9` built in the workspace

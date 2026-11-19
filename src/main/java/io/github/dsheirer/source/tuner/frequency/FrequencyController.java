@@ -24,6 +24,7 @@ import io.github.dsheirer.source.SourceEvent;
 import io.github.dsheirer.source.SourceException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +41,13 @@ public class FrequencyController
     private double mFrequencyCorrection = 0.0d;
     private double mSampleRate = 0.0d;
     private boolean mSampleRateLocked = false;
-    private List<ISourceEventProcessor> mProcessors = new ArrayList<>();
+    /**
+     * AP-fork (1.0.0-ap-10): copy-on-write so that broadcast() can walk the processors while one of them adds or
+     * removes a processor - a sample rate change can stop a channel, which removes its processor during the same
+     * broadcast on the same thread (the lock is reentrant).  ArrayList threw ConcurrentModificationException there
+     * and the remaining processors missed the event.  Each broadcast now walks a snapshot.
+     */
+    private List<ISourceEventProcessor> mProcessors = new CopyOnWriteArrayList<>();
 
     /**
      * Constructs an instance

@@ -40,6 +40,12 @@ import org.slf4j.LoggerFactory;
  * The stream is assumed to be stopped (ie no buffer listeners) or restarted when buffers stop arriving for longer than
  * the restart gap, and detection restarts with the next buffer.  Detection also restarts when the sample rate changes.
  *
+ * Reporting: drops are summarized at most once a minute.  AP-fork (1.0.0-ap-10): a warning is logged only when the
+ * samples lost over the summarized period reach REPORT_PERCENT of the stream, so sustained loss (ie an overloaded USB
+ * hub losing 1-2% minute after minute) is still reported, while an isolated short gap - about 20-40 ms once every
+ * 15-90 minutes on an RSP1B, 0.00% of the stream - is logged at DEBUG only.  Every detected drop still counts toward
+ * getTotalDroppedSamples().
+ *
  * Note: process() is invoked on the tuner's sample stream thread and is not thread safe.
  */
 public class SampleDropMonitor
@@ -58,6 +64,9 @@ public class SampleDropMonitor
     static final double CLOCK_ALLOWANCE = 500.0 / 1_000_000.0;
     //Accumulated deficit that indicates dropped samples, in milliseconds of samples
     static final double THRESHOLD_MILLISECONDS = 20.0;
+    //AP-fork (1.0.0-ap-10): share of the sample stream lost over a reporting period, in percent, at or above which a
+    //warning is logged.  Below it the summary is logged at DEBUG.
+    static final double REPORT_PERCENT = 0.01;
 
     private final DoubleSupplier mSampleRateSupplier;
     private final Supplier<String> mTunerNameSupplier;
@@ -188,13 +197,23 @@ public class SampleDropMonitor
             double period = (double)(now - mReportStart) / NANOS_PER_SECOND;
             double milliseconds = mUnreportedDroppedSamples / sampleRate * 1000.0;
             double percent = mUnreportedDroppedSamples / (sampleRate * period) * 100.0;
-            LOG.warn("Tuner [" + mTunerNameSupplier.get() + "] is dropping samples - approximately [" +
+            String summary = "Tuner [" + mTunerNameSupplier.get() + "] is dropping samples - approximately [" +
                     (long)mUnreportedDroppedSamples + "] samples (" + Math.round(milliseconds) + " ms, " +
                     PERCENT_FORMAT.format(percent) + "% of the sample stream) were lost over the last " +
                     Math.round(period) + " seconds.  The USB bus or the computer isn't keeping up with the tuner's " +
                     "sample rate.  Dropped samples cause decoders to lose sync and cause choppy audio.  Try a " +
                     "different USB port or USB controller, avoid USB hubs and extension cables, don't share the USB " +
-                    "controller with other tuners, or lower the tuner sample rate.");
+                    "controller with other tuners, or lower the tuner sample rate.";
+
+            if(isReportable(percent))
+            {
+                LOG.warn(summary);
+            }
+            else if(LOG.isDebugEnabled())
+            {
+                LOG.debug("Isolated short gap, below " + REPORT_PERCENT + "% of the stream - " + summary);
+            }
+
             mLastLog = now;
             mReportStart = now;
             mUnreportedDroppedSamples = 0.0;
@@ -202,5 +221,15 @@ public class SampleDropMonitor
 
         mWindowStart = now;
         mWindowSampleCount = 0;
+    }
+
+    /**
+     * AP-fork (1.0.0-ap-10): indicates if a drop summary is significant enough to log as a warning.
+     * @param percent of the sample stream lost over the summarized period.
+     * @return true at or above REPORT_PERCENT.
+     */
+    static boolean isReportable(double percent)
+    {
+        return percent >= REPORT_PERCENT;
     }
 }
