@@ -3,6 +3,15 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-19 11:40: `1.0.0-ap-11` built in the workspace
+
+**ap-10** (9ccbdb76) = upstream batch of 19 November + FrequencyController race fix + sustained-loss-only drop
+warnings; cleared for the fleet.  **ap-11** = ap-10 + upstream branch `2646-channel-snr` (channel power and SNR in
+the channel spectrum view, for setting gain), taken before upstream merges it, + 20-band graphic equalizer
+(170 Hz - 3.5 kHz, Q 6, 10-band settings converted, both saved).  + gain tools: TunerSignalMonitor overload log (0.01% at
+full scale / RSP events, 5 min), tuner panel signal meter, Gain Check sweep with recommendation.  Now Playing PR branches
+(`pr-nowplaying-waterfall`, `pr-nowplaying-mute`) pushed to the fork, not opened.
+
 ## Current state 2026-11-19 07:20: `1.0.0-ap-10` built in the workspace
 
 **ap-9 trial (to about 21:45 on 11-18):** no channelizer queue overflow on any machine; queue sizes correct

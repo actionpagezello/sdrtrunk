@@ -5,6 +5,51 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-11] - 2026-11-19
+
+Upstream's channel signal meter (taken from its branch before it is merged), a 20-band graphic equalizer, and new
+tools for setting tuner gain: overload warnings in the log, a signal level meter in each tuner panel and a Gain Check
+that recommends a setting.  Builds on ap-10.
+
+### Added from upstream (branch `2646-channel-snr`, not yet in upstream master)
+- **Channel signal strength and SNR readout** (#2646): the channel spectrum view (Now Playing, Channel Spectrum tab)
+  shows the selected channel's power in dBFS and its signal-to-noise ratio, below the channel bandwidth label.  The
+  noise floor is measured from the tuner's own samples near the channel, so it works on every tuner type.  The
+  measurement runs only while a channel spectrum is open and stops a few seconds after it closes; otherwise it costs
+  nothing.  Useful for setting tuner gain: raise gain while the SNR improves, back off when it stops improving or the
+  noise floor rises with it.
+- Because it comes from an unmerged branch, upstream may still change it before release; the fork will follow.
+
+### Changed in the fork
+- **Graphic equalizer: 20 bands instead of 10** (P25, EDACS and Type II channels), 170 Hz to 3.5 kHz about a quarter
+  octave apart, for finer control.  The ten earlier frequencies are still there as every other band.  The editor now
+  shows one vertical slider per band, like a hardware equalizer, with a Flat button; double-click a slider for 0 dB.
+- **Existing settings carry over.**  Each earlier band keeps its gain, the new band between two earlier ones gets their
+  average, and the new 170 Hz band starts flat.  The sound is close to before but not identical (narrower bands), so
+  listen to equalized channels once.  The playlist still saves the 10-band settings as well, so going back to ap-10
+  keeps them (approximately).
+
+### Added in the fork: setting tuner gain
+- **Overload warnings in the log.**  Every tuner's samples are checked four times a second for samples at the top of
+  the tuner's range (clipping), where strong signals create false signals and raise the noise floor.  When 0.01% or
+  more were at full scale over 5 minutes, or an RSP reported an overload itself, the log says so: `Tuner [name] overload
+  over the last 5 minutes: 0.120% of samples at full scale, peak 0.0 dBFS - reduce the gain`.  Nothing is logged
+  otherwise.  Costs a fraction of a millisecond a second per tuner.
+- **Signal level meter in the tuner panel** (RTL-SDR, Airspy, HydraSDR, RSP; Tuners tab, below the gain controls):
+  green OK, amber "Little headroom" (peak above -3 dBFS), red "Overload - reduce gain"; peak level, share of samples
+  at full scale, noise floor, and how far the strongest signals are above it.  Updates once a second while shown.
+- **Gain Check button** next to the meter: steps the gain through every setting (RTL gain list, Airspy/HydraSDR
+  Linearity or Sensitivity gain, RSP LNA state), about 3 seconds each, measures each one, shows a table, puts your
+  setting back and recommends one: the lowest gain without overload whose strongest signals are within 1 dB of the
+  best.  Apply Recommended sets and saves it.  The tuner's channels hear the gain changes while it runs (1-2 minutes;
+  an RTL-SDR has about 29 settings, an Airspy 22, an RSP about 10).  Run it while a busy channel, best a control channel, is on the tuner.  Results go to the
+  log too.  Not available with AGC on (RTL) or the Custom gain mode (Airspy/HydraSDR).
+
+### Checks
+- Tests: 639, all pass, including upstream's new noise floor estimator and signal meter tests, new tests for the
+  equalizer bands, the conversion of 10-band settings and reading and writing both forms in a playlist, and for
+  overload detection, the gain check's measurements and recommendation, and a full gain check on a simulated tuner.
+
 ## [1.0.0-ap-10] - 2026-11-19
 
 Upstream's four changes of 19 November.  Builds on ap-9.
