@@ -1180,7 +1180,7 @@ public class AliasItemEditor extends Editor<Alias>
             GridPane.setConstraints(getColorPicker(), 7, row);
             mTextFieldPane.getChildren().add(getColorPicker());
 
-            Label groupLabel = new Label("Group");
+            Label groupLabel = new Label("Category");
             groupLabel.setLabelFor(getGroupField());
             GridPane.setHalignment(groupLabel, HPos.RIGHT);
             GridPane.setConstraints(groupLabel, 0, ++row);
