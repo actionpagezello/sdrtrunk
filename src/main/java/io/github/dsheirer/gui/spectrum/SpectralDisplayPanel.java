@@ -127,6 +127,32 @@ public class SpectralDisplayPanel extends JFXPanel
     }
 
     /**
+     * Zooms the display to the zoom level and centres it on the frequency.  Used when a channel's "show in
+     * spectrum" request names the channel frequency.  Runs on the FX thread after the tuner's own settings (queued
+     * by showTuner) so the frequency range is known; the zoom is reset first so it always re-centres.
+     * @param zoom level (0 = full bandwidth, each level doubles)
+     * @param frequency to centre
+     */
+    public void zoomTo(int zoom, long frequency)
+    {
+        Platform.runLater(() -> {
+            TunerSpectralDisplay display;
+
+            synchronized(this)
+            {
+                display = mTunerSpectralDisplay;
+            }
+
+            if(display != null)
+            {
+                SpectralDisplayModel model = display.getSpectralDisplay().getModel();
+                model.resetZoom();
+                model.setZoom(zoom, frequency, 0.5);
+            }
+        });
+    }
+
+    /**
      * Stops showing the current tuner.
      */
     public void clearTuner()

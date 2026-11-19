@@ -99,7 +99,16 @@ public class TunerSpectralDisplayManager implements Listener<TunerEvent>
             case REQUEST_MAIN_SPECTRAL_DISPLAY:
                 if(SystemProperties.getInstance().get(TunerSpectralDisplay.SPECTRAL_DISPLAY_ENABLED, true))
                 {
-                    SwingUtils.run(() -> mSpectralDisplayPanel.showTuner(event.getTuner()));
+                    SwingUtils.run(() ->
+                    {
+                        mSpectralDisplayPanel.showTuner(event.getTuner());
+
+                        if(event.hasCenterFrequency())
+                        {
+                            //Zoom to level 4 (16x) centred on the channel frequency
+                            mSpectralDisplayPanel.zoomTo(4, event.getCenterFrequency());
+                        }
+                    });
                 }
                 break;
             case REQUEST_NEW_SPECTRAL_DISPLAY:

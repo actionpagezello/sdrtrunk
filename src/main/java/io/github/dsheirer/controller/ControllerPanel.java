@@ -63,7 +63,7 @@ public class ControllerPanel extends JPanel
     {
         mAudioPanel = new AudioPanel(iconModel, userPreferences, settingsManager, audioPlaybackManager,
             playlistManager.getAliasModel());
-        mNowPlayingPanel = new NowPlayingPanel(playlistManager, iconModel, userPreferences, detailTabsVisible);
+        mNowPlayingPanel = new NowPlayingPanel(playlistManager, iconModel, userPreferences, tunerManager, detailTabsVisible);
         mMapPanel = new MapPanel(mapService, iconModel, userPreferences,
             playlistManager.getRadioReference() != null ? playlistManager.getRadioReference().getFrequencyIndex() : null,
             new RadioReferencePlaylistActions(playlistManager));

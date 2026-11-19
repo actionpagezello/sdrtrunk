@@ -22,6 +22,7 @@ import io.github.dsheirer.gui.theme.ThemeManager;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.source.tuner.manager.TunerManager;
 import javafx.application.Platform;
 import javafx.embed.swing.JFXPanel;
 import javafx.scene.Scene;
@@ -40,10 +41,11 @@ public class NowPlayingPanel extends JFXPanel
      * @param playlistManager for the channels
      * @param iconModel for alias icons
      * @param userPreferences for display formats and column settings
+     * @param tunerManager for showing a channel in the waterfall
      * @param detailTabsVisible to show the channel detail tabs
      */
     public NowPlayingPanel(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences,
-                           boolean detailTabsVisible)
+                           TunerManager tunerManager, boolean detailTabsVisible)
     {
         mDetailTabsVisible = detailTabsVisible;
         Platform.setImplicitExit(false);
@@ -54,7 +56,7 @@ public class NowPlayingPanel extends JFXPanel
 
             synchronized(NowPlayingPanel.this)
             {
-                view = new NowPlayingView(playlistManager, iconModel, userPreferences, mDetailTabsVisible);
+                view = new NowPlayingView(playlistManager, iconModel, userPreferences, tunerManager, mDetailTabsVisible);
                 mNowPlayingView = view;
             }
 
