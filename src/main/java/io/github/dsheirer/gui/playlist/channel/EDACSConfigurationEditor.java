@@ -161,6 +161,14 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(getIgnoreUnaliasedSwitch(), 1, 2);
             gridPane.getChildren().add(getIgnoreUnaliasedSwitch());
 
+            Label systemKeyLabel = new Label("System Key (ESK 0xA0)");
+            GridPane.setHalignment(systemKeyLabel, HPos.RIGHT);
+            GridPane.setConstraints(systemKeyLabel, 2, 2);
+            gridPane.getChildren().add(systemKeyLabel);
+
+            GridPane.setConstraints(getSystemKeySwitch(), 3, 2);
+            gridPane.getChildren().add(getSystemKeySwitch());
+
             mDecoderPane.setContent(gridPane);
         }
 
@@ -356,6 +364,23 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     }
 
     private ToggleSwitch mIgnoreUnaliasedSwitch;
+    private ToggleSwitch mSystemKeySwitch;
+
+    private ToggleSwitch getSystemKeySwitch()
+    {
+        if(mSystemKeySwitch == null)
+        {
+            mSystemKeySwitch = new ToggleSwitch();
+            mSystemKeySwitch.setDisable(true);
+            mSystemKeySwitch.setTooltip(new Tooltip("Turn on for a system that uses an EDACS System Key (ESK): the " +
+                "control channel messages are XORed with 0xA0.  Leave off for most systems; if the control channel " +
+                "decodes but talkgroups and LCNs make no sense, try turning it on."));
+            mSystemKeySwitch.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mSystemKeySwitch;
+    }
 
     private ToggleSwitch getIgnoreUnaliasedSwitch()
     {
@@ -397,6 +422,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         getCallTimeoutSpinner().setDisable(config == null);
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
         getIgnoreUnaliasedSwitch().setDisable(config == null);
+        getSystemKeySwitch().setDisable(config == null);
 
         if(config instanceof DecodeConfigEDACS edacs)
         {
@@ -404,6 +430,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             getCallTimeoutSpinner().getValueFactory().setValue(edacs.getCallTimeoutSeconds());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(edacs.getTrafficChannelPoolSize());
             getIgnoreUnaliasedSwitch().setSelected(edacs.getIgnoreUnaliasedTalkgroups());
+            getSystemKeySwitch().setSelected(edacs.getSystemKey() != 0);
             setGraphicEQ(edacs.isGraphicEQEnabled(), edacs.getGraphicEQBandGains());
         }
         else if(config != null)
@@ -412,6 +439,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             getCallTimeoutSpinner().getValueFactory().setValue(DecodeConfigEDACS.CALL_TIMEOUT_DEFAULT_SECONDS);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT);
             getIgnoreUnaliasedSwitch().setSelected(false);
+            getSystemKeySwitch().setSelected(false);
             setGraphicEQ(false, null);
         }
         else
@@ -438,6 +466,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         config.setCallTimeoutSeconds(getCallTimeoutSpinner().getValue());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedSwitch().isSelected());
+        config.setSystemKey(getSystemKeySwitch().isSelected() ? 0xA0 : 0);
 
         config.setGraphicEQEnabled(mGraphicEqualizerEditor.isEqualizerEnabled());
         config.setGraphicEQBandGains(mGraphicEqualizerEditor.getGains());

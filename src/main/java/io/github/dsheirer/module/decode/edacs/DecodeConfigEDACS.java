@@ -54,6 +54,7 @@ public class DecodeConfigEDACS extends DecodeConfiguration implements WithCallTi
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT;
     private VoiceMode mVoiceMode = VoiceMode.CONTROL;
     private boolean mIgnoreUnaliasedTalkgroups = false;
+    private int mSystemKey = 0;
     private boolean mGraphicEQEnabled = false;
     private double[] mGraphicEQBandGains = new double[GraphicEqualizer.BAND_COUNT];
     private boolean mGraphicEQBandGainsLoaded;
@@ -128,6 +129,21 @@ public class DecodeConfigEDACS extends DecodeConfiguration implements WithCallTi
     public void setIgnoreUnaliasedTalkgroups(boolean ignore)
     {
         mIgnoreUnaliasedTalkgroups = ignore;
+    }
+
+    /**
+     * EDACS System Key (ESK): some systems XOR the top 8 bits of each control channel message with this value.  0 for
+     * none (most systems); 0xA0 is the value in use.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "system_key")
+    public int getSystemKey()
+    {
+        return mSystemKey;
+    }
+
+    public void setSystemKey(int systemKey)
+    {
+        mSystemKey = systemKey & 0xFF;
     }
 
     @JacksonXmlProperty(isAttribute = true, localName = "traffic_channel_pool_size")
@@ -238,6 +254,7 @@ public class DecodeConfigEDACS extends DecodeConfiguration implements WithCallTi
         copy.setCallTimeoutSeconds(getCallTimeoutSeconds());
         copy.setTrafficChannelPoolSize(getTrafficChannelPoolSize());
         copy.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroups());
+        copy.setSystemKey(getSystemKey());
         copy.setAudioHangtimeMs(getAudioHangtimeMs());
         copy.setGraphicEQEnabled(isGraphicEQEnabled());
         copy.setGraphicEQBandGains(getGraphicEQBandGains());
