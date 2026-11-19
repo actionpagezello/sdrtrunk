@@ -24,6 +24,7 @@ import io.github.dsheirer.source.tuner.hydrasdr.HydraSdrTunerController.GainMode
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.manager.TunerStatus;
+import io.github.dsheirer.source.tuner.ui.GainSteps;
 import io.github.dsheirer.source.tuner.ui.TunerEditor;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -189,6 +190,64 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
         add(getLNAAGCCheckBox());
         add(getLNAGainSlider());
         add(getLNAGainValueLabel());
+
+        //AP-fork (ap-12): signal level meter and gain check
+        add(new JSeparator(), "span,growx,push");
+        add(getGainCheckPanel(), "span,growx");
+    }
+
+    /**
+     * AP-fork (ap-12): the master gain slider (Linearity or Sensitivity mode) for the gain check
+     */
+    @Override
+    protected GainSteps getGainSteps()
+    {
+        return new GainSteps()
+        {
+            @Override
+            public boolean isAvailable()
+            {
+                return hasTuner() && getGainModeCombo().getSelectedItem() != GainMode.CUSTOM;
+            }
+
+            @Override
+            public String getUnavailableReason()
+            {
+                return hasTuner() ? "Gain Check steps the Linearity or Sensitivity gain.  Choose one of those gain " +
+                    "modes instead of Custom." : "The tuner isn't available.";
+            }
+
+            @Override
+            public String getControlName()
+            {
+                return getGainModeCombo().getSelectedItem() == GainMode.SENSITIVITY ? "Sensitivity gain" :
+                    "Linearity gain";
+            }
+
+            @Override
+            public int count()
+            {
+                return HydraSdrTunerController.GAIN_MAX - HydraSdrTunerController.GAIN_MIN + 1;
+            }
+
+            @Override
+            public int current()
+            {
+                return getMasterGainSlider().getValue() - HydraSdrTunerController.GAIN_MIN;
+            }
+
+            @Override
+            public String label(int index)
+            {
+                return String.valueOf(index + HydraSdrTunerController.GAIN_MIN);
+            }
+
+            @Override
+            public void apply(int index)
+            {
+                getMasterGainSlider().setValue(index + HydraSdrTunerController.GAIN_MIN);
+            }
+        };
     }
 
     private JCheckBox getLNAAGCCheckBox()

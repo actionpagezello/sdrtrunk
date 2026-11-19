@@ -86,7 +86,7 @@ public class TunerNoiseFloorEstimator
      * Noise density of each bin, with the tuner frequency and sample rate that it was measured at.  Bins are in FFT
      * order: bin 0 is DC and bins above size / 2 are negative frequencies.
      */
-    private record Estimate(long frequency, double sampleRate, double[] density, boolean[] usable) {}
+    private record Estimate(long frequency, double sampleRate, double[] density, boolean[] usable, long timestamp) {}
 
     private final LongSupplier mFrequency;
     private final DoubleSupplier mSampleRate;
@@ -438,7 +438,8 @@ public class TunerNoiseFloorEstimator
             usable[bin] = Math.abs(offset) > DC_EXCLUSION_BINS && Math.abs(offset) <= maximumOffset;
         }
 
-        mEstimate = new Estimate(mMeasurementFrequency, mMeasurementSampleRate, density, usable);
+        mEstimate = new Estimate(mMeasurementFrequency, mMeasurementSampleRate, density, usable,
+            System.currentTimeMillis());
         Arrays.fill(mBinPowerAccumulator, 0.0);
         mAccumulatedBlocks = 0;
     }
@@ -452,6 +453,59 @@ public class TunerNoiseFloorEstimator
         int middle = count / 2;
         return (count % 2 == 1) ? values[middle] : (values[middle - 1] + values[middle]) / 2.0;
     }
+
+    /**
+     * AP-fork (ap-12): the latest measurement of the tuner's usable bandwidth, for the gain meter and gain check.
+     * Turns on the measurement, like getNoiseDensity().
+     * @return power of each usable bin (about 25 kHz wide) in dBFS and the time it was measured, or null when there is
+     * no current measurement yet
+     */
+    public BandPowers getBandPowers()
+    {
+        mLastRequestTimestamp = System.currentTimeMillis();
+
+        if(!mActive)
+        {
+            start();
+        }
+
+        Estimate estimate = mEstimate;
+
+        if(estimate == null || estimate.frequency() != mFrequency.getAsLong() ||
+            estimate.sampleRate() != mSampleRate.getAsDouble())
+        {
+            return null;
+        }
+
+        double binWidth = estimate.sampleRate() / estimate.density().length;
+        int count = 0;
+
+        for(boolean usable : estimate.usable())
+        {
+            if(usable)
+            {
+                count++;
+            }
+        }
+
+        double[] powers = new double[count];
+        int pointer = 0;
+
+        for(int bin = 0; bin < estimate.density().length; bin++)
+        {
+            if(estimate.usable()[bin])
+            {
+                powers[pointer++] = 10.0 * Math.log10(Math.max(estimate.density()[bin] * binWidth, 1e-20));
+            }
+        }
+
+        return new BandPowers(powers, estimate.timestamp());
+    }
+
+    /**
+     * AP-fork (ap-12): power of each usable bin in dBFS, measured at the timestamp
+     */
+    public record BandPowers(double[] binPowersDb, long timestamp) {}
 
     /**
      * Indicates if the measurement is turned on.

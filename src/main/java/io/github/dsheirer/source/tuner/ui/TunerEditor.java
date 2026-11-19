@@ -66,6 +66,7 @@ import javax.swing.event.ChangeListener;
 public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> extends JPanel
         implements IDiscoveredTunerStatusListener, Listener<TunerEvent>
 {
+    private GainCheckPanel mGainCheckPanel;
     private Logger mLog = LoggerFactory.getLogger(TunerEditor.class);
     private static final long DEFAULT_MINIMUM_FREQUENCY = 1;
     private static final long DEFAULT_MAXIMUM_FREQUENCY = 9_999_999_999l;
@@ -822,6 +823,28 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
     /**
      * Indicates if the discovered tuner has a usable tuner
      */
+    /**
+     * AP-fork (ap-12): signal level meter with the Gain Check button, for editors to place in their layout
+     */
+    protected GainCheckPanel getGainCheckPanel()
+    {
+        if(mGainCheckPanel == null)
+        {
+            mGainCheckPanel = new GainCheckPanel(() -> hasTuner() ? getTuner() : null, this::getGainSteps);
+        }
+
+        return mGainCheckPanel;
+    }
+
+    /**
+     * AP-fork (ap-12): the editor's main gain control for the gain check, or null when the tuner type doesn't support
+     * it.  Override in editors that support it.
+     */
+    protected GainSteps getGainSteps()
+    {
+        return null;
+    }
+
     public boolean hasTuner()
     {
         return mDiscoveredTuner != null && mDiscoveredTuner.hasTuner();

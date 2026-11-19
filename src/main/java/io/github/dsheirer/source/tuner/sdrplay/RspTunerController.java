@@ -149,6 +149,7 @@ public abstract class RspTunerController<I extends IControlRsp> extends TunerCon
                 if(overload.overloaded())
                 {
                     getControlRsp().processPowerOverload(overload.tuner());
+                    getSignalMonitor().overloadEvent();
                 }
             }
             //The device can't be closed from an API callback thread, so process the removal on another thread

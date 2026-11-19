@@ -56,6 +56,8 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
     protected Broadcaster<INativeBuffer> mNativeBufferBroadcaster = new Broadcaster();
     private final TunerNoiseFloorEstimator mNoiseFloorEstimator = new TunerNoiseFloorEstimator(this::getFrequency,
         this::getSampleRate, this::getUsableBandwidth);
+    //AP-fork (ap-12): overload detection
+    private final TunerSignalMonitor mSignalMonitor = new TunerSignalMonitor(this::getSampleDropMonitorTunerName);
     protected FrequencyController mFrequencyController;
     private int mMiddleUnusableHalfBandwidth;
     private int mMeasuredFrequencyError;
@@ -881,6 +883,15 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         //Note: unprotected access to the broadcaster ... the broadcaster uses thread-save internal list
         mNativeBufferBroadcaster.broadcast(complexSamples);
         mNoiseFloorEstimator.receive(complexSamples);
+        mSignalMonitor.receive(complexSamples);
+    }
+
+    /**
+     * AP-fork (ap-12): overload and headroom monitor for this tuner's samples
+     */
+    public TunerSignalMonitor getSignalMonitor()
+    {
+        return mSignalMonitor;
     }
 
     /**

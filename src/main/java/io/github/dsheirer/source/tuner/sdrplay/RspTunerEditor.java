@@ -22,6 +22,7 @@ package io.github.dsheirer.source.tuner.sdrplay;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.sdrplay.Tuner;
+import io.github.dsheirer.source.tuner.ui.GainSteps;
 import io.github.dsheirer.source.tuner.ui.TunerEditor;
 import io.github.dsheirer.util.ThreadPool;
 import java.awt.Color;
@@ -98,9 +99,64 @@ public abstract class RspTunerEditor<C extends RspTunerConfiguration> extends Tu
             mGainPanel.add(new JLabel()); //empty label to grow to fill space
             mGainPanel.add(new JLabel("IF Gain Mode:"));
             mGainPanel.add(getAgcButton());
+            //AP-fork (ap-12): signal level meter and gain check
+            mGainPanel.add(getGainCheckPanel(), "newline,span,growx");
         }
 
         return mGainPanel;
+    }
+
+    /**
+     * AP-fork (ap-12): the LNA state for the gain check, least gain first
+     */
+    @Override
+    protected GainSteps getGainSteps()
+    {
+        return new GainSteps()
+        {
+            @Override
+            public boolean isAvailable()
+            {
+                return hasTuner() && getLNASlider().isEnabled();
+            }
+
+            @Override
+            public String getUnavailableReason()
+            {
+                return "The tuner isn't available.";
+            }
+
+            @Override
+            public String getControlName()
+            {
+                return "LNA state";
+            }
+
+            @Override
+            public int count()
+            {
+                return getLNASlider().getMaximum() - getLNASlider().getMinimum() + 1;
+            }
+
+            @Override
+            public int current()
+            {
+                return getLNASlider().getValue() - getLNASlider().getMinimum();
+            }
+
+            @Override
+            public String label(int index)
+            {
+                //The slider runs from the most LNA attenuation (least gain) to none
+                return "LNA " + (getLNASlider().getMaximum() - (index + getLNASlider().getMinimum()));
+            }
+
+            @Override
+            public void apply(int index)
+            {
+                getLNASlider().setValue(index + getLNASlider().getMinimum());
+            }
+        };
     }
 
     /**

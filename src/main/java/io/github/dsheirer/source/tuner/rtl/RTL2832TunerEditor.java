@@ -26,6 +26,7 @@ import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.rtl.RTL2832TunerController.SampleRate;
 import io.github.dsheirer.source.tuner.rtl.e4k.E4KTunerConfiguration;
 import io.github.dsheirer.source.tuner.rtl.r8x.R8xTunerConfiguration;
+import io.github.dsheirer.source.tuner.ui.GainSteps;
 import io.github.dsheirer.source.tuner.ui.TunerEditor;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
@@ -137,6 +138,68 @@ public class RTL2832TunerEditor extends TunerEditor<RTL2832Tuner, RTL2832TunerCo
 
         add(getIFGainLabel());
         add(getIFGainCombo(), "wrap");
+
+        //AP-fork (ap-12): signal level meter and gain check
+        add(new JSeparator(), "span,growx,push");
+        add(getGainCheckPanel(), "span,growx");
+    }
+
+    /**
+     * AP-fork (ap-12): the gain list for the gain check
+     */
+    @Override
+    protected GainSteps getGainSteps()
+    {
+        return new GainSteps()
+        {
+            @Override
+            public boolean isAvailable()
+            {
+                return hasTuner() && !getAgcToggleButton().isSelected() && getGainCombo().getItemCount() > 1;
+            }
+
+            @Override
+            public String getUnavailableReason()
+            {
+                if(!hasTuner())
+                {
+                    return "The tuner isn't available.";
+                }
+
+                return getGainCombo().getItemCount() > 1 ? "Turn off AGC first: Gain Check steps the manual gain." :
+                    "This tuner has no adjustable gain.";
+            }
+
+            @Override
+            public String getControlName()
+            {
+                return "Gain";
+            }
+
+            @Override
+            public int count()
+            {
+                return getGainCombo().getItemCount();
+            }
+
+            @Override
+            public int current()
+            {
+                return Math.max(0, getGainCombo().getSelectedIndex());
+            }
+
+            @Override
+            public String label(int index)
+            {
+                return String.valueOf(getGainCombo().getItemAt(index));
+            }
+
+            @Override
+            public void apply(int index)
+            {
+                getGainCombo().setSelectedIndex(index);
+            }
+        };
     }
 
     @Override
