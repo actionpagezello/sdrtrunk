@@ -60,6 +60,7 @@ public class UserPreferences implements Listener<PreferenceType>
     private ApplicationPreference mApplicationPreference;
     private ChannelMultiFrequencyPreference mChannelMultiFrequencyPreference;
     private DecodeEventPreference mDecodeEventPreference;
+    private final ChannelMutePreference mChannelMutePreference = new ChannelMutePreference();
     private DirectoryPreference mDirectoryPreference;
     private CallManagementPreference mCallManagementPreference;
     private JmbeLibraryPreference mJmbeLibraryPreference;
@@ -124,6 +125,14 @@ public class UserPreferences implements Listener<PreferenceType>
     public JmbeLibraryPreference getJmbeLibraryPreference()
     {
         return mJmbeLibraryPreference;
+    }
+
+    /**
+     * Now Playing mute state of channels that have no alias
+     */
+    public ChannelMutePreference getChannelMutePreference()
+    {
+        return mChannelMutePreference;
     }
 
     /**
