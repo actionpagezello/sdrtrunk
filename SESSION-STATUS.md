@@ -3,6 +3,20 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-19 07:20: `1.0.0-ap-10` built in the workspace
+
+**ap-9 trial (to about 21:45 on 11-18):** no channelizer queue overflow on any machine; queue sizes correct
+(2 s of samples per tuner, provisional limit first).  Summit 800 gain 15 -> 10 fixed the hunting (1-16 an hour).
+Cambridge, Somerville clean.  Daly RSP1Bs: single 20-40 ms gaps every 15-90 minutes now reported (0.00%; hidden
+before by the RSP double count).  Monson and Paxton went ap-2 -> ap-9, their first run with the sample drop monitor:
+Monson RTL 00009103 and 16531039 lost 1.3-1.8% from 12:44 to about 19:40 (11 RTLs, mostly on hubs); Monson channel
+queues overflow (also on ap-2 - CPU).  Paxton RISCON East Simulcast "No Tuner Available" since 13:00 on ap-2, an RTL
+failed to start at 20:18 (EEPROM read).  Upstream race in FrequencyController (one error each, Paxton and Monson).
+
+**ap-10** = upstream #2691 (Ctrl-C copy), #2697 (talker alias), #2696 (Category label), #2698 (SIMD warning).
+Offered, not yet asked for: fix for the FrequencyController race; quieter warnings for isolated tiny RSP gaps.
+Upstream branch `2646-channel-snr` (channel signal meter) not merged yet.
+
 ## Current state 2026-11-18 10:15: `1.0.0-ap-8` and `1.0.0-ap-9` built in the workspace
 
 **ap-7 trial (overnight to 09:12, every Diagnostics box off from 22:30):** Cambridge sample-drop warnings 225 on ap-5

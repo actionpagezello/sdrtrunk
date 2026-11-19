@@ -5,6 +5,23 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-10] - 2026-11-19
+
+Upstream's four changes of 19 November.  Builds on ap-9.
+
+### Added from upstream
+- **Copy rows with Ctrl-C** (#2691): in the Now Playing Events and Messages tabs several rows can be selected and
+  copied, one line per row with the visible columns separated by tabs, as the old Swing tables allowed.
+- **Talker aliases** (#2697): when a system sends both a radio's short ID and its fully qualified ID, the automatic
+  talker-alias feature creates one alias for both instead of two.
+- **"Group" renamed "Category"** in the alias editors (#2696), so it isn't read as a talkgroup.  Screen labels only;
+  playlists are unchanged.
+- **No misleading warning before SIMD calibration** (#2698): the signal-processing factories treat "not calibrated
+  yet" as a normal state and use the standard code without logging an "unrecognized implementation" warning.
+
+### Checks
+- Tests: 609, all pass, including upstream's new history-table copy and talker-alias tests.
+
 ## [1.0.0-ap-9] - 2026-11-18
 
 Upstream's channelizer buffer change (#2672) of 18 November, on its own because it affects how samples flow from
