@@ -3,6 +3,12 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-19 23:30: `1.0.0-ap-13` built in the workspace
+
+**ap-12** (1405553a) built and pushed.  **ap-13** = Gain Check measures the tuner's control channel SNR (steady,
+>=10 dB, picked before the sweep) when it has one, otherwise the noise floor rule; ap-12 history limits still apply.
+Next: install ap-13 on Cambridge, Summit 800, Somerville and test Gain Check on each tuner type.
+
 ## Current state 2026-11-19 22:45: `1.0.0-ap-12` built in the workspace
 
 **ap-11** (42871ed6) running on Cambridge, Summit 800, Somerville.  First-day findings: Summit 800 Airspy Gain Check

@@ -5,6 +5,27 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-13] - 2026-11-19
+
+Gain Check measures against the tuner's control channel.  Builds on ap-12.
+
+### Changed in the fork
+- **Gain Check uses the control channel when the tuner has one.**  It finds the control channels running on the
+  tuner (P25, DMR, NXDN, EDACS, Type II and other trunking decoders; a multi-frequency one on its current frequency)
+  and, before changing anything, keeps the one that is on the air continuously: at least 10 dB above the noise in
+  each of 4 measurements and steady to within 3 dB.  At each gain setting it measures that channel's
+  signal-to-noise ratio, and recommends the lowest setting within 1 dB of the best.  A control channel is on the air
+  the whole time and is a signal you decode, so every setting is measured against the same thing.
+- **Without a control channel, the noise floor decides** (conventional channels): the setting where the noise floor
+  has risen 3 dB above the tuner's own noise.  The "strongest signals in the band" reading is still shown but no
+  longer decides: on a busy band it measured whatever happened to be transmitting.
+- The 30-minute overload history from ap-12 still limits how high either rule can go.
+- The window has a Control Channel column and says which rule it used; the log names the control channel.
+
+### Checks
+- Tests: 649, all pass, including a full Gain Check on a simulated tuner with a control channel (picked, measured at
+  each setting, recommendation before overload) and the noise floor rule ignoring a passing transmission.
+
 ## [1.0.0-ap-12] - 2026-11-19
 
 Gain Check fixes after the first day of ap-11, and the EDACS System Key option.  Builds on ap-11.
