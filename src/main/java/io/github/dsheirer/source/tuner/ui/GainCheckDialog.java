@@ -62,6 +62,7 @@ public class GainCheckDialog extends JDialog
     private GainSweep mSweep;
     private int mRecommendedIndex = -1;
     private int mOriginalIndex = -1;
+    private io.github.dsheirer.source.tuner.TunerSignalMonitor.History mHistory;
 
     public GainCheckDialog(Window owner, String tunerName, GainSteps steps, TunerController controller)
     {
@@ -78,7 +79,9 @@ public class GainCheckDialog extends JDialog
             steps.count() + " settings, about 3 seconds each, and measures the noise floor, the strongest signals and " +
             "overload at each.  The tuner's channels hear the gain changes while it runs.  Your setting (" +
             steps.label(steps.current()) + ") is put back at the end unless you apply the recommendation.  For the " +
-            "best result, run it while a busy channel (a control channel is best) is on this tuner.");
+            "best result, run it while a busy channel (a control channel is best) is on this tuner, after the tuner " +
+            "has run at its setting for at least 5 minutes: the recommendation also uses how the tuner did at its " +
+            "setting over the last 30 minutes.");
         intro.setEditable(false);
         intro.setLineWrap(true);
         intro.setWrapStyleWord(true);
@@ -157,6 +160,8 @@ public class GainCheckDialog extends JDialog
         }
 
         mOriginalIndex = mSteps.current();
+        //ap-12: the tuner's history at its own setting, from before the check changes it
+        mHistory = mController.getSignalMonitor().getHistory();
         mModel.clear();
         mRecommendedIndex = -1;
         mRecommendationText.setText("");
@@ -225,7 +230,7 @@ public class GainCheckDialog extends JDialog
             return;
         }
 
-        GainSweep.Recommendation recommendation = GainSweep.recommend(results);
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, mOriginalIndex, mHistory);
         mRecommendedIndex = recommendation.index();
         mModel.setRecommended(recommendation.index());
         mRecommendationText.setText(recommendation.explanation());
@@ -244,6 +249,11 @@ public class GainCheckDialog extends JDialog
                 .append(String.format("%.1f", result.signalDb())).append(" dB, peak ")
                 .append(String.format("%.1f", result.peakDbfs())).append(" dBFS, full scale ")
                 .append(String.format("%.3f", result.clippedPercent())).append('%');
+
+            if(!Double.isNaN(result.signalSpreadDb()))
+            {
+                sb.append(", signals varied ").append(String.format("%.1f", result.signalSpreadDb())).append(" dB");
+            }
 
             if(result.overloadEvents() > 0)
             {

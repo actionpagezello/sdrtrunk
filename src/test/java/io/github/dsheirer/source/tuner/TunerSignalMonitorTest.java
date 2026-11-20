@@ -125,6 +125,33 @@ public class TunerSignalMonitorTest
     }
 
     @Test
+    public void gainCheckSamplesStayOutOfTheHistory()
+    {
+        TunerSignalMonitor monitor = new TunerSignalMonitor(() -> "test");
+        monitor.receive(tone(0.25), 60_000);
+        monitor.setIntensive(true);
+        monitor.receive(tone(2.0), 61_000);
+        monitor.setIntensive(false);
+        monitor.receive(tone(0.25), 62_000);
+
+        TunerSignalMonitor.History history = monitor.getHistory(62_000);
+        assertFalse(history.reading().isOverloaded(), "the check's overloaded setting isn't the tuner's own");
+        assertEquals(2 * 8192, history.reading().samplesChecked());
+        assertEquals(2000, history.coveredMs());
+    }
+
+    @Test
+    public void aSettingChangeStartsANewHistory()
+    {
+        TunerSignalMonitor monitor = new TunerSignalMonitor(() -> "test");
+        monitor.receive(tone(2.0), 60_000);
+        assertTrue(monitor.getHistory(60_000).reading().isOverloaded());
+        monitor.markSettingChange();
+        monitor.receive(tone(0.25), 61_000);
+        assertFalse(monitor.getHistory(61_000).reading().isOverloaded());
+    }
+
+    @Test
     public void onlyOnePerTenThousandOrMoreIsReported()
     {
         assertFalse(TunerSignalMonitor.isReportable(0.005));

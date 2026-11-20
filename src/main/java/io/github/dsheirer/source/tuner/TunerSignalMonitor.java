@@ -157,9 +157,15 @@ public class TunerSignalMonitor
             mLogPeriodStart = now;
         }
 
-        mLogChecked += checked;
-        mLogClipped += clipped;
-        mLogPeak = Math.max(mLogPeak, peak);
+        //ap-12: a gain check's samples are measured at settings that aren't the tuner's own - they stay out of the
+        //5-minute log and the history
+        if(!mIntensive)
+        {
+            mLogChecked += checked;
+            mLogClipped += clipped;
+            mLogPeak = Math.max(mLogPeak, peak);
+            addHistory(checked, clipped, peak, 0, now);
+        }
 
         mSlot = (mSlot + 1) % RECENT_SLOTS;
         mSlotTime[mSlot] = now;
@@ -182,10 +188,100 @@ public class TunerSignalMonitor
      */
     public synchronized void overloadEvent()
     {
-        mLogOverloadEvents++;
+        long now = System.currentTimeMillis();
         mWindowOverloadEvents++;
-        mLastOverloadEvent = System.currentTimeMillis();
+        mLastOverloadEvent = now;
+
+        if(!mIntensive)
+        {
+            mLogOverloadEvents++;
+            addHistory(0, 0, 0, 1, now);
+        }
     }
+
+    //ap-12: history at the tuner's current gain setting, one bucket per minute, for the gain check
+    static final long HISTORY_MS = 30 * 60 * 1000;
+    private static final long BUCKET_MS = 60 * 1000;
+    private final java.util.ArrayDeque<long[]> mHistory = new java.util.ArrayDeque<>();
+    private long mHistoryStart;
+
+    private void addHistory(long checked, long clipped, float peak, int events, long now)
+    {
+        if(mHistoryStart == 0)
+        {
+            mHistoryStart = now;
+        }
+
+        long bucket = now / BUCKET_MS;
+        long[] last = mHistory.peekLast();
+
+        if(last == null || last[0] != bucket)
+        {
+            last = new long[]{bucket, 0, 0, 0, 0};
+            mHistory.addLast(last);
+        }
+
+        last[1] += checked;
+        last[2] += clipped;
+        //Peak kept in millionths of full scale
+        last[3] = Math.max(last[3], (long)(peak * 1_000_000));
+        last[4] += events;
+
+        while(!mHistory.isEmpty() && mHistory.peekFirst()[0] < bucket - HISTORY_MS / BUCKET_MS)
+        {
+            mHistory.removeFirst();
+        }
+    }
+
+    /**
+     * ap-12: forgets the history, because the tuner's gain setting changed.  Called when the user or the gain check
+     * changes the setting.
+     */
+    public synchronized void markSettingChange()
+    {
+        mHistory.clear();
+        mHistoryStart = 0;
+    }
+
+    /**
+     * ap-12: readings at the current gain setting over up to the last 30 minutes (gain check samples excluded)
+     */
+    public synchronized History getHistory()
+    {
+        return getHistory(System.currentTimeMillis());
+    }
+
+    synchronized History getHistory(long now)
+    {
+        long checked = 0;
+        long clipped = 0;
+        long peak = 0;
+        int events = 0;
+        long earliest = now / BUCKET_MS - HISTORY_MS / BUCKET_MS;
+
+        for(long[] bucket : mHistory)
+        {
+            if(bucket[0] >= earliest)
+            {
+                checked += bucket[1];
+                clipped += bucket[2];
+                peak = Math.max(peak, bucket[3]);
+                events += bucket[4];
+            }
+        }
+
+        long covered = mHistoryStart == 0 ? 0 : Math.min(HISTORY_MS, now - mHistoryStart);
+        Reading reading = new Reading(checked, checked > 0 ? 100.0 * clipped / checked : 0.0,
+            checked > 0 ? toDb(peak / 1_000_000f) : Double.NaN, events);
+        return new History(reading, covered);
+    }
+
+    /**
+     * ap-12: readings at the current gain setting
+     * @param reading over the period
+     * @param coveredMs length of the period, up to 30 minutes
+     */
+    public record History(Reading reading, long coveredMs) {}
 
     private void logPeriod(long now)
     {
@@ -236,6 +332,14 @@ public class TunerSignalMonitor
     public void setIntensive(boolean intensive)
     {
         mIntensive = intensive;
+    }
+
+    /**
+     * Indicates a gain check is running on this tuner
+     */
+    public boolean isIntensive()
+    {
+        return mIntensive;
     }
 
     /**

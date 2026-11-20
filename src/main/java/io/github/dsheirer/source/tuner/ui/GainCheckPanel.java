@@ -55,6 +55,7 @@ public class GainCheckPanel extends JPanel
     private final JButton mGainCheckButton = new JButton("Gain Check...");
     private final Timer mTimer;
     private GainCheckDialog mDialog;
+    private int mLastSetting = Integer.MIN_VALUE;
 
     /**
      * Constructs an instance
@@ -141,6 +142,19 @@ public class GainCheckPanel extends JPanel
             mNoiseLabel.setText("-");
             mSignalLabel.setText("-");
             return;
+        }
+
+        //ap-12: a changed gain setting starts a new history (not while a gain check is stepping through settings)
+        if(steps != null && !controller.getSignalMonitor().isIntensive())
+        {
+            int current = steps.current();
+
+            if(mLastSetting != Integer.MIN_VALUE && current != mLastSetting)
+            {
+                controller.getSignalMonitor().markSettingChange();
+            }
+
+            mLastSetting = current;
         }
 
         TunerSignalMonitor.Reading reading = controller.getSignalMonitor().getRecentReading();
