@@ -20,8 +20,8 @@ package io.github.dsheirer.source.tuner.ui;
 
 /**
  * AP-fork (ap-12): a tuner editor's main gain control as an ordered list of settings, lowest gain first, for the gain
- * check.  Calls are made on the Swing event thread.  Applying a setting works exactly as if the user moved the control,
- * so the tuner configuration is saved each time.
+ * check.  Calls are made on the JavaFX application thread (ap-14; the Swing event thread before).  Applying a
+ * setting works exactly as if the user moved the control, so the tuner configuration is saved each time.
  */
 public interface GainSteps
 {

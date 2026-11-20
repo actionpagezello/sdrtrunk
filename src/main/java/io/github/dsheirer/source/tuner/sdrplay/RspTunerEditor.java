@@ -22,6 +22,7 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sdrplay.Tuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.ui.GainSlider;
+import io.github.dsheirer.source.tuner.ui.GainSteps;
 import io.github.dsheirer.source.tuner.ui.TunerEditor;
 import io.github.dsheirer.source.tuner.ui.TunerSection;
 import io.github.dsheirer.util.ThreadPool;
@@ -76,6 +77,63 @@ public abstract class RspTunerEditor<C extends RspTunerConfiguration> extends Tu
         gain.addRow("Gain", readout);
         mLnaLabel = gain.addRow("LNA", getLNASlider(), new Region());
         mIfGainLabel = gain.addRow("IF", getIfGainSlider(), getAgcCheckBox());
+        //AP-fork (ap-11): signal level meter and Gain Check
+        addGainCheckSection();
+    }
+
+    /**
+     * AP-fork (ap-12): the LNA state for the gain check, least gain first
+     */
+    @Override
+    protected GainSteps getGainSteps()
+    {
+        return new GainSteps()
+        {
+            @Override
+            public boolean isAvailable()
+            {
+                return hasTuner() && !getLNASlider().isDisabled();
+            }
+
+            @Override
+            public String getUnavailableReason()
+            {
+                return "The tuner isn't available.";
+            }
+
+            @Override
+            public String getControlName()
+            {
+                return "LNA state";
+            }
+
+            @Override
+            public int count()
+            {
+                return (int)getLNASlider().getSlider().getMax() - (int)getLNASlider().getSlider().getMin() + 1;
+            }
+
+            @Override
+            public int current()
+            {
+                return getLNASlider().getValue() - (int)getLNASlider().getSlider().getMin();
+            }
+
+            @Override
+            public String label(int index)
+            {
+                //The slider runs from the most LNA attenuation (least gain) to none
+                return "LNA " + ((int)getLNASlider().getSlider().getMax() -
+                    (index + (int)getLNASlider().getSlider().getMin()));
+            }
+
+            @Override
+            public void apply(int index)
+            {
+                //Through the slider, so the editor applies and saves it as if the user moved it
+                getLNASlider().getSlider().setValue(index + getLNASlider().getSlider().getMin());
+            }
+        };
     }
 
     /**

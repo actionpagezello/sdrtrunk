@@ -316,6 +316,16 @@ public class GainSweepTest
     @Test
     public void sweepOnASimulatedTunerFindsTheSettingBeforeOverload() throws Exception
     {
+        //ap-14: gain settings are applied on the JavaFX application thread
+        try
+        {
+            javafx.application.Platform.startup(() -> {});
+        }
+        catch(IllegalStateException alreadyStarted)
+        {
+            //Started by another test
+        }
+
         double[] gains = {0.002, 0.02, 0.2, 2.0};
         AtomicInteger setting = new AtomicInteger(0);
         TunerNoiseFloorEstimator estimator = new TunerNoiseFloorEstimator(() -> 100_000_000L, () -> 2_400_000.0,

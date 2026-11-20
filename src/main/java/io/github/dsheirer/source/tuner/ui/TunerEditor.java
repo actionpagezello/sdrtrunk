@@ -80,6 +80,8 @@ import org.slf4j.LoggerFactory;
 public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> extends VBox
         implements IDiscoveredTunerStatusListener, Listener<TunerEvent>
 {
+    //AP-fork (ap-14): Signal Level section, when the editor adds one
+    private GainCheckSection mGainCheckSection;
     private static final Logger mLog = LoggerFactory.getLogger(TunerEditor.class);
     private static final PseudoClass STATUS_ENABLED = PseudoClass.getPseudoClass("enabled");
     private static final PseudoClass STATUS_DISABLED = PseudoClass.getPseudoClass("disabled-tuner");
@@ -288,6 +290,30 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
                 mSections.getChildren().size();
         mSections.getChildren().add(index, section);
         return section;
+    }
+
+    /**
+     * AP-fork (ap-14): adds the Signal Level section (meter and Gain Check) after the sections added so far.  Editors
+     * call it after their Gain section.
+     */
+    protected GainCheckSection addGainCheckSection()
+    {
+        GainCheckSection section = new GainCheckSection(() -> hasTuner() ? getTuner() : null, this::getGainSteps,
+            () -> getTunerManager() != null ? getTunerManager().getChannelProcessingManager() : null);
+        int index = hasTuningControls() ? mSections.getChildren().indexOf(getCorrectionSection()) :
+                mSections.getChildren().size();
+        mSections.getChildren().add(index, section);
+        mGainCheckSection = section;
+        return section;
+    }
+
+    /**
+     * AP-fork (ap-12): the editor's main gain control for the gain check, or null when the tuner type doesn't support
+     * it.  Override in editors that support it.
+     */
+    protected GainSteps getGainSteps()
+    {
+        return null;
     }
 
     /**
@@ -1306,6 +1332,12 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
     {
         turnOffRecorder();
         mDisposed = true;
+
+        if(mGainCheckSection != null)
+        {
+            mGainCheckSection.dispose();
+        }
+
         getFrequencyControl().removeListener(mFrequencyRequestListener);
         registerFrequencyControl(null);
 

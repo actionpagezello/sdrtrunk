@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import javax.swing.SwingUtilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -254,13 +253,13 @@ public class GainSweep
     }
 
     /**
-     * Runs the sweep on the calling thread (not the Swing event thread), then puts the original setting back.
+     * Runs the sweep on the calling thread (not the JavaFX application thread), then puts the original setting back.
      * @return results, one per measured setting, lowest gain first
      */
     public List<StepResult> run(Listener listener) throws Exception
     {
-        int original = onSwing(mSteps::current);
-        int count = onSwing(mSteps::count);
+        int original = onUi(mSteps::current);
+        int count = onUi(mSteps::count);
         List<StepResult> results = new ArrayList<>();
         //ap-13: the control channel, measured at the tuner's own setting before anything changes
         mReference = chooseReference();
@@ -274,7 +273,7 @@ public class GainSweep
                 String label = labelOf(index);
                 listener.stepStarted(index + 1, count, label);
                 final int step = index;
-                runOnSwing(() -> mSteps.apply(step));
+                runOnUi(() -> mSteps.apply(step));
                 StepResult result = measure(index, label);
 
                 if(result != null)
@@ -287,7 +286,7 @@ public class GainSweep
         finally
         {
             mMonitor.setIntensive(false);
-            runOnSwing(() -> mSteps.apply(original));
+            runOnUi(() -> mSteps.apply(original));
         }
 
         return results;
@@ -295,7 +294,7 @@ public class GainSweep
 
     private String labelOf(int index) throws Exception
     {
-        return onSwing(() -> mSteps.label(index));
+        return onUi(() -> mSteps.label(index));
     }
 
     private StepResult measure(int index, String label) throws InterruptedException
@@ -695,39 +694,42 @@ public class GainSweep
             "the tuner's own noise still dominates there.");
     }
 
-    private static <T> T onSwing(java.util.concurrent.Callable<T> callable) throws Exception
+    /**
+     * Runs a call on the JavaFX application thread (the tuner editors' controls are JavaFX since ap-14) and waits for
+     * its result.
+     */
+    private static <T> T onUi(java.util.concurrent.Callable<T> callable) throws Exception
     {
-        if(SwingUtilities.isEventDispatchThread())
+        if(javafx.application.Platform.isFxApplicationThread())
         {
             return callable.call();
         }
 
-        Object[] result = new Object[1];
-        Exception[] error = new Exception[1];
-        SwingUtilities.invokeAndWait(() -> {
+        java.util.concurrent.CompletableFuture<T> future = new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
             try
             {
-                result[0] = callable.call();
+                future.complete(callable.call());
             }
-            catch(Exception e)
+            catch(Throwable t)
             {
-                error[0] = e;
+                future.completeExceptionally(t);
             }
         });
 
-        if(error[0] != null)
+        try
         {
-            throw error[0];
+            return future.get(10, java.util.concurrent.TimeUnit.SECONDS);
         }
-
-        @SuppressWarnings("unchecked")
-        T value = (T)result[0];
-        return value;
+        catch(java.util.concurrent.ExecutionException e)
+        {
+            throw e.getCause() instanceof Exception exception ? exception : e;
+        }
     }
 
-    private static void runOnSwing(Runnable runnable) throws Exception
+    private static void runOnUi(Runnable runnable) throws Exception
     {
-        onSwing(() -> {
+        onUi(() -> {
             runnable.run();
             return null;
         });

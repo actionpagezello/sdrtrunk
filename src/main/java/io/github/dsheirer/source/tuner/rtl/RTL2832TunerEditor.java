@@ -25,6 +25,7 @@ import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.rtl.RTL2832TunerController.SampleRate;
 import io.github.dsheirer.source.tuner.rtl.e4k.E4KTunerConfiguration;
 import io.github.dsheirer.source.tuner.rtl.r8x.R8xTunerConfiguration;
+import io.github.dsheirer.source.tuner.ui.GainSteps;
 import io.github.dsheirer.source.tuner.ui.TunerEditor;
 import io.github.dsheirer.source.tuner.ui.TunerSection;
 import javafx.collections.FXCollections;
@@ -98,6 +99,8 @@ public class RTL2832TunerEditor extends TunerEditor<RTL2832Tuner, RTL2832TunerCo
         TunerSection gain = addSection("Gain");
         gain.addRow("Gain", getGainCombo(), getAgcCheckBox());
         mIFGainLabel = gain.addRow("IF Gain (dB)", getIFGainCombo());
+        //AP-fork (ap-11): signal level meter and Gain Check
+        addGainCheckSection();
 
         TunerSection options = addSection("Options");
         options.addControl(getBiasTCheckBox());
@@ -234,6 +237,65 @@ public class RTL2832TunerEditor extends TunerEditor<RTL2832Tuner, RTL2832TunerCo
     /**
      * Applies the current AGC and gain settings to the tuner and saves the configuration.
      */
+    /**
+     * AP-fork (ap-12): the gain list for the gain check
+     */
+    @Override
+    protected GainSteps getGainSteps()
+    {
+        return new GainSteps()
+        {
+            @Override
+            public boolean isAvailable()
+            {
+                return hasTuner() && !getAgcCheckBox().isSelected() && getGainCombo().getItems().size() > 1;
+            }
+
+            @Override
+            public String getUnavailableReason()
+            {
+                if(!hasTuner())
+                {
+                    return "The tuner isn't available.";
+                }
+
+                return getGainCombo().getItems().size() > 1 ? "Turn off AGC first: Gain Check steps the manual gain." :
+                    "This tuner has no adjustable gain.";
+            }
+
+            @Override
+            public String getControlName()
+            {
+                return "Gain";
+            }
+
+            @Override
+            public int count()
+            {
+                return getGainCombo().getItems().size();
+            }
+
+            @Override
+            public int current()
+            {
+                return Math.max(0, getGainCombo().getSelectionModel().getSelectedIndex());
+            }
+
+            @Override
+            public String label(int index)
+            {
+                return String.valueOf(getGainCombo().getItems().get(index));
+            }
+
+            @Override
+            public void apply(int index)
+            {
+                //Through the combo box, so the editor applies and saves it as if the user picked it
+                getGainCombo().getSelectionModel().select(index);
+            }
+        };
+    }
+
     private void applyGain()
     {
         if(isLoading() || !hasTuner())

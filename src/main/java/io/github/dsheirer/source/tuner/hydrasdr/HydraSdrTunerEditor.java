@@ -24,6 +24,7 @@ import io.github.dsheirer.source.tuner.hydrasdr.HydraSdrTunerController.GainMode
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.ui.GainSlider;
+import io.github.dsheirer.source.tuner.ui.GainSteps;
 import io.github.dsheirer.source.tuner.ui.TunerEditor;
 import io.github.dsheirer.source.tuner.ui.TunerSection;
 import java.util.List;
@@ -88,6 +89,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
         mIFGainLabel = gain.addRow("IF", getIFGainSlider(), new Region());
         mMixerGainLabel = gain.addRow("Mixer", getMixerGainSlider(), getMixerAGCCheckBox());
         mLNAGainLabel = gain.addRow("LNA", getLNAGainSlider(), getLNAAGCCheckBox());
+        //AP-fork (ap-11): signal level meter and Gain Check
+        addGainCheckSection();
 
         TunerSection options = addSection("Options");
         options.addControl(getBiasTCheckBox());
@@ -236,6 +239,60 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
         }
 
         return mIFGainSlider;
+    }
+
+    /**
+     * AP-fork (ap-12): the master gain slider (Linearity or Sensitivity mode) for the gain check
+     */
+    @Override
+    protected GainSteps getGainSteps()
+    {
+        return new GainSteps()
+        {
+            @Override
+            public boolean isAvailable()
+            {
+                return hasTuner() && getGainModeCombo().getValue() != GainMode.CUSTOM;
+            }
+
+            @Override
+            public String getUnavailableReason()
+            {
+                return hasTuner() ? "Gain Check steps the Linearity or Sensitivity gain.  Choose one of those gain " +
+                    "modes instead of Custom." : "The tuner isn't available.";
+            }
+
+            @Override
+            public String getControlName()
+            {
+                return getGainModeCombo().getValue() == GainMode.SENSITIVITY ? "Sensitivity gain" : "Linearity gain";
+            }
+
+            @Override
+            public int count()
+            {
+                return HydraSdrTunerController.GAIN_MAX - HydraSdrTunerController.GAIN_MIN + 1;
+            }
+
+            @Override
+            public int current()
+            {
+                return getMasterGainSlider().getValue() - HydraSdrTunerController.GAIN_MIN;
+            }
+
+            @Override
+            public String label(int index)
+            {
+                return String.valueOf(index + HydraSdrTunerController.GAIN_MIN);
+            }
+
+            @Override
+            public void apply(int index)
+            {
+                //Through the slider, so the editor applies and saves it as if the user moved it
+                getMasterGainSlider().getSlider().setValue(index + HydraSdrTunerController.GAIN_MIN);
+            }
+        };
     }
 
     private GainSlider getMasterGainSlider()
