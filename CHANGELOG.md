@@ -5,6 +5,35 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-14] - 2026-11-20
+
+Upstream's six changes of 20 November, including the new JavaFX Tuners tab, with the fork's gain tools moved onto
+it.  Builds on ap-13.
+
+### Added from upstream
+- **New Tuners tab** (#2720): a tuner list with status pills and configurable columns, an Add Tuner menu, and a
+  sectioned editor - header with status, enable switch, spectrum/record/restart; Tuning; Gain; Options; Frequency
+  Correction; collapsible Frequency Limits.  Every tuner editor rebuilt in JavaFX.  **New frequency control**: hover
+  a digit and scroll, or click its upper or lower half, to step it; or type a frequency (e.g. 851.0125) and press
+  Enter.  Upstream fixes in the same change: RSPdx saved the FM notch as the DAB notch and never applied the HDR
+  bandwidth; RSP2 external reference output and network tuner PPM weren't saved; FCD Pro gain/phase correction loaded
+  swapped; Airspy/HydraSDR gain mode changes now apply the mode's gains.
+- **Waterfall contrast for weak signals** (#2712): the waterfall's colours follow the noise floor, so weak signals
+  stand out the same at any gain, sample rate or FFT size.
+- **App branding, icons and a startup splash screen** (#2718, #2721).  The splash shows the fork's version.
+- Test and README fixes (#2713, #2715).
+
+### Changed in the fork
+- **Signal level meter and Gain Check moved to the new Tuners tab.**  They are now a "Signal Level" section after the
+  Gain section of the RTL-SDR, Airspy, HydraSDR and RSP editors, and the Gain Check window is a JavaFX window.  How
+  they measure and recommend is unchanged from ap-13 (control channel or noise floor, 30-minute overload history).
+- The fork's RSP recovery (re-finding an RSP the SDRplay API reported as removed and restarting its channels) and the
+  logging of uncaught exceptions carried over unchanged.
+
+### Checks
+- Tests: 673, all pass, including upstream's new frequency control and tuner info tests and the gain check on a
+  simulated tuner (its gain settings now applied on the JavaFX thread).
+
 ## [1.0.0-ap-13] - 2026-11-19
 
 Gain Check measures against the tuner's control channel.  Builds on ap-12.

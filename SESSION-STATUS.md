@@ -3,6 +3,13 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-20 07:00: `1.0.0-ap-14` built in the workspace
+
+**ap-13** (73627f51) pushed.  **ap-14** = upstream #2712, #2714, #2716, #2719, #2722 and #2720 (JavaFX Tuners tab)
++ the fork's Signal Level section and Gain Check window rebuilt in JavaFX on the new editors (RTL, Airspy, HydraSDR,
+RSP).  RSP recovery merged unchanged.  Next: install on Cambridge, Summit 800, Somerville; test the new Tuners tab
+and Gain Check.
+
 ## Current state 2026-11-19 23:30: `1.0.0-ap-13` built in the workspace
 
 **ap-12** (1405553a) built and pushed.  **ap-13** = Gain Check measures the tuner's control channel SNR (steady,
