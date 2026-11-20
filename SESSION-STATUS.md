@@ -3,6 +3,14 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-19 22:45: `1.0.0-ap-12` built in the workspace
+
+**ap-11** (42871ed6) running on Cambridge, Summit 800, Somerville.  First-day findings: Summit 800 Airspy Gain Check
+recommended 10 (correct); Somerville RTL 65089485 sent 32.8 -> 42.1 dB by Gain Check and then overloaded (set back);
+Somerville RTLs 14095505, 70339484, 00000001, 65089485 overloaded most of the time (gain too high, pre-existing);
+Cambridge RSP1B ~2,800 tuner overload events in 4.5 h.  **ap-12** = Gain Check with 30-minute history per setting and
+noise-floor rule + ESK.  MBTA encryption scan: none in 4,088 transmissions.  Upstream PR #2706 has the ESK commit.
+
 ## Current state 2026-11-19 11:40: `1.0.0-ap-11` built in the workspace
 
 **ap-10** (9ccbdb76) = upstream batch of 19 November + FrequencyController race fix + sustained-loss-only drop

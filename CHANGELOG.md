@@ -5,6 +5,44 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-12] - 2026-11-19
+
+Gain Check fixes after the first day of ap-11, and the EDACS System Key option.  Builds on ap-11.
+
+### Fixed in the fork
+- **Gain Check no longer recommends a gain that overloads a while later.**  On Somerville, ap-11 sent an RTL from
+  32.8 to 42.1 dB, where it then overloaded most of the time: a strong transmitter that keys up now and then happened
+  to be off during that setting's 2-second measurement.  Gain Check now also uses how the tuner did at its own setting
+  over the last 30 minutes (kept for each tuner; changing the gain starts a new history):
+  - overload at your setting in that time: only lower settings are recommended;
+  - no overload: a higher setting only as far as the highest peak in that time leaves room for, keeping 3 dB of
+    headroom (RTL-SDR); one setting higher at most, and only with peaks at or below -6 dBFS (Airspy, HydraSDR, RSP);
+  - less than 5 minutes at your setting: nothing higher.  Run it after the tuner has been at one setting a while.
+- **When traffic comes and goes, the noise floor decides.**  Each setting's strongest signals are now measured twice.
+  When they were steady (a control channel), the recommendation is as before: the lowest setting within 1 dB of the
+  best signals.  When they weren't, it is the setting where the noise floor has risen 3 dB above the tuner's own noise
+  - past that, more gain mostly amplifies noise.  The window and the log say which rule was used.
+- **The 5-minute overload warning ignores Gain Check's own test settings.**  ap-11 logged one false overload warning
+  right after every check.
+
+Replayed on ap-11's three Gain Check results: Summit 800's Airspy stays at 10; the Somerville RTL that went to 42.1 dB
+gets 28.0 dB; the one that overloaded at 15.7 dB gets a lower setting.
+
+### Added in the fork
+- **EDACS System Key (ESK)** switch in the EDACS channel editor (off by default): for systems that XOR the control
+  channel messages with 0xA0.  Not tested on the air (MBTA doesn't use it).  Also added to the upstream EDACS pull
+  request (#2706) after a reviewer asked for it.
+
+### Checked, no change needed
+- **EDACS encryption:** 4,088 MBTA ProVoice transmissions recorded on Cambridge (2026-11-19 15:21-20:08, 24
+  talkgroups) all decode as speech, and no header carries an unexplained flag - MBTA doesn't appear to use encryption,
+  so no encrypted-call handling was added.  2% of calls had more than 30% of their voice frames damaged, spread evenly
+  over all 13 voice channels: reception, not one channel.
+
+### Checks
+- Tests: 647, all pass, including the three ap-11 Gain Check tables replayed against the new recommendation, history
+  kept per setting, and test settings kept out of the history and the log.
+
 ## [1.0.0-ap-11] - 2026-11-19
 
 Upstream's channel signal meter (taken from its branch before it is merged), a 20-band graphic equalizer, and new
