@@ -830,7 +830,8 @@ public abstract class TunerEditor<T extends Tuner,C extends TunerConfiguration> 
     {
         if(mGainCheckPanel == null)
         {
-            mGainCheckPanel = new GainCheckPanel(() -> hasTuner() ? getTuner() : null, this::getGainSteps);
+            mGainCheckPanel = new GainCheckPanel(() -> hasTuner() ? getTuner() : null, this::getGainSteps,
+                () -> mTunerManager != null ? mTunerManager.getChannelProcessingManager() : null);
         }
 
         return mGainCheckPanel;

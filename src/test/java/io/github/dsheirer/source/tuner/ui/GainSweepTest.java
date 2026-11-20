@@ -165,8 +165,17 @@ public class GainSweepTest
     public void summit800AirspyStaysAt10()
     {
         //2026-11-19 14:53: control channel on the tuner (steady), at 10 for 30 minutes with peaks near -0.3 dBFS
-        GainSweep.Recommendation recommendation = GainSweep.recommend(table(SUMMIT, 1.0), index(SUMMIT, "10"),
-            history(30, 0.0, -0.3, 0));
+        List<GainSweep.StepResult> results = new java.util.ArrayList<>();
+
+        for(GainSweep.StepResult result : table(SUMMIT, 1.0))
+        {
+            //The control channel stood in for by the strongest signals, which it was at Summit 800
+            results.add(new GainSweep.StepResult(result.index(), result.label(), result.noiseFloorDb(),
+                result.signalDb(), result.peakDbfs(), result.clippedPercent(), 0, 1.0, result.signalDb()));
+        }
+
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, index(SUMMIT, "10"),
+            history(30, 0.0, -0.3, 0), "EDACS Control");
         assertEquals("10", SUMMIT[recommendation.index()][0], recommendation.explanation());
     }
 
@@ -221,14 +230,22 @@ public class GainSweepTest
         return new GainSweep.StepResult(index, String.valueOf(index), noise, signal, -10, clipped, 0);
     }
 
+    /**
+     * A setting with the control channel measured at the signal-to-noise ratio
+     */
+    private static GainSweep.StepResult control(int index, double noise, double snr, double clipped)
+    {
+        return new GainSweep.StepResult(index, String.valueOf(index), noise, snr, -10, clipped, 0, 1.0, snr);
+    }
+
     @Test
     public void recommendsTheLowestGainWithinOneDbOfTheBestSignals()
     {
         //Signals improve while the tuner's own noise dominates, level off, then overload sets in
         List<GainSweep.StepResult> results = List.of(
-            step(0, -80, 10, 0), step(1, -78, 16, 0), step(2, -74, 21.5, 0), step(3, -70, 22.0, 0),
-            step(4, -66, 22.2, 0), step(5, -60, 19, 0.2));
-        GainSweep.Recommendation recommendation = GainSweep.recommend(results);
+            control(0, -80, 10, 0), control(1, -78, 16, 0), control(2, -74, 21.5, 0), control(3, -70, 22.0, 0),
+            control(4, -66, 22.2, 0), control(5, -60, 19, 0.2));
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, -1, null, "CC");
         assertEquals(2, recommendation.index(), recommendation.explanation());
         assertTrue(recommendation.explanation().contains("Overload starts above 4"), recommendation.explanation());
     }
@@ -238,6 +255,27 @@ public class GainSweepTest
     {
         List<GainSweep.StepResult> results = List.of(step(0, -80, 10, 0), step(1, -70, 30, 0.05));
         assertEquals(0, GainSweep.recommend(results).index());
+    }
+
+    @Test
+    public void withoutAControlChannelTheStrongestSignalsDontDecide()
+    {
+        //ap-13: a passing transmission at setting 3 doesn't pull the recommendation up; the noise floor decides
+        List<GainSweep.StepResult> results = List.of(step(0, -80, 2, 0), step(1, -80, 2, 0), step(2, -76.5, 3, 0),
+            step(3, -72, 30, 0), step(4, -66, 4, 0));
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results);
+        assertEquals(2, recommendation.index(), recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("no control channel"), recommendation.explanation());
+    }
+
+    @Test
+    public void controlChannelMissingAtSomeSettingFallsBackToTheNoiseFloor()
+    {
+        List<GainSweep.StepResult> results = List.of(control(0, -80, 10, 0), control(1, -80, 20, 0),
+            step(2, -76, 3, 0), control(3, -70, 25, 0));
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, -1, null, "CC");
+        assertEquals(2, recommendation.index(), recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("couldn't be measured"), recommendation.explanation());
     }
 
     @Test
@@ -340,7 +378,9 @@ public class GainSweepTest
 
         try
         {
-            GainSweep sweep = new GainSweep(steps, estimator, monitor);
+            //The tone at 0.15 cycles per sample sits 360 kHz above the 100 MHz center: the simulated control channel
+            GainSweep sweep = new GainSweep(steps, estimator, monitor,
+                List.of(new GainCheckReference.Candidate("Simulated control", 100_360_000L, 12_500)));
             List<GainSweep.StepResult> results = sweep.run(new GainSweep.Listener()
             {
                 public void stepStarted(int step, int of, String label) {}
@@ -352,6 +392,14 @@ public class GainSweepTest
             assertFalse(results.get(2).isOverloaded(), results.toString());
             assertTrue(results.get(3).isOverloaded(), results.toString());
             assertTrue(results.get(1).signalDb() > results.get(0).signalDb() + 10, results.toString());
+            assertEquals("Simulated control", sweep.getReference() != null ? sweep.getReference().name() : null);
+            assertTrue(results.get(2).referenceSnrDb() > results.get(1).referenceSnrDb() + 5, results.toString());
+            //Half an hour at setting 1 peaking at -31 dBFS allows one setting higher
+            assertEquals(2, GainSweep.recommend(results, 1, history(30, 0.0, -31.0, 0),
+                sweep.getReference().name()).index(), results.toString());
+            //Without history at setting 1, nothing higher
+            assertEquals(1, GainSweep.recommend(results, 1, null, sweep.getReference().name()).index());
+            //Without the control channel the noise floor gives the same answer here
             assertEquals(2, GainSweep.recommend(results).index(), results.toString());
         }
         finally

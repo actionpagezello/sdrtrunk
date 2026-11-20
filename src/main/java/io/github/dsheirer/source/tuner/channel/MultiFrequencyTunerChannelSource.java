@@ -27,6 +27,7 @@ import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.SourceEvent;
 import io.github.dsheirer.source.SourceException;
 import io.github.dsheirer.source.heartbeat.Heartbeat;
+import io.github.dsheirer.source.tuner.TunerNoiseFloorEstimator;
 import io.github.dsheirer.source.tuner.channel.rotation.FrequencyHunt;
 import io.github.dsheirer.source.tuner.channel.rotation.FrequencyLockChangeRequest;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
@@ -157,6 +158,26 @@ public class MultiFrequencyTunerChannelSource extends TunerChannelSource
     {
         TunerChannelSource source = mTunerChannelSource;
         return source != null ? source.getNoiseDensity() : Double.NaN;
+    }
+
+    /**
+     * AP-fork (ap-13): the current frequency's tuner channel (getTunerChannel() keeps the first frequency's)
+     */
+    @Override
+    public TunerChannel getActiveTunerChannel()
+    {
+        TunerChannelSource source = mTunerChannelSource;
+        return source != null ? source.getTunerChannel() : getTunerChannel();
+    }
+
+    /**
+     * AP-fork (ap-13): the estimator of the tuner the current frequency comes from
+     */
+    @Override
+    public TunerNoiseFloorEstimator getNoiseFloorEstimator()
+    {
+        TunerChannelSource source = mTunerChannelSource;
+        return source != null ? source.getNoiseFloorEstimator() : null;
     }
 
     /**

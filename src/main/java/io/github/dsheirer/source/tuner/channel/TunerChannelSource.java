@@ -155,6 +155,24 @@ public abstract class TunerChannelSource extends ComplexSource implements ISourc
     /**
      * Sets the noise floor estimator of the tuner that sources this channel.
      */
+    /**
+     * AP-fork (ap-13): the frequency and bandwidth this source receives now.  The same as getTunerChannel(), except
+     * for a multi-frequency source, which reports its current frequency.
+     */
+    public TunerChannel getActiveTunerChannel()
+    {
+        return getTunerChannel();
+    }
+
+    /**
+     * AP-fork (ap-13): the noise floor estimator of the tuner this channel comes from, or null - identifies the tuner
+     * for the gain check
+     */
+    public TunerNoiseFloorEstimator getNoiseFloorEstimator()
+    {
+        return mNoiseFloorEstimator;
+    }
+
     public void setNoiseFloorEstimator(TunerNoiseFloorEstimator noiseFloorEstimator)
     {
         mNoiseFloorEstimator = noiseFloorEstimator;

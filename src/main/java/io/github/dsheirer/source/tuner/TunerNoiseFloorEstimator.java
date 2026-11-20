@@ -455,6 +455,57 @@ public class TunerNoiseFloorEstimator
     }
 
     /**
+     * AP-fork (ap-13): signal-to-noise ratio of a channel in the latest measurement, for the gain check: the mean power
+     * density across the channel's bins over the noise density near it (getNoiseDensity()), in dB.  This is (S+N)/N,
+     * so about 0 dB with nothing on the channel.  Turns on the measurement.
+     * @return the ratio and the time it was measured, or null when there is no current measurement or the channel
+     * isn't within the usable bandwidth
+     */
+    public ChannelSnr getChannelSnr(long frequency, int bandwidth)
+    {
+        Estimate estimate = mEstimate;
+        double noise = getNoiseDensity(frequency, bandwidth);
+
+        if(estimate == null || Double.isNaN(noise) || noise <= 0 || estimate != mEstimate)
+        {
+            return null;
+        }
+
+        int size = estimate.density().length;
+        double binWidth = estimate.sampleRate() / size;
+        int low = (int)Math.round((frequency - bandwidth / 2.0 - estimate.frequency()) / binWidth);
+        int high = (int)Math.round((frequency + bandwidth / 2.0 - estimate.frequency()) / binWidth);
+        double sum = 0;
+        int count = 0;
+
+        for(int offset = low; offset <= high; offset++)
+        {
+            if(Math.abs(offset) < size / 2)
+            {
+                int bin = offset < 0 ? offset + size : offset;
+
+                if(estimate.usable()[bin])
+                {
+                    sum += estimate.density()[bin];
+                    count++;
+                }
+            }
+        }
+
+        if(count == 0)
+        {
+            return null;
+        }
+
+        return new ChannelSnr(10.0 * Math.log10((sum / count) / noise), estimate.timestamp());
+    }
+
+    /**
+     * AP-fork (ap-13): channel signal-to-noise ratio in dB, measured at the timestamp
+     */
+    public record ChannelSnr(double snrDb, long timestamp) {}
+
+    /**
      * AP-fork (ap-12): the latest measurement of the tuner's usable bandwidth, for the gain meter and gain check.
      * Turns on the measurement, like getNoiseDensity().
      * @return power of each usable bin (about 25 kHz wide) in dBFS and the time it was measured, or null when there is

@@ -47,6 +47,7 @@ public class GainCheckPanel extends JPanel
 
     private final Supplier<Tuner> mTuner;
     private final Supplier<GainSteps> mGainSteps;
+    private final Supplier<io.github.dsheirer.controller.channel.ChannelProcessingManager> mChannels;
     private final JLabel mStatusLabel = new JLabel("-");
     private final JLabel mPeakLabel = new JLabel("-");
     private final JLabel mClippedLabel = new JLabel("-");
@@ -61,11 +62,14 @@ public class GainCheckPanel extends JPanel
      * Constructs an instance
      * @param tuner supplies the editor's tuner, or null when there is none
      * @param gainSteps supplies the editor's gain control for the gain check, or null when not supported
+     * @param channels ap-13: supplies the channel processing manager, to find the tuner's control channel
      */
-    public GainCheckPanel(Supplier<Tuner> tuner, Supplier<GainSteps> gainSteps)
+    public GainCheckPanel(Supplier<Tuner> tuner, Supplier<GainSteps> gainSteps,
+                          Supplier<io.github.dsheirer.controller.channel.ChannelProcessingManager> channels)
     {
         mTuner = tuner;
         mGainSteps = gainSteps;
+        mChannels = channels;
         setLayout(new MigLayout("insets 0,wrap 4", "[right][grow,fill][right][grow,fill]", ""));
 
         mStatusLabel.setFont(mStatusLabel.getFont().deriveFont(Font.BOLD));
@@ -225,7 +229,8 @@ public class GainCheckPanel extends JPanel
 
         Tuner tuner = mTuner.get();
         mDialog = new GainCheckDialog(SwingUtilities.getWindowAncestor(this),
-            tuner != null ? tuner.getPreferredName() : "Tuner", steps, controller);
+            tuner != null ? tuner.getPreferredName() : "Tuner", steps, controller,
+            () -> GainCheckReference.find(mChannels.get(), controller.getNoiseFloorEstimator()));
         mDialog.setVisible(true);
     }
 }

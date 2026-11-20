@@ -62,10 +62,14 @@ public class GainCheckDialog extends JDialog
     private GainSweep mSweep;
     private int mRecommendedIndex = -1;
     private int mOriginalIndex = -1;
+    private final java.util.function.Supplier<List<GainCheckReference.Candidate>> mCandidates;
+    private String mReferenceName;
     private io.github.dsheirer.source.tuner.TunerSignalMonitor.History mHistory;
 
-    public GainCheckDialog(Window owner, String tunerName, GainSteps steps, TunerController controller)
+    public GainCheckDialog(Window owner, String tunerName, GainSteps steps, TunerController controller,
+                           java.util.function.Supplier<List<GainCheckReference.Candidate>> candidates)
     {
+        mCandidates = candidates;
         super(owner, "Gain Check - " + tunerName, ModalityType.MODELESS);
         mSteps = steps;
         mController = controller;
@@ -76,12 +80,13 @@ public class GainCheckDialog extends JDialog
         content.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
         JTextArea intro = new JTextArea("Steps " + steps.getControlName().toLowerCase() + " through all " +
-            steps.count() + " settings, about 3 seconds each, and measures the noise floor, the strongest signals and " +
-            "overload at each.  The tuner's channels hear the gain changes while it runs.  Your setting (" +
-            steps.label(steps.current()) + ") is put back at the end unless you apply the recommendation.  For the " +
-            "best result, run it while a busy channel (a control channel is best) is on this tuner, after the tuner " +
-            "has run at its setting for at least 5 minutes: the recommendation also uses how the tuner did at its " +
-            "setting over the last 30 minutes.");
+            steps.count() + " settings, about 3 seconds each, and measures the noise floor, overload and - when " +
+            "this tuner carries a control channel that is on the air - the control channel's signal-to-noise ratio " +
+            "at each.  With a control channel the recommendation follows it; without one, the noise floor.  It also " +
+            "uses how the tuner did at its own setting over the last 30 minutes, so run it after the tuner has been " +
+            "at one setting for at least 5 minutes.  The tuner's channels hear the gain changes while it runs.  Your " +
+            "setting (" + steps.label(steps.current()) + ") is put back at the end unless you apply the " +
+            "recommendation.");
         intro.setEditable(false);
         intro.setLineWrap(true);
         intro.setWrapStyleWord(true);
@@ -168,7 +173,9 @@ public class GainCheckDialog extends JDialog
         mStartButton.setEnabled(false);
         mStopButton.setEnabled(true);
         mApplyButton.setEnabled(false);
-        mSweep = new GainSweep(mSteps, mController.getNoiseFloorEstimator(), mController.getSignalMonitor());
+        mReferenceName = null;
+        mSweep = new GainSweep(mSteps, mController.getNoiseFloorEstimator(), mController.getSignalMonitor(),
+            mCandidates.get());
         GainSweep sweep = mSweep;
         LOG.info("Gain check [" + mTunerName + "]: started, " + mSteps.getControlName() + " " +
             mSteps.label(mSteps.current()));
@@ -192,6 +199,15 @@ public class GainCheckDialog extends JDialog
                     public void stepMeasured(GainSweep.StepResult result)
                     {
                         SwingUtilities.invokeLater(() -> mModel.add(result));
+                    }
+
+                    @Override
+                    public void referenceChosen(GainCheckReference.Candidate reference)
+                    {
+                        mReferenceName = reference != null ? reference.name() : null;
+                        LOG.info("Gain check [" + mTunerName + "]: " + (reference != null ? "measuring on control " +
+                            "channel " + reference.name() + " (" + reference.frequency() + " Hz)" :
+                            "no control channel on the air on this tuner - using the noise floor"));
                     }
                 });
             }
@@ -230,7 +246,8 @@ public class GainCheckDialog extends JDialog
             return;
         }
 
-        GainSweep.Recommendation recommendation = GainSweep.recommend(results, mOriginalIndex, mHistory);
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, mOriginalIndex, mHistory,
+            mReferenceName);
         mRecommendedIndex = recommendation.index();
         mModel.setRecommended(recommendation.index());
         mRecommendationText.setText(recommendation.explanation());
@@ -250,6 +267,11 @@ public class GainCheckDialog extends JDialog
                 .append(String.format("%.1f", result.peakDbfs())).append(" dBFS, full scale ")
                 .append(String.format("%.3f", result.clippedPercent())).append('%');
 
+            if(!Double.isNaN(result.referenceSnrDb()))
+            {
+                sb.append(", control channel ").append(String.format("%.1f", result.referenceSnrDb())).append(" dB");
+            }
+
             if(!Double.isNaN(result.signalSpreadDb()))
             {
                 sb.append(", signals varied ").append(String.format("%.1f", result.signalSpreadDb())).append(" dB");
@@ -266,8 +288,8 @@ public class GainCheckDialog extends JDialog
 
     private class ResultsModel extends AbstractTableModel
     {
-        private final String[] COLUMNS = {"Gain", "Noise Floor", "Strongest Signals", "Peak", "At Full Scale",
-            "Result"};
+        private final String[] COLUMNS = {"Gain", "Noise Floor", "Control Channel", "Strongest Signals", "Peak",
+            "At Full Scale", "Result"};
         private final List<GainSweep.StepResult> mResults = new ArrayList<>();
         private int mRecommended = -1;
 
@@ -327,9 +349,10 @@ public class GainCheckDialog extends JDialog
             {
                 case 0 -> result.label() + (result.index() == mOriginalIndex ? " (yours)" : "");
                 case 1 -> format(result.noiseFloorDb(), "%.1f dBFS");
-                case 2 -> format(result.signalDb(), "+%.1f dB");
-                case 3 -> format(result.peakDbfs(), "%.1f dBFS");
-                case 4 -> String.format("%.3f%%", result.clippedPercent());
+                case 2 -> format(result.referenceSnrDb(), "%.1f dB SNR");
+                case 3 -> format(result.signalDb(), "+%.1f dB");
+                case 4 -> format(result.peakDbfs(), "%.1f dBFS");
+                case 5 -> String.format("%.3f%%", result.clippedPercent());
                 default -> result.isOverloaded() ? "Overload" : (isRecommended(row) ? "Recommended" : "");
             };
         }

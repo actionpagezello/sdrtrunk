@@ -111,6 +111,14 @@ public class TunerManager implements IDiscoveredTunerStatusListener
      * @param channelProcessingManager that starts and stops channels
      * @param channelInPlaylist tests that a channel is still in the playlist (it may have been deleted meanwhile)
      */
+    /**
+     * AP-fork (ap-13): the channel processing manager, for the gain check to find a tuner's control channel, or null
+     */
+    public ChannelProcessingManager getChannelProcessingManager()
+    {
+        return mChannelProcessingManager;
+    }
+
     public void setRspRecoveryChannels(ChannelProcessingManager channelProcessingManager,
                                        Predicate<Channel> channelInPlaylist)
     {

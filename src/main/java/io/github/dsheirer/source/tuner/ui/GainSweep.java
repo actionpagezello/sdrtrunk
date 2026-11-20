@@ -38,8 +38,9 @@ import org.slf4j.LoggerFactory;
  *
  * Recommendation (see recommend()): settings that overloaded are out; the tuner's history at its own setting limits
  * how high it can go (ap-12, after ap-11 sent a Somerville RTL from 32.8 to 42.1 dB, where it then overloaded most of
- * the time); then the lowest setting whose strongest signals are within 1 dB of the best when the signals were
- * steady, or the setting where the noise floor has risen 3 dB above the tuner's own noise when they came and went.
+ * the time); then, with a control channel on the tuner, the lowest setting where its signal-to-noise ratio is within
+ * 1 dB of the best (ap-13), and without one the setting where the noise floor has risen 3 dB above the tuner's own
+ * noise.
  */
 public class GainSweep
 {
@@ -69,17 +70,30 @@ public class GainSweep
      * @param signalSpreadDb how much the strongest signals differed between the setting's measurements, dB (NaN with
      * one measurement): a few dB for a steady signal such as a control channel, much more when transmissions come
      * and go
+     * @param referenceSnrDb ap-13: signal-to-noise ratio of the tuner's control channel at this setting, dB, or NaN
+     * when the tuner has no control channel on the air continuously
      */
     public record StepResult(int index, String label, double noiseFloorDb, double signalDb, double peakDbfs,
-                             double clippedPercent, int overloadEvents, double signalSpreadDb)
+                             double clippedPercent, int overloadEvents, double signalSpreadDb, double referenceSnrDb)
     {
+        /**
+         * Constructs a result without a control channel measurement
+         */
+        public StepResult(int index, String label, double noiseFloorDb, double signalDb, double peakDbfs,
+                          double clippedPercent, int overloadEvents, double signalSpreadDb)
+        {
+            this(index, label, noiseFloorDb, signalDb, peakDbfs, clippedPercent, overloadEvents, signalSpreadDb,
+                Double.NaN);
+        }
+
         /**
          * Constructs a result without a measure of how steady the signals were
          */
         public StepResult(int index, String label, double noiseFloorDb, double signalDb, double peakDbfs,
                           double clippedPercent, int overloadEvents)
         {
-            this(index, label, noiseFloorDb, signalDb, peakDbfs, clippedPercent, overloadEvents, Double.NaN);
+            this(index, label, noiseFloorDb, signalDb, peakDbfs, clippedPercent, overloadEvents, Double.NaN,
+                Double.NaN);
         }
 
         public boolean isOverloaded()
@@ -103,13 +117,127 @@ public class GainSweep
         void stepStarted(int step, int of, String label);
 
         void stepMeasured(StepResult result);
+
+        /**
+         * ap-13: the control channel the check measures against, or null for none (the noise floor decides)
+         */
+        default void referenceChosen(GainCheckReference.Candidate reference)
+        {
+        }
     }
 
+    //ap-13: control channel selection, at the tuner's own setting before the check starts
+    static final int REFERENCE_ESTIMATES = 4;
+    static final long REFERENCE_TIMEOUT_MS = 8000;
+    //A control channel is on the air the whole time: at least this far above the noise in every measurement ...
+    static final double REFERENCE_MINIMUM_SNR_DB = 10.0;
+    //... and steady to within this
+    static final double REFERENCE_MAXIMUM_SPREAD_DB = 3.0;
+
+    private final List<GainCheckReference.Candidate> mCandidates;
+    private GainCheckReference.Candidate mReference;
+
     public GainSweep(GainSteps steps, TunerNoiseFloorEstimator estimator, TunerSignalMonitor monitor)
+    {
+        this(steps, estimator, monitor, List.of());
+    }
+
+    /**
+     * Constructs an instance
+     * @param candidates ap-13: possible control channels on the tuner (GainCheckReference.find())
+     */
+    public GainSweep(GainSteps steps, TunerNoiseFloorEstimator estimator, TunerSignalMonitor monitor,
+                     List<GainCheckReference.Candidate> candidates)
     {
         mSteps = steps;
         mEstimator = estimator;
         mMonitor = monitor;
+        mCandidates = candidates;
+    }
+
+    /**
+     * ap-13: the control channel measured against, or null
+     */
+    public GainCheckReference.Candidate getReference()
+    {
+        return mReference;
+    }
+
+    /**
+     * ap-13: picks the control channel to measure against: of the candidates, the one that was at least 10 dB above
+     * the noise in every one of 4 measurements and steady to within 3 dB, the strongest if there are several.  A
+     * conventional P25 or DMR channel, or a control channel too weak or fading, isn't picked.
+     */
+    private GainCheckReference.Candidate chooseReference() throws InterruptedException
+    {
+        if(mCandidates.isEmpty())
+        {
+            return null;
+        }
+
+        List<List<Double>> readings = new ArrayList<>();
+
+        for(int x = 0; x < mCandidates.size(); x++)
+        {
+            readings.add(new ArrayList<>());
+        }
+
+        long start = System.currentTimeMillis();
+        long lastTimestamp = 0;
+        int measured = 0;
+
+        while(measured < REFERENCE_ESTIMATES && System.currentTimeMillis() - start < REFERENCE_TIMEOUT_MS &&
+            !mCancelled.get())
+        {
+            mEstimator.getBandPowers();
+            TunerNoiseFloorEstimator.ChannelSnr first = null;
+
+            for(int x = 0; x < mCandidates.size(); x++)
+            {
+                GainCheckReference.Candidate candidate = mCandidates.get(x);
+                TunerNoiseFloorEstimator.ChannelSnr snr = mEstimator.getChannelSnr(candidate.frequency(),
+                    candidate.bandwidth());
+
+                if(snr != null && snr.timestamp() > lastTimestamp)
+                {
+                    readings.get(x).add(snr.snrDb());
+                    first = snr;
+                }
+            }
+
+            if(first != null)
+            {
+                lastTimestamp = first.timestamp();
+                measured++;
+            }
+
+            Thread.sleep(100);
+        }
+
+        GainCheckReference.Candidate best = null;
+        double bestMinimum = Double.NEGATIVE_INFINITY;
+
+        for(int x = 0; x < mCandidates.size(); x++)
+        {
+            List<Double> values = readings.get(x);
+
+            if(values.size() < REFERENCE_ESTIMATES)
+            {
+                continue;
+            }
+
+            double minimum = values.stream().mapToDouble(Double::doubleValue).min().orElse(Double.NaN);
+            double maximum = values.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
+
+            if(minimum >= REFERENCE_MINIMUM_SNR_DB && maximum - minimum <= REFERENCE_MAXIMUM_SPREAD_DB &&
+                minimum > bestMinimum)
+            {
+                best = mCandidates.get(x);
+                bestMinimum = minimum;
+            }
+        }
+
+        return best;
     }
 
     /**
@@ -134,6 +262,9 @@ public class GainSweep
         int original = onSwing(mSteps::current);
         int count = onSwing(mSteps::count);
         List<StepResult> results = new ArrayList<>();
+        //ap-13: the control channel, measured at the tuner's own setting before anything changes
+        mReference = chooseReference();
+        listener.referenceChosen(mReference);
         mMonitor.setIntensive(true);
 
         try
@@ -181,6 +312,7 @@ public class GainSweep
         long measureStart = System.currentTimeMillis();
         mMonitor.startWindow();
         List<double[]> estimates = new ArrayList<>();
+        List<Double> referenceSnr = new ArrayList<>();
         long lastTimestamp = measureStart;
 
         while(estimates.size() < ESTIMATES_PER_STEP && System.currentTimeMillis() - measureStart < STEP_TIMEOUT_MS &&
@@ -192,6 +324,18 @@ public class GainSweep
             {
                 estimates.add(powers.binPowersDb());
                 lastTimestamp = powers.timestamp();
+                GainCheckReference.Candidate reference = mReference;
+
+                if(reference != null)
+                {
+                    TunerNoiseFloorEstimator.ChannelSnr snr = mEstimator.getChannelSnr(reference.frequency(),
+                        reference.bandwidth());
+
+                    if(snr != null)
+                    {
+                        referenceSnr.add(snr.snrDb());
+                    }
+                }
             }
 
             Thread.sleep(100);
@@ -217,8 +361,22 @@ public class GainSweep
         }
 
         double spread = estimates.size() > 1 ? high - low : Double.NaN;
+        double reference = Double.NaN;
+
+        if(!referenceSnr.isEmpty())
+        {
+            double sum = 0;
+
+            for(double value : referenceSnr)
+            {
+                sum += Math.pow(10.0, value / 10.0);
+            }
+
+            reference = 10.0 * Math.log10(sum / referenceSnr.size());
+        }
+
         return new StepResult(index, label, noise, signal, reading.peakDbfs(), reading.clippedPercent(),
-            reading.overloadEvents(), spread);
+            reading.overloadEvents(), spread, reference);
     }
 
     /**
@@ -301,10 +459,6 @@ public class GainSweep
     static final double HEADROOM_MARGIN_DB = 3.0;
     //Without gain values in dB, one setting higher is allowed only when the history's peak is at or below this
     static final double ONE_STEP_UP_PEAK_DBFS = -6.0;
-    //A setting's signals are steady when its two measurements are within this
-    static final double STEADY_SPREAD_DB = 3.0;
-    //Share of settings that must be steady to follow the signals rather than the noise floor
-    static final double STEADY_SHARE = 0.7;
     //Noise floor rise, above the tuner's own noise at its lowest settings, that marks the useful gain
     static final double NOISE_RISE_DB = 3.0;
 
@@ -325,7 +479,15 @@ public class GainSweep
      */
     public static Recommendation recommend(List<StepResult> results)
     {
-        return recommend(results, -1, null);
+        return recommend(results, -1, null, null);
+    }
+
+    /**
+     * Recommends a setting without a control channel
+     */
+    public static Recommendation recommend(List<StepResult> results, int current, TunerSignalMonitor.History history)
+    {
+        return recommend(results, current, history, null);
     }
 
     /**
@@ -337,16 +499,18 @@ public class GainSweep
      *    setting during the history (up to 30 minutes), only lower settings are considered.  If it didn't, a higher
      *    setting is allowed only as far as the history's highest peak leaves room for (keeping 3 dB of headroom); with
      *    less than 5 minutes of history, nothing higher is allowed.
-     * 3. If the strongest signals were steady through the check (a control channel), the lowest allowed setting whose
-     *    signals are within 1 dB of the best.  Otherwise the signals say little, and the noise floor decides: the
-     *    lowest allowed setting where the noise floor has risen 3 dB above the tuner's own noise at its lowest
-     *    settings - past that, more gain mostly amplifies noise along with the signals.
+     * 3. ap-13: with a control channel on the tuner (on the air continuously), the lowest allowed setting where its
+     *    signal-to-noise ratio is within 1 dB of the best.  Without one, the noise floor decides: the lowest allowed
+     *    setting where the noise floor has risen 3 dB above the tuner's own noise at its lowest settings - past that,
+     *    more gain mostly amplifies noise along with the signals.
      *
      * @param results of the check, lowest gain first
      * @param current index of the tuner's own setting, or -1 when unknown
      * @param history at the tuner's own setting, or null
+     * @param referenceName name of the control channel measured against, or null for none
      */
-    public static Recommendation recommend(List<StepResult> results, int current, TunerSignalMonitor.History history)
+    public static Recommendation recommend(List<StepResult> results, int current, TunerSignalMonitor.History history,
+                                           String referenceName)
     {
         if(results.isEmpty())
         {
@@ -462,47 +626,40 @@ public class GainSweep
                 "filter (or an attenuator) ahead of the tuner will help more than any gain setting.");
         }
 
-        //Steady signals?
-        int measured = 0;
-        int steady = 0;
+        //ap-13: control channel rule - its signal-to-noise ratio at each allowed setting
         double best = Double.NEGATIVE_INFINITY;
+        int measured = 0;
 
         for(StepResult result : allowed)
         {
-            if(!Double.isNaN(result.signalSpreadDb()))
+            if(!Double.isNaN(result.referenceSnrDb()))
             {
                 measured++;
-
-                if(result.signalSpreadDb() <= STEADY_SPREAD_DB)
-                {
-                    steady++;
-                }
-            }
-
-            if(!Double.isNaN(result.signalDb()))
-            {
-                best = Math.max(best, result.signalDb());
+                best = Math.max(best, result.referenceSnrDb());
             }
         }
 
-        boolean followSignals = best >= MINIMUM_SIGNAL_DB && (measured == 0 || steady >= STEADY_SHARE * measured);
-
-        if(followSignals)
+        if(referenceName != null && measured == allowed.size() && best >= MINIMUM_SIGNAL_DB)
         {
             for(StepResult result : allowed)
             {
-                if(!Double.isNaN(result.signalDb()) && result.signalDb() >= best - SIGNAL_TOLERANCE_DB)
+                if(result.referenceSnrDb() >= best - SIGNAL_TOLERANCE_DB)
                 {
                     StepResult highestClean = clean.get(clean.size() - 1);
                     String overload = highestClean.index() < results.get(results.size() - 1).index() ?
                         "  Overload starts above " + highestClean.label() + "." : "";
                     return new Recommendation(result.index(), note + "Recommended: " + result.label() +
-                        ".  Signals are " + String.format("%.1f", result.signalDb()) + " dB above the noise here; " +
-                        "more gain doesn't improve them (best " + String.format("%.1f", best) + " dB) and leaves " +
-                        "less headroom." + overload);
+                        ".  Measured on the control channel " + referenceName + ": it is " +
+                        String.format("%.1f", result.referenceSnrDb()) + " dB above the noise here, and more gain " +
+                        "doesn't improve it (best " + String.format("%.1f", best) + " dB) and leaves less headroom." +
+                        overload);
                 }
             }
         }
+
+        String why = referenceName == null ? "This tuner has no control channel on the air continuously, so this " +
+            "follows the noise floor" : "The control channel " + referenceName + " couldn't be measured at every " +
+            "setting, so this follows the noise floor";
 
         //Noise floor rule
         double[] lowest = new double[Math.min(3, results.size())];
@@ -525,8 +682,8 @@ public class GainSweep
         {
             if(!Double.isNaN(result.noiseFloorDb()) && result.noiseFloorDb() >= ownNoise + NOISE_RISE_DB)
             {
-                return new Recommendation(result.index(), note + "Recommended: " + result.label() + ".  The signals " +
-                    "came and went during the check, so this follows the noise floor: here it is " +
+                return new Recommendation(result.index(), note + "Recommended: " + result.label() + ".  " + why +
+                    ": here it is " +
                     String.format("%.1f", result.noiseFloorDb() - ownNoise) + " dB above the tuner's own noise, the " +
                     "point past which more gain mostly amplifies noise along with the signals.");
             }
@@ -534,8 +691,8 @@ public class GainSweep
 
         StepResult highest = allowed.get(allowed.size() - 1);
         return new Recommendation(highest.index(), note + "Recommended: " + highest.label() + ", the highest " +
-            "setting allowed.  The signals came and went during the check, and the noise floor didn't rise by " +
-            NOISE_RISE_DB + " dB at any allowed setting, so the tuner's own noise still dominates there.");
+            "setting allowed.  " + why + ", and it didn't rise by " + NOISE_RISE_DB + " dB at any allowed setting, so " +
+            "the tuner's own noise still dominates there.");
     }
 
     private static <T> T onSwing(java.util.concurrent.Callable<T> callable) throws Exception
