@@ -84,7 +84,7 @@ public class DecodeEventView extends HistoryTableView<IDecodeEvent,IDecodeEvent>
         getHistoryControls().restoreHistorySize(nowPlayingPreference.getEventHistorySize(),
             nowPlayingPreference::setEventHistorySize);
         getHistoryControls().setFilterSet(mFilterSet);
-        //Filter changes come from the Swing filter editor
+        //Filter changes come from the filter editor
         mFilterSet.register(() -> {
             FilterStateStore.store(mFilterSet, nowPlayingPreference);
             Platform.runLater(this::refilter);

@@ -102,7 +102,7 @@ public class MessageActivityView extends HistoryTableView<MessageItem,IMessage> 
             mMessageFilterSet = filterSet;
             //AP-fork: message filter choices kept between sessions
             FilterStateStore.restore(filterSet, mNowPlayingPreference);
-            //Filter changes come from the Swing filter editor
+            //Filter changes come from the filter editor
             filterSet.register(() -> {
                 FilterStateStore.store(filterSet, mNowPlayingPreference);
                 Platform.runLater(() -> {
