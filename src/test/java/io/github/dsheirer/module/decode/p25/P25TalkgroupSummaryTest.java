@@ -36,6 +36,8 @@ import io.github.dsheirer.source.config.SourceConfigTuner;
 import java.lang.reflect.Proxy;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -70,23 +72,51 @@ public class P25TalkgroupSummaryTest
         return ic;
     }
 
+    private static String summary(P25TrafficChannelManager manager)
+    {
+        io.github.dsheirer.module.decode.event.ActivitySummary summary =
+            new io.github.dsheirer.module.decode.event.ActivitySummary("Test");
+        manager.addTalkgroupSummary(summary);
+        return summary.toString();
+    }
+
+    /**
+     * Table rows after the header and its underline in the talkgroup section.
+     */
+    private static List<String> rows(String summary)
+    {
+        List<String> lines = List.of(summary.split("\\R"));
+        int header = -1;
+
+        for(int x = 0; x < lines.size(); x++)
+        {
+            if(lines.get(x).trim().startsWith("Talkgroup"))
+            {
+                header = x;
+                break;
+            }
+        }
+
+        return lines.subList(header + 2, lines.size()).stream().filter(line -> !line.isBlank()).toList();
+    }
+
     @Test
     void testCountsAndAliasNames()
     {
         P25TrafficChannelManager manager = manager(aliases());
-        assertTrue(manager.getTalkgroupSummary().contains("none yet"));
+        assertTrue(summary(manager).contains("None"), summary(manager));
 
         manager.countCall(call(2000, 1));
         manager.countCall(call(100, 2));
         manager.countCall(call(100, 3));
         manager.countCall(call(30, 4));
 
-        String summary = manager.getTalkgroupSummary();
-        String[] lines = summary.split("\\R");
-        assertTrue(lines[0].startsWith("Calls by talkgroup"), summary);
-        assertTrue(lines[1].matches("\\s+30\\s+1"), summary);
-        assertTrue(lines[2].matches("\\s+100\\s+Boston Fire Dispatch\\s+2"), summary);
-        assertTrue(lines[3].matches("\\s+2000\\s+1"), summary);
+        String summary = summary(manager);
+        List<String> rows = rows(summary);
+        assertTrue(summary.contains("Calls by Talkgroup"), summary);
+        assertTrue(rows.get(0).matches("\\s*30\\s+1"), summary);
+        assertTrue(rows.get(1).matches("\\s*100\\s+Boston Fire Dispatch\\s+2"), summary);
+        assertTrue(rows.get(2).matches("\\s*2000\\s+1"), summary);
     }
 
     /**
@@ -111,7 +141,7 @@ public class P25TalkgroupSummaryTest
                 Opcode.OSP_GROUP_VOICE_CHANNEL_GRANT, 1_000_000L + x * 100, "test");
         }
 
-        String summary = manager.getTalkgroupSummary();
-        assertTrue(summary.split("\\R")[1].matches("\\s+100\\s+Boston Fire Dispatch\\s+1"), summary);
+        String summary = summary(manager);
+        assertTrue(rows(summary).get(0).matches("\\s*100\\s+Boston Fire Dispatch\\s+1"), summary);
     }
 }
