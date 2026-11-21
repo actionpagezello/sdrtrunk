@@ -33,6 +33,7 @@ import io.github.dsheirer.module.decode.analog.AnalogDecoderState;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
 import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
+import io.github.dsheirer.module.decode.event.ActivitySummary;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -214,57 +215,32 @@ public class NBFMDecoderState extends AnalogDecoderState
     @Override
     public String getActivitySummary()
     {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Activity Summary - Decoder:NBFM\n");
+        ActivitySummary summary = new ActivitySummary("NBFM");
+        summary.section("Tone Filter");
+        summary.field("Status", mToneFilterEnabled ? "Enabled" : "Disabled");
 
-        sb.append("\n\nTone Filter: ");
-        if(mToneFilterEnabled)
+        if(mToneFilterEnabled && !mConfiguredFilters.isEmpty())
         {
-            sb.append("ENABLED\n");
-            sb.append("Configured Filter: ");
-            if(!mConfiguredFilters.isEmpty())
-            {
-                sb.append(mConfiguredFilters.get(0).getDisplayString());
-            }
-            sb.append("\n");
-        }
-        else
-        {
-            sb.append("Disabled\n");
+            summary.field("Configured Filter", mConfiguredFilters.get(0).getDisplayString());
         }
 
-        sb.append("\nCurrent Status: ").append(mToneStatus).append("\n");
+        summary.field("Current Status", mToneStatus);
 
         synchronized(mToneCounts)
         {
             if(!mToneCounts.isEmpty())
             {
-                sb.append("\nDetected Tones:\n");
+                summary.section("Detected Tones");
+                ActivitySummary.Table table = summary.table("Tone", "Alias", "Allowed", "Rejected");
+
                 for(Map.Entry<String, int[]> entry : mToneCounts.entrySet())
                 {
-                    int accepted = entry.getValue()[0];
-                    int rejected = entry.getValue()[1];
-                    String status;
-                    if(accepted > 0 && rejected == 0)
-                    {
-                        status = "ALLOWED (" + accepted + ")";
-                    }
-                    else if(rejected > 0 && accepted == 0)
-                    {
-                        status = "REJECTED (" + rejected + ")";
-                    }
-                    else
-                    {
-                        status = "ALLOWED (" + accepted + ") REJECTED (" + rejected + ")";
-                    }
                     String alias = aliasName(entry.getKey());
-                    sb.append("\t").append(entry.getKey()).append(alias != null ? "  " + alias : "").append(" - ")
-                        .append(status).append("\n");
+                    table.row(entry.getKey(), alias != null ? alias : "", entry.getValue()[0], entry.getValue()[1]);
                 }
             }
         }
 
-        sb.append("\n");
-        return sb.toString();
+        return summary.toString();
     }
 }

@@ -181,7 +181,7 @@ public class MainWindow
         mSpectralHiddenBar = createSpectralHiddenBar();
 
         boolean detailsVisible = mPreferences.getBoolean(PREFERENCE_NOW_PLAYING_DETAILS_VISIBLE, true);
-        mNowPlayingView = new NowPlayingView(playlistManager, iconModel, userPreferences, detailsVisible);
+        mNowPlayingView = new NowPlayingView(playlistManager, iconModel, userPreferences, tunerManager, detailsVisible);
         createTabs(mapService, iconModel);
 
         URL stylesheet = MainWindow.class.getResource("/main_window.css");

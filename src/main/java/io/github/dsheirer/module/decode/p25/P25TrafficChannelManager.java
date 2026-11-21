@@ -224,10 +224,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     }
 
     /**
-     * Calls by talkgroup with the alias name from the channel's alias list, for the activity summary.  Talkgroups in
-     * numeric order, anything else (patch groups) after them.
+     * Adds calls by talkgroup, with the alias name from the channel's alias list, to the activity summary.  Talkgroups
+     * in numeric order, anything else (patch groups) after them.
+     * @param summary to add to
      */
-    public String getTalkgroupSummary()
+    public void addTalkgroupSummary(io.github.dsheirer.module.decode.event.ActivitySummary summary)
     {
         java.util.List<String> keys;
         Map<String,Integer> counts;
@@ -251,13 +252,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             }
         }).thenComparing(java.util.Comparator.naturalOrder()));
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Calls by talkgroup (talkgroup, alias, calls):\n");
-
-        if(keys.isEmpty())
-        {
-            sb.append("  none yet\n");
-        }
+        summary.section("Calls by Talkgroup");
+        io.github.dsheirer.module.decode.event.ActivitySummary.Table table = summary.table("Talkgroup", "Alias", "Calls");
 
         for(String key : keys)
         {
@@ -273,10 +269,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
                 }
             }
 
-            sb.append(String.format("  %8s  %-32s %d%n", key, name, counts.get(key)));
+            table.row(key, name, counts.get(key));
         }
-
-        return sb.toString();
     }
 
     /**
