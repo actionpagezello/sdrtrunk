@@ -5,6 +5,54 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-16] - 2026-11-21
+
+Upstream's full JavaFX application, the Gain Check fixes from the Daly day logs and better overload logging.  Builds
+on ap-15.
+
+### From upstream
+- **#2725 Full JavaFX application.**  The main window, Now Playing, audio panel, streaming status and spectrum are
+  JavaFX; Swing, FlatLaf, JIDE and MigLayout are gone.  The spectrum and waterfall can be hidden (View menu,
+  Ctrl+Shift+S), which frees its processing and memory.  The audio panel is a playback display at the top of the
+  window with per-channel mute.
+- **#2732** audio panel spacing, **#2735** baseband recorder labels show .wav and .iq, **#2736** DMR decoder resets
+  its sync mode after inactivity, **#2739** master mute turns off the channel level meters, **#2743** auto-added
+  talker alias radios show their identifier.
+- **#2737** every decoder's Now Playing details use one column-aligned layout in a monospace font.
+- Not taken: #2741 (JMBE 3.0 ProVoice codec) - the fork keeps its own ProVoice decoding.
+
+### Kept from the fork in the new JavaFX window
+- Now Playing "Show in Waterfall" still zooms to the channel (now on the new main spectral display).
+- Now Playing event and message filters and history sizes are still kept between sessions.
+- The P25 "Calls by Talkgroup" list (talkgroup, alias, calls) and the NBFM tone filter details use the new layout.
+- The fork's Swing table sorter for the old channel table is removed; the table is JavaFX.
+
+### Gain Check (after ap-15 sent a Daly RSP1B to LNA 9 and its VHF channels went silent for 16 hours)
+- **Only real control channels are the reference.**  EDACS, Type II, MPT-1327, LTR-Net and Passport control
+  channels, and P25 Phase 1 channels that decoded a control channel status broadcast in the last two minutes.  A
+  conventional P25 channel (Salem Police on Daly) is no longer used; P25 Phase 2, DMR and NXDN tuners follow the noise
+  floor.
+- **Never below the noise floor setting.**  The control channel can be strong at every setting while the tuner's
+  other channels are weak; the recommendation no longer goes below the setting where the noise floor rises 3 dB above
+  the tuner's own noise.
+- **Mild overload, small step.**  When only the tuner reported overload (RSP events) and no sample reached full
+  scale, the recommendation goes down two settings at most.
+- **Not receiving.**  A tuner with no channels isn't streaming: the signal level section says so and Gain Check
+  explains instead of measuring blank values.
+- **Put Back** button after Apply restores the previous setting; the log records both settings.
+
+### Logging
+- **Overload warnings name the strongest signal** in the tuner's bandwidth, e.g. `strongest signal 164.2125 MHz,
+  48 dB above the noise`, so the transmitter causing it can be found.  A peak above 0 dBFS (possible only on Airspy
+  and HydraSDR, whose converter is real, not I/Q) is marked as the converter clipping.
+- **Channels per tuner.**  A line lists each tuner's channels with frequencies when it first carries channels and
+  whenever the list changes (standard channels only; traffic channels come and go with every call).
+
+### Fixed in the fork
+- Hotplug polling skips the tuners already running before reading their USB serial, so ap-15's two "Access to USB
+  tuner denied" errors at startup on Denmark are gone.
+- The Tuners tab no longer throws an error for a tuner that is shutting down when the program closes.
+
 ## [1.0.0-ap-15] - 2026-11-21
 
 Fix for HydraSDR RFOne tuners that wouldn't start (Denmark).  Builds on ap-14.

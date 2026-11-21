@@ -3,6 +3,14 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-21 evening: `1.0.0-ap-16` built in the workspace
+
+**ap-15** (c9213b5b) running on Denmark (RFOnes as HydraSDR).  **ap-16** = upstream #2725 full JavaFX app plus
+#2732/#2735/#2736/#2737/#2739/#2743 (not #2741 JMBE 3), Gain Check fixes (real control channels only, noise floor
+setting is the minimum, mild overload two steps at most, Not receiving, Put Back), overload warning names the
+strongest signal, channels-per-tuner log, hotplug and Tuners tab fixes.  Upstream PRs: Dennis asked on #2706/#2707
+whether they can be synchronized with #2648/#2650; replies posted offering to close and contribute the differences.
+
 ## Current state 2026-11-21 10:00: `1.0.0-ap-15` built in the workspace
 
 **ap-14** (d3c57c59) running on Cambridge, Daly, Somerville, Summit 800 and now Denmark.  Denmark's two HydraSDR
