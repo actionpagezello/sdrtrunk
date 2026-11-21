@@ -311,6 +311,51 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     }
 
     /**
+     * Earlier HydraSDR RFOne units use the Airspy USB vendor and product ids (1d50:60a1) and only differ from an
+     * Airspy in their USB serial string, which starts with HYDRASDR instead of AIRSPY.  libairspy won't open them
+     * (it only accepts AIRSPY serial strings), but libhydrasdr does, so these are started as HydraSDR tuners.
+     * @param tunerClass from the vendor and product ids
+     * @param device to check
+     * @return HYDRASDR for an RFOne that uses the Airspy ids, otherwise the tuner class unchanged
+     */
+    private static TunerClass checkForLegacyHydraSdr(TunerClass tunerClass, UsbDeviceInfo device)
+    {
+        if(tunerClass != TunerClass.AIRSPY)
+        {
+            return tunerClass;
+        }
+
+        try(UsbContext usb = UsbDeviceLookup.createContext())
+        {
+            String serial = UsbDeviceLookup.readSerialNumber(usb, device);
+
+            if(isLegacyHydraSdrSerial(serial))
+            {
+                mLog.info("USB Bus [" + device.busNumber() + "] Port [" + UsbPortAddress.of(device) +
+                    "] uses the Airspy USB ids but its serial [" + serial.trim() +
+                    "] is a HydraSDR RFOne - starting it as a HydraSDR tuner");
+                return TunerClass.HYDRASDR;
+            }
+        }
+        catch(SourceException | RuntimeException e)
+        {
+            mLog.debug("Couldn't read the USB serial of the Airspy at bus [" + device.busNumber() + "] port [" +
+                UsbPortAddress.of(device) + "] - treating it as an Airspy", e);
+        }
+
+        return tunerClass;
+    }
+
+    /**
+     * Indicates if the USB serial string is a HydraSDR serial (HYDRASDR SN:...).
+     * @param serial string, may be null
+     */
+    static boolean isLegacyHydraSdrSerial(String serial)
+    {
+        return serial != null && serial.trim().toUpperCase(java.util.Locale.ROOT).startsWith("HYDRASDR");
+    }
+
+    /**
      * Creates a discovered tuner for a USB device.
      * @param device to create a tuner for
      * @return discovered tuner, or null if the device isn't a supported tuner
@@ -323,6 +368,8 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         {
             return null;
         }
+
+        tunerClass = checkForLegacyHydraSdr(tunerClass, device);
 
         ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
         return new DiscoveredUSBTuner(tunerClass, device.busNumber(), UsbPortAddress.of(device), channelizerType);

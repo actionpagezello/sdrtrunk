@@ -5,6 +5,21 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-15] - 2026-11-21
+
+Fix for HydraSDR RFOne tuners that wouldn't start (Denmark).  Builds on ap-14.
+
+### Fixed in the fork
+- **Earlier HydraSDR RFOne units are started as HydraSDR tuners.**  These units use the Airspy USB ids (1d50:60a1)
+  and only differ from an Airspy in their USB serial string (`HYDRASDR SN:...`).  The 0.6.2 builds drove them with
+  the old Airspy code, which didn't check the serial string, so they ran as Airspy tuners.  The 1.0.0 builds use
+  libairspy, which only opens devices whose serial starts with `AIRSPY SN:`, so they failed with
+  `airspy_open_sn failed: AIRSPY_ERROR_NOT_FOUND (-5)`.  Tuner discovery now reads the serial string of each
+  Airspy-id device and starts an RFOne as a HydraSDR tuner; libhydrasdr supports the RFOne on both its own
+  (38af:0001) and the Airspy USB ids.  The log names each RFOne found this way.  An RFOne set up under the old
+  build as an Airspy keeps its channels, but its tuner settings (gain, sample rate, PPM) start from the HydraSDR
+  defaults and need to be set again in the Tuners tab.
+
 ## [1.0.0-ap-14] - 2026-11-20
 
 Upstream's six changes of 20 November, including the new JavaFX Tuners tab, with the fork's gain tools moved onto

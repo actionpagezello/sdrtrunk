@@ -3,6 +3,13 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-21 10:00: `1.0.0-ap-15` built in the workspace
+
+**ap-14** (d3c57c59) running on Cambridge, Daly, Somerville, Summit 800 and now Denmark.  Denmark's two HydraSDR
+RFOne tuners use the Airspy USB ids and failed to start under 1.0.0 (libairspy NOT_FOUND).  **ap-15** = discovery
+starts those as HydraSDR tuners.  Gain Check fixes from the 11-20 day review (Daly RSP1B sent to LNA 9 using a
+conventional P25 channel as reference) are held for the next build.
+
 ## Current state 2026-11-20 07:00: `1.0.0-ap-14` built in the workspace
 
 **ap-13** (73627f51) pushed.  **ap-14** = upstream #2712, #2714, #2716, #2719, #2722 and #2720 (JavaFX Tuners tab)
