@@ -163,9 +163,13 @@ public class GainCheckSection extends TunerSection
 
         if(reading.samplesChecked() == 0)
         {
-            setStatus("No samples", PLAIN);
+            //ap-16: a tuner with no channels isn't streaming, so there is nothing to measure
+            setStatus(isIdle() ? "Not receiving - the tuner only runs while it has a channel" : "No samples", PLAIN);
             mPeakLabel.setText("-");
             mClippedLabel.setText("-");
+            mGainCheckButton.setDisable(true);
+            mGainCheckButton.setTooltip(new Tooltip("Gain Check needs the tuner to be receiving: start a channel on " +
+                "this tuner first"));
         }
         else
         {
@@ -201,6 +205,16 @@ public class GainCheckSection extends TunerSection
             mNoiseLabel.setText("measuring...");
             mSignalLabel.setText("measuring...");
         }
+    }
+
+    /**
+     * Indicates if the tuner has no channels, so it isn't streaming.
+     */
+    private boolean isIdle()
+    {
+        Tuner tuner = mTuner.get();
+        return tuner != null && tuner.getChannelSourceManager() != null &&
+            tuner.getChannelSourceManager().getTunerChannelCount() == 0;
     }
 
     private void setStatus(String text, String style)

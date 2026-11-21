@@ -2257,6 +2257,17 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         return true;
     }
 
+    /**
+     * AP-fork (ap-16): indicates if this channel decoded a control channel status broadcast within the time, so it is
+     * a trunking control channel and not a conventional channel.  Used by Gain Check to pick a reference channel.
+     * @param maxAgeMs how recent the last broadcast must be
+     */
+    public boolean isControlChannel(long maxAgeMs)
+    {
+        long last = mNetworkConfigurationMonitor.getLastControlChannelBroadcast();
+        return last > 0 && System.currentTimeMillis() - last <= maxAgeMs;
+    }
+
     @Override
     public String getActivitySummary()
     {

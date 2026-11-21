@@ -31,6 +31,7 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableRow;
@@ -63,6 +64,9 @@ public class GainCheckWindow extends Stage
     private final Button mStartButton = new Button("Start");
     private final Button mStopButton = new Button("Stop");
     private final Button mApplyButton = new Button("Apply Recommended");
+    //ap-16: puts back the setting the tuner had before Apply
+    private final Button mUndoButton = new Button("Put Back");
+    private int mPreviousIndex = -1;
     private final TableView<GainSweep.StepResult> mTable = new TableView<>(mResults);
     private GainSweep mSweep;
     private int mRecommendedIndex = -1;
@@ -141,7 +145,9 @@ public class GainCheckWindow extends Stage
         close.setOnAction(e -> close());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox bottom = new HBox(8, spacer, mApplyButton, close);
+        HBox bottom = new HBox(8, spacer, mUndoButton, mApplyButton, close);
+        mUndoButton.setDisable(true);
+        mUndoButton.setTooltip(new Tooltip("Put back the setting the tuner had before Apply"));
 
         mStopButton.setDisable(true);
         mApplyButton.setDisable(true);
@@ -156,11 +162,26 @@ public class GainCheckWindow extends Stage
         mApplyButton.setOnAction(e -> {
             if(mRecommendedIndex >= 0)
             {
+                mPreviousIndex = mSteps.current();
                 mSteps.apply(mRecommendedIndex);
-                mProgressLabel.setText("Applied " + mSteps.label(mRecommendedIndex) + " and saved.");
+                mProgressLabel.setText("Applied " + mSteps.label(mRecommendedIndex) + " and saved.  If channels on " +
+                    "this tuner go quiet, use Put Back.");
                 LOG.info("Gain check [" + mTunerName + "]: applied recommended " + mSteps.getControlName() + " " +
-                    mSteps.label(mRecommendedIndex));
+                    mSteps.label(mRecommendedIndex) + " (was " + mSteps.label(mPreviousIndex) + ")");
                 mApplyButton.setDisable(true);
+                mUndoButton.setText("Put Back " + mSteps.label(mPreviousIndex));
+                mUndoButton.setDisable(false);
+            }
+        });
+        mUndoButton.setOnAction(e -> {
+            if(mPreviousIndex >= 0)
+            {
+                mSteps.apply(mPreviousIndex);
+                mProgressLabel.setText("Put back " + mSteps.label(mPreviousIndex) + " and saved.");
+                LOG.info("Gain check [" + mTunerName + "]: put back " + mSteps.getControlName() + " " +
+                    mSteps.label(mPreviousIndex));
+                mUndoButton.setDisable(true);
+                mApplyButton.setDisable(mRecommendedIndex < 0);
             }
         });
         setOnHidden(e -> {
@@ -190,6 +211,14 @@ public class GainCheckWindow extends Stage
 
     private void start()
     {
+        //ap-16: without samples every setting measures blank
+        if(mController.getSignalMonitor().getRecentReading().samplesChecked() == 0)
+        {
+            mRecommendationText.setText("The tuner isn't receiving, so there is nothing to measure.  A tuner only runs " +
+                "while it has a channel: start a channel on this tuner, then run the gain check.");
+            return;
+        }
+
         if(!mSteps.isAvailable())
         {
             mRecommendationText.setText(mSteps.getUnavailableReason());

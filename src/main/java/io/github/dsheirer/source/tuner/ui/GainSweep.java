@@ -39,7 +39,8 @@ import org.slf4j.LoggerFactory;
  * how high it can go (ap-12, after ap-11 sent a Somerville RTL from 32.8 to 42.1 dB, where it then overloaded most of
  * the time); then, with a control channel on the tuner, the lowest setting where its signal-to-noise ratio is within
  * 1 dB of the best (ap-13), and without one the setting where the noise floor has risen 3 dB above the tuner's own
- * noise.
+ * noise.  ap-16: the control channel rule never goes below the noise floor setting, so the weaker channels on the
+ * tuner keep their gain, and overload reported only by the tuner lowers the gain by two settings at most.
  */
 public class GainSweep
 {
@@ -51,6 +52,12 @@ public class GainSweep
     static final double SIGNAL_TOLERANCE_DB = 1.0;
     //A setting whose strongest signals are less than this above the noise had nothing to measure
     static final double MINIMUM_SIGNAL_DB = 3.0;
+    /**
+     * ap-16: when the tuner itself reported overload at its setting but no samples reached full scale, the
+     * recommendation goes down at most this many settings.  ap-15 sent a Daly RSP1B from LNA 0 to LNA 9 on 10 such
+     * reports, and every weak channel on it went silent.
+     */
+    static final int EVENTS_ONLY_MAX_STEPS_DOWN = 2;
 
     private final GainSteps mSteps;
     private final TunerNoiseFloorEstimator mEstimator;
@@ -498,10 +505,13 @@ public class GainSweep
      *    setting during the history (up to 30 minutes), only lower settings are considered.  If it didn't, a higher
      *    setting is allowed only as far as the history's highest peak leaves room for (keeping 3 dB of headroom); with
      *    less than 5 minutes of history, nothing higher is allowed.
-     * 3. ap-13: with a control channel on the tuner (on the air continuously), the lowest allowed setting where its
-     *    signal-to-noise ratio is within 1 dB of the best.  Without one, the noise floor decides: the lowest allowed
-     *    setting where the noise floor has risen 3 dB above the tuner's own noise at its lowest settings - past that,
-     *    more gain mostly amplifies noise along with the signals.
+     *    ap-16: when the tuner reported overload but no samples reached full scale, at most two settings lower.
+     * 3. The noise floor gives the lowest useful setting: the lowest allowed setting where the noise floor has risen
+     *    3 dB above the tuner's own noise at its lowest settings - below that the tuner's own noise hides weak signals,
+     *    and past it more gain mostly amplifies noise along with the signals.
+     * 4. ap-13: with a control channel on the tuner (on the air continuously), the lowest allowed setting where its
+     *    signal-to-noise ratio is within 1 dB of the best - ap-16: but not below the noise floor setting, since the
+     *    other channels on the tuner may be much weaker than the control channel.
      *
      * @param results of the check, lowest gain first
      * @param current index of the tuner's own setting, or -1 when unknown
@@ -535,6 +545,7 @@ public class GainSweep
 
         //Limit from the history at the tuner's own setting
         int maxIndex = Integer.MAX_VALUE;
+        int minIndex = Integer.MIN_VALUE;
         StringBuilder note = new StringBuilder();
         StepResult own = null;
 
@@ -564,7 +575,18 @@ public class GainSweep
                     note.append(", ").append(history.reading().overloadEvents()).append(" overload events");
                 }
 
-                note.append("), so only lower settings are considered.  ");
+                note.append("), so only lower settings are considered");
+
+                //ap-16: overload reported only by the tuner (no samples at full scale) is mild: at most two lower
+                if(!TunerSignalMonitor.isReportable(history.reading().clippedPercent()))
+                {
+                    int position = results.indexOf(own);
+                    minIndex = results.get(Math.max(0, position - EVENTS_ONLY_MAX_STEPS_DOWN)).index();
+                    note.append(", and since only the tuner reported it (no samples reached full scale), at most ")
+                        .append(EVENTS_ONLY_MAX_STEPS_DOWN).append(" settings lower");
+                }
+
+                note.append(".  ");
             }
             else if(enough)
             {
@@ -612,7 +634,7 @@ public class GainSweep
 
         for(StepResult result : clean)
         {
-            if(result.index() <= maxIndex)
+            if(result.index() <= maxIndex && result.index() >= minIndex)
             {
                 allowed.add(result);
             }
@@ -620,9 +642,73 @@ public class GainSweep
 
         if(allowed.isEmpty())
         {
+            if(minIndex != Integer.MIN_VALUE)
+            {
+                //ap-16: the settings within reach overloaded during the check; stay at the lowest of them
+                StepResult lowestInReach = null;
+
+                for(StepResult result : results)
+                {
+                    if(result.index() >= minIndex && lowestInReach == null)
+                    {
+                        lowestInReach = result;
+                    }
+                }
+
+                if(lowestInReach != null)
+                {
+                    return new Recommendation(lowestInReach.index(), note + "The settings within reach overloaded " +
+                        "during the check too.  Recommended: " + lowestInReach.label() + ".  A strong nearby " +
+                        "transmitter is the likely cause: a band-pass or notch filter (or an attenuator) ahead of the " +
+                        "tuner will help more than lowering the gain further, which also loses the weaker channels.");
+                }
+            }
+
             return new Recommendation(results.get(0).index(), note + "Every lower setting overloaded during the " +
                 "check too.  Use the lowest gain, and look for a very strong nearby transmitter: a band-pass or notch " +
                 "filter (or an attenuator) ahead of the tuner will help more than any gain setting.");
+        }
+
+        //Noise floor rule: the lowest useful setting
+        double[] lowest = new double[Math.min(3, results.size())];
+
+        for(int x = 0; x < lowest.length; x++)
+        {
+            lowest[x] = results.get(x).noiseFloorDb();
+        }
+
+        double ownNoise = noiseFloor(lowest);
+        StepResult noiseChoice = null;
+        String noiseReason;
+
+        if(Double.isNaN(ownNoise))
+        {
+            noiseChoice = allowed.get(allowed.size() - 1);
+            noiseReason = "the highest setting allowed (the noise floor couldn't be measured)";
+        }
+        else
+        {
+            for(StepResult result : allowed)
+            {
+                if(noiseChoice == null && !Double.isNaN(result.noiseFloorDb()) &&
+                    result.noiseFloorDb() >= ownNoise + NOISE_RISE_DB)
+                {
+                    noiseChoice = result;
+                }
+            }
+
+            if(noiseChoice != null)
+            {
+                noiseReason = "here the noise floor is " +
+                    String.format("%.1f", noiseChoice.noiseFloorDb() - ownNoise) + " dB above the tuner's own noise, " +
+                    "the point past which more gain mostly amplifies noise along with the signals";
+            }
+            else
+            {
+                noiseChoice = allowed.get(allowed.size() - 1);
+                noiseReason = "the highest setting allowed: the noise floor didn't rise by " + NOISE_RISE_DB +
+                    " dB at any allowed setting, so the tuner's own noise still dominates there";
+            }
         }
 
         //ap-13: control channel rule - its signal-to-noise ratio at each allowed setting
@@ -647,6 +733,17 @@ public class GainSweep
                     StepResult highestClean = clean.get(clean.size() - 1);
                     String overload = highestClean.index() < results.get(results.size() - 1).index() ?
                         "  Overload starts above " + highestClean.label() + "." : "";
+
+                    //ap-16: not below the noise floor setting - the other channels may be much weaker
+                    if(result.index() < noiseChoice.index())
+                    {
+                        return new Recommendation(noiseChoice.index(), note + "Recommended: " + noiseChoice.label() +
+                            ".  The control channel " + referenceName + " is already " +
+                            String.format("%.1f", result.referenceSnrDb()) + " dB above the noise at " +
+                            result.label() + ", but weaker channels on this tuner need more gain than that: at " +
+                            noiseChoice.label() + " " + noiseReason + "." + overload);
+                    }
+
                     return new Recommendation(result.index(), note + "Recommended: " + result.label() +
                         ".  Measured on the control channel " + referenceName + ": it is " +
                         String.format("%.1f", result.referenceSnrDb()) + " dB above the noise here, and more gain " +
@@ -660,38 +757,8 @@ public class GainSweep
             "follows the noise floor" : "The control channel " + referenceName + " couldn't be measured at every " +
             "setting, so this follows the noise floor";
 
-        //Noise floor rule
-        double[] lowest = new double[Math.min(3, results.size())];
-
-        for(int x = 0; x < lowest.length; x++)
-        {
-            lowest[x] = results.get(x).noiseFloorDb();
-        }
-
-        double ownNoise = noiseFloor(lowest);
-
-        if(Double.isNaN(ownNoise))
-        {
-            StepResult highest = allowed.get(allowed.size() - 1);
-            return new Recommendation(highest.index(), note + "Recommended: " + highest.label() + ", the highest " +
-                "setting allowed (the noise floor couldn't be measured).");
-        }
-
-        for(StepResult result : allowed)
-        {
-            if(!Double.isNaN(result.noiseFloorDb()) && result.noiseFloorDb() >= ownNoise + NOISE_RISE_DB)
-            {
-                return new Recommendation(result.index(), note + "Recommended: " + result.label() + ".  " + why +
-                    ": here it is " +
-                    String.format("%.1f", result.noiseFloorDb() - ownNoise) + " dB above the tuner's own noise, the " +
-                    "point past which more gain mostly amplifies noise along with the signals.");
-            }
-        }
-
-        StepResult highest = allowed.get(allowed.size() - 1);
-        return new Recommendation(highest.index(), note + "Recommended: " + highest.label() + ", the highest " +
-            "setting allowed.  " + why + ", and it didn't rise by " + NOISE_RISE_DB + " dB at any allowed setting, so " +
-            "the tuner's own noise still dominates there.");
+        return new Recommendation(noiseChoice.index(), note + "Recommended: " + noiseChoice.label() + ".  " + why +
+            ": " + noiseReason + ".");
     }
 
     /**

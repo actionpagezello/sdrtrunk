@@ -20,7 +20,9 @@ package io.github.dsheirer.source.tuner.ui;
 
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
+import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
+import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderState;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.tuner.TunerNoiseFloorEstimator;
@@ -39,11 +41,18 @@ import java.util.Map;
 public class GainCheckReference
 {
     /**
-     * Decoders whose standard (non-traffic) channel can be a trunking control channel
+     * Decoders whose standard (non-traffic) channel is always a trunking control channel
      */
-    static final EnumSet<DecoderType> CONTROL_DECODERS = EnumSet.of(DecoderType.P25_PHASE1, DecoderType.P25_PHASE2,
-        DecoderType.DMR, DecoderType.NXDN, DecoderType.EDACS, DecoderType.SMARTNET, DecoderType.MPT1327,
-        DecoderType.LTR_NET, DecoderType.PASSPORT);
+    static final EnumSet<DecoderType> CONTROL_DECODERS = EnumSet.of(DecoderType.EDACS, DecoderType.SMARTNET,
+        DecoderType.MPT1327, DecoderType.LTR_NET, DecoderType.PASSPORT);
+
+    /**
+     * ap-16: a P25 Phase 1 channel counts as a control channel only after it decoded a network or RFSS status
+     * broadcast within this time.  A conventional P25 channel (ap-15 used Salem Police on Daly and sent the tuner to
+     * its lowest gain) never sends these.  P25 Phase 2, DMR and NXDN channels aren't used: their conventional channels
+     * can't be told apart, so those tuners follow the noise floor.
+     */
+    static final long P25_CONTROL_BROADCAST_MAX_AGE_MS = 120_000;
 
     /**
      * A channel running on the tuner
@@ -58,9 +67,10 @@ public class GainCheckReference
     }
 
     /**
-     * Finds the possible control channels running on the tuner with the estimator: standard channels (not traffic
-     * channels) with a trunking decoder.  The gain check then keeps only one that is on the air continuously - a P25
-     * or DMR conventional channel is in the list but drops out there.
+     * Finds the control channels running on the tuner with the estimator: standard channels (not traffic channels)
+     * with an EDACS, Type II, MPT-1327, LTR-Net or Passport decoder, and P25 Phase 1 channels that decoded a control
+     * channel status broadcast in the last two minutes (ap-16).  The gain check then keeps only one that is on the air
+     * continuously.
      *
      * @param manager for the running channels, or null
      * @param estimator of the tuner
@@ -80,7 +90,7 @@ public class GainCheckReference
             Channel channel = entry.getKey();
 
             if(!channel.isStandardChannel() || channel.getDecodeConfiguration() == null ||
-                !CONTROL_DECODERS.contains(channel.getDecodeConfiguration().getDecoderType()))
+                !isControlChannel(channel.getDecodeConfiguration().getDecoderType(), entry.getValue()))
             {
                 continue;
             }
@@ -101,5 +111,29 @@ public class GainCheckReference
         }
 
         return candidates;
+    }
+
+    /**
+     * Indicates if a standard channel with the decoder is a trunking control channel.
+     */
+    static boolean isControlChannel(DecoderType decoderType, ProcessingChain chain)
+    {
+        if(CONTROL_DECODERS.contains(decoderType))
+        {
+            return true;
+        }
+
+        if(decoderType == DecoderType.P25_PHASE1 && chain != null)
+        {
+            for(Module module : chain.getModules())
+            {
+                if(module instanceof P25P1DecoderState state && state.isControlChannel(P25_CONTROL_BROADCAST_MAX_AGE_MS))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

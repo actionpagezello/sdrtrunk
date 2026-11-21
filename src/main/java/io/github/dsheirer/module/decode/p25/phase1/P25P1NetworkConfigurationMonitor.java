@@ -69,6 +69,8 @@ public class P25P1NetworkConfigurationMonitor
     private Map<Integer,IFrequencyBand> mFrequencyBandMap = new HashMap<>();
 
     //Network Status Messages
+    //AP-fork (ap-16): time of the last network or RFSS status broadcast (TSBK or AMBTC), sent only on a control channel
+    private volatile long mLastControlChannelBroadcast;
     private AMBTCNetworkStatusBroadcast mAMBTCNetworkStatusBroadcast;
     private NetworkStatusBroadcast mTSBKNetworkStatusBroadcast;
     private LCNetworkStatusBroadcast mLCNetworkStatusBroadcast;
@@ -112,6 +114,15 @@ public class P25P1NetworkConfigurationMonitor
     }
 
     /**
+     * AP-fork (ap-16): time of the last network or RFSS status broadcast (TSBK or AMBTC) decoded on this channel, or 0.
+     * Only a trunking control channel sends these, so this tells a control channel from a conventional channel.
+     */
+    public long getLastControlChannelBroadcast()
+    {
+        return mLastControlChannelBroadcast;
+    }
+
+    /**
      * Processes TSBK network configuration messages
      */
     public void process(TSBKMessage tsbk)
@@ -132,6 +143,7 @@ public class P25P1NetworkConfigurationMonitor
                 {
                     mTSBKNetworkStatusBroadcast = (NetworkStatusBroadcast)tsbk;
                 }
+                mLastControlChannelBroadcast = System.currentTimeMillis();
                 break;
             case OSP_SYSTEM_SERVICE_BROADCAST:
                 if(tsbk instanceof SystemServiceBroadcast)
@@ -144,6 +156,7 @@ public class P25P1NetworkConfigurationMonitor
                 {
                     mTSBKRFSSStatusBroadcast = (RFSSStatusBroadcast)tsbk;
                 }
+                mLastControlChannelBroadcast = System.currentTimeMillis();
                 break;
             case OSP_SECONDARY_CONTROL_CHANNEL_BROADCAST:
                 if(tsbk instanceof SecondaryControlChannelBroadcast)
@@ -212,12 +225,14 @@ public class P25P1NetworkConfigurationMonitor
                 {
                     mAMBTCNetworkStatusBroadcast = (AMBTCNetworkStatusBroadcast)ambtc;
                 }
+                mLastControlChannelBroadcast = System.currentTimeMillis();
                 break;
             case OSP_RFSS_STATUS_BROADCAST:
                 if(ambtc instanceof AMBTCRFSSStatusBroadcast)
                 {
                     mAMBTCRFSSStatusBroadcast = (AMBTCRFSSStatusBroadcast)ambtc;
                 }
+                mLastControlChannelBroadcast = System.currentTimeMillis();
                 break;
 //TODO: process the rest of the messages here
         }

@@ -250,6 +250,41 @@ public class GainSweepTest
         assertTrue(recommendation.explanation().contains("Overload starts above 4"), recommendation.explanation());
     }
 
+    /**
+     * ap-16: a strong control channel is within 1 dB of its best at every setting.  ap-15 then recommended the lowest
+     * gain; now the noise floor setting is the minimum, so the weaker channels on the tuner keep their gain.
+     */
+    @Test
+    public void strongControlChannelDoesNotPullTheGainBelowTheNoiseFloorSetting()
+    {
+        List<GainSweep.StepResult> results = List.of(control(0, -80, 30, 0), control(1, -80, 30.2, 0),
+            control(2, -79.5, 30.4, 0), control(3, -76, 30.5, 0), control(4, -70, 30.5, 0));
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, -1, null, "CC");
+        assertEquals(3, recommendation.index(), recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("weaker channels"), recommendation.explanation());
+    }
+
+    /**
+     * ap-16: the Daly RSP1B case - the tuner reported overload 10 times at its setting (the highest gain) but no sample
+     * reached full scale.  ap-15 recommended the lowest gain (LNA 9); now it goes down two settings at most.
+     */
+    @Test
+    public void overloadReportedOnlyByTheTunerLowersTheGainTwoSettingsAtMost()
+    {
+        List<GainSweep.StepResult> results = new java.util.ArrayList<>();
+
+        for(int x = 0; x < 10; x++)
+        {
+            //LNA 9 (index 0, least gain) to LNA 0 (index 9, most gain); the control channel is strong everywhere
+            results.add(new GainSweep.StepResult(x, "LNA " + (9 - x), -80 + Math.max(0, x - 5) * 2, 30, -10, 0, 0, 1.0,
+                30));
+        }
+
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, 9, history(19, 0.0, -9.3, 10), "CC");
+        assertEquals(7, recommendation.index(), recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("at most 2 settings lower"), recommendation.explanation());
+    }
+
     @Test
     public void overloadedSettingsAreNeverRecommended()
     {
