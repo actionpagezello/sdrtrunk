@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -105,6 +106,37 @@ public class TunerNoiseFloorEstimatorTest
     private static double expected(double sampleRate)
     {
         return 10.0 * Math.log10(NOISE_VARIANCE / sampleRate);
+    }
+
+    /**
+     * ap-16: the strongest signal for the overload warning is found at its frequency, well above the noise, on either
+     * side of the tuner's center.
+     */
+    @Test
+    void strongestSignal()
+    {
+        double sampleRate = 2_400_000.0;
+
+        for(long offset : new long[]{-412_500, 287_500})
+        {
+            TunerNoiseFloorEstimator estimator = new TunerNoiseFloorEstimator(() -> CENTER, () -> sampleRate,
+                () -> (int)(sampleRate * 0.98), false);
+            estimator.getBandPowers();
+            Generator generator = new Generator(sampleRate, 0.3, offset);
+            int bufferLength = TunerNoiseFloorEstimator.getFftSize(sampleRate) * 8;
+
+            for(long now = 0; now <= 2000; now += 50)
+            {
+                estimator.receive(generator.next(bufferLength));
+                estimator.process(now);
+            }
+
+            TunerNoiseFloorEstimator.StrongestSignal strongest = estimator.getStrongestSignal();
+            assertNotNull(strongest);
+            double binWidth = sampleRate / TunerNoiseFloorEstimator.getFftSize(sampleRate);
+            assertEquals(CENTER + offset, strongest.frequency(), binWidth, "offset " + offset);
+            assertTrue(strongest.aboveNoiseDb() > 20, "above noise " + strongest.aboveNoiseDb());
+        }
     }
 
     /**

@@ -89,6 +89,12 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         mTunerFrequencyErrorManager = new TunerFrequencyErrorManager(this);
         mSampleDropMonitor = isSampleDropMonitorSupported() ? new SampleDropMonitor(this::getSampleDropMonitorTunerName,
                 this::getSampleRate) : null;
+        //AP-fork (ap-16): the overload warning names the strongest signal in the tuner's bandwidth
+        mSignalMonitor.setStrongestSignal(() -> {
+            TunerNoiseFloorEstimator.StrongestSignal strongest = mNoiseFloorEstimator.getStrongestSignal();
+            return strongest == null ? null : String.format(java.util.Locale.US, "%.4f MHz, %.0f dB above the noise",
+                strongest.frequency() / 1E6, strongest.aboveNoiseDb());
+        }, mNoiseFloorEstimator::getBandPowers);
     }
 
     /**

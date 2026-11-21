@@ -554,6 +554,61 @@ public class TunerNoiseFloorEstimator
     }
 
     /**
+     * AP-fork (ap-16): the strongest signal in the tuner's usable bandwidth from the latest estimate, for the overload
+     * warning: the frequency of the strongest bin and how far it is above the median (the noise floor).
+     * @return strongest signal, or null when there is no current estimate
+     */
+    public StrongestSignal getStrongestSignal()
+    {
+        Estimate estimate = mEstimate;
+
+        if(estimate == null || estimate.frequency() != mFrequency.getAsLong() ||
+            estimate.sampleRate() != mSampleRate.getAsDouble())
+        {
+            return null;
+        }
+
+        int size = estimate.density().length;
+        double binWidth = estimate.sampleRate() / size;
+        java.util.List<Double> usablePowers = new java.util.ArrayList<>();
+        int strongestBin = -1;
+        double strongest = Double.NEGATIVE_INFINITY;
+
+        for(int bin = 0; bin < size; bin++)
+        {
+            if(estimate.usable()[bin])
+            {
+                double power = 10.0 * Math.log10(Math.max(estimate.density()[bin] * binWidth, 1e-20));
+                usablePowers.add(power);
+
+                if(power > strongest)
+                {
+                    strongest = power;
+                    strongestBin = bin;
+                }
+            }
+        }
+
+        if(strongestBin < 0)
+        {
+            return null;
+        }
+
+        java.util.Collections.sort(usablePowers);
+        double median = usablePowers.get(usablePowers.size() / 2);
+        int offset = strongestBin < (size + 1) / 2 ? strongestBin : strongestBin - size;
+        long frequency = estimate.frequency() + Math.round(offset * binWidth);
+        return new StrongestSignal(frequency, strongest - median);
+    }
+
+    /**
+     * AP-fork (ap-16): strongest signal in the tuner's bandwidth
+     * @param frequency of the strongest bin, Hz
+     * @param aboveNoiseDb how far it is above the noise floor, dB
+     */
+    public record StrongestSignal(long frequency, double aboveNoiseDb) {}
+
+    /**
      * AP-fork (ap-12): power of each usable bin in dBFS, measured at the timestamp
      */
     public record BandPowers(double[] binPowersDb, long timestamp) {}

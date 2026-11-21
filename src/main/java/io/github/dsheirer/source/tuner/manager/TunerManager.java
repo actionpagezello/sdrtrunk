@@ -89,6 +89,9 @@ public class TunerManager implements IDiscoveredTunerStatusListener
     //Guards the discovery session, which RSP recovery uses from its own thread
     private final Object mSDRplayLock = new Object();
     private volatile ChannelProcessingManager mChannelProcessingManager;
+    //AP-fork (ap-16): logs the channels each tuner carries
+    private final TunerChannelLog mTunerChannelLog = new TunerChannelLog(this::getRunningTuners,
+        () -> mChannelProcessingManager);
     private volatile Predicate<Channel> mChannelInPlaylist = channel -> true;
 
     /**
@@ -178,6 +181,25 @@ public class TunerManager implements IDiscoveredTunerStatusListener
 
         discoverRecordingTuners();
         discoverNetworkTuners();
+        mTunerChannelLog.start();
+    }
+
+    /**
+     * AP-fork (ap-16): the tuners that are running
+     */
+    private List<io.github.dsheirer.source.tuner.Tuner> getRunningTuners()
+    {
+        List<io.github.dsheirer.source.tuner.Tuner> tuners = new ArrayList<>();
+
+        for(DiscoveredTuner discoveredTuner : getAvailableTuners())
+        {
+            if(discoveredTuner.hasTuner())
+            {
+                tuners.add(discoveredTuner.getTuner());
+            }
+        }
+
+        return tuners;
     }
 
     /**
@@ -188,6 +210,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         //Stop hotplug detection first so that no tuner is added or removed while the tuners are released
         mHotplugEventSupport.stop();
         mRspRecoveryMonitor.stop();
+        mTunerChannelLog.stop();
 
         //Stop all tuners
         mDiscoveredTunerModel.releaseDiscoveredTuners();
@@ -1025,6 +1048,13 @@ public class TunerManager implements IDiscoveredTunerStatusListener
         {
             try
             {
+                //ap-16: polling reports the tuners found at startup as arrivals; skip them before anything opens the
+                //device (ap-15 read the serial of the running RFOnes here and logged "access denied")
+                if(mDiscoveredTunerModel.hasUsbTuner(device.busNumber(), UsbPortAddress.of(device)))
+                {
+                    return;
+                }
+
                 DiscoveredUSBTuner discoveredUSBTuner = createDiscoveredTuner(device);
 
                 if(discoveredUSBTuner == null ||

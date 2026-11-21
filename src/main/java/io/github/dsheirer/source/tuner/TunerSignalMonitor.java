@@ -68,6 +68,11 @@ public class TunerSignalMonitor
     static final long RECENT_MS = 3000;
 
     private final Supplier<String> mTunerName;
+    //ap-16: describes the strongest signal for the overload warning, or returns null
+    private volatile Supplier<String> mStrongestSignal = () -> null;
+    //ap-16: keeps the spectrum measurement running for the strongest signal in the last seconds of an overloaded period
+    private volatile Runnable mStrongestSignalWarmUp = () -> {};
+    static final long STRONGEST_SIGNAL_WARM_UP_MS = 10_000;
     private volatile boolean mIntensive;
     private long mLastCheck;
 
@@ -100,6 +105,19 @@ public class TunerSignalMonitor
     public TunerSignalMonitor(Supplier<String> tunerName)
     {
         mTunerName = tunerName;
+    }
+
+    /**
+     * AP-fork (ap-16): sets the description of the strongest signal added to the overload warning, so the transmitter
+     * causing the overload can be found.
+     * @param strongestSignal supplies the description, or null when unknown
+     * @param warmUp called in the last seconds of an overloaded period so the spectrum measurement is running when
+     * the warning is written
+     */
+    public void setStrongestSignal(Supplier<String> strongestSignal, Runnable warmUp)
+    {
+        mStrongestSignal = strongestSignal != null ? strongestSignal : () -> null;
+        mStrongestSignalWarmUp = warmUp != null ? warmUp : () -> {};
     }
 
     /**
@@ -180,6 +198,18 @@ public class TunerSignalMonitor
         if(now - mLogPeriodStart >= LOG_INTERVAL_MS)
         {
             logPeriod(now);
+        }
+        else if(now - mLogPeriodStart >= LOG_INTERVAL_MS - STRONGEST_SIGNAL_WARM_UP_MS && mLogChecked > 0 &&
+            (isReportable(100.0 * mLogClipped / mLogChecked) || mLogOverloadEvents > 0))
+        {
+            try
+            {
+                mStrongestSignalWarmUp.run();
+            }
+            catch(RuntimeException e)
+            {
+                //The warning is written without the strongest signal
+            }
         }
     }
 
@@ -298,6 +328,29 @@ public class TunerSignalMonitor
             if(mLogOverloadEvents > 0)
             {
                 sb.append(", ").append(mLogOverloadEvents).append(" overload events from the tuner");
+            }
+
+            //ap-16: peaks above 0 dBFS only occur on tuners with a real (not I/Q) ADC, Airspy and HydraSDR, when the
+            //ADC itself clips
+            if(mLogPeak > 1.0f)
+            {
+                sb.append(" (above 0 dBFS: the tuner's converter is clipping)");
+            }
+
+            String strongest = null;
+
+            try
+            {
+                strongest = mStrongestSignal.get();
+            }
+            catch(RuntimeException e)
+            {
+                //Leave it out
+            }
+
+            if(strongest != null)
+            {
+                sb.append(", strongest signal ").append(strongest);
             }
 
             sb.append(" - reduce the gain (Gain Check in the tuner panel finds a setting)");

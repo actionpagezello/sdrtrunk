@@ -198,7 +198,8 @@ public class TunerView extends SplitPane implements DiscoveredTunerModel.ModelLi
         TableColumnMonitor.setLegacyIndex(frequency, 3);
 
         TableColumn<DiscoveredTuner,String> channels = textColumn("channels", "Channels", tuner -> {
-            if(!tuner.hasTuner())
+            //AP-fork (ap-16): a tuner being shut down has no channel source manager any more
+            if(!tuner.hasTuner() || tuner.getTuner().getChannelSourceManager() == null)
             {
                 return "";
             }
