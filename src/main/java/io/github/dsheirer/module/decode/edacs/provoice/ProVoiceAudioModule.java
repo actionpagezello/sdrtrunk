@@ -29,7 +29,7 @@ import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.message.IMessage;
-import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.settings.Settings;
 import io.github.dsheirer.sample.Listener;
 
 /**
@@ -55,9 +55,9 @@ public class ProVoiceAudioModule extends ImbeAudioModule
     private int mSegmentFrames;
     private long mSilentSegmentCount;
 
-    public ProVoiceAudioModule(UserPreferences userPreferences, AliasList aliasList)
+    public ProVoiceAudioModule(Settings settings, AliasList aliasList)
     {
-        super(userPreferences, aliasList);
+        super(settings, aliasList);
     }
 
     /**

@@ -21,7 +21,7 @@ package io.github.dsheirer.source.tuner.manager;
 
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
-import io.github.dsheirer.gui.preference.tuner.RspDuoSelectionMode;
+import io.github.dsheirer.gui.settings.tuner.RspDuoSelectionMode;
 import io.github.dsheirer.libusb.LibUsb;
 import io.github.dsheirer.libusb.UsbContext;
 import io.github.dsheirer.libusb.UsbDeviceInfo;
@@ -29,8 +29,8 @@ import io.github.dsheirer.libusb.UsbException;
 import io.github.dsheirer.libusb.UsbHotplug;
 import io.github.dsheirer.libusb.UsbHotplugListener;
 import io.github.dsheirer.libusb.UsbLogLevel;
-import io.github.dsheirer.preference.UserPreferences;
-import io.github.dsheirer.preference.source.ChannelizerType;
+import io.github.dsheirer.settings.Settings;
+import io.github.dsheirer.settings.source.ChannelizerType;
 import io.github.dsheirer.sdrplay.DeviceInfo;
 import io.github.dsheirer.sdrplay.SDRplay;
 import io.github.dsheirer.sdrplay.SDRplayException;
@@ -74,7 +74,7 @@ import org.slf4j.LoggerFactory;
 public class TunerManager implements IDiscoveredTunerStatusListener
 {
     private static final Logger mLog = LoggerFactory.getLogger(TunerManager.class);
-    private final UserPreferences mUserPreferences;
+    private final Settings mSettings;
     private final DiscoveredTunerModel mDiscoveredTunerModel;
     private final TunerConfigurationManager mTunerConfigurationManager;
     /**
@@ -96,12 +96,12 @@ public class TunerManager implements IDiscoveredTunerStatusListener
 
     /**
      * Constructs an instance
-     * @param userPreferences for preferences
+     * @param settings for preferences
      */
-    public TunerManager(UserPreferences userPreferences)
+    public TunerManager(Settings settings)
     {
-        mUserPreferences = userPreferences;
-        mTunerConfigurationManager = new TunerConfigurationManager(userPreferences);
+        mSettings = settings;
+        mTunerConfigurationManager = new TunerConfigurationManager(settings);
         mDiscoveredTunerModel = new DiscoveredTunerModel(mTunerConfigurationManager);
         mRspRecoveryMonitor = new RspRecoveryMonitor<>(new RspRecoveryHost(), new RspRecoveryScheduler());
         mDiscoveredTunerModel.setRspRemovalListener(tuner ->
@@ -394,7 +394,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
 
         tunerClass = checkForLegacyHydraSdr(tunerClass, device);
 
-        ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
+        ChannelizerType channelizerType = mSettings.getTunerSettings().getChannelizerType();
         return new DiscoveredUSBTuner(tunerClass, device.busNumber(), UsbPortAddress.of(device), channelizerType);
     }
 
@@ -449,8 +449,8 @@ public class TunerManager implements IDiscoveredTunerStatusListener
      */
     private void discoverSdrPlayTuners()
     {
-        ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
-        RspDuoSelectionMode duoSelectionMode = mUserPreferences.getTunerPreference().getRspDuoTunerMode();
+        ChannelizerType channelizerType = mSettings.getTunerSettings().getChannelizerType();
+        RspDuoSelectionMode duoSelectionMode = mSettings.getTunerSettings().getRspDuoTunerMode();
 
         if(!SDRplay.isInstalled())
         {
@@ -527,8 +527,8 @@ public class TunerManager implements IDiscoveredTunerStatusListener
      */
     private boolean attachRsp(String serialNumber) throws SDRplayException
     {
-        ChannelizerType channelizerType = mUserPreferences.getTunerPreference().getChannelizerType();
-        RspDuoSelectionMode duoSelectionMode = mUserPreferences.getTunerPreference().getRspDuoTunerMode();
+        ChannelizerType channelizerType = mSettings.getTunerSettings().getChannelizerType();
+        RspDuoSelectionMode duoSelectionMode = mSettings.getTunerSettings().getRspDuoTunerMode();
         boolean started = false;
 
         for(DeviceInfo deviceInfo: getAvailableRspDevices())
@@ -725,7 +725,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
             if(tunerConfiguration instanceof RecordingTunerConfiguration recordingTunerConfiguration)
             {
                 DiscoveredRecordingTuner discoveredRecordingTuner =
-                        new DiscoveredRecordingTuner(mUserPreferences, recordingTunerConfiguration);
+                        new DiscoveredRecordingTuner(mSettings, recordingTunerConfiguration);
 
                 discoveredRecordingTuner.addTunerStatusListener(this);
                 discoveredRecordingTuner.setEnabled(false);
@@ -752,7 +752,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
             if(tunerConfiguration instanceof NetworkTunerConfiguration networkTunerConfiguration)
             {
                 DiscoveredNetworkTuner discoveredNetworkTuner =
-                        new DiscoveredNetworkTuner(mUserPreferences, networkTunerConfiguration);
+                        new DiscoveredNetworkTuner(mSettings, networkTunerConfiguration);
 
                 discoveredNetworkTuner.addTunerStatusListener(this);
                 discoveredNetworkTuner.setEnabled(false);

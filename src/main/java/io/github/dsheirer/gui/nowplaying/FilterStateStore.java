@@ -22,7 +22,7 @@ import io.github.dsheirer.filter.Filter;
 import io.github.dsheirer.filter.FilterElement;
 import io.github.dsheirer.filter.FilterSet;
 import io.github.dsheirer.filter.IFilter;
-import io.github.dsheirer.preference.NowPlayingPreference;
+import io.github.dsheirer.settings.NowPlayingSettings;
 
 /**
  * AP-fork: keeps the Now Playing event and message filter choices between sessions, as the fork's Swing panels did.
@@ -37,7 +37,7 @@ public final class FilterStateStore
     /**
      * Applies the stored enabled states to the filter set's elements.
      */
-    public static <T> void restore(FilterSet<T> filterSet, NowPlayingPreference preference)
+    public static <T> void restore(FilterSet<T> filterSet, NowPlayingSettings preference)
     {
         for(IFilter<T> iFilter: filterSet.getFilters())
         {
@@ -54,7 +54,7 @@ public final class FilterStateStore
     /**
      * Stores the enabled states of the filter set's elements.
      */
-    public static <T> void store(FilterSet<T> filterSet, NowPlayingPreference preference)
+    public static <T> void store(FilterSet<T> filterSet, NowPlayingSettings preference)
     {
         for(IFilter<T> iFilter: filterSet.getFilters())
         {

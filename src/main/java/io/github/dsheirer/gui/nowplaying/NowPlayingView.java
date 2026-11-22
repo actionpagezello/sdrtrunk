@@ -21,7 +21,7 @@ package io.github.dsheirer.gui.nowplaying;
 import io.github.dsheirer.gui.channel.ChannelSpectrumView;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.playlist.PlaylistManager;
-import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.settings.Settings;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import javafx.geometry.Orientation;
 import javafx.scene.control.SplitPane;
@@ -49,18 +49,18 @@ public class NowPlayingView extends SplitPane
      * Constructs an instance.  Construct on the JavaFX application thread.
      * @param playlistManager for the channels
      * @param iconModel for alias icons
-     * @param userPreferences for display formats and column settings
+     * @param settings for display formats and column settings
      * @param detailTabsVisible to show the detail tabs
      */
-    public NowPlayingView(PlaylistManager playlistManager, IconModel iconModel, UserPreferences userPreferences,
+    public NowPlayingView(PlaylistManager playlistManager, IconModel iconModel, Settings settings,
                           TunerManager tunerManager, boolean detailTabsVisible)
     {
         setOrientation(Orientation.VERTICAL);
 
-        mChannelMetadataView = new ChannelMetadataView(playlistManager, iconModel, userPreferences, tunerManager);
+        mChannelMetadataView = new ChannelMetadataView(playlistManager, iconModel, settings, tunerManager);
         mChannelDetailView = new ChannelDetailView(playlistManager.getChannelProcessingManager());
-        mDecodeEventView = new DecodeEventView(iconModel, userPreferences, playlistManager.getAliasModel());
-        mMessageActivityView = new MessageActivityView(userPreferences);
+        mDecodeEventView = new DecodeEventView(iconModel, settings, playlistManager.getAliasModel());
+        mMessageActivityView = new MessageActivityView(settings);
         mChannelSpectrumView = new ChannelSpectrumView(playlistManager);
 
         Tab detailsTab = new Tab("Details", mChannelDetailView);

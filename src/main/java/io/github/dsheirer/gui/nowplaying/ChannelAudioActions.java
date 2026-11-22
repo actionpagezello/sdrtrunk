@@ -35,7 +35,7 @@ import io.github.dsheirer.module.decode.am.AMTalkgroup;
 import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog;
 import io.github.dsheirer.module.decode.nbfm.NBFMTalkgroup;
 import io.github.dsheirer.playlist.PlaylistManager;
-import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.settings.Settings;
 import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.config.SourceConfigTuner;
 import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
@@ -73,20 +73,20 @@ public class ChannelAudioActions
     private final Map<String,Alias> mLastCallAlias = new ConcurrentHashMap<>();
     private final ChannelProcessingManager mChannelProcessingManager;
     private final PlaylistManager mPlaylistManager;
-    private final UserPreferences mUserPreferences;
+    private final Settings mSettings;
     private final TunerManager mTunerManager;
 
     /**
      * Constructs an instance
      * @param playlistManager for the alias model and processing chains
-     * @param userPreferences for the per-channel mute store
+     * @param settings for the per-channel mute store
      * @param tunerManager for the waterfall, or null
      */
-    public ChannelAudioActions(PlaylistManager playlistManager, UserPreferences userPreferences, TunerManager tunerManager)
+    public ChannelAudioActions(PlaylistManager playlistManager, Settings settings, TunerManager tunerManager)
     {
         mPlaylistManager = playlistManager;
         mChannelProcessingManager = playlistManager.getChannelProcessingManager();
-        mUserPreferences = userPreferences;
+        mSettings = settings;
         mTunerManager = tunerManager;
     }
 
@@ -231,7 +231,7 @@ public class ChannelAudioActions
         ChannelMetadata first = getFirstMetadata(channel);
 
         if(first != null && resolveChannelAlias(first, channel) == null
-            && mUserPreferences.getNowPlayingPreference().isChannelMuted(getChannelMuteKey(channel)))
+            && mSettings.getNowPlayingSettings().isChannelMuted(getChannelMuteKey(channel)))
         {
             setProcessingChainMuted(mChannelProcessingManager.getProcessingChain(channel), true);
         }
@@ -350,7 +350,7 @@ public class ChannelAudioActions
         //the channel as unmuted while its audio modules were still silenced, and the menu would
         //offer "Mute" on a channel the user cannot hear.  Reading the union keeps the menu honest;
         //setChannelMuted() clears both stores on unmute, so the state cannot get stuck.
-        return mUserPreferences.getNowPlayingPreference().isChannelMuted(getChannelMuteKey(channel));
+        return mSettings.getNowPlayingSettings().isChannelMuted(getChannelMuteKey(channel));
     }
 
     /**
@@ -377,12 +377,12 @@ public class ChannelAudioActions
             //A channel may have been muted while no alias was identifiable and acquired one since -
             //a trunked channel muted between calls, for instance.  Migrate rather than leaving a
             //second copy behind: the alias holds the state now, so discard the per-channel entry.
-            mUserPreferences.getNowPlayingPreference().setChannelMuted(getChannelMuteKey(channel), false);
+            mSettings.getNowPlayingSettings().setChannelMuted(getChannelMuteKey(channel), false);
         }
         else
         {
             String muteKey = getChannelMuteKey(channel);
-            mUserPreferences.getNowPlayingPreference().setChannelMuted(muteKey, mute);
+            mSettings.getNowPlayingSettings().setChannelMuted(muteKey, mute);
 
             for(Map.Entry<Channel,ProcessingChain> entry : mChannelProcessingManager.getProcessingChains().entrySet())
             {

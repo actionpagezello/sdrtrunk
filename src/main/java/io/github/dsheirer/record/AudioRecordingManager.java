@@ -29,7 +29,7 @@ import io.github.dsheirer.identifier.string.StringIdentifier;
 import io.github.dsheirer.identifier.tone.Tone;
 import io.github.dsheirer.identifier.tone.ToneIdentifier;
 import io.github.dsheirer.identifier.tone.ToneSequence;
-import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.settings.Settings;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.util.StringUtils;
 import io.github.dsheirer.util.ThreadPool;
@@ -53,18 +53,18 @@ public class AudioRecordingManager implements Listener<AudioSegment>
     private final static Logger mLog = LoggerFactory.getLogger(AudioRecordingManager.class);
     private LinkedTransferQueue<AudioSegment> mCompletedAudioSegmentQueue = new LinkedTransferQueue<>();
     private ScheduledFuture<?> mQueueProcessorHandle;
-    private UserPreferences mUserPreferences;
+    private Settings mSettings;
     private int mUnknownAudioRecordingIndex = 1;
     private int mDuplicateAudioRecordingSuffix = 1;
     private String mPreviousRecordingPath = null;
 
     /**
      * Constructs an instance
-     * @param userPreferences to determine audio recording format
+     * @param settings to determine audio recording format
      */
-    public AudioRecordingManager(UserPreferences userPreferences)
+    public AudioRecordingManager(Settings settings)
     {
-        mUserPreferences = userPreferences;
+        mSettings = settings;
     }
 
     /**
@@ -135,7 +135,7 @@ public class AudioRecordingManager implements Listener<AudioSegment>
      */
     private void processAudioSegments()
     {
-        RecordFormat recordFormat = mUserPreferences.getRecordPreference().getAudioRecordFormat();
+        RecordFormat recordFormat = mSettings.getRecordSettings().getAudioRecordFormat();
         AudioSegment audioSegment = mCompletedAudioSegmentQueue.poll();
 
         while(audioSegment != null)
@@ -144,7 +144,7 @@ public class AudioRecordingManager implements Listener<AudioSegment>
             {
                 audioSegment.decrementConsumerCount(); //AP-fork (edacs-23): silence throughout - no file
             }
-            else if(audioSegment.isDuplicate() && mUserPreferences.getCallManagementPreference().isDuplicateRecordingSuppressionEnabled())
+            else if(audioSegment.isDuplicate() && mSettings.getCallManagementSettings().isDuplicateRecordingSuppressionEnabled())
             {
                 audioSegment.decrementConsumerCount();
             }
@@ -154,7 +154,7 @@ public class AudioRecordingManager implements Listener<AudioSegment>
 
                 try
                 {
-                    AudioSegmentRecorder.record(audioSegment, path, recordFormat, mUserPreferences);
+                    AudioSegmentRecorder.record(audioSegment, path, recordFormat, mSettings);
                 }
                 catch(IOException ioe)
                 {
@@ -175,7 +175,7 @@ public class AudioRecordingManager implements Listener<AudioSegment>
      */
     public Path getRecordingBasePath()
     {
-        return mUserPreferences.getDirectoryPreference().getDirectoryRecording();
+        return mSettings.getDirectorySettings().getDirectoryRecording();
     }
 
     /**

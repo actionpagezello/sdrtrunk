@@ -40,8 +40,8 @@ import io.github.dsheirer.gui.playlist.IAliasListRefreshListener;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.log.EventLogManager;
-import io.github.dsheirer.preference.UserPreferences;
-import io.github.dsheirer.preference.playlist.PlaylistPreference;
+import io.github.dsheirer.settings.Settings;
+import io.github.dsheirer.settings.playlist.PlaylistSettings;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.service.radioreference.AliasListSynchronizer;
 import io.github.dsheirer.service.radioreference.RadioReference;
@@ -84,7 +84,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
     private ChannelModel mChannelModel;
     private ChannelProcessingManager mChannelProcessingManager;
     private TunerManager mTunerManager;
-    private UserPreferences mUserPreferences;
+    private Settings mSettings;
     private RadioReference mRadioReference;
     private AliasListSynchronizer mAliasListSynchronizer;
     private AtomicBoolean mPlaylistSavePending = new AtomicBoolean();
@@ -114,27 +114,27 @@ public class PlaylistManager implements Listener<ChannelEvent>
      *
      * Monitors playlist changes to automatically save configuration changes after they occur.
      *
-     * @param userPreferences for user settings
+     * @param settings for user settings
      * @param tunerManager for access to tuner model
      * @param aliasModel for aliases
      * @param eventLogManager for event logging
      * @param iconModel for icons
      */
-    public PlaylistManager(UserPreferences userPreferences, TunerManager tunerManager, AliasModel aliasModel,
+    public PlaylistManager(Settings settings, TunerManager tunerManager, AliasModel aliasModel,
                            EventLogManager eventLogManager, IconModel iconModel)
     {
-        mUserPreferences = userPreferences;
+        mSettings = settings;
         mTunerManager = tunerManager;
         mAliasModel = aliasModel;
         mIconModel = iconModel;
 
-        mBroadcastModel = new BroadcastModel(mAliasModel, mIconModel, userPreferences);
-        mRadioReference = new RadioReference(mUserPreferences);
-        mAliasListSynchronizer = new AliasListSynchronizer(mAliasModel, mRadioReference, mUserPreferences);
+        mBroadcastModel = new BroadcastModel(mAliasModel, mIconModel, settings);
+        mRadioReference = new RadioReference(mSettings);
+        mAliasListSynchronizer = new AliasListSynchronizer(mAliasModel, mRadioReference, mSettings);
 
         mChannelModel = new ChannelModel(mAliasModel);
         mChannelProcessingManager = new ChannelProcessingManager(mChannelMapModel, eventLogManager, mTunerManager,
-            mAliasModel, mUserPreferences);
+            mAliasModel, mSettings);
 
         //Register the channel processing manager to receive global channel stop processing requests so that it can
         //respond to tuner shutdown (ie error) events
@@ -327,7 +327,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
         //Complete any pending playlist save
         saveNow();
 
-        mUserPreferences.getPlaylistPreference().setPlaylist(path);
+        mSettings.getPlaylistSettings().setPlaylist(path);
 
         if(!Files.exists(path))
         {
@@ -476,7 +476,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
      */
     private boolean migrateJmbeComfortNoiseGain(List<Channel> channels)
     {
-        Path path = mUserPreferences.getPlaylistPreference().getPlaylist();
+        Path path = mSettings.getPlaylistSettings().getPlaylist();
         String key = "apJmbeNoiseMigrated." + (path != null ? Integer.toHexString(path.toAbsolutePath().toString()
                 .toLowerCase().hashCode()) : "default");
         int count = migrateJmbeComfortNoiseGain(channels,
@@ -545,20 +545,20 @@ public class PlaylistManager implements Listener<ChannelEvent>
      */
     private void save()
     {
-        PlaylistPreference playlistPreference = mUserPreferences.getPlaylistPreference();
+        PlaylistSettings playlistSettings = mSettings.getPlaylistSettings();
         long saveStartMs = System.currentTimeMillis();
 
         if(mSaveBlocked)
         {
-            mLog.warn("Playlist NOT saved - the playlist file [" + playlistPreference.getPlaylist() + "] could not be " +
+            mLog.warn("Playlist NOT saved - the playlist file [" + playlistSettings.getPlaylist() + "] could not be " +
                 "read at startup, so saving is blocked to protect it.  Fix or restore the file, then restart.");
             return;
         }
 
         if(System.currentTimeMillis() - mLastHistoryCopyMs >= HISTORY_INTERVAL_MS)
         {
-            copyToHistory(playlistPreference.getPlaylist(), true);
-            copyToHistory(PlaylistCompatibility.getCompanion(playlistPreference.getPlaylist()), true);
+            copyToHistory(playlistSettings.getPlaylist(), true);
+            copyToHistory(PlaylistCompatibility.getCompanion(playlistSettings.getPlaylist()), true);
         }
 
         PlaylistV2 playlist = new PlaylistV2();
@@ -571,31 +571,31 @@ public class PlaylistManager implements Listener<ChannelEvent>
         playlist.setVersion(PLAYLIST_CURRENT_VERSION);
 
         //Create a backup copy of the current playlist
-        if(Files.exists(playlistPreference.getPlaylist()))
+        if(Files.exists(playlistSettings.getPlaylist()))
         {
             try
             {
-                Files.copy(playlistPreference.getPlaylist(), playlistPreference.getPlaylistBackup(),
+                Files.copy(playlistSettings.getPlaylist(), playlistSettings.getPlaylistBackup(),
                     StandardCopyOption.REPLACE_EXISTING);
             }
             catch(Exception e)
             {
                 mLog.error("Error creating backup copy of current playlist prior to saving updates [" +
-                    playlistPreference.getPlaylist().toString() + "]", e);
+                    playlistSettings.getPlaylist().toString() + "]", e);
             }
         }
 
         //Create a temporary lock file to signify that we're in the process of updating the playlist
-        if(!Files.exists(playlistPreference.getPlaylistLock()))
+        if(!Files.exists(playlistSettings.getPlaylistLock()))
         {
             try
             {
-                Files.createFile(playlistPreference.getPlaylistLock());
+                Files.createFile(playlistSettings.getPlaylistLock());
             }
             catch(IOException e)
             {
                 mLog.error("Error creating temporary lock file prior to saving playlist [" +
-                    playlistPreference.getPlaylistLock().toString() + "]", e);
+                    playlistSettings.getPlaylistLock().toString() + "]", e);
             }
         }
 
@@ -612,14 +612,14 @@ public class PlaylistManager implements Listener<ChannelEvent>
             PlaylistCompatibility.SaveFiles files = PlaylistCompatibility.prepareSave(complete,
                 LocalDateTime.now().format(STAMP) + "-" + System.nanoTime());
 
-            Path companion = PlaylistCompatibility.getCompanion(playlistPreference.getPlaylist());
+            Path companion = PlaylistCompatibility.getCompanion(playlistSettings.getPlaylist());
             writeAtomically(companion, files.companion());
-            writeAtomically(playlistPreference.getPlaylist(), files.playlist());
+            writeAtomically(playlistSettings.getPlaylist(), files.playlist());
 
             //Remove the playlist lock file to indicate that we successfully saved the file
-            if(Files.exists(playlistPreference.getPlaylistLock()))
+            if(Files.exists(playlistSettings.getPlaylistLock()))
             {
-                Files.delete(playlistPreference.getPlaylistLock());
+                Files.delete(playlistSettings.getPlaylistLock());
             }
 
             //AP-fork (ap-15.9.33): one line per save, so an edit that seems not to stick can be checked against it
@@ -632,11 +632,11 @@ public class PlaylistManager implements Listener<ChannelEvent>
         }
         catch(IOException ioe)
         {
-            mLog.error("IO error while writing the playlist to a file [" + playlistPreference.getPlaylist().toString() + "]", ioe);
+            mLog.error("IO error while writing the playlist to a file [" + playlistSettings.getPlaylist().toString() + "]", ioe);
         }
         catch(Exception e)
         {
-            mLog.error("Error while saving playlist [" + playlistPreference.getPlaylist().toString() + "]", e);
+            mLog.error("Error while saving playlist [" + playlistSettings.getPlaylist().toString() + "]", e);
         }
     }
 
@@ -645,7 +645,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
      */
     public PlaylistV2 load()
     {
-        PlaylistPreference files = mUserPreferences.getPlaylistPreference();
+        PlaylistSettings files = mSettings.getPlaylistSettings();
 
         PlaylistV2 playlist = null;
         boolean readFailed = false;

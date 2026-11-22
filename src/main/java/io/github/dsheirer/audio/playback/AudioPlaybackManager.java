@@ -25,9 +25,9 @@ import io.github.dsheirer.audio.AudioSegment;
 import io.github.dsheirer.audio.IAudioController;
 import io.github.dsheirer.controller.NamingThreadFactory;
 import io.github.dsheirer.eventbus.MyEventBus;
-import io.github.dsheirer.preference.PreferenceType;
-import io.github.dsheirer.preference.UserPreferences;
-import io.github.dsheirer.preference.playback.PlayTestAudioRequest;
+import io.github.dsheirer.settings.SettingsType;
+import io.github.dsheirer.settings.Settings;
+import io.github.dsheirer.settings.playback.PlayTestAudioRequest;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
@@ -57,7 +57,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     private final List<AudioSegment> mPendingAudioSegments = new ArrayList<>();
     private final LinkedTransferQueue<AudioSegment> mNewAudioSegmentQueue = new LinkedTransferQueue<>();
     private final ReentrantLock mAudioChannelsLock = new ReentrantLock();
-    private final UserPreferences mUserPreferences;
+    private final Settings mSettings;
     private final AudioSegmentRouter mAudioRouter = new AudioSegmentRouter();
     private AudioPlaybackDeviceDescriptor mAudioPlaybackDevice;
     private AudioOutput mAudioOutput;
@@ -66,13 +66,13 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     /**
      * Constructs an instance.
      *
-     * @param userPreferences for audio playback preferences
+     * @param settings for audio playback preferences
      */
-    public AudioPlaybackManager(UserPreferences userPreferences)
+    public AudioPlaybackManager(Settings settings)
     {
-        mUserPreferences = userPreferences;
+        mSettings = settings;
         MyEventBus.getGlobalEventBus().register(this);
-        AudioPlaybackDeviceDescriptor device = mUserPreferences.getPlaybackPreference().getAudioPlaybackDevice();
+        AudioPlaybackDeviceDescriptor device = mSettings.getPlaybackSettings().getAudioPlaybackDevice();
 
         if(device != null)
         {
@@ -122,7 +122,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
         while(newSegment != null)
         {
             if(newSegment.isDuplicate() &&
-               mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled())
+               mSettings.getCallManagementSettings().isDuplicatePlaybackSuppressionEnabled())
             {
                 newSegment.decrementConsumerCount();
             }
@@ -150,7 +150,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
                 audioSegment = it.next();
 
                 if(audioSegment.isDuplicate() &&
-                   mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled())
+                   mSettings.getCallManagementSettings().isDuplicatePlaybackSuppressionEnabled())
                 {
                     it.remove();
                     audioSegment.decrementConsumerCount();
@@ -185,7 +185,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
                 audioSegment = it.next();
 
                 if(audioSegment.isDoNotMonitor() || (audioSegment.isDuplicate() &&
-                   mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled()))
+                   mSettings.getCallManagementSettings().isDuplicatePlaybackSuppressionEnabled()))
                 {
                     it.remove();
                     audioSegment.decrementConsumerCount();
@@ -260,7 +260,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
                 audioSegment = it.next();
 
                 if(audioSegment.completeProperty().get() || (audioSegment.isDuplicate() &&
-                   mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled()))
+                   mSettings.getCallManagementSettings().isDuplicatePlaybackSuppressionEnabled()))
                 {
                     it.remove();
                     audioSegment.decrementConsumerCount();
@@ -335,11 +335,11 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
      * device in the user preferences editor.
      */
     @Subscribe
-    public void preferenceUpdated(PreferenceType preferenceType)
+    public void preferenceUpdated(SettingsType settingsType)
     {
-        if(preferenceType == PreferenceType.PLAYBACK)
+        if(settingsType == SettingsType.PLAYBACK)
         {
-            AudioPlaybackDeviceDescriptor device = mUserPreferences.getPlaybackPreference().getAudioPlaybackDevice();
+            AudioPlaybackDeviceDescriptor device = mSettings.getPlaybackSettings().getAudioPlaybackDevice();
 
             if(device != null && !device.equals(getAudioPlaybackDevice()))
             {
@@ -383,13 +383,13 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
                 switch(channelCount)
                 {
                     case 1:
-                        mAudioOutput = new AudioOutput(audioDevice, new AudioProviderMono(mUserPreferences));
+                        mAudioOutput = new AudioOutput(audioDevice, new AudioProviderMono(mSettings));
                         break;
                     case 2:
-                        mAudioOutput = new AudioOutput(audioDevice, new AudioProviderStereo(mUserPreferences));
+                        mAudioOutput = new AudioOutput(audioDevice, new AudioProviderStereo(mSettings));
                         break;
                     default:
-//                        mAudioOutput = new AudioOutput(audioDevice, new AudioProviderMultiChannel(mUserPreferences,
+//                        mAudioOutput = new AudioOutput(audioDevice, new AudioProviderMultiChannel(mSettings,
 //                                audioDevice.getAudioFormat()));
                         throw new AudioException("Unsupported mixer channel configuration channel count: " + channelCount);
                 }

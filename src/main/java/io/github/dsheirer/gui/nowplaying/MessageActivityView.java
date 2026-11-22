@@ -25,8 +25,8 @@ import io.github.dsheirer.message.StuffBitsMessage;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.event.MessageItem;
-import io.github.dsheirer.preference.NowPlayingPreference;
-import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.settings.NowPlayingSettings;
+import io.github.dsheirer.settings.Settings;
 import io.github.dsheirer.sample.Listener;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -45,20 +45,20 @@ public class MessageActivityView extends HistoryTableView<MessageItem,IMessage> 
     private MessageHistory mCurrentMessageHistory;
     private Listener<IMessage> mCurrentMessageListener;
     private FilterSet<IMessage> mMessageFilterSet;
-    private final NowPlayingPreference mNowPlayingPreference;
+    private final NowPlayingSettings mNowPlayingSettings;
 
     /**
      * Constructs an instance.  Construct on the JavaFX application thread.
-     * @param userPreferences for the column settings
+     * @param settings for the column settings
      */
-    public MessageActivityView(UserPreferences userPreferences)
+    public MessageActivityView(Settings settings)
     {
-        super(createColumns(), TABLE_KEY, userPreferences.getSwingPreference(), SWING_TABLE_KEY,
+        super(createColumns(), TABLE_KEY, settings.getSwingSettings(), SWING_TABLE_KEY,
             "Message Filter Editor", "Message Columns");
-        mNowPlayingPreference = userPreferences.getNowPlayingPreference();
+        mNowPlayingSettings = settings.getNowPlayingSettings();
         //AP-fork: message history size kept between sessions
-        getHistoryControls().restoreHistorySize(mNowPlayingPreference.getMessageHistorySize(),
-            mNowPlayingPreference::setMessageHistorySize);
+        getHistoryControls().restoreHistorySize(mNowPlayingSettings.getMessageHistorySize(),
+            mNowPlayingSettings::setMessageHistorySize);
     }
 
     @Override
@@ -101,10 +101,10 @@ public class MessageActivityView extends HistoryTableView<MessageItem,IMessage> 
             FilterSet<IMessage> filterSet = DecoderFactory.getMessageFilters(processingChain.getModules());
             mMessageFilterSet = filterSet;
             //AP-fork: message filter choices kept between sessions
-            FilterStateStore.restore(filterSet, mNowPlayingPreference);
+            FilterStateStore.restore(filterSet, mNowPlayingSettings);
             //Filter changes come from the filter editor
             filterSet.register(() -> {
-                FilterStateStore.store(filterSet, mNowPlayingPreference);
+                FilterStateStore.store(filterSet, mNowPlayingSettings);
                 Platform.runLater(() -> {
                     if(mMessageFilterSet == filterSet)
                     {

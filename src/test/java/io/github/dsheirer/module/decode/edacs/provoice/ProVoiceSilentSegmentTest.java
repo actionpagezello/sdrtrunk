@@ -21,7 +21,7 @@ package io.github.dsheirer.module.decode.edacs.provoice;
 
 import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.AudioSegment;
-import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.settings.Settings;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -59,7 +59,7 @@ public class ProVoiceSilentSegmentTest
                 return null;
             });
 
-        ProVoiceAudioModule module = new ProVoiceAudioModule(new UserPreferences(), new AliasList("test"))
+        ProVoiceAudioModule module = new ProVoiceAudioModule(new Settings(), new AliasList("test"))
         {
             @Override
             public IAudioCodec getAudioCodec()
