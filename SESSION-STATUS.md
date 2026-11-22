@@ -3,6 +3,13 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-22: `1.0.0-ap-17` built in the workspace
+
+**ap-16** (f634a2cf) on Denmark.  **ap-17** = NBFM: TDMA veto gated on filtered-envelope modulation depth (paging
+tones split calls), 1.5 s resume window incl. tone loss with held audio, call end reasons at INFO; own-channel
+strongest-signal note; unknown encryption ID must repeat; stream field width 420 px; upstream #2748 #2749 #2751
+#2647 #2755.  Upstream #2753 Settings redesign deferred.
+
 ## Current state 2026-11-21 evening: `1.0.0-ap-16` built in the workspace
 
 **ap-15** (c9213b5b) running on Denmark (RFOnes as HydraSDR).  **ap-16** = upstream #2725 full JavaFX app plus

@@ -5,6 +5,49 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-17] - 2026-11-22
+
+NBFM paging calls no longer split, call end reasons in the log, own-channel overload advice and upstream fixes.
+Builds on ap-16.
+
+### Fixed in the fork: NBFM calls split mid-transmission (Denmark, Oxford County Fire 154.0700, 2026-11-22 09:51)
+- **Cause: the DMR/TDMA interference veto tripped on a paging tone.**  The detector looks for the 33.3 Hz slot
+  cadence in the audio envelope, but its 2 ms envelope aliased a steady tone's ripple onto that cadence: a 768 Hz
+  tone (the page's A tone) tripped it, as did 483.3 and 766.7 Hz.  The veto closed the tone gate at once - no
+  squelch tail - and the gate only reopened after the detector released and the CTCSS tone re-confirmed, about
+  825 ms later, as a new call.  A window may now only trip the veto when the slot cadence also modulates a properly
+  filtered envelope by at least 2%.  Steady tones from 280 Hz to 2.2 kHz no longer trip it (0 of every window, with
+  CTCSS and noise); TDMA-like bursts trip it as often as in ap-16 (186, 186 and 148 of 200 buffers).
+- **Resume window.**  If a tone-filtered NBFM call ends and the same channel comes back within 1.5 s (was 0.5 s),
+  it continues the same call.  This now also covers the CTCSS/DCS tone being lost while the carrier stays up, and
+  the audio received during the gap is held and released into the call, so nothing is lost (a 0.8 s tone dropout in
+  a test keeps all its audio).  The call (and its recording) is kept open through the window.  Calls on these
+  channels therefore end 1.5 s after the carrier drops instead of 0.5 s.
+- **Call end reasons at INFO.**  One line per call end: `Call ended - carrier dropped`, `CTCSS tone lost with the
+  carrier still up`, `wrong CTCSS tone ...`, `DMR/TDMA interference on the channel`, `tone not confirmed after the
+  carrier came back`, each with the call length and how many times it continued; and `Call continues - ... resumed
+  within the 1.5s window (N ms of held audio released into the call)`.
+- The delay before audio returned was the detector release plus tone confirmation; with the resume window that
+  audio is held and kept instead of starting a new call.
+
+### Overload
+- When the strongest signal on an overloaded tuner is one of its own channels, the overload warning names the
+  channel and Gain Check adds a note: lowering the gain costs that channel nothing, and the weaker channels decide
+  how low to go.  The tuner's channel list is refreshed once a minute.
+
+### Also fixed in the fork
+- **Unknown P25 encryption IDs** mute the call only when the same ID arrives in two LDU2s in a row (a real
+  encrypted talkgroup repeats it every LDU2).  A one-off ID from a bit error (Denmark: ID 8 on talkgroup 711) is
+  logged and the call keeps playing.
+- **Stream settings** text fields grow up to 420 px instead of the whole window width.
+
+### From upstream
+- **#2755** fix for the 11-tap 256-bit vector half-band decimation filter: taps 8-10 multiplied the wrong samples on
+  machines that pick the 256-bit implementation (every fleet CPU reports 256-bit SIMD).
+- **#2749** P25 Phase 1 data packets longer than 5 blocks, **#2647** Now Playing alias names refresh when the alias
+  list arrives after the call identifiers, **#2751** old settings classes removed, **#2748** Gradle 9.9.2.
+- Not taken yet: **#2753** Settings dialog redesign (renames every preference class; 261 files) - in a later build.
+
 ## [1.0.0-ap-16] - 2026-11-21
 
 Upstream's full JavaFX application, the Gain Check fixes from the Daly day logs and better overload logging.  Builds
