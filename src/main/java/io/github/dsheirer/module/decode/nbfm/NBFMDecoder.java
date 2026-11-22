@@ -130,8 +130,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     //dropped at 7 of 20 transmission ends in a replay).  Timed in audio samples so it behaves the same in replays.
     //The recent-tone window covers the CTCSS block (~77 ms), the noise squelch look-ahead (~80 ms) and margin.
     private static final double TONE_RECENT_SECONDS = 0.25;
-    private static final double CALL_REJOIN_SECONDS = 0.5;
+    //AP-fork (ap-17): 1.5 s (was 0.5 s).  Denmark 2026-11-22 09:51, Oxford County Fire: a stacked two-tone page was
+    //cut into two calls 825 ms apart, splitting a 768 Hz A tone so the page no longer matched.  The rejoin also
+    //covers the CTCSS tone being lost while the carrier stays up (see ctcssLost), and the audio received during the
+    //window is held and released into the same call when it continues.
+    private static final double CALL_REJOIN_SECONDS = 1.5;
     private long mDeferredCallEndSampleCount = -1;
+    //AP-fork (ap-17): why the deferred call end was deferred, for the call end line
+    private String mDeferredCallEndReason = null;
+    //AP-fork (ap-17): demodulated sample count when the call first started (rejoins don't reset it), or -1
+    private long mCallFirstStartSampleCount = -1;
     private int mCallRejoinCount = 0;
     private long mDemodulatedSampleCount = 0;
     private long mLastToneMatchSampleCount = -1;
@@ -224,6 +232,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private boolean mConfirmHoldActive = false;
     private int mConfirmHoldSamples = 0;
     private static final int MAX_PENDING_TONE_SAMPLES = 4000; // 500ms at 8kHz
+    //AP-fork (ap-17): while a call end is deferred the held audio covers the whole rejoin window plus a tone
+    //confirmation, so a call that continues loses none of it (the 500 ms cap dropped the start of the resumed audio)
+    private static final int MAX_REJOIN_PENDING_SAMPLES = (int)(8000 * (CALL_REJOIN_SECONDS + 0.6));
 
     /**
      * AP-fork (ap-15.9.20): a CTCSS confirmation whose strongest target block is below this SNR is treated as
@@ -419,11 +430,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     //reopen within CALL_REJOIN_SECONDS continues the call (see TONE_RECENT_SECONDS)
                     if(mToneFilterEnabled && isTargetToneRecent() && !mWatchdogTripped)
                     {
-                        mDeferredCallEndSampleCount = mDemodulatedSampleCount;
+                        deferCallEnd("carrier dropped");
                     }
                     else
                     {
-                        notifyCallEnd();
+                        notifyCallEnd("carrier dropped");
                     }
                 }
 
@@ -491,23 +502,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         mHoldoverOpenTime = System.currentTimeMillis();
 
                         //AP-fork (ap-15.10.8): a reopen while the call end is deferred continues the same call
-                        if(mDeferredCallEndSampleCount >= 0)
-                        {
-                            mDeferredCallEndSampleCount = -1;
-                            mCallRejoinCount++;
-                            mCallStartTimeMs = System.currentTimeMillis();
-                            mLog.debug("[{}] Call continues - squelch reopened within {}s with the target tone recent " +
-                                    "(rejoin {} this call, audio {}s)", mChannelLabel, CALL_REJOIN_SECONDS,
-                                    mCallRejoinCount, getAudioSeconds());
-                        }
-                        else
-                        {
-                            notifyCallStart();
-                        }
+                        //(ap-17: notifyCallStart() does that now)
+                        notifyCallStart();
                     }
                     else
                     {
-                        flushDeferredCallEnd();
+                        //AP-fork (ap-17): a deferred call end stays pending - if the tone confirms again inside the
+                        //rejoin window the call continues, otherwise the window expiry ends it
 
                         // Holdover expired or no previous match — full reset.
                         // Channel stays idle until detector confirms the correct tone.
@@ -609,7 +610,24 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     {
         if(mDeferredCallEndSampleCount >= 0)
         {
-            notifyCallEnd();
+            notifyCallEnd(mDeferredCallEndReason + ", no resume within " + CALL_REJOIN_SECONDS + "s");
+
+            //Back to the normal pre-confirmation buffer for a new call
+            trimPendingToneAudio(MAX_PENDING_TONE_SAMPLES);
+        }
+    }
+
+    /**
+     * AP-fork (ap-17): defers the call end for CALL_REJOIN_SECONDS so a reopen or a tone re-confirmation in that time
+     * continues the same call.
+     * @param reason the call would have ended for
+     */
+    private void deferCallEnd(String reason)
+    {
+        if(mDeferredCallEndSampleCount < 0)
+        {
+            mDeferredCallEndSampleCount = mDemodulatedSampleCount;
+            mDeferredCallEndReason = reason;
         }
     }
 
@@ -876,7 +894,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mAudioFilters.reset();
                 }
 
-                notifyCallEnd();
+                notifyCallEnd("DMR/TDMA interference on the channel");
             }
 
             clearPendingToneAudio();
@@ -888,7 +906,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         // saw the slot cadence's fundamental, in which case the held audio is a burst and is discarded.
         if(mConfirmHoldActive)
         {
-            bufferPendingToneAudio(resampledAudio, MAX_PENDING_TONE_SAMPLES + CONFIRM_HOLD_SAMPLES);
+            //AP-fork (ap-17): while a call end is deferred, keep the whole rejoin window
+            bufferPendingToneAudio(resampledAudio, mDeferredCallEndSampleCount >= 0 ?
+                MAX_REJOIN_PENDING_SAMPLES + CONFIRM_HOLD_SAMPLES : MAX_PENDING_TONE_SAMPLES + CONFIRM_HOLD_SAMPLES);
             mConfirmHoldSamples += resampledAudio.length;
 
             if(mTdmaDetector != null && mTdmaDetector.isSlotCadenceSuspected())
@@ -1037,7 +1057,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                         mAudioFilters.reset();
                     }
 
-                    notifyCallEnd();
+                    notifyCallEnd("tone not confirmed after the carrier came back");
                     clearPendingToneAudio();
                     return;
                 }
@@ -1094,7 +1114,39 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      */
     private void bufferPendingToneAudio(float[] audio)
     {
-        bufferPendingToneAudio(audio, MAX_PENDING_TONE_SAMPLES);
+        //AP-fork (ap-17): hold the whole rejoin window while a call end is deferred
+        bufferPendingToneAudio(audio, mDeferredCallEndSampleCount >= 0 ? MAX_REJOIN_PENDING_SAMPLES :
+            MAX_PENDING_TONE_SAMPLES);
+    }
+
+    /**
+     * AP-fork (ap-17): drops the oldest held audio down to the sample count.
+     */
+    private void trimPendingToneAudio(int maxSamples)
+    {
+        while(mPendingToneSampleCount > maxSamples && !mPendingToneAudio.isEmpty())
+        {
+            float[] removed = mPendingToneAudio.remove(0);
+            mPendingToneSampleCount -= removed.length;
+        }
+    }
+
+    /**
+     * AP-fork (ap-17): the tone or code was lost.  With the carrier still up the call end is deferred, so a tone that
+     * comes back within the rejoin window continues the call with the audio in between (Denmark, Oxford County Fire:
+     * a page was cut mid-tone).  With the carrier gone the call ends now.
+     * @param reason for the call end
+     */
+    private void endOrDeferOnToneLoss(String reason)
+    {
+        if(!mNoiseSquelch.isSquelched() && !mWatchdogTripped)
+        {
+            deferCallEnd(reason + " with the carrier still up");
+        }
+        else
+        {
+            notifyCallEnd(reason);
+        }
     }
 
     /**
@@ -1356,6 +1408,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             flushDeferredCallEnd();
         }
+        else if(mDeferredCallEndSampleCount >= 0)
+        {
+            //AP-fork (ap-17): keep the call (and its recording) open through the rejoin window - the channel state
+            //otherwise fades a standard channel 1.2 s after the last update and the resumed audio would start a new
+            //recording
+            notifyCallContinuation();
+        }
 
         //Once we process the sample buffer, if the ending state is squelch closed, update the decoder state that we
         // are idle.
@@ -1402,7 +1461,24 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             return;
         }
+
+        //AP-fork (ap-15.10.8, ap-17): a start while the previous call's end is deferred continues that call
+        if(mDeferredCallEndSampleCount >= 0)
+        {
+            long gapMs = mDemodulatedSampleRate > 0 ?
+                Math.round((mDemodulatedSampleCount - mDeferredCallEndSampleCount) * 1000 / mDemodulatedSampleRate) : -1;
+            mCallRejoinCount++;
+            mLog.info("[{}] Call continues - {} {}ms ago, resumed within the {}s window ({}ms of held audio " +
+                    "released into the call)", mChannelLabel, mDeferredCallEndReason, gapMs, CALL_REJOIN_SECONDS,
+                mPendingToneSampleCount * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE);
+            mDeferredCallEndSampleCount = -1;
+            mDeferredCallEndReason = null;
+            mCallStartTimeMs = System.currentTimeMillis();
+            return;
+        }
+
         mCallStartTimeMs = System.currentTimeMillis();
+        mCallFirstStartSampleCount = mDemodulatedSampleCount;
         startToneCoverage();
         broadcast(new DecoderStateEvent(this, DecoderStateEvent.Event.START, State.CALL, 0));
     }
@@ -1513,8 +1589,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     /**
      * Broadcasts a call end state event
      */
-    private void notifyCallEnd()
+    private void notifyCallEnd(String reason)
     {
+        //AP-fork (ap-17): INFO - why each call ended (carrier dropped, tone lost, wrong tone, interference, ...)
+        mLog.info("[{}] Call ended - {} (call {}s{})", mChannelLabel, reason,
+            mCallFirstStartSampleCount >= 0 && mDemodulatedSampleRate > 0 ? String.format("%.1f",
+                (mDemodulatedSampleCount - mCallFirstStartSampleCount) / mDemodulatedSampleRate) : "?",
+            mCallRejoinCount > 0 ? ", continued " + mCallRejoinCount + (mCallRejoinCount == 1 ? " time" : " times") : "");
+        mCallFirstStartSampleCount = -1;
+        mDeferredCallEndReason = null;
         mDeferredCallEndSampleCount = -1;
         mCallRejoinCount = 0;
 
@@ -1714,7 +1797,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     // If we had an active call, end it and go idle
                     if(wasActive)
                     {
-                        notifyCallEnd();
+                        notifyCallEnd("wrong CTCSS tone " + code.getDisplayString());
                     }
                     notifyIdle();
 
@@ -1735,7 +1818,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
                     if(wasActive)
                     {
-                        notifyCallEnd();
+                        endOrDeferOnToneLoss("CTCSS tone lost");
                     }
                     notifyIdle();
 
@@ -1791,7 +1874,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
                     if(wasActive)
                     {
-                        notifyCallEnd();
+                        notifyCallEnd("wrong DCS code " + code);
                     }
                     notifyIdle();
 
@@ -1811,7 +1894,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
                     if(wasActive)
                     {
-                        notifyCallEnd();
+                        endOrDeferOnToneLoss("DCS code lost");
                     }
                     notifyIdle();
 

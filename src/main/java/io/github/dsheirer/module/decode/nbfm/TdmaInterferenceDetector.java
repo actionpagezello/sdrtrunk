@@ -185,6 +185,34 @@ public class TdmaInterferenceDetector
     private float mSumSquares = 0.0f;
     private int mSubBlockCount = 0;
 
+    /**
+     * AP-fork (ap-17): a steady tone trips the comb.  The envelope is a 2 ms sum of squares sampled at 500 Hz, which
+     * is a poor anti-alias filter: a tone of frequency f leaves a ripple at 2f in the squared audio that aliases into
+     * the envelope, and for tones where 2f lands near a multiple of 500 Hz +/- 33 Hz the ripple falls on the slot
+     * cadence.  The comb score is relative to the off-comb envelope noise, which is close to zero under a steady
+     * tone, so the small ripple scored high: a 766.7 Hz tone latched the detector in 111 of 200 buffers, 768 Hz in 22
+     * and 483.3 Hz in 148.  Denmark 2026-11-22, Oxford County Fire: a stacked two-tone page's 768 Hz A tone closed the
+     * tone gate as "TDMA interference" and split the page into two calls.
+     *
+     * The comb score is unchanged (it is calibrated on real DMR bursts), but a window may now only latch or count as
+     * suspected when the slot-rate fundamental also modulates a properly filtered envelope - the squared audio low-
+     * passed at this cutoff (4th-order Butterworth) - by MIN_MODULATION_DEPTH.  The slot cadence and its 2nd and 3rd
+     * harmonics pass the filter; a tone's 2f ripple doesn't.
+     */
+    static final float ENVELOPE_LOWPASS_HZ = 180.0f;
+
+    /**
+     * AP-fork (ap-17): the slot-rate fundamental must modulate the audio envelope by at least this fraction of its
+     * mean, measured on the filtered envelope, before a window may latch or count as suspected.  TDMA bursts modulate
+     * it deeply (synthetic 2-slot bursts at 92% duty: about 14%); a steady tone leaves well under 0.1%.
+     */
+    static final float MIN_MODULATION_DEPTH = 0.02f;
+    private float[] mRawEnvelope;
+    private float mLastModulationDepth = 0.0f;
+    private final float[] mLowPassB = new float[6];
+    private final float[] mLowPassA = new float[4];
+    private final float[] mLowPassState = new float[8];
+
     // One-pole high-pass state for the envelope
     private final float mHighPassAlpha;
     private float mHpPrevInput = 0.0f;
@@ -251,6 +279,7 @@ public class TdmaInterferenceDetector
         mEnvelopeRate = sampleRate / mSubBlockSamples;
         mWindowLength = Math.max(32, (int)(mEnvelopeRate * WINDOW_MS / 1000.0f));
         mEnvelope = new float[mWindowLength];
+        mRawEnvelope = new float[mWindowLength];
 
         // One-pole high-pass: y[n] = a*(y[n-1] + x[n] - x[n-1])
         float rc = 1.0f / (2.0f * (float)Math.PI * ENVELOPE_HIGHPASS_HZ);
@@ -259,6 +288,45 @@ public class TdmaInterferenceDetector
 
         //AP-fork: y[n] = x[n] - x[n-1] + R*y[n-1]
         mDcBlockR = 1.0f - (float)(2.0 * Math.PI * DC_BLOCK_HZ / sampleRate);
+
+        //AP-fork (ap-17): two biquad sections of a 4th-order Butterworth low-pass for the squared audio
+        double[] qs = {0.54119610, 1.30656296};
+
+        for(int section = 0; section < 2; section++)
+        {
+            double w0 = 2.0 * Math.PI * ENVELOPE_LOWPASS_HZ / sampleRate;
+            double alpha = Math.sin(w0) / (2.0 * qs[section]);
+            double cos = Math.cos(w0);
+            double a0 = 1.0 + alpha;
+            mLowPassB[section * 3] = (float)((1.0 - cos) / 2.0 / a0);
+            mLowPassB[section * 3 + 1] = (float)((1.0 - cos) / a0);
+            mLowPassB[section * 3 + 2] = (float)((1.0 - cos) / 2.0 / a0);
+            mLowPassA[section * 2] = (float)(-2.0 * cos / a0);
+            mLowPassA[section * 2 + 1] = (float)((1.0 - alpha) / a0);
+        }
+    }
+
+    /**
+     * AP-fork (ap-17): low-pass filters the squared audio sample (direct form I, two sections).
+     */
+    private float lowPass(float input)
+    {
+        float x = input;
+
+        for(int section = 0; section < 2; section++)
+        {
+            int st = section * 4;
+            float y = mLowPassB[section * 3] * x + mLowPassB[section * 3 + 1] * mLowPassState[st] +
+                mLowPassB[section * 3 + 2] * mLowPassState[st + 1] - mLowPassA[section * 2] * mLowPassState[st + 2] -
+                mLowPassA[section * 2 + 1] * mLowPassState[st + 3];
+            mLowPassState[st + 1] = mLowPassState[st];
+            mLowPassState[st] = x;
+            mLowPassState[st + 3] = mLowPassState[st + 2];
+            mLowPassState[st + 2] = y;
+            x = y;
+        }
+
+        return x;
     }
 
     /**
@@ -283,6 +351,14 @@ public class TdmaInterferenceDetector
     public float getLastScore()
     {
         return mLastScore;
+    }
+
+    /**
+     * AP-fork (ap-17): slot-rate modulation depth of the last window, as a fraction of the envelope mean.
+     */
+    public float getLastModulationDepth()
+    {
+        return mLastModulationDepth;
     }
 
     /**
@@ -316,6 +392,7 @@ public class TdmaInterferenceDetector
         mEnvelopeFilled = false;
         mSumSquares = 0.0f;
         mSubBlockCount = 0;
+        java.util.Arrays.fill(mLowPassState, 0.0f);
         mHpPrevInput = 0.0f;
         mHpPrevOutput = 0.0f;
         mDcPrevInput = 0.0f;
@@ -392,11 +469,14 @@ public class TdmaInterferenceDetector
             mDcPrevOutput = sample;
 
             mSumSquares += sample * sample;
+            //AP-fork (ap-17): low-passed squared audio for the modulation depth check (see ENVELOPE_LOWPASS_HZ)
+            float power = lowPass(sample * sample);
             mSubBlockCount++;
 
             if(mSubBlockCount >= mSubBlockSamples)
             {
                 float rms = (float)Math.sqrt(mSumSquares / mSubBlockCount);
+                mRawEnvelope[mEnvelopeIndex] = (float)Math.sqrt(Math.max(0.0f, power));
                 mSumSquares = 0.0f;
                 mSubBlockCount = 0;
 
@@ -419,6 +499,7 @@ public class TdmaInterferenceDetector
                     // wrap discontinuity.
                     int half = mWindowLength / 2;
                     System.arraycopy(mEnvelope, half, mEnvelope, 0, mWindowLength - half);
+                    System.arraycopy(mRawEnvelope, half, mRawEnvelope, 0, mWindowLength - half);
                     mEnvelopeIndex = mWindowLength - half;
                 }
             }
@@ -549,11 +630,11 @@ public class TdmaInterferenceDetector
         //a DETECTION_THRESHOLD of 20.0. Windows evaluate about every 150 ms per channel.
         if(LOGGER.isDebugEnabled() && (best >= SURVEY_FLOOR || mInterferenceDetected))
         {
-            LOGGER.debug("[{}] TDMA survey: score={} rate={} H1={} H2={} H3={} noiseFloor={} latched={}",
+            LOGGER.debug("[{}] TDMA survey: score={} rate={} H1={} H2={} H3={} noiseFloor={} depth={}% latched={}",
                     mChannelLabel, String.format("%.1f", best), String.format("%.2f", bestRate),
                     String.format("%.1f", bestH1), String.format("%.1f", bestH2),
                     String.format("%.1f", bestH3), String.format("%.3g", noiseFloor),
-                    mInterferenceDetected);
+                    String.format("%.1f", mLastModulationDepth * 100), mInterferenceDetected);
         }
 
         //AP-fork: FUNDAMENTAL GATE (ap-15.9.17). A window over DETECTION_THRESHOLD may only latch if the winning
@@ -561,6 +642,20 @@ public class TdmaInterferenceDetector
         //than HARMONIC_EXCESS. Decided on the same winner the survey logs, which is exactly what the 2026-10-06
         //measurement simulated. A refused window counts as below threshold, so it also releases a latch like
         //any other quiet window.
+        //AP-fork (ap-17): how deeply the slot-rate fundamental modulates the envelope (see MIN_MODULATION_DEPTH)
+        float rawMean = 0.0f;
+
+        for(float v : mRawEnvelope)
+        {
+            rawMean += v;
+        }
+
+        rawMean /= mWindowLength;
+        float fundamentalAmplitude = bestRate > 0 ? 2.0f * (float)Math.sqrt(goertzelPower(mRawEnvelope, bestRate,
+            rawMean)) / mWindowLength : 0.0f;
+        mLastModulationDepth = rawMean > 1e-9f ? fundamentalAmplitude / rawMean : 0.0f;
+        boolean deepEnough = mLastModulationDepth >= MIN_MODULATION_DEPTH;
+
         //AP-fork (ap-15.9.22): measurement only - see PERSIST_SCORE.
         mWindows++;
         if(best >= PERSIST_SCORE && bestRate >= SUSPECT_RATE_MIN && bestRate <= SUSPECT_RATE_MAX)
@@ -570,7 +665,7 @@ public class TdmaInterferenceDetector
 
         //AP-fork (ap-15.9.20): remember the strongest slot-cadence fundamental, using the same windows the survey
         //logs (score at or above SURVEY_FLOOR), which is what the 2026-10-13/14 measurement was taken from.
-        if(best >= SURVEY_FLOOR && bestRate >= SUSPECT_RATE_MIN && bestRate <= SUSPECT_RATE_MAX &&
+        if(deepEnough && best >= SURVEY_FLOOR && bestRate >= SUSPECT_RATE_MIN && bestRate <= SUSPECT_RATE_MAX &&
                 bestH1 > mSuspectFundamental)
         {
             mSuspectFundamental = bestH1;
@@ -578,7 +673,7 @@ public class TdmaInterferenceDetector
         }
 
         boolean fundamentalPresent = bestH1 >= FUNDAMENTAL_FLOOR &&
-                Math.max(bestH2, bestH3) <= bestH1 * HARMONIC_EXCESS;
+                Math.max(bestH2, bestH3) <= bestH1 * HARMONIC_EXCESS && deepEnough;
 
         if(best >= DETECTION_THRESHOLD && !fundamentalPresent && !mInterferenceDetected && LOGGER.isDebugEnabled())
         {
@@ -601,11 +696,19 @@ public class TdmaInterferenceDetector
      */
     private float goertzelPower(float frequency, float mean)
     {
+        return goertzelPower(mEnvelope, frequency, mean);
+    }
+
+    /**
+     * Goertzel power of the mean-removed values at the frequency (envelope sample rate)
+     */
+    private float goertzelPower(float[] values, float frequency, float mean)
+    {
         float coefficient = 2.0f * (float)Math.cos(2.0 * Math.PI * frequency / mEnvelopeRate);
         float s1 = 0.0f;
         float s2 = 0.0f;
 
-        for(float value : mEnvelope)
+        for(float value : values)
         {
             float s0 = (value - mean) + coefficient * s1 - s2;
             s2 = s1;
