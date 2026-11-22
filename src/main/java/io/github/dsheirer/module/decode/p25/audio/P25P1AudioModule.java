@@ -52,6 +52,10 @@ public class P25P1AudioModule extends ImbeAudioModule
     private final static Logger mLog = LoggerFactory.getLogger(P25P1AudioModule.class);
     private boolean mEncryptedCall = false;
     private boolean mEncryptedCallStateEstablished = false;
+    //AP-fork (ap-17): an unknown algorithm ID mutes the call only once the same ID arrives twice in a row
+    private int mPendingUnknownAlgorithmId = -1;
+    private int mUnknownAlgorithmLdu2Count = 0;
+    static final int UNKNOWN_ALGORITHM_GIVE_UP_LDU2 = 3;
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
@@ -301,6 +305,8 @@ public class P25P1AudioModule extends ImbeAudioModule
             mResetCallStatePending = false;
             mEncryptedCallStateEstablished = false;
             mEncryptedCall = false;
+            mPendingUnknownAlgorithmId = -1;
+            mUnknownAlgorithmLdu2Count = 0;
             mCachedLDUMessages.clear();
         }
 
@@ -334,12 +340,15 @@ public class P25P1AudioModule extends ImbeAudioModule
                 {
                     if(ldu2.getEncryptionSyncParameters().isValid())
                     {
-                        mEncryptedCallStateEstablished = true;
-                        mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
-                        countEncryption(ldu2.getEncryptionSyncParameters().getAlgorithmId());
-                        warnIfUnknownAlgorithm(
-                            Encryption.fromValue(ldu2.getEncryptionSyncParameters().getAlgorithmId()),
-                            ldu2.getEncryptionSyncParameters().getAlgorithmId(), "LDU2");
+                        int algorithmId = ldu2.getEncryptionSyncParameters().getAlgorithmId();
+
+                        if(acceptEncryptionState(Encryption.fromValue(algorithmId), algorithmId))
+                        {
+                            mEncryptedCallStateEstablished = true;
+                            mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
+                            countEncryption(algorithmId);
+                            warnIfUnknownAlgorithm(Encryption.fromValue(algorithmId), algorithmId, "LDU2");
+                        }
                     }
 
                     if(mEncryptedCallStateEstablished)
@@ -360,6 +369,39 @@ public class P25P1AudioModule extends ImbeAudioModule
                 }
             }
         }
+    }
+
+    /**
+     * AP-fork (ap-17): decides whether an LDU2's encryption parameters set the call's encryption state.  A known
+     * algorithm (or unencrypted) always does.  An unknown algorithm ID only does once the same ID arrives in two
+     * LDU2s in a row - a real encrypted talkgroup repeats its ID in every LDU2, while a bit error produces a one-off
+     * value.  Denmark 2026-11-21 21:15, talkgroup 711 on 171.975 MHz: one LDU2 decoded as algorithm ID 8, unknown
+     * (unencrypted is 0x80), and muted part of a clear call.  A call whose first LDU2s keep giving unknown IDs that
+     * don't repeat is treated as encrypted after UNKNOWN_ALGORITHM_GIVE_UP_LDU2 of them, so the cached voice frames
+     * aren't held indefinitely.
+     * @return true when the LDU2 sets the call's encryption state
+     */
+    private boolean acceptEncryptionState(Encryption encryption, int algorithmId)
+    {
+        if(encryption != Encryption.UNKNOWN)
+        {
+            mPendingUnknownAlgorithmId = -1;
+            mUnknownAlgorithmLdu2Count = 0;
+            return true;
+        }
+
+        mUnknownAlgorithmLdu2Count++;
+
+        if(mPendingUnknownAlgorithmId == algorithmId || mUnknownAlgorithmLdu2Count >= UNKNOWN_ALGORITHM_GIVE_UP_LDU2)
+        {
+            return true;
+        }
+
+        mPendingUnknownAlgorithmId = algorithmId;
+        mLog.info("P25 Phase 1 LDU2 carries unknown encryption algorithm ID {} (0x{}) once - not muting until it " +
+            "repeats (likely a bit error).  Talkgroup(s): {}", algorithmId, String.format("%02X", algorithmId & 0xFF),
+            getIdentifierCollection().getIdentifiers());
+        return false;
     }
 
     /**
@@ -469,6 +511,8 @@ public class P25P1AudioModule extends ImbeAudioModule
                 closeAudioSegment();
                 mEncryptedCallStateEstablished = false;
                 mEncryptedCall = false;
+                mPendingUnknownAlgorithmId = -1;
+                mUnknownAlgorithmLdu2Count = 0;
                 mCachedLDUMessages.clear();
             }
         }

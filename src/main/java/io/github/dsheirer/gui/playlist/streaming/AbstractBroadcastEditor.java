@@ -47,6 +47,11 @@ import org.controlsfx.control.ToggleSwitch;
  */
 public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> extends Editor<T>
 {
+    /**
+     * AP-fork (ap-17): widest a stream setting text field grows, in pixels
+     */
+    public static final double STREAM_FIELD_MAX_WIDTH = 420;
+
     private PlaylistManager mPlaylistManager;
     private Button mSaveButton;
     private Button mResetButton;
@@ -71,7 +76,8 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         buttonBox.getChildren().addAll(getSaveButton(), getResetButton(), getReconnectButton());
 
         /**
-         * Allow column 1 (Primary input fields) to expand with editor width
+         * Allow column 1 (Primary input fields) to expand with editor width.  AP-fork (ap-17): up to
+         * STREAM_FIELD_MAX_WIDTH - on a wide window the fields stretched far past anything typed into them.
          */
         for(Node node : getEditorPane().getChildren())
         {
@@ -83,32 +89,14 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
                 {
                     GridPane.setFillWidth(node, false);
                 }
-                else if(node instanceof TextField)
+                else if(node instanceof TextField textField)
                 {
                     GridPane.setHgrow(node, Priority.ALWAYS);
+                    textField.setMaxWidth(STREAM_FIELD_MAX_WIDTH);
                 }
             }
         }
 
-        /**
-         * Allow column 1 (Primary input fields) to expand with editor width
-         */
-        for(Node node : getEditorPane().getChildren())
-        {
-            Integer column = GridPane.getColumnIndex(node);
-
-            if(column != null && column == 1)
-            {
-                if(node instanceof IntegerTextField)
-                {
-                    GridPane.setFillWidth(node, false);
-                }
-                else if(node instanceof TextField)
-                {
-                    GridPane.setHgrow(node, Priority.ALWAYS);
-                }
-            }
-        }
 
         HBox editorBox = new HBox();
         HBox.setHgrow(getEditorPane(), Priority.ALWAYS);
