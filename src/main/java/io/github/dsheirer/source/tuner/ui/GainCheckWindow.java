@@ -19,6 +19,7 @@
 package io.github.dsheirer.source.tuner.ui;
 
 import io.github.dsheirer.source.tuner.TunerController;
+import io.github.dsheirer.source.tuner.TunerNoiseFloorEstimator;
 import io.github.dsheirer.source.tuner.TunerSignalMonitor;
 import java.util.ArrayList;
 import java.util.List;
@@ -311,9 +312,43 @@ public class GainCheckWindow extends Stage
             mReferenceName);
         mRecommendedIndex = recommendation.index();
         mTable.refresh();
-        mRecommendationText.setText(recommendation.explanation());
+        String explanation = recommendation.explanation() + ownChannelNote();
+        mRecommendationText.setText(explanation);
         mApplyButton.setDisable(recommendation.index() < 0 || recommendation.index() == mSteps.current());
-        LOG.info("Gain check [" + mTunerName + "]: " + recommendation.explanation() + summary(results));
+        LOG.info("Gain check [" + mTunerName + "]: " + explanation + summary(results));
+    }
+
+    /**
+     * AP-fork (ap-17): when the tuner overloaded and the strongest signal in its bandwidth is one of its own channels,
+     * says that lowering the gain costs that channel nothing.  Denmark 2026-11-22: Oxford County Fire on RTL 24711130
+     * was 60 dB above the noise and clipping the tuner it is received on.
+     * @return note starting with two spaces, or an empty string
+     */
+    private String ownChannelNote()
+    {
+        if(mHistory == null || !mHistory.reading().isOverloaded())
+        {
+            return "";
+        }
+
+        TunerNoiseFloorEstimator.StrongestSignal strongest = mController.getNoiseFloorEstimator().getStrongestSignal();
+
+        if(strongest == null)
+        {
+            return "";
+        }
+
+        String channel = mController.getChannelNameAt(strongest.frequency());
+
+        if(channel == null)
+        {
+            return "";
+        }
+
+        return String.format(java.util.Locale.US, "  The strongest signal on this tuner is one of its own channels, %s " +
+            "(%.4f MHz, %.0f dB above the noise), and it is what overloads the tuner.  Lowering the gain costs it " +
+            "nothing - check that the weakest channels on this tuner still come through.", channel,
+            strongest.frequency() / 1E6, strongest.aboveNoiseDb());
     }
 
     private static String summary(List<GainSweep.StepResult> results)

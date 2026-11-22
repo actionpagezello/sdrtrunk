@@ -109,7 +109,9 @@ public class TunerChannelLog
                     continue;
                 }
 
-                String list = describe(manager.getProcessingChains(), controller);
+                List<Entry> entries = entries(manager.getProcessingChains(), controller);
+                controller.setChannelNameLookup(frequency -> channelAt(entries, frequency));
+                String list = describe(entries);
                 String name = tuner.getPreferredName();
                 String previous = mLogged.get(name);
 
@@ -128,11 +130,43 @@ public class TunerChannelLog
     }
 
     /**
+     * A channel on a tuner
+     */
+    record Entry(String name, long frequency) {}
+
+    /**
+     * AP-fork (ap-17): the channel within half a 25 kHz channel of the frequency, or null.  The strongest signal is
+     * measured in spectrum bins, so it can be a few kHz off the channel frequency.
+     */
+    static String channelAt(List<Entry> entries, long frequency)
+    {
+        Entry closest = null;
+
+        for(Entry entry : entries)
+        {
+            if(Math.abs(entry.frequency() - frequency) <= 12_500 &&
+                (closest == null || Math.abs(entry.frequency() - frequency) < Math.abs(closest.frequency() - frequency)))
+            {
+                closest = entry;
+            }
+        }
+
+        return closest != null ? closest.name() : null;
+    }
+
+    /**
      * Lists the standard channels whose source is on the tuner, in frequency order: name (MHz).
      */
     static String describe(Map<Channel,ProcessingChain> chains, TunerController controller)
     {
-        record Entry(String name, long frequency) {}
+        return describe(entries(chains, controller));
+    }
+
+    /**
+     * The standard channels whose source is on the tuner, in frequency order
+     */
+    static List<Entry> entries(Map<Channel,ProcessingChain> chains, TunerController controller)
+    {
         List<Entry> entries = new ArrayList<>();
 
         for(Map.Entry<Channel,ProcessingChain> chain : chains.entrySet())
@@ -153,6 +187,14 @@ public class TunerChannelLog
         }
 
         entries.sort((a, b) -> Long.compare(a.frequency(), b.frequency()));
+        return entries;
+    }
+
+    /**
+     * Formats the channels: name (MHz), ...
+     */
+    static String describe(List<Entry> entries)
+    {
         List<String> parts = new ArrayList<>();
 
         for(Entry entry : entries)

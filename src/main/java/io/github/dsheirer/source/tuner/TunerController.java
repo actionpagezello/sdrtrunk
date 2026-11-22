@@ -90,11 +90,56 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         mSampleDropMonitor = isSampleDropMonitorSupported() ? new SampleDropMonitor(this::getSampleDropMonitorTunerName,
                 this::getSampleRate) : null;
         //AP-fork (ap-16): the overload warning names the strongest signal in the tuner's bandwidth
-        mSignalMonitor.setStrongestSignal(() -> {
-            TunerNoiseFloorEstimator.StrongestSignal strongest = mNoiseFloorEstimator.getStrongestSignal();
-            return strongest == null ? null : String.format(java.util.Locale.US, "%.4f MHz, %.0f dB above the noise",
-                strongest.frequency() / 1E6, strongest.aboveNoiseDb());
-        }, mNoiseFloorEstimator::getBandPowers);
+        mSignalMonitor.setStrongestSignal(this::describeStrongestSignal, mNoiseFloorEstimator::getBandPowers);
+    }
+
+    /**
+     * AP-fork (ap-17): names the channel on this tuner at a frequency (within half a 25 kHz channel), or returns null.
+     * Set by the tuner manager's channel log once a minute.
+     */
+    private volatile java.util.function.LongFunction<String> mChannelNameLookup = frequency -> null;
+
+    /**
+     * AP-fork (ap-17): sets the lookup that names this tuner's channel at a frequency
+     */
+    public void setChannelNameLookup(java.util.function.LongFunction<String> lookup)
+    {
+        mChannelNameLookup = lookup != null ? lookup : frequency -> null;
+    }
+
+    /**
+     * AP-fork (ap-17): the channel on this tuner at the frequency, or null
+     */
+    public String getChannelNameAt(long frequency)
+    {
+        return mChannelNameLookup.apply(frequency);
+    }
+
+    /**
+     * AP-fork (ap-16, ap-17): describes the strongest signal in the tuner's bandwidth for the overload warning, and
+     * names it when it is one of this tuner's own channels.
+     * @return description or null
+     */
+    public String describeStrongestSignal()
+    {
+        TunerNoiseFloorEstimator.StrongestSignal strongest = mNoiseFloorEstimator.getStrongestSignal();
+
+        if(strongest == null)
+        {
+            return null;
+        }
+
+        String text = String.format(java.util.Locale.US, "%.4f MHz, %.0f dB above the noise",
+            strongest.frequency() / 1E6, strongest.aboveNoiseDb());
+        String channel = getChannelNameAt(strongest.frequency());
+
+        if(channel != null)
+        {
+            text += " (" + channel + ", one of this tuner's channels: it is strong enough that lowering the gain " +
+                "costs it nothing - the weaker channels decide how low to go)";
+        }
+
+        return text;
     }
 
     /**
