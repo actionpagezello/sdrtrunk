@@ -20,6 +20,9 @@ Fixes from the first ap-19 run on Denmark.  Builds on ap-19.
   signals), never below 0, and with no headroom no higher setting is considered.  A lower setting estimated at no
   less gain is skipped when sizing an overload reduction.
 
+### Upstream
+- **#2744** keeps the column editor window on the screen.
+
 ## [1.0.0-ap-19] - 2026-11-23
 
 Gain Check judges by signal-to-noise instead of the noise floor, no tone blips at the start of NBFM transmissions.
