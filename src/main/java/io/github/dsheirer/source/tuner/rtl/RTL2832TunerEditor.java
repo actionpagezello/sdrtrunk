@@ -67,7 +67,10 @@ public class RTL2832TunerEditor extends TunerEditor<RTL2832Tuner, RTL2832TunerCo
     {
         if(hasTuner())
         {
-            return getTuner().getController().getMinimumFrequency();
+            //AP-fork (ap-20): the embedded tuner's own range, not the user's frequency limits - with the limits, a
+            //range could only be narrowed (Denmark 2026-11-23: 800-900 MHz could not be set back to 450 MHz).  The
+            //controller side was ported in ap-16.1 but this editor still asked for the limits.
+            return getTuner().getController().getMinimumTunableFrequency();
         }
 
         return R8xTunerConfiguration.MINIMUM_TUNABLE_FREQUENCY_HZ;
@@ -78,7 +81,7 @@ public class RTL2832TunerEditor extends TunerEditor<RTL2832Tuner, RTL2832TunerCo
     {
         if(hasTuner())
         {
-            return getTuner().getController().getMaximumFrequency();
+            return getTuner().getController().getMaximumTunableFrequency();
         }
 
         return R8xTunerConfiguration.MAXIMUM_TUNABLE_FREQUENCY_HZ;

@@ -5,6 +5,21 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-20] - 2026-11-23
+
+Fixes from the first ap-19 run on Denmark.  Builds on ap-19.
+
+### Fixed
+- **RTL-SDR frequency limits could only be narrowed.**  The tuner panel checked a new minimum or maximum against the
+  limits already set instead of the tuner's own range, so Denmark's RTL 24711130, set to 800-900 MHz, couldn't be
+  set back to 450 MHz ("below the tuner's lowest frequency of 800 MHz") and a VHF channel found no tuner.  The
+  controller side was fixed in ap-16.1; the RTL tuner panel now uses it.
+- **Gain Check allowed higher settings with no headroom left.**  With the RF One at 11 and a peak of 0.1 dBFS over
+  30 minutes, the steady signals happened to measure Linearity 15 below 11, so settings up to 15 were allowed and
+  12 was recommended.  A higher setting's gain is now the largest of its estimates (noise floor, peak, steady
+  signals), never below 0, and with no headroom no higher setting is considered.  A lower setting estimated at no
+  less gain is skipped when sizing an overload reduction.
+
 ## [1.0.0-ap-19] - 2026-11-23
 
 Gain Check judges by signal-to-noise instead of the noise floor, no tone blips at the start of NBFM transmissions.

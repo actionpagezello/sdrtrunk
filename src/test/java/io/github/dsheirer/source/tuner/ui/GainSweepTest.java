@@ -610,4 +610,18 @@ public class GainSweepTest
             {"4", -82.0, 4.0, -36.0, 0.0, 0.3}});
         assertTrue(!GainSweep.isSteadySignal(results, results.get(2)));
     }
+
+    @Test
+    public void noHeadroomAllowsNoHigherSettingEvenIfTheSignalsSayLessGain()
+    {
+        //ap-20, Denmark 2026-11-23 07:23: RF One at 11 with a peak of 0.1 dBFS over 30 minutes; the steady signals
+        //measured 15 lower than 11, so ap-19 allowed up to 15 and recommended 12
+        List<GainSweep.StepResult> results = sweep(new Object[][]{
+            {"9", -72.0, 24.0, -29.0, 0.0, 0.3}, {"10", -70.0, 25.5, -26.0, 0.0, 0.3},
+            {"11", -67.5, 26.5, -22.0, 0.0, 0.3}, {"12", -64.0, 27.1, -18.0, 0.0, 0.4},
+            {"13", -61.0, 27.1, -14.0, 0.0, 0.5}, {"14", -57.5, 26.0, -11.0, 0.0, 0.4},
+            {"15", -53.5, 22.1, -7.0, 0.0, 0.6}});
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, 2, history(30, 0.0, 0.1, 0));
+        assertTrue(recommendation.index() <= 2, recommendation.explanation());
+    }
 }

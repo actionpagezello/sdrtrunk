@@ -3,6 +3,12 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-23 morning: `1.0.0-ap-20` built in the workspace
+
+**ap-19** (947d54b6) on Denmark and Daly.  **ap-20** = RTL2832TunerEditor min/max tunable from the controller's
+hardware range (frequency limits could only be narrowed); GainSweep.estimatedGainUp (max of estimates, >= 0) and
+no higher setting with zero headroom; lower settings with no estimated reduction skipped.
+
 ## Current state 2026-11-23: `1.0.0-ap-19` built in the workspace
 
 **ap-18** (b36b9261) on Daly; Denmark still ap-17.  **ap-19** = Gain Check signal-to-noise rule (steady signals,

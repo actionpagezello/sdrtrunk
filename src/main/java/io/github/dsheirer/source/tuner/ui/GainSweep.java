@@ -527,7 +527,8 @@ public class GainSweep
     /**
      * ap-18/ap-19: how much more gain (negative: less) a setting has than another, estimated from the check's own
      * measurements when the settings have no dB values (RSP LNA states, Airspy/HydraSDR steps).  In order of
-     * preference: the steady signals' own level (both settings), the peak, the noise floor.
+     * preference: the steady signals' own level (both settings), the peak, the noise floor.  Used for how far down an
+     * overload needs to go.
      * @return estimated dB, or NaN when neither setting has a usable measurement
      */
     static double estimatedGainAbove(List<StepResult> results, StepResult own, StepResult result)
@@ -548,16 +549,62 @@ public class GainSweep
         if(isSteadySignal(results, own) && isSteadySignal(results, result))
         {
             //signalDb is above the noise floor: compare the signals' own levels
-            return (result.noiseFloorDb() + result.signalDb()) - (own.noiseFloorDb() + own.signalDb());
+            return signalLevel(result) - signalLevel(own);
         }
 
-        if(!Double.isNaN(result.peakDbfs()) && !Double.isNaN(own.peakDbfs()) &&
-            result.peakDbfs() > INVALID_NOISE_FLOOR_DBFS && own.peakDbfs() > INVALID_NOISE_FLOOR_DBFS)
+        if(hasPeak(own) && hasPeak(result))
         {
             return result.peakDbfs() - own.peakDbfs();
         }
 
         return result.noiseFloorDb() - own.noiseFloorDb();
+    }
+
+    /**
+     * ap-20: how much more gain a higher setting has, for how far up the history's headroom allows.  The largest of
+     * the estimates, never below 0, so the estimate errs high (less gain allowed).  Denmark 2026-11-23 07:23: the
+     * steady signals alone put Linearity 15 1.9 dB *below* 11, so with 0.0 dB of headroom (peak 0.1 dBFS) settings up
+     * to 15 were allowed and 12 was recommended.
+     * @return estimated dB, or NaN when neither setting has a usable measurement
+     */
+    static double estimatedGainUp(List<StepResult> results, StepResult own, StepResult result)
+    {
+        double ownDb = gainDb(own.label());
+        double resultDb = gainDb(result.label());
+
+        if(!Double.isNaN(ownDb) && !Double.isNaN(resultDb))
+        {
+            return resultDb - ownDb;
+        }
+
+        if(!isMeasured(own) || !isMeasured(result))
+        {
+            return Double.NaN;
+        }
+
+        double estimate = result.noiseFloorDb() - own.noiseFloorDb();
+
+        if(hasPeak(own) && hasPeak(result))
+        {
+            estimate = Math.max(estimate, result.peakDbfs() - own.peakDbfs());
+        }
+
+        if(isSteadySignal(results, own) && isSteadySignal(results, result))
+        {
+            estimate = Math.max(estimate, signalLevel(result) - signalLevel(own));
+        }
+
+        return Math.max(0.0, estimate);
+    }
+
+    private static double signalLevel(StepResult result)
+    {
+        return result.noiseFloorDb() + result.signalDb();
+    }
+
+    private static boolean hasPeak(StepResult result)
+    {
+        return !Double.isNaN(result.peakDbfs()) && result.peakDbfs() > INVALID_NOISE_FLOOR_DBFS;
     }
 
     private static final java.util.regex.Pattern DB_LABEL = java.util.regex.Pattern.compile("^(-?\\d+(\\.\\d+)?) dB");
@@ -684,7 +731,8 @@ public class GainSweep
                         {
                             double db = -estimatedGainAbove(results, own, result);
 
-                            if(!Double.isNaN(db) && db >= needed)
+                            //a lower setting estimated at no less gain is a measurement fluke - skip it
+                            if(!Double.isNaN(db) && db > 0 && db >= needed)
                             {
                                 reach = result.index();
                                 reachStep = result;
@@ -763,7 +811,7 @@ public class GainSweep
                     {
                         if(result.index() > current)
                         {
-                            double db = estimatedGainAbove(results, own, result);
+                            double db = estimatedGainUp(results, own, result);
 
                             if(Double.isNaN(db))
                             {
@@ -776,7 +824,9 @@ public class GainSweep
                                 continue;
                             }
 
-                            if(db > allowance + 0.05)
+                            //ap-20: a higher setting is more gain even when the check can't see it - with no headroom
+                            //left none is allowed
+                            if(db > allowance + 0.05 || allowance <= 0.0)
                             {
                                 break;
                             }
