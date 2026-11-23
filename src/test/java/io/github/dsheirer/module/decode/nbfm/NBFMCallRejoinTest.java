@@ -29,6 +29,15 @@ public class NBFMCallRejoinTest
      */
     private static Result run(double dropoutSeconds)
     {
+        return run(dropoutSeconds, false);
+    }
+
+    /**
+     * @param carrierGap true: the carrier itself drops for the dropout (ap-18, 0.5 s window), false: only the CTCSS
+     * tone drops while the carrier stays up (1.5 s window)
+     */
+    private static Result run(double dropoutSeconds, boolean carrierGap)
+    {
         DecodeConfigNBFM config = new DecodeConfigNBFM();
         config.setToneFilterEnabled(true);
         config.addToneFilter(new ChannelToneFilter(ChannelToneFilter.ToneType.CTCSS, "TONE_2Z", "110.9"));
@@ -63,9 +72,11 @@ public class NBFMCallRejoinTest
             {
                 double t = (start + k) / SAMPLE_RATE;
 
-                if(t >= carrierOn && t < carrierOff)
+                boolean gap = carrierGap && t >= dropStart && t < dropEnd;
+
+                if(t >= carrierOn && t < carrierOff && !gap)
                 {
-                    boolean ctcss = t < dropStart || t >= dropEnd;
+                    boolean ctcss = carrierGap || t < dropStart || t >= dropEnd;
                     double deviation = (ctcss ? 500 * Math.sin(2 * Math.PI * 110.9 * t) : 0) +
                         2500 * Math.sin(2 * Math.PI * 768 * t);
                     phase += 2 * Math.PI * deviation / SAMPLE_RATE;
@@ -86,6 +97,21 @@ public class NBFMCallRejoinTest
     }
 
     record Result(List<String> events, int audioSamples) {}
+
+    @Test
+    public void shortCarrierDropStaysOneCall()
+    {
+        Result result = run(0.3, true);
+        assertEquals(List.of("START", "END"), result.events(), "events " + result.events());
+    }
+
+    @Test
+    public void carrierDropLongerThanHalfASecondEndsTheCall()
+    {
+        //ap-18: a carrier drop waits 0.5 s, not the 1.5 s of a tone loss with the carrier up
+        Result result = run(0.9, true);
+        assertEquals(List.of("START", "END", "START", "END"), result.events(), "events " + result.events());
+    }
 
     @Test
     public void briefToneDropoutWithTheCarrierUpStaysOneCall()

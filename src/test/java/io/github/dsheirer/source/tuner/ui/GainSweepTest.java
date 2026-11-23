@@ -452,4 +452,73 @@ public class GainSweepTest
             running.set(false);
         }
     }
+
+    /**
+     * ap-18: Daly 2026-11-22, RSP1B 24050F5260 at LNA 9 with VHF silent for days.  LNA 8 and LNA 7 read -200 dBFS (no
+     * estimate); ap-17 took them as the tuner's own noise and recommended LNA 9 again ("99.1 dB above the tuner's own
+     * noise").  RSP LNA states have no dB values, which also held it to one step up.
+     */
+    private static List<GainSweep.StepResult> dalySweep()
+    {
+        //index, label, noise floor, signals above noise, peak
+        Object[][] rows = {
+            {"LNA 9", -100.9, 8.0, -45.0},
+            {"LNA 8", -200.0, Double.NaN, -44.0},
+            {"LNA 7", -200.0, Double.NaN, -43.0},
+            {"LNA 6", -101.6, 8.5, -41.0},
+            {"LNA 5", -101.4, 9.0, -39.5},
+            {"LNA 4", -100.8, 10.0, -37.0},
+            {"LNA 3", -97.6, 12.0, -33.0},
+            {"LNA 2", -93.0, 13.0, -28.0},
+            {"LNA 1", -86.0, 14.0, -21.0},
+            {"LNA 0", -64.4, 15.0, -15.1}};
+        List<GainSweep.StepResult> results = new java.util.ArrayList<>();
+
+        for(int x = 0; x < rows.length; x++)
+        {
+            results.add(new GainSweep.StepResult(x, (String)rows[x][0], (double)rows[x][1], (double)rows[x][2],
+                (double)rows[x][3], 0, 0, 1));
+        }
+
+        return results;
+    }
+
+    @Test
+    public void dalyUnmeasuredStepsDontPoisonTheOwnNoise()
+    {
+        GainSweep.Recommendation recommendation = GainSweep.recommend(dalySweep(), 0, history(5, 0.0, -24.3, 0));
+        assertTrue(recommendation.index() > 0, recommendation.explanation());
+        assertTrue(!recommendation.explanation().contains("99."), recommendation.explanation());
+    }
+
+    @Test
+    public void dalyClimbsMoreThanOneStepWithoutDbLabels()
+    {
+        GainSweep.Recommendation recommendation = GainSweep.recommend(dalySweep(), 0, history(5, 0.0, -24.3, 0));
+        //LNA 3 is the first setting 3 dB above the own noise (about -101.2); it is within the 21.3 dB of headroom
+        assertEquals(6, recommendation.index(), recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("measured during the check"), recommendation.explanation());
+    }
+
+    @Test
+    public void unmeasuredStepIsNeverRecommended()
+    {
+        List<GainSweep.StepResult> results = List.of(new GainSweep.StepResult(0, "LNA 9", -100, 8, -40, 0, 0, 1),
+            new GainSweep.StepResult(1, "LNA 8", -200, Double.NaN, -40, 0, 0, 1));
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results);
+        assertEquals(0, recommendation.index(), recommendation.explanation());
+    }
+
+    @Test
+    public void noisyBottomSettingIsNotTheNoiseChoice()
+    {
+        //The lowest setting reads 4 dB above the settings just above it; the noise rule starts at the quietest one
+        List<GainSweep.StepResult> results = List.of(new GainSweep.StepResult(0, "10", -96, 8, -40, 0, 0, 1),
+            new GainSweep.StepResult(1, "11", -100, 8, -39, 0, 0, 1),
+            new GainSweep.StepResult(2, "12", -100, 8, -38, 0, 0, 1),
+            new GainSweep.StepResult(3, "13", -99, 8, -37, 0, 0, 1),
+            new GainSweep.StepResult(4, "14", -96, 8, -36, 0, 0, 1));
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results);
+        assertEquals(4, recommendation.index(), recommendation.explanation());
+    }
 }

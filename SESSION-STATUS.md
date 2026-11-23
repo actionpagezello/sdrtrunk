@@ -3,6 +3,14 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-22 evening: `1.0.0-ap-18` built in the workspace
+
+**ap-17** (220975b5) on Denmark and Daly.  **ap-18** = upstream #2753 Settings dialog (preference -> settings
+rename; fork Diagnostics page ported, fork-only settings keep their old preference nodes); NBFM resume windows split
+(carrier drop 0.5 s, tone/DCS loss with carrier up 1.5 s); Gain Check: -200 dBFS steps ignored, own noise from
+measured steps, noise rule from the quietest step, RSP/Airspy steps estimated from measurements so more than one
+step up is possible; Calls by Talkgroup in the activity summary layout.  Upstream is fully merged except #2741 (JMBE 3).
+
 ## Current state 2026-11-22: `1.0.0-ap-17` built in the workspace
 
 **ap-16** (f634a2cf) on Denmark.  **ap-17** = NBFM: TDMA veto gated on filtered-envelope modulation depth (paging

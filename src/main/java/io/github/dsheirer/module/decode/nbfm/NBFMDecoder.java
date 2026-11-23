@@ -134,7 +134,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     //cut into two calls 825 ms apart, splitting a 768 Hz A tone so the page no longer matched.  The rejoin also
     //covers the CTCSS tone being lost while the carrier stays up (see ctcssLost), and the audio received during the
     //window is held and released into the same call when it continues.
+    //AP-fork (ap-18): two windows.  When the carrier drops, the next transmission on the channel can follow within a
+    //second, so a carrier drop waits 0.5 s as before ap-17.  When the tone or DCS code is lost while the carrier stays
+    //up, it is the same transmitter still keyed, so that waits CALL_REJOIN_SECONDS with the audio held.
     private static final double CALL_REJOIN_SECONDS = 1.5;
+    static final double CARRIER_DROP_REJOIN_SECONDS = 0.5;
+    //AP-fork (ap-18): the window of the pending deferral - CARRIER_DROP_REJOIN_SECONDS or CALL_REJOIN_SECONDS
+    private double mDeferredCallEndWindowSeconds = CALL_REJOIN_SECONDS;
     private long mDeferredCallEndSampleCount = -1;
     //AP-fork (ap-17): why the deferred call end was deferred, for the call end line
     private String mDeferredCallEndReason = null;
@@ -430,7 +436,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     //reopen within CALL_REJOIN_SECONDS continues the call (see TONE_RECENT_SECONDS)
                     if(mToneFilterEnabled && isTargetToneRecent() && !mWatchdogTripped)
                     {
-                        deferCallEnd("carrier dropped");
+                        deferCallEnd("carrier dropped", CARRIER_DROP_REJOIN_SECONDS);
                     }
                     else
                     {
@@ -610,7 +616,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     {
         if(mDeferredCallEndSampleCount >= 0)
         {
-            notifyCallEnd(mDeferredCallEndReason + ", no resume within " + CALL_REJOIN_SECONDS + "s");
+            notifyCallEnd(mDeferredCallEndReason + ", no resume within " + mDeferredCallEndWindowSeconds + "s");
 
             //Back to the normal pre-confirmation buffer for a new call
             trimPendingToneAudio(MAX_PENDING_TONE_SAMPLES);
@@ -618,16 +624,18 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     }
 
     /**
-     * AP-fork (ap-17): defers the call end for CALL_REJOIN_SECONDS so a reopen or a tone re-confirmation in that time
-     * continues the same call.
+     * AP-fork (ap-17): defers the call end so a reopen or a tone re-confirmation within the window continues the
+     * same call.  A deferral already pending keeps its own reason and window.
      * @param reason the call would have ended for
+     * @param windowSeconds how long to wait: CARRIER_DROP_REJOIN_SECONDS or CALL_REJOIN_SECONDS (ap-18)
      */
-    private void deferCallEnd(String reason)
+    private void deferCallEnd(String reason, double windowSeconds)
     {
         if(mDeferredCallEndSampleCount < 0)
         {
             mDeferredCallEndSampleCount = mDemodulatedSampleCount;
             mDeferredCallEndReason = reason;
+            mDeferredCallEndWindowSeconds = windowSeconds;
         }
     }
 
@@ -1141,7 +1149,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     {
         if(!mNoiseSquelch.isSquelched() && !mWatchdogTripped)
         {
-            deferCallEnd(reason + " with the carrier still up");
+            deferCallEnd(reason + " with the carrier still up", CALL_REJOIN_SECONDS);
         }
         else
         {
@@ -1404,7 +1412,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         //AP-fork (ap-15.10.8): end a deferred call once the rejoin window has passed without a reopen
         if(mDeferredCallEndSampleCount >= 0 && mDemodulatedSampleRate > 0 &&
-                (mDemodulatedSampleCount - mDeferredCallEndSampleCount) > (long)(mDemodulatedSampleRate * CALL_REJOIN_SECONDS))
+                (mDemodulatedSampleCount - mDeferredCallEndSampleCount) > (long)(mDemodulatedSampleRate * mDeferredCallEndWindowSeconds))
         {
             flushDeferredCallEnd();
         }
@@ -1469,7 +1477,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 Math.round((mDemodulatedSampleCount - mDeferredCallEndSampleCount) * 1000 / mDemodulatedSampleRate) : -1;
             mCallRejoinCount++;
             mLog.info("[{}] Call continues - {} {}ms ago, resumed within the {}s window ({}ms of held audio " +
-                    "released into the call)", mChannelLabel, mDeferredCallEndReason, gapMs, CALL_REJOIN_SECONDS,
+                    "released into the call)", mChannelLabel, mDeferredCallEndReason, gapMs, mDeferredCallEndWindowSeconds,
                 mPendingToneSampleCount * 1000 / (int) DEMODULATED_AUDIO_SAMPLE_RATE);
             mDeferredCallEndSampleCount = -1;
             mDeferredCallEndReason = null;

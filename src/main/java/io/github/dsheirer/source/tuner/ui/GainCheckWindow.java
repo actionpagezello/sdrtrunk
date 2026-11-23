@@ -103,7 +103,9 @@ public class GainCheckWindow extends Stage
         HBox buttons = new HBox(8, mStartButton, mStopButton, mProgressLabel);
 
         addColumn("Gain", r -> r.label() + (r.index() == mOriginalIndex ? " (yours)" : ""));
-        addColumn("Noise Floor", r -> format(r.noiseFloorDb(), "%.1f dBFS"));
+        //ap-18: the estimator's no-estimate value (-200 dBFS) is shown as not measured
+        addColumn("Noise Floor", r -> GainSweep.isMeasured(r) ? format(r.noiseFloorDb(), "%.1f dBFS") :
+            "not measured");
         addColumn("Control Channel", r -> format(r.referenceSnrDb(), "%.1f dB SNR"));
         addColumn("Strongest Signals", r -> format(r.signalDb(), "+%.1f dB"));
         addColumn("Peak", r -> format(r.peakDbfs(), "%.1f dBFS"));
@@ -358,7 +360,8 @@ public class GainCheckWindow extends Stage
         for(GainSweep.StepResult result : results)
         {
             sb.append("\n  ").append(result.label()).append(": noise ")
-                .append(String.format("%.1f", result.noiseFloorDb())).append(" dBFS, signals +")
+                .append(GainSweep.isMeasured(result) ? String.format("%.1f", result.noiseFloorDb()) + " dBFS" :
+                    "not measured").append(", signals +")
                 .append(String.format("%.1f", result.signalDb())).append(" dB, peak ")
                 .append(String.format("%.1f", result.peakDbfs())).append(" dBFS, full scale ")
                 .append(String.format("%.3f", result.clippedPercent())).append('%');

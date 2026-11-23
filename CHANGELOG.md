@@ -5,6 +5,40 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-18] - 2026-11-22
+
+Upstream Settings dialog, two NBFM resume windows and Gain Check fixes for RSP tuners.  Builds on ap-17.
+
+### Upstream
+- **#2753 Settings replaces User Preferences** (menu: Settings, Ctrl/Cmd-comma).  The dialog is redesigned with
+  grouped pages, search and reset-to-default.  Settings carry over: upstream reads the same stored values.
+- The fork's **Diagnostics (Logging)** page is now a page of the Settings dialog (General group), with a switch for
+  each subsystem and one for all of them.  The fork's Now Playing muted channels and event filters, debug logging
+  switches, column layouts and table sort orders keep the values stored by earlier builds.
+
+### NBFM: two resume windows (fork)
+- **Carrier dropped: 0.5 s** (as before ap-17).  The next transmission on a channel can follow within a second, so
+  a carrier drop no longer waits 1.5 s.
+- **Tone or DCS code lost while the carrier stays up: 1.5 s**, with the audio held and released into the call when
+  the tone comes back (ap-17 behaviour).  The same transmitter is still keyed, so it is the same call.
+- The `Call ended` and `Call continues` lines name the window that applied.
+
+### Gain Check (fork) - Daly, RSP1B 24050F5260 left at LNA 9 with VHF silent
+- A setting whose noise floor couldn't be measured (the -200 dBFS "no estimate" value) is shown as "not measured",
+  is never recommended and no longer counts as the tuner's own noise.  At Daly two such settings made LNA 9 look
+  99 dB above the noise and LNA 9 was recommended again.
+- The tuner's own noise comes from the lowest settings that were measured, and the noise floor rule starts at the
+  quietest setting: a low setting that reads noisier than the ones above it is not taken as the point where gain
+  starts amplifying noise.
+- **RSP LNA states (and Airspy/HydraSDR steps) can now climb more than one setting.**  They have no dB values, so a
+  higher setting was allowed only one step at a time.  The check now estimates each setting's gain from its own
+  measurements (the rise in noise floor, signals and peak, whichever is largest) and allows the settings that fit
+  the headroom left by the history's peak, less 3 dB.
+
+### Now Playing
+- Channels without their own talkgroup list (NBFM, AM, ...) show **Calls by Talkgroup** in the same section and
+  table layout as P25, EDACS and Type II channels, instead of the old free-text list.
+
 ## [1.0.0-ap-17] - 2026-11-22
 
 NBFM paging calls no longer split, call end reasons in the log, own-channel overload advice and upstream fixes.

@@ -189,7 +189,11 @@ public class ChannelDetailView extends VBox implements Listener<ProcessingChain>
                     aliasList = processingChain.getAliasModel().getAliasList(channel.getAliasListName());
                 }
 
-                sb.append("\n").append(processingChain.getCallSummary().format(aliasList));
+                //ap-18: in the activity summary layout (section heading, aligned table)
+                io.github.dsheirer.module.decode.event.ActivitySummary summary =
+                    new io.github.dsheirer.module.decode.event.ActivitySummary(null);
+                processingChain.getCallSummary().addTo(summary, aliasList);
+                sb.append(summary);
             }
 
             //Keep the scroll position, so that a refresh doesn't move the user back to the top

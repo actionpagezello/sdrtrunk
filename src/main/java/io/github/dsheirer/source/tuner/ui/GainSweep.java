@@ -467,6 +467,48 @@ public class GainSweep
     static final double ONE_STEP_UP_PEAK_DBFS = -6.0;
     //Noise floor rise, above the tuner's own noise at its lowest settings, that marks the useful gain
     static final double NOISE_RISE_DB = 3.0;
+    //ap-18: a noise floor at or below this is the estimator's "no estimate" value (-200 dBFS), not a measurement
+    static final double INVALID_NOISE_FLOOR_DBFS = -190.0;
+
+    /**
+     * ap-18: true when the step's noise floor is a real measurement.  Daly 2026-11-22 (RSP1B 24050F5260 at LNA 9):
+     * LNA 8 and LNA 7 read -200 dBFS, which as part of the tuner's own noise made LNA 9 look 99 dB above it.
+     */
+    static boolean isMeasured(StepResult result)
+    {
+        return !Double.isNaN(result.noiseFloorDb()) && result.noiseFloorDb() > INVALID_NOISE_FLOOR_DBFS;
+    }
+
+    /**
+     * ap-18: how much more gain a setting has than the tuner's own setting, estimated from the check's measurements
+     * when the settings have no dB values (RSP LNA states, Airspy/HydraSDR steps).  The largest of the rises in the
+     * strongest signals, the peak and the noise floor, so the estimate errs high (less gain allowed), never below 0.
+     * @return estimated dB, or NaN when neither setting has a usable measurement
+     */
+    static double estimatedGainAbove(StepResult own, StepResult result)
+    {
+        if(!isMeasured(own) || !isMeasured(result))
+        {
+            return Double.NaN;
+        }
+
+        double estimate = result.noiseFloorDb() - own.noiseFloorDb();
+
+        if(!Double.isNaN(result.signalDb()) && !Double.isNaN(own.signalDb()))
+        {
+            //signalDb is above the noise floor: compare the signals' own levels
+            estimate = Math.max(estimate, (result.noiseFloorDb() + result.signalDb()) -
+                (own.noiseFloorDb() + own.signalDb()));
+        }
+
+        if(!Double.isNaN(result.peakDbfs()) && !Double.isNaN(own.peakDbfs()) &&
+            result.peakDbfs() > INVALID_NOISE_FLOOR_DBFS && own.peakDbfs() > INVALID_NOISE_FLOOR_DBFS)
+        {
+            estimate = Math.max(estimate, result.peakDbfs() - own.peakDbfs());
+        }
+
+        return Math.max(0.0, estimate);
+    }
 
     private static final java.util.regex.Pattern DB_LABEL = java.util.regex.Pattern.compile("^(-?\\d+(\\.\\d+)?) dB");
 
@@ -530,7 +572,8 @@ public class GainSweep
 
         for(StepResult result : results)
         {
-            if(!result.isOverloaded())
+            //ap-18: a setting with no noise floor measurement can't be judged, so it isn't recommended
+            if(!result.isOverloaded() && isMeasured(result))
             {
                 clean.add(result);
             }
@@ -614,11 +657,59 @@ public class GainSweep
                 }
                 else
                 {
-                    maxIndex = peak <= ONE_STEP_UP_PEAK_DBFS ? current + 1 : current;
-                    note.append("At your setting the highest peak over the last ").append(minutes)
-                        .append(" minutes was ").append(String.format("%.1f", peak)).append(" dBFS, so ")
-                        .append(maxIndex > current ? "at most one setting higher is considered.  " :
-                            "no higher setting is considered.  ");
+                    //ap-18: no dB values - estimate each higher setting's gain from the check's own measurements,
+                    //so a setting far too low can climb more than one step (Daly: LNA 9 with VHF silent for days)
+                    double allowance = Math.max(0.0, -peak - HEADROOM_MARGIN_DB);
+                    int estimatedMax = current;
+                    StepResult estimatedStep = null;
+                    double estimatedDb = Double.NaN;
+
+                    for(StepResult result : results)
+                    {
+                        if(result.index() > current)
+                        {
+                            double db = estimatedGainAbove(own, result);
+
+                            if(Double.isNaN(db))
+                            {
+                                if(isMeasured(result))
+                                {
+                                    break;
+                                }
+
+                                //Not measured: can't be estimated, but doesn't block the settings above it
+                                continue;
+                            }
+
+                            if(db > allowance + 0.05)
+                            {
+                                break;
+                            }
+
+                            estimatedMax = result.index();
+                            estimatedStep = result;
+                            estimatedDb = db;
+                        }
+                    }
+
+                    if(estimatedStep != null)
+                    {
+                        maxIndex = estimatedMax;
+                        note.append("At your setting the highest peak over the last ").append(minutes)
+                            .append(" minutes was ").append(String.format("%.1f", peak))
+                            .append(" dBFS, which leaves room for ").append(String.format("%.1f", allowance))
+                            .append(" dB more gain at most; measured during the check, ").append(estimatedStep.label())
+                            .append(" is about ").append(String.format("%.1f", estimatedDb))
+                            .append(" dB above your setting, so settings up to it are considered.  ");
+                    }
+                    else
+                    {
+                        maxIndex = peak <= ONE_STEP_UP_PEAK_DBFS ? current + 1 : current;
+                        note.append("At your setting the highest peak over the last ").append(minutes)
+                            .append(" minutes was ").append(String.format("%.1f", peak)).append(" dBFS, so ")
+                            .append(maxIndex > current ? "at most one setting higher is considered.  " :
+                                "no higher setting is considered.  ");
+                    }
                 }
             }
             else
@@ -669,15 +760,41 @@ public class GainSweep
                 "filter (or an attenuator) ahead of the tuner will help more than any gain setting.");
         }
 
-        //Noise floor rule: the lowest useful setting
-        double[] lowest = new double[Math.min(3, results.size())];
+        //Noise floor rule: the lowest useful setting.  ap-18: the tuner's own noise from the lowest settings that
+        //were actually measured
+        List<StepResult> measured = new ArrayList<>();
+
+        for(StepResult result : results)
+        {
+            if(isMeasured(result))
+            {
+                measured.add(result);
+            }
+        }
+
+        double[] lowest = new double[Math.min(3, measured.size())];
 
         for(int x = 0; x < lowest.length; x++)
         {
-            lowest[x] = results.get(x).noiseFloorDb();
+            lowest[x] = measured.get(x).noiseFloorDb();
         }
 
         double ownNoise = noiseFloor(lowest);
+
+        //ap-18: the noise rule applies where the noise floor rises with gain - from the setting with the lowest noise
+        //floor up.  A low setting whose floor reads higher than the ones just above it isn't "more gain amplifying
+        //noise".
+        int risingFrom = Integer.MIN_VALUE;
+        double quietest = Double.POSITIVE_INFINITY;
+
+        for(StepResult result : measured)
+        {
+            if(result.noiseFloorDb() < quietest)
+            {
+                quietest = result.noiseFloorDb();
+                risingFrom = result.index();
+            }
+        }
         StepResult noiseChoice = null;
         String noiseReason;
 
@@ -690,7 +807,7 @@ public class GainSweep
         {
             for(StepResult result : allowed)
             {
-                if(noiseChoice == null && !Double.isNaN(result.noiseFloorDb()) &&
+                if(noiseChoice == null && isMeasured(result) && result.index() >= risingFrom &&
                     result.noiseFloorDb() >= ownNoise + NOISE_RISE_DB)
                 {
                     noiseChoice = result;
@@ -713,18 +830,18 @@ public class GainSweep
 
         //ap-13: control channel rule - its signal-to-noise ratio at each allowed setting
         double best = Double.NEGATIVE_INFINITY;
-        int measured = 0;
+        int referenceMeasured = 0;
 
         for(StepResult result : allowed)
         {
             if(!Double.isNaN(result.referenceSnrDb()))
             {
-                measured++;
+                referenceMeasured++;
                 best = Math.max(best, result.referenceSnrDb());
             }
         }
 
-        if(referenceName != null && measured == allowed.size() && best >= MINIMUM_SIGNAL_DB)
+        if(referenceName != null && referenceMeasured == allowed.size() && best >= MINIMUM_SIGNAL_DB)
         {
             for(StepResult result : allowed)
             {

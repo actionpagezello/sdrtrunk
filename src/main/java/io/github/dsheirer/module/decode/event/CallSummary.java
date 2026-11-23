@@ -92,6 +92,63 @@ public class CallSummary implements Listener<IDecodeEvent>
     }
 
     /**
+     * ap-18: adds the list as a "Calls by Talkgroup" section with a Talkgroup / Alias / Calls table, in the same layout
+     * as the decoders' own activity summaries.
+     * @param summary to add the section to
+     * @param aliasList of the channel, can be null
+     */
+    public void addTo(ActivitySummary summary, AliasList aliasList)
+    {
+        Map<String,Integer> counts;
+        Map<String,Identifier> identifiers;
+
+        synchronized(this)
+        {
+            counts = new HashMap<>(mCounts);
+            identifiers = new HashMap<>(mIdentifiers);
+        }
+
+        summary.section("Calls by Talkgroup");
+        ActivitySummary.Table table = summary.table("Talkgroup", "Alias", "Calls");
+
+        for(String key : sortedKeys(counts))
+        {
+            table.row(key, aliasName(aliasList, identifiers.get(key)), counts.get(key));
+        }
+    }
+
+    private static List<String> sortedKeys(Map<String,Integer> counts)
+    {
+        List<String> keys = new ArrayList<>(counts.keySet());
+        keys.sort(Comparator.comparingLong((String key) -> {
+            try
+            {
+                return Long.parseLong(key);
+            }
+            catch(NumberFormatException e)
+            {
+                return Long.MAX_VALUE;
+            }
+        }).thenComparing(Comparator.naturalOrder()));
+        return keys;
+    }
+
+    private static String aliasName(AliasList aliasList, Identifier identifier)
+    {
+        if(aliasList != null && identifier != null)
+        {
+            List<Alias> aliases = aliasList.getAliases(identifier);
+
+            if(aliases != null && !aliases.isEmpty())
+            {
+                return aliases.get(0).getName();
+            }
+        }
+
+        return "";
+    }
+
+    /**
      * The list: talkgroup, alias name from the alias list (blank when it has none), calls.  Numbers in numeric order,
      * anything else after them.
      * @param aliasList of the channel, can be null
