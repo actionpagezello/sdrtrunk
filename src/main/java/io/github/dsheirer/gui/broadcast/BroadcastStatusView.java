@@ -193,7 +193,19 @@ public class BroadcastStatusView extends VBox
      */
     private void update()
     {
-        List<ConfiguredBroadcast> current = new ArrayList<>(mBroadcastModel.getConfiguredBroadcasts());
+        List<ConfiguredBroadcast> current;
+
+        //ap-19: at start-up the broadcasters are added on the main thread while this copies the list (Daly
+        //2026-11-22 19:52 and 21:11: ConcurrentModificationException once per start) - try again shortly
+        try
+        {
+            current = new ArrayList<>(mBroadcastModel.getConfiguredBroadcasts());
+        }
+        catch(java.util.ConcurrentModificationException e)
+        {
+            scheduleUpdate();
+            return;
+        }
 
         if(!current.equals(mItems))
         {

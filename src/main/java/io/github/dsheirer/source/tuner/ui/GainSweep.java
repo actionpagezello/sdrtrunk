@@ -479,35 +479,85 @@ public class GainSweep
         return !Double.isNaN(result.noiseFloorDb()) && result.noiseFloorDb() > INVALID_NOISE_FLOOR_DBFS;
     }
 
+    //ap-19: signals at or above this, steady within a step, are taken as real signals from the antenna
+    static final double STEADY_SIGNAL_MIN_DB = 10.0;
+    //ap-19: how much a steady signal may vary between a step's measurements
+    static final double STEADY_SIGNAL_MAX_SPREAD_DB = 2.0;
+    //ap-19: a steady signal also seen at a neighbouring setting, within this much, isn't a passing transmission
+    static final double STEADY_NEIGHBOUR_DB = 6.0;
+    //ap-19: the lowest setting whose steady signals are within this of the best is recommended
+    static final double SNR_TOLERANCE_DB = 1.5;
+    //ap-19: history peaks at or below this leave so much headroom that the gain isn't lowered without a measured
+    //reason (the noise floor rule alone isn't one)
+    static final double QUIET_PEAK_DBFS = -10.0;
+
     /**
-     * ap-18: how much more gain a setting has than the tuner's own setting, estimated from the check's measurements
-     * when the settings have no dB values (RSP LNA states, Airspy/HydraSDR steps).  The largest of the rises in the
-     * strongest signals, the peak and the noise floor, so the estimate errs high (less gain allowed), never below 0.
+     * ap-19: true when the step measured a real, steady signal: strong enough, steady between its measurements and
+     * seen at a neighbouring setting at a similar level (a transmission passing during one step isn't)
+     */
+    static boolean isSteadySignal(List<StepResult> results, StepResult result)
+    {
+        if(!isSteadyAlone(result))
+        {
+            return false;
+        }
+
+        int position = results.indexOf(result);
+
+        for(int offset : new int[]{-1, 1, -2, 2})
+        {
+            int x = position + offset;
+
+            if(x >= 0 && x < results.size() && isSteadyAlone(results.get(x)) &&
+                Math.abs(results.get(x).signalDb() - result.signalDb()) <= STEADY_NEIGHBOUR_DB)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean isSteadyAlone(StepResult result)
+    {
+        return isMeasured(result) && !Double.isNaN(result.signalDb()) && result.signalDb() >= STEADY_SIGNAL_MIN_DB &&
+            !Double.isNaN(result.signalSpreadDb()) && result.signalSpreadDb() <= STEADY_SIGNAL_MAX_SPREAD_DB;
+    }
+
+    /**
+     * ap-18/ap-19: how much more gain (negative: less) a setting has than another, estimated from the check's own
+     * measurements when the settings have no dB values (RSP LNA states, Airspy/HydraSDR steps).  In order of
+     * preference: the steady signals' own level (both settings), the peak, the noise floor.
      * @return estimated dB, or NaN when neither setting has a usable measurement
      */
-    static double estimatedGainAbove(StepResult own, StepResult result)
+    static double estimatedGainAbove(List<StepResult> results, StepResult own, StepResult result)
     {
+        double ownDb = gainDb(own.label());
+        double resultDb = gainDb(result.label());
+
+        if(!Double.isNaN(ownDb) && !Double.isNaN(resultDb))
+        {
+            return resultDb - ownDb;
+        }
+
         if(!isMeasured(own) || !isMeasured(result))
         {
             return Double.NaN;
         }
 
-        double estimate = result.noiseFloorDb() - own.noiseFloorDb();
-
-        if(!Double.isNaN(result.signalDb()) && !Double.isNaN(own.signalDb()))
+        if(isSteadySignal(results, own) && isSteadySignal(results, result))
         {
             //signalDb is above the noise floor: compare the signals' own levels
-            estimate = Math.max(estimate, (result.noiseFloorDb() + result.signalDb()) -
-                (own.noiseFloorDb() + own.signalDb()));
+            return (result.noiseFloorDb() + result.signalDb()) - (own.noiseFloorDb() + own.signalDb());
         }
 
         if(!Double.isNaN(result.peakDbfs()) && !Double.isNaN(own.peakDbfs()) &&
             result.peakDbfs() > INVALID_NOISE_FLOOR_DBFS && own.peakDbfs() > INVALID_NOISE_FLOOR_DBFS)
         {
-            estimate = Math.max(estimate, result.peakDbfs() - own.peakDbfs());
+            return result.peakDbfs() - own.peakDbfs();
         }
 
-        return Math.max(0.0, estimate);
+        return result.noiseFloorDb() - own.noiseFloorDb();
     }
 
     private static final java.util.regex.Pattern DB_LABEL = java.util.regex.Pattern.compile("^(-?\\d+(\\.\\d+)?) dB");
@@ -587,6 +637,8 @@ public class GainSweep
         }
 
         //Limit from the history at the tuner's own setting
+        String minimumNote = null;
+        boolean quietHistory = false;
         int maxIndex = Integer.MAX_VALUE;
         int minIndex = Integer.MIN_VALUE;
         StringBuilder note = new StringBuilder();
@@ -613,12 +665,54 @@ public class GainSweep
                     .append(minutes).append(" minutes (").append(String.format("%.3f", history.reading().clippedPercent()))
                     .append("% of samples at full scale");
 
+                //ap-19: with samples at full scale, go down as far as the history's peak needs (3 dB of headroom
+                //below full scale), estimated from the check's measurements - not further: every step lower costs
+                //the weaker channels signal-to-noise
+                double peak = history.reading().peakDbfs();
+
+                if(TunerSignalMonitor.isReportable(history.reading().clippedPercent()) && !Double.isNaN(peak) &&
+                    peak > -100)
+                {
+                    double needed = Math.max(0.0, peak) + HEADROOM_MARGIN_DB;
+                    int reach = Integer.MIN_VALUE;
+                    StepResult reachStep = null;
+                    double reachDb = Double.NaN;
+
+                    for(StepResult result : results)
+                    {
+                        if(result.index() < current && isMeasured(result))
+                        {
+                            double db = -estimatedGainAbove(results, own, result);
+
+                            if(!Double.isNaN(db) && db >= needed)
+                            {
+                                reach = result.index();
+                                reachStep = result;
+                                reachDb = db;
+                            }
+                        }
+                    }
+
+                    if(reachStep != null)
+                    {
+                        maxIndex = reach;
+                        minimumNote = "the history's peak (" + String.format("%.1f", peak) + " dBFS) needs about " +
+                            String.format("%.1f", needed) + " dB less gain, and " + reachStep.label() + " is about " +
+                            String.format("%.1f", reachDb) + " dB below your setting";
+                    }
+                }
+
                 if(history.reading().overloadEvents() > 0)
                 {
                     note.append(", ").append(history.reading().overloadEvents()).append(" overload events");
                 }
 
                 note.append("), so only lower settings are considered");
+
+                if(minimumNote != null)
+                {
+                    note.append(" (").append(minimumNote).append(")");
+                }
 
                 //ap-16: overload reported only by the tuner (no samples at full scale) is mild: at most two lower
                 if(!TunerSignalMonitor.isReportable(history.reading().clippedPercent()))
@@ -635,6 +729,7 @@ public class GainSweep
             {
                 double peak = history.reading().peakDbfs();
                 double ownDb = gainDb(own.label());
+                quietHistory = !Double.isNaN(peak) && peak <= QUIET_PEAK_DBFS;
 
                 if(!Double.isNaN(ownDb))
                 {
@@ -668,7 +763,7 @@ public class GainSweep
                     {
                         if(result.index() > current)
                         {
-                            double db = estimatedGainAbove(own, result);
+                            double db = estimatedGainAbove(results, own, result);
 
                             if(Double.isNaN(db))
                             {
@@ -870,12 +965,85 @@ public class GainSweep
             }
         }
 
-        String why = referenceName == null ? "This tuner has no control channel on the air continuously, so this " +
-            "follows the noise floor" : "The control channel " + referenceName + " couldn't be measured at every " +
-            "setting, so this follows the noise floor";
+        //ap-19: signal-to-noise rule.  Every channel on the tuner gains or loses signal-to-noise with the setting the
+        //same way, so the steady signals the check can see stand in for the weak channels it can't (Denmark
+        //2026-11-22: the noise floor rule picked Linearity 4 on the RF One, where the signals were 16.8 dB above
+        //the noise against 28 dB at 11, and Bridgton Police turned hissy).  The lowest allowed setting within
+        //SNR_TOLERANCE_DB of the best allowed signal-to-noise ratio, never below the noise floor setting.
+        StepResult snrChoice = null;
+        StepResult bestStep = null;
 
-        return new Recommendation(noiseChoice.index(), note + "Recommended: " + noiseChoice.label() + ".  " + why +
-            ": " + noiseReason + ".");
+        for(StepResult result : allowed)
+        {
+            if(isSteadySignal(results, result) && (bestStep == null || result.signalDb() > bestStep.signalDb()))
+            {
+                bestStep = result;
+            }
+        }
+
+        if(bestStep != null)
+        {
+            for(StepResult result : allowed)
+            {
+                if(snrChoice == null && isSteadySignal(results, result) &&
+                    result.signalDb() >= bestStep.signalDb() - SNR_TOLERANCE_DB)
+                {
+                    snrChoice = result;
+                }
+            }
+        }
+
+        StepResult choice = noiseChoice;
+        String reason;
+
+        if(snrChoice != null && snrChoice.index() >= noiseChoice.index())
+        {
+            choice = snrChoice;
+            reason = "Measured on the steady signals on this tuner: they are " +
+                String.format("%.1f", snrChoice.signalDb()) + " dB above the noise here (best allowed " +
+                String.format("%.1f", bestStep.signalDb()) + " dB at " + bestStep.label() + "), and every channel " +
+                "on the tuner gains or loses signal-to-noise with the setting the same way, the weak ones included";
+        }
+        else
+        {
+            String why = referenceName == null ? "This tuner has no control channel on the air continuously and " +
+                "no steady signal to measure, so this follows the noise floor" : "The control channel " +
+                referenceName + " couldn't be measured at every setting, so this follows the noise floor";
+            reason = why + ": " + noiseReason;
+        }
+
+        //ap-19: the history at your setting has plenty of headroom and nothing measured says a lower setting does as
+        //well - keep it (Daly 2026-11-22: LNA 4 with peaks at -24 dBFS was lowered to LNA 5 by the noise floor rule)
+        if(quietHistory && own != null && choice.index() < own.index() && allowed.contains(own) &&
+            (snrChoice == null || snrChoice.index() >= own.index()))
+        {
+            return new Recommendation(own.index(), note + "Recommended: keep " + own.label() + ".  Its peaks " +
+                "leave plenty of headroom, and the check found no setting below it that keeps the signals as far " +
+                "above the noise; lower gain would cost the weaker channels.");
+        }
+
+        //ap-19: signal-to-noise still improving above the highest allowed setting - say what stops it
+        String limited = "";
+
+        if(maxIndex != Integer.MAX_VALUE && choice.index() == allowed.get(allowed.size() - 1).index())
+        {
+            for(StepResult result : clean)
+            {
+                if(result.index() > choice.index() && isSteadySignal(results, result) &&
+                    result.signalDb() > choice.signalDb() + SNR_TOLERANCE_DB)
+                {
+                    limited = "  More gain would still help the weaker channels (" +
+                        String.format("%.1f", result.signalDb()) + " dB above the noise at " + result.label() +
+                        "), but the tuner's peaks leave no room for it: a strong signal is overloading this tuner.  " +
+                        "Moving the strongest signals to another tuner, or a notch filter for them ahead of this " +
+                        "one, would let the gain go higher.";
+                    break;
+                }
+            }
+        }
+
+        return new Recommendation(choice.index(), note + "Recommended: " + choice.label() + ".  " + reason + "." +
+            limited);
     }
 
     /**

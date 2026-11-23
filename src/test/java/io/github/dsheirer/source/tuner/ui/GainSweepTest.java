@@ -309,8 +309,10 @@ public class GainSweepTest
         List<GainSweep.StepResult> results = List.of(control(0, -80, 10, 0), control(1, -80, 20, 0),
             step(2, -76, 3, 0), control(3, -70, 25, 0));
         GainSweep.Recommendation recommendation = GainSweep.recommend(results, -1, null, "CC");
-        assertEquals(2, recommendation.index(), recommendation.explanation());
-        assertTrue(recommendation.explanation().contains("couldn't be measured"), recommendation.explanation());
+        //ap-19: the control channel rule doesn't apply, but its readings are steady signals for the signal-to-noise
+        //rule (was the noise floor rule, setting 2)
+        assertEquals(3, recommendation.index(), recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("steady signals"), recommendation.explanation());
     }
 
     @Test
@@ -520,5 +522,92 @@ public class GainSweepTest
             new GainSweep.StepResult(4, "14", -96, 8, -36, 0, 0, 1));
         GainSweep.Recommendation recommendation = GainSweep.recommend(results);
         assertEquals(4, recommendation.index(), recommendation.explanation());
+    }
+
+    /**
+     * Builds results from rows of label, noise floor, signals above noise, peak, percent at full scale, spread
+     */
+    private static List<GainSweep.StepResult> sweep(Object[][] rows)
+    {
+        List<GainSweep.StepResult> results = new java.util.ArrayList<>();
+
+        for(int x = 0; x < rows.length; x++)
+        {
+            results.add(new GainSweep.StepResult(x, (String)rows[x][0], ((Number)rows[x][1]).doubleValue(),
+                ((Number)rows[x][2]).doubleValue(), ((Number)rows[x][3]).doubleValue(),
+                ((Number)rows[x][4]).doubleValue(), 0, ((Number)rows[x][5]).doubleValue()));
+        }
+
+        return results;
+    }
+
+    /**
+     * Denmark 2026-11-22 21:25, HydraSDR RF One 36B463DC-35933AC7 at Linearity 12, which clipped (1.1% of samples at
+     * full scale, peak 6.4 dBFS over 15 minutes).  ap-18 recommended 4 by the noise floor rule, where the signals were
+     * 16.8 dB above the noise against 28 dB at 11, and Bridgton Police turned hissy.
+     */
+    private static final Object[][] DENMARK_RF_ONE = {
+        {"1", -88.9, 11.3, -46.3, 0.0, 0.2}, {"2", -87.7, 8.8, -45.6, 0.0, 0.4}, {"3", -85.7, 11.3, -44.7, 0.0, 1.8},
+        {"4", -83.7, 16.8, -43.3, 0.0, 0.1}, {"5", -80.8, 16.6, -40.3, 0.0, 0.2}, {"6", -77.6, 17.2, -37.5, 0.0, 0.1},
+        {"7", -74.3, 19.0, -33.6, 0.0, 0.3}, {"8", -73.6, 22.0, -31.9, 0.0, 0.3}, {"9", -72.5, 24.6, -28.9, 0.0, 0.0},
+        {"10", -70.4, 26.6, -25.8, 0.0, 0.1}, {"11", -67.5, 28.0, -22.3, 0.0, 0.4}, {"12", -63.8, 27.1, -17.2, 0.0, 4.3},
+        {"13", -61.0, 28.6, -13.7, 0.0, 1.4}, {"14", -57.3, 28.8, -10.9, 0.0, 0.3}, {"15", -53.0, 28.9, -6.8, 0.0, 0.1},
+        {"16", -49.1, 28.0, -3.5, 0.0, 1.4}, {"17", -45.4, 28.2, 0.2, 0.0, 1.0}, {"18", -41.3, 27.7, 3.4, 0.739, 0.7},
+        {"19", -36.7, 26.3, 5.2, 18.617, 0.2}, {"20", -34.3, 28.2, 6.5, 73.508, 0.4},
+        {"21", -38.5, 33.3, 6.4, 64.297, 5.4}};
+
+    @Test
+    public void denmarkRfOneGoesDownOnlyAsFarAsThePeakNeeds()
+    {
+        GainSweep.Recommendation recommendation = GainSweep.recommend(sweep(DENMARK_RF_ONE), 11,
+            history(15, 1.115, 6.4, 0));
+        //6.4 dBFS + 3 dB of headroom: 9.4 dB less; the steady signals put 9 11.2 dB below 12 and 10 only 7.1
+        assertEquals("9", DENMARK_RF_ONE[recommendation.index()][0], recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("steady signals"), recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("More gain would still help"), recommendation.explanation());
+    }
+
+    @Test
+    public void denmarkRfOneWithoutOverloadUsesTheSignalToNoisePlateau()
+    {
+        //Same sweep, no history: the signals level off from 11 (28.0 dB, best 28.9 at 15)
+        GainSweep.Recommendation recommendation = GainSweep.recommend(sweep(DENMARK_RF_ONE));
+        assertEquals("11", DENMARK_RF_ONE[recommendation.index()][0], recommendation.explanation());
+    }
+
+    /**
+     * Daly 2026-11-22 21:12 (ap-18), RSP1B 24050F5260 at LNA 4 for 5+ minutes, peaks -23.6 dBFS.  ap-18 recommended
+     * LNA 5 by the noise floor rule although the signals rose from +5 to +19 dB above the noise from LNA 5 to LNA 1.
+     */
+    private static final Object[][] DALY_AP18 = {
+        {"LNA 9", -103.3, 2.6, -44.6, 0.0, 0.2}, {"LNA 8", -200.0, 0.0, -45.2, 0.0, 0.0},
+        {"LNA 7", -113.4, 9.8, -45.2, 0.0, 0.9}, {"LNA 6", -114.7, 9.6, -45.0, 0.0, 0.2},
+        {"LNA 5", -107.5, 5.3, -45.0, 0.0, 0.5}, {"LNA 4", -89.2, 4.7, -44.6, 0.0, 0.0},
+        {"LNA 3", -78.4, 15.8, -35.0, 0.0, 1.9}, {"LNA 2", -74.4, 17.2, -29.3, 0.0, 0.2},
+        {"LNA 1", -69.8, 18.8, -20.6, 0.0, 0.5}, {"LNA 0", -64.1, 31.2, -13.4, 0.0, 15.6}};
+
+    @Test
+    public void dalyLna4IsNotLoweredToLna5()
+    {
+        GainSweep.Recommendation recommendation = GainSweep.recommend(sweep(DALY_AP18), 5, history(10, 0.0, -23.6, 0));
+        assertTrue(recommendation.index() >= 5, recommendation.explanation());
+        //Peaks -23.6 dBFS leave 20.6 dB: LNA 2 is 15.3 dB above by its peak, LNA 1 24 dB; signals level at LNA 3-2
+        assertEquals("LNA 3", DALY_AP18[recommendation.index()][0], recommendation.explanation());
+    }
+
+    @Test
+    public void dalyWithoutHistoryKeepsLna4()
+    {
+        GainSweep.Recommendation recommendation = GainSweep.recommend(sweep(DALY_AP18), 5, history(0, 0.0, -23.6, 0));
+        assertTrue(recommendation.index() >= 4, recommendation.explanation());
+    }
+
+    @Test
+    public void passingTransmissionInOneStepIsNotASteadySignal()
+    {
+        List<GainSweep.StepResult> results = sweep(new Object[][]{
+            {"1", -90.0, 4.0, -40.0, 0.0, 0.3}, {"2", -88.0, 4.0, -38.0, 0.0, 0.3}, {"3", -85.0, 30.0, -20.0, 0.0, 0.5},
+            {"4", -82.0, 4.0, -36.0, 0.0, 0.3}});
+        assertTrue(!GainSweep.isSteadySignal(results, results.get(2)));
     }
 }

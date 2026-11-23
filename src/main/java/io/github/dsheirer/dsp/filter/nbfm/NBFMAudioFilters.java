@@ -133,6 +133,10 @@ public class NBFMAudioFilters
     private int mAnalyzeMaxSamples = 80000;  // 10 seconds at 8kHz
     
     private double mSampleRate;
+    //ap-19: fade-in after a reset while the tone notch settles
+    static final double TONE_NOTCH_FADE_IN_MS = 120.0;
+    private int mFadeInRemaining = 0;
+    private int mFadeInLength = 0;
     
     /**
      * Constructor
@@ -173,6 +177,14 @@ public class NBFMAudioFilters
 
         if (mToneNotchEnabled) {
             sample = processToneNotch(sample);
+        }
+
+        //ap-19: raised-cosine fade-in over the notch's settling time at the start of a transmission
+        if(mFadeInRemaining > 0)
+        {
+            double position = (mFadeInLength - mFadeInRemaining) / (double)mFadeInLength;
+            sample *= (float)(0.5 - 0.5 * Math.cos(Math.PI * position));
+            mFadeInRemaining--;
         }
 
         // 1. Low-Pass Filter - Remove high hiss/noise (brickwall)
@@ -1051,10 +1063,27 @@ public class NBFMAudioFilters
     /**
      * Reset all filter states
      */
+    /**
+     * ap-19: fades the next audio in over TONE_NOTCH_FADE_IN_MS when a tone notch or the DCS high-pass is on - called
+     * at the start of each transmission, where the notch settles on the newly keyed tone.
+     */
+    public void armFadeIn()
+    {
+        mFadeInRemaining = (mToneNotchEnabled || mDcsHighPassEnabled) && mSampleRate > 0 ?
+            (int)(mSampleRate * TONE_NOTCH_FADE_IN_MS / 1000.0) : 0;
+        mFadeInLength = mFadeInRemaining;
+    }
+
     public void reset() 
     {
         mLpfX1 = mLpfX2 = 0.0f;
         mLpfY1 = mLpfY2 = 0.0f;
+
+        //ap-19: the notch starts each transmission cold and lets the tone through while it settles (Denmark, Bridgton
+        //Police 225.7 Hz: 45-70 ms blips 18-27 dB below the call level at the start of 5 of 6 calls).  Fade the
+        //start of the next audio in over TONE_NOTCH_FADE_IN_MS: 120 ms takes the blips to 41-47 dB below, and
+        //speech rarely starts that soon after a radio keys up.
+        armFadeIn();
 
         if(mToneNotchEnabled)
         {

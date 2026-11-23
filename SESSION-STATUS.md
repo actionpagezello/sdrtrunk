@@ -3,6 +3,13 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-23: `1.0.0-ap-19` built in the workspace
+
+**ap-18** (b36b9261) on Daly; Denmark still ap-17.  **ap-19** = Gain Check signal-to-noise rule (steady signals,
+within 1.5 dB of best, floor at the noise setting), overload reduction sized by the history peak, keep a quiet
+setting, strong-signal note; NBFM 120 ms fade-in at each transmission start (tone notch settling); BroadcastStatusView
+CME at start-up.  Deferred: automatic gain backoff (needs gain control outside the tuner editor).
+
 ## Current state 2026-11-22 evening: `1.0.0-ap-18` built in the workspace
 
 **ap-17** (220975b5) on Denmark and Daly.  **ap-18** = upstream #2753 Settings dialog (preference -> settings

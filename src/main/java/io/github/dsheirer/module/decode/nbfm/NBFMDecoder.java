@@ -1485,6 +1485,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             return;
         }
 
+        //ap-19: a new transmission - fade its first audio in while the tone notch settles on the new tone
+        if(mAudioFilters != null)
+        {
+            mAudioFilters.armFadeIn();
+        }
+
         mCallStartTimeMs = System.currentTimeMillis();
         mCallFirstStartSampleCount = mDemodulatedSampleCount;
         startToneCoverage();

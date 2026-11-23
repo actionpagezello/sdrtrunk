@@ -5,6 +5,37 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-19] - 2026-11-23
+
+Gain Check judges by signal-to-noise instead of the noise floor, no tone blips at the start of NBFM transmissions.
+Builds on ap-18.
+
+### Gain Check (fork)
+- **Signal-to-noise rule.**  Every channel on a tuner gains or loses signal-to-noise with the setting the same way, so
+  the steady signals the check can see stand in for the weak channels it can't.  It now recommends the lowest
+  allowed setting whose steady signals are within 1.5 dB of the best, never below the noise floor setting.  The
+  noise floor rule alone picked far too little gain on the HydraSDR/Airspy and RSP tuners: Denmark's RF One was
+  sent to Linearity 4, where the signals were 16.8 dB above the noise against 28 dB at 11, and Bridgton Police
+  turned hissy.  A signal counts as steady when it is at least 10 dB above the noise, varied no more than 2 dB
+  within its step and shows at a neighbouring setting too, so a transmission passing during one step doesn't count.
+- **Overload goes down only as far as needed.**  When the tuner clipped at your setting, the check now estimates how
+  much less gain the history's peak needs (3 dB of headroom below full scale) and stops there, instead of allowing
+  every lower setting.  Denmark's RF One at 12 (peaks 6.4 dBFS): 9, not 4.
+- **Your setting is kept when it has plenty of headroom** (history peaks at or below -10 dBFS) and nothing measured
+  says a lower one does as well.  Daly's RSP1B at LNA 4 (peaks -24 dBFS) was lowered to LNA 5 by ap-18; ap-19
+  recommends LNA 3.
+- **Says when a strong signal is what holds the gain down:** when more gain would still improve the signals but the
+  peaks leave no room, the explanation says so and suggests moving the strongest signals to another tuner or a notch
+  filter.
+
+### NBFM (fork)
+- **No squelch tone blip at the start of a transmission.**  The CTCSS/DCS notch settles on each newly keyed tone in
+  about 50-70 ms and let it through meanwhile (Denmark, Bridgton Police 225.7 Hz: blips 18-27 dB below the call level
+  at the start of 5 of 6 calls).  The first 120 ms of each transmission now fade in; the blips are 41-47 dB below.
+
+### Fixed
+- Streaming status view: an error at start-up while the streams were being added (once per start).
+
 ## [1.0.0-ap-18] - 2026-11-22
 
 Upstream Settings dialog, two NBFM resume windows and Gain Check fixes for RSP tuners.  Builds on ap-17.
