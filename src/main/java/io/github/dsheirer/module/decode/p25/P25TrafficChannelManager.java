@@ -71,6 +71,7 @@ import io.github.dsheirer.module.decode.p25.reference.VoiceServiceOptions;
 import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.source.config.SourceConfigTuner;
+import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -1365,6 +1366,10 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             SourceConfigTuner sourceConfig = new SourceConfigTuner();
             sourceConfig.setFrequency(apco25Channel.getDownlinkFrequency());
             if(mParentChannel.getSourceConfiguration() instanceof SourceConfigTuner parentConfigTuner)
+            {
+                sourceConfig.setPreferredTuner(parentConfigTuner.getPreferredTuner());
+            }
+            else if(mParentChannel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency parentConfigTuner)
             {
                 sourceConfig.setPreferredTuner(parentConfigTuner.getPreferredTuner());
             }
