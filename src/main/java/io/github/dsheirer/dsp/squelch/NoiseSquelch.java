@@ -401,25 +401,12 @@ public class NoiseSquelch implements INoiseSquelchController
                     squelchCloseIndex = findTransition(x);
 
                     //Broadcast the partial audio segment ending at the transition point.
-                    if(mSquelchOpenIndex < squelchCloseIndex)
+                    //Only broadcast the truncated audio samples when we're not in squelch override
+                    if(mSquelchOpenIndex < squelchCloseIndex && !mSquelchOverride)
                     {
-                        //Only broadcast the truncated audio samples when we're not in squelch override
-                        if(!mSquelchOverride)
-                        {
-                            broadcast(mSquelchOpenIndex, squelchCloseIndex);
-                        }
+                        broadcast(mSquelchOpenIndex, squelchCloseIndex);
                     }
 
-                    //AP-fork: the SQUELCH state change is broadcast whenever mSquelch flips to true, NOT only when
-                    //there is a trailing audio segment to emit.  mSquelchOpenIndex is set from findTransition(), which
-                    //indexes the delay buffer and can therefore exceed squelchCloseIndex; when it did, this event was
-                    //swallowed while the internal state still went squelched.  Downstream that meant NBFMDecoder never
-                    //saw the close: the stuck-call watchdog's mCallStartTimeMs was never cleared, the squelch tail
-                    //remover never closed, and the tone holdover never started.  A stale mCallStartTimeMs then makes
-                    //the next squelch opening trip the 180 s watchdog immediately (Baker and Audubon 2026-09-22,
-                    //five machines 2026-09-25).  UNSQUELCH is broadcast unconditionally; this makes SQUELCH symmetric
-                    //with it.  Not guarded on mSquelchOverride: broadcast(SquelchState) already converts SQUELCH to
-                    //UNSQUELCH while override is active.
                     broadcast(SquelchState.SQUELCH);
 
                     mSquelchOpenIndex = 0;
@@ -499,17 +486,14 @@ public class NoiseSquelch implements INoiseSquelchController
             {
                 if(hysteresisCount == 0)
                 {
-                    hysteresisCount++;
                     transitionPointer = x;
                 }
-                else
-                {
-                    hysteresisCount++;
 
-                    if(hysteresisCount >= hysteresisThreshold)
-                    {
-                        return transitionPointer;
-                    }
+                hysteresisCount++;
+
+                if(hysteresisCount >= hysteresisThreshold)
+                {
+                    return transitionPointer;
                 }
             }
             else
