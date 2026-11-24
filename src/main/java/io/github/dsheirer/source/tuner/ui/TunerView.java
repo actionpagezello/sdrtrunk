@@ -198,14 +198,19 @@ public class TunerView extends SplitPane implements DiscoveredTunerModel.ModelLi
         TableColumnMonitor.setLegacyIndex(frequency, 3);
 
         TableColumn<DiscoveredTuner,String> channels = textColumn("channels", "Channels", tuner -> {
-            //AP-fork (ap-16): a tuner being shut down has no channel source manager any more
-            if(!tuner.hasTuner() || tuner.getTuner().getChannelSourceManager() == null)
+            //AP-fork (ap-16): a tuner being shut down has no channel source manager any more.  ap-21: read it once -
+            //checking and then reading it again raced the shutdown (Summit 800 2026-11-23 20:07)
+            io.github.dsheirer.source.tuner.Tuner t = tuner.hasTuner() ? tuner.getTuner() : null;
+            io.github.dsheirer.source.tuner.manager.ChannelSourceManager manager = t != null ?
+                t.getChannelSourceManager() : null;
+
+            if(manager == null)
             {
                 return "";
             }
 
-            int count = tuner.getTuner().getChannelSourceManager().getTunerChannelCount();
-            boolean locked = tuner.getTuner().getTunerController().isLockedSampleRate();
+            int count = manager.getTunerChannelCount();
+            boolean locked = t.getTunerController().isLockedSampleRate();
             return count + (locked ? " (locked)" : "");
         }, 4);
 

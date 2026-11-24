@@ -221,11 +221,20 @@ public class FMDemodulatorModule extends Module implements ISourceEventListener,
                     "event before it can process complex sample buffers");
         }
 
+        //AP-fork (ap-21): a traffic channel being torn down can still get one buffer from the channelizer after dispose()
+        //(Summit 800, Type II traffic channel 2026-11-23/24: NullPointerException on mDemodulator) - drop it
+        IDemodulator demodulator = mDemodulator;
+
+        if(demodulator == null)
+        {
+            return;
+        }
+
         float[] decimatedI = mIDecimationFilter.decimateReal(samples.i());
         float[] decimatedQ = mQDecimationFilter.decimateReal(samples.q());
         float[] filteredI = mIBasebandFilter.filter(decimatedI);
         float[] filteredQ = mQBasebandFilter.filter(decimatedQ);
-        float[] demodulated = mDemodulator.demodulate(filteredI, filteredQ);
+        float[] demodulated = demodulator.demodulate(filteredI, filteredQ);
         mPowerMonitor.process(filteredI, filteredQ);
 
         if(carrierSquelched(filteredI, filteredQ))
