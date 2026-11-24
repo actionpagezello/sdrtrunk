@@ -48,7 +48,7 @@ public enum SettingsPageType
         context -> new AppearanceSettingsPage(context.settings())),
     PERFORMANCE(Group.GENERAL, "Performance", FontAwesome.TACHOMETER,
         "CPU vector (SIMD) operations and their calibration.",
-        context -> new PerformanceSettingsPage(context.settings())),
+        context -> new PerformanceSettingsPage(context.settings(), context.channelProcessingManager())),
     DIAGNOSTICS(Group.GENERAL, "Diagnostics (Logging)", FontAwesome.BUG,
         "Debug logging for selected subsystems, switched on and off while the application runs.",
         context -> new DiagnosticsSettingsPage(context.settings())),
