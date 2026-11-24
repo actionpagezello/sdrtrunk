@@ -3,9 +3,56 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## 2026-11-24 12:50 - HANDOFF: `1.0.0-ap-21` pushed and running fleet-wide; start the next session here
+
+**State of play**
+- `ap-1.0` on GitHub = `81db2214`, tree `d28a751b5843cd772aa082b2c8009b44bd74facc`, version `1.0.0-ap-21`, 809 tests.
+  Running on Cambridge, Somerville, Denmark, Daly, Summit 800 (installed 2026-11-24 ~09:30). Builds ap-11..ap-21 are
+  summarised in `CHANGELOG.md` and `SESSION-STATUS.md`.
+- Upstream (`DSheirer/sdrtrunk` master) fully taken through `71116f8f` (2026-11-24 05:51). Not taken on purpose:
+  #2741 (JMBE 3 API check). #2701 (channel SNR) was already in the fork, identical.
+- Patch workflow unchanged: `git format-patch --binary` -> `C:\Users\Admin\projects\sdrtrunk-ap\logs\` -> he runs
+  `git am --keep-cr --3way`, checks `git rev-parse "HEAD^{tree}"`, `.\gradlew test`, `.\gradlew runtimeZipWindows`,
+  `git push origin ap-1.0`. git only on his PC. Workspace tests: xvfb-run + JDK 27.
+- Logs folder `C:\Users\Admin\projects\logs` cleared 2026-11-24 (kept `reference\` and two ActionPage Media
+  screenshots); `sdrtrunk-ap\logs\` emptied.
+
+**Waiting on him (per machine, after ap-21 has run a while)**
+- Logs from all five. Check: calibration dialog (ap-21 takes upstream #2782; first start may ask to calibrate),
+  settings carried over, Gain Check results.
+- Denmark: HydraSDR RF One 36B463DC-35933AC7 was clipping at Linearity 12 (ap-19 Gain Check bug, fixed in ap-20) -
+  advised 9, then Gain Check; RTL 24711130 limits back from 800-900 MHz; West Paris Fire 154.980 tone filter on at
+  CTCSS 156.7 (only the notch was on; Falmouth ME Fire 107.2 is the strong co-channel station); CTCSS/DCS auxiliary
+  decoders being tried for "who is on this channel" (untested with the fork's NBFM audio path).
+- Daly: RSP1B 24050F5260 at LNA 1 since 2026-11-23 19:45 (Gain Check), VHF healthy.
+- Summit 800: Airspy kept at Linearity 8 by Gain Check (Metro Boston Control 47 dB above noise).
+- Cambridge: version unknown in the 11-23/24 logs (no restart) - should now be ap-21.
+
+**Upstream PRs and issues (his, on DSheirer/sdrtrunk)**
+- #2706 EDACS, #2707 Type II: Dennis asked about overlap with #2648/#2650; his replies posted 11-21/22; no answer yet.
+- #2770 Show in Waterfall, #2771 Mute/Unmute (opened 11-23 on master 8cd8d0c2; both start with the right-click menu
+  fix commit); #2769 closed in favour of issue #2772 (right-click menu never opens). CI has not run on #2770/#2771
+  (needs maintainer approval); the #2769 run failed on a workflow-file problem upstream, not the code.
+- #2768 issue: RTL-SDR frequency limits can only be narrowed since #2590. Fork fix in ap-20
+  (RTL2832TunerEditor uses the controller's tunable range). **When Dennis fixes #2768 or #2772, take his fix and
+  remove the fork's.**
+- Descriptions: keep them simple - what it does and how to use it, no implementation detail.
+
+**Open / parked**
+- NBFM: if Oxford County Fire (154.07, Denmark) is cut again as "DMR/TDMA interference", get a baseband and stop the
+  rapid reopen after a TDMA end (5 x 0.0 s calls 50 ms apart on 11-23 05:58 during RF One clipping; none since).
+- Longer CTCSS check (idea from upstream PR #2765) only if a tone-squelched channel sounds choppy.
+- Automatic gain backoff: parked - GainSteps only exist in the tuner editors.
+- CTCSS/DCS auxiliary decoder summary in the ActivitySummary table layout: after his test.
+- Gain Check design (ap-19..ap-20): steady-signal SNR rule (>= 10 dB, spread <= 2, neighbour within 6 dB, lowest
+  within 1.5 dB of best, floor = noise rule), overload reduction sized by history peak + 3 dB, keep a setting with
+  history peaks <= -10 dBFS, `estimatedGainUp` = max of estimates >= 0, no higher setting with zero headroom.
+  Bridgton Police (Denmark RF One) is the weak channel that showed the old noise-floor rule went too low.
+
 ## Current state 2026-11-24: `1.0.0-ap-21` built in the workspace
 
-**ap-20** (034668ea) on Denmark, Daly, Summit 800.  **ap-21** = upstream through 71116f8f (#2782, #2781, #2767,
+**ap-21** pushed (81db2214) and installed on Cambridge, Somerville, Denmark, Daly and Summit 800 on 2026-11-24.
+ap-21 = upstream through 71116f8f (#2782, #2781, #2767,
 #2651, #2685, #2695, #2785, #2710; #2701 already in), FMDemodulatorModule disposed-buffer guard, TunerView channel
 count race.  Open: #2768, #2772 (fork fixes until upstream), #2706/#2707/#2770/#2771 awaiting review.
 
