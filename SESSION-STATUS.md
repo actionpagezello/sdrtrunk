@@ -3,6 +3,12 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## Current state 2026-11-24: `1.0.0-ap-21` built in the workspace
+
+**ap-20** (034668ea) on Denmark, Daly, Summit 800.  **ap-21** = upstream through 71116f8f (#2782, #2781, #2767,
+#2651, #2685, #2695, #2785, #2710; #2701 already in), FMDemodulatorModule disposed-buffer guard, TunerView channel
+count race.  Open: #2768, #2772 (fork fixes until upstream), #2706/#2707/#2770/#2771 awaiting review.
+
 ## Current state 2026-11-23 morning: `1.0.0-ap-20` built in the workspace
 
 **ap-19** (947d54b6) on Denmark and Daly.  **ap-20** = RTL2832TunerEditor min/max tunable from the controller's

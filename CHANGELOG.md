@@ -5,6 +5,30 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-21] - 2026-11-24
+
+Upstream from 2026-11-24 and two fixes from the Summit 800 log.  Builds on ap-20.
+
+### Upstream
+- **#2782** calibration cleanup: calibrations for unused code removed, stale calibration settings pruned, the startup
+  calibration dialog's Calibrate button starts calibrating.  The fork's Diagnostics (Logging) page stays in Settings.
+- **#2781** noise squelch always sends the close.  The fork has sent it since 2026-09 (Baker, Audubon); upstream also
+  fixes the transition search behind it, so the fork's version of that line is now upstream's.
+- **#2767** no hover flicker in the Events history table with the dark theme.
+- **#2651** P25 Phase 1 doesn't mark a call encrypted on the link control encryption flag until the algorithm ID
+  confirms it.
+- **#2685** frequencies are written with a dot decimal on every locale.
+- **#2695** bladeRF 1.0 starts at its default frequency.
+- **#2785** an unused interface removed.
+- **#2710** multi-frequency channels inherit the parent's preferred tuner.
+- **#2701** channel SNR in the channel spectral display was already in the fork since ap-11; the merged version is
+  identical.
+
+### Fixed
+- A traffic channel being shut down could get one more sample buffer after its FM demodulator was released (Summit
+  800, Type II traffic channel: an error in the log, no effect on calls).
+- The tuner list could ask a tuner for its channel count as it shut down (Summit 800, closing for an update).
+
 ## [1.0.0-ap-20] - 2026-11-23
 
 Fixes from the first ap-19 run on Denmark.  Builds on ap-19.
