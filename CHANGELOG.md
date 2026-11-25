@@ -5,6 +5,47 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-22] - 2026-11-25
+
+Voice calls cut as "DMR/TDMA interference", two Gain Check faults from the Denmark RF One, and upstream from
+2026-11-25.  Builds on ap-21.
+
+### Fixed
+- **Voice calls were ended in mid-sentence as "DMR/TDMA interference".**  On 2026-11-24 Somerville lost the middle
+  of 22 calls this way, Daly 17 and Denmark 4, each followed by five or six empty calls 50-100 ms apart and the
+  rest of the transmission as a second call.  The basebands recorded at two of the cuts (Denmark, Oxford County
+  Fire 154.070; Daly, Lawrence Fire 154.445) are clean speech on a strong signal: nothing digital is on the air.
+  Speech meets the TDMA detection rule for a single 0.3 s window about once in 20 to 50 minutes of talk, and one
+  window was enough to end the call.  A call that is already open is now ended only when the detector sees a
+  second detection window while it is latched; a closed tone gate is still kept closed by one window, as before.
+  Replaying the Denmark baseband through the decoder at 400 window alignments, ap-21 cut the call in 8 (47 call
+  ends, 39 of them empty) and this build in none.  Cost: digital interference that lands on a call in progress is
+  cut about 0.3 s later than before, and a burst shorter than about 0.6 s is heard in the call instead of
+  splitting it.
+- **Empty calls after a TDMA call end.**  The tone kept confirming while the detector held the gate closed, so the
+  gate opened and closed again every 50-100 ms.  It now stays closed until the detector lets go, and the
+  transmission resumes as one call.
+- **Gain Check compared settings measured on different signals.**  Denmark RF One 35933AC7 carries only NBFM
+  channels, and Oxford County Fire was transmitting during Linearity 1-7 of the check and not during 8-11, so 7
+  read 27 dB better than the tuner's own setting of 9 and was recommended.  A jump of more than 6 dB between
+  neighbouring settings now marks a transmission starting or stopping, and only the settings measured on the same
+  signals as the tuner's own are compared.  When there are none, the check recommends keeping the setting and
+  running it again.
+- **A tuner peaking above 0 dBFS was not reported as overloaded.**  Airspy and HydraSDR tuners clip at their
+  converter, and the conversion to I/Q spreads the clipped samples, so "samples at full scale" stays near zero
+  (Denmark RF One: +3.4 dBFS with 0.000%).  A peak above 0 dBFS now counts as overload in the 5-minute log warning,
+  the tuner panel status, each Gain Check step and the history the check reads.
+
+### Upstream
+- **#2702, #2791** MDC-1200 IDs are radio IDs, not talkgroups.  Alias IDs of the old kind are converted when the
+  playlist loads; a converted playlist still loads in ap-21, where the alias keeps its name but no longer matches
+  MDC-1200 IDs.  #2791 also gives every traffic channel manager the parent channel's preferred tuner; the fork's
+  EDACS and Type II managers are unchanged.
+- **#2760** crash in the activity summary of the DCS decoder.
+- **#2793** NXDN inbound calls, and call events started from audio.
+- **#2796** menus tidied and an optional toolbar under the menu bar.
+- **#2798** status bar: CPU is the program's own load, one memory bar, storage limits of 2 GB and more.
+
 ## [1.0.0-ap-21] - 2026-11-24
 
 Upstream from 2026-11-24 and two fixes from the Summit 800 log.  Builds on ap-20.

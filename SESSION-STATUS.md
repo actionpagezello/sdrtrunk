@@ -3,6 +3,33 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## 2026-11-25 15:30 - `1.0.0-ap-22` delivered as `ap-1.0.0-ap-22.patch` (not yet applied when written)
+
+- Nine commits on `4168ebf3` (ap-21 + the 11-24 docs commit): upstream #2702, #2791, #2760, #2793, #2796, #2798
+  (`71116f8f..133f7c73`, all of upstream master on 2026-11-25); the TDMA open-call fix; the two Gain Check fixes;
+  version and docs.  831 tests.
+- **TDMA cuts, what was measured.** ap-21 logs 11-24: calls ended "DMR/TDMA interference" after 1 s or more -
+  Somerville 22, Daly 17, Denmark 4.  Basebands 11-25 (Denmark Oxford County Fire cut 06:27:13, Daly Lawrence Fire
+  cut 07:21:31): clean speech, 64 dB and 36 dB above the noise.  Detector alone over the speech in both, every
+  alignment: 10 one-window latches in 16,380 s, none with a second window.  Somerville log 11-25 10:21-14:33 with
+  the CTCSS / DCS box on: 9 calls cut, the window after each scored 1-6; 118 triggers on Winthrop EMA/Harbormaster
+  453.8625, all with the gate closed.  Whole decoder on the Denmark baseband, 400 alignments: ap-21 8 cuts,
+  ap-22 none.
+- **Not tested:** real DMR on a call that is already open (no recording of one).  Synthetic 50% duty burst over a
+  CTCSS call: 1 s and 2 s bursts end the call 0.8-1.0 s into the burst (ap-21: 0.5-0.9 s); 0.2-0.6 s bursts no
+  longer end it.  "Two windows in a row" was tried first and took up to 1.8 s, so the rule is a second window
+  within the latch.
+- **Gate-closed single windows are unchanged**: a one-window latch at the start of a transmission still holds the
+  gate for about 0.45 s and that audio is dropped.  Not measured how often; look at it if call starts are clipped.
+- The Diagnostics box for the detector's lines is **CTCSS / DCS squelch codes** ("NBFM / audio output" is the
+  audio path only).
+- Workspace tools (not in the repo): `/home/claude/replay/Replay.java` + `sweep.sh` feed a 50 kHz I/Q baseband
+  WAV through `NBFMDecoder` with a tone filter and count call ends by reason; start the replay inside the
+  transmission and step the start by 20 samples to vary the detector's window alignment.  `cut-baseband.ps1` in
+  the logs folder cuts a few minutes out of a multi-GB baseband recording (staging limit 400 MB a file).
+- Seen on a virtual display: the program starts with upstream's toolbar and status bar, no exception.  Not seen:
+  any fork screen with a tuner or channel running.
+
 ## 2026-11-24 12:50 - HANDOFF: `1.0.0-ap-21` pushed and running fleet-wide; start the next session here
 
 **State of play**
