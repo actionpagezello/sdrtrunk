@@ -624,4 +624,63 @@ public class GainSweepTest
         GainSweep.Recommendation recommendation = GainSweep.recommend(results, 2, history(30, 0.0, 0.1, 0));
         assertTrue(recommendation.index() <= 2, recommendation.explanation());
     }
+
+    /**
+     * Denmark 2026-11-24 10:47 (ap-21), HydraSDR RF One 36B463DC-35933AC7 at Linearity 9, NBFM channels only, about
+     * 3 s a step.  Oxford County Fire was transmitting during 1-7 and 12-14 and not during 8-11 and 15-19, so 7 read
+     * 27 dB better than 9 and ap-21 recommended 7.  16 and 17 peaked above 0 dBFS with 0.000% and 0.002% of samples
+     * at full scale.
+     */
+    private static final Object[][] DENMARK_RF_ONE_AP21 = {
+        {"1", -87.6, 40.4, -37.3, 0.0, 3.4}, {"2", -86.4, 43.7, -34.2, 0.0, 1.2}, {"3", -84.7, 46.3, -30.7, 0.0, 0.1},
+        {"4", -82.8, 48.7, -27.0, 0.0, 0.1}, {"5", -80.4, 49.0, -24.4, 0.0, 0.1}, {"6", -77.7, 49.4, -21.2, 0.0, 0.2},
+        {"7", -74.1, 51.6, -15.6, 0.0, 0.3}, {"8", -73.5, 21.7, -27.6, 0.0, 0.6}, {"9", -72.4, 24.6, -23.6, 0.0, 0.2},
+        {"10", -70.2, 25.9, -21.1, 0.0, 0.3}, {"11", -67.5, 27.9, -16.0, 0.0, 0.0},
+        {"12", -62.6, 51.4, 0.6, 33.911, 27.1}, {"13", -59.3, 52.5, 0.9, 30.445, 7.0},
+        {"14", -56.4, 52.8, 1.7, 89.158, 0.1}, {"15", -52.3, 27.2, -0.6, 0.0, 0.3}, {"16", -49.1, 25.8, 1.7, 0.0, 0.2},
+        {"17", -45.6, 25.3, 3.4, 0.002, 0.0}, {"18", -41.6, 25.3, 4.5, 0.345, 0.9},
+        {"19", -37.5, 25.9, 5.4, 11.933, 0.1}, {"20", -37.9, 32.3, 6.6, 65.848, 2.4},
+        {"21", -39.1, 35.7, 5.3, 97.751, 1.1}, {"22", -39.6, 36.2, 5.4, 97.890, 1.3}};
+
+    @Test
+    public void transmissionDuringTheCheckIsNotComparedWithTheSettingsMeasuredWithoutIt()
+    {
+        List<GainSweep.StepResult> results = sweep(DENMARK_RF_ONE_AP21);
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, 8, history(30, 0.0, -3.4, 0));
+        assertEquals("9", DENMARK_RF_ONE_AP21[recommendation.index()][0], recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("started or stopped"), recommendation.explanation());
+
+        //1-7 and 8-11 are different signals; 7 and 9 can't be compared
+        assertFalse(GainSweep.sameSteadySignals(results, results.get(6), results.get(8)));
+        assertTrue(GainSweep.sameSteadySignals(results, results.get(7), results.get(8)));
+        assertTrue(GainSweep.steadyGroupCount(results) > 1);
+    }
+
+    @Test
+    public void settingWithNoSignalsOfItsOwnToCompareIsKeptWhenTransmissionsCameAndWent()
+    {
+        //The tuner's own setting (12) was measured with a spread of 27 dB: nothing to compare it with
+        List<GainSweep.StepResult> results = sweep(DENMARK_RF_ONE_AP21);
+        results.set(11, new GainSweep.StepResult(11, "12", -62.6, 51.4, -8.0, 0.0, 0, 27.1));
+        GainSweep.Recommendation recommendation = GainSweep.recommend(results, 11, history(30, 0.0, -12.0, 0));
+        assertEquals("12", DENMARK_RF_ONE_AP21[recommendation.index()][0], recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("Run the check again"), recommendation.explanation());
+    }
+
+    @Test
+    public void peakAboveZeroDbfsIsOverloadWithoutSamplesAtFullScale()
+    {
+        List<GainSweep.StepResult> results = sweep(DENMARK_RF_ONE_AP21);
+        assertFalse(results.get(14).isOverloaded(), "15: -0.6 dBFS");
+        assertTrue(results.get(15).isOverloaded(), "16: +1.7 dBFS, 0.000%");
+        assertTrue(results.get(16).isOverloaded(), "17: +3.4 dBFS, 0.002%");
+
+        //History that peaked above 0 dBFS with no samples counted at full scale: overloaded, lower settings only,
+        //and far enough down for the peak (3.4 dBFS + 3 dB)
+        GainSweep.Recommendation recommendation = GainSweep.recommend(sweep(DENMARK_RF_ONE), 10,
+            history(30, 0.0, 3.4, 0));
+        assertTrue(recommendation.index() < 10, recommendation.explanation());
+        assertTrue(recommendation.explanation().contains("converter clipped"), recommendation.explanation());
+        assertFalse(recommendation.explanation().contains("only the tuner reported it"), recommendation.explanation());
+    }
 }

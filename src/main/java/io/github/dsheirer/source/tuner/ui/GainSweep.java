@@ -104,7 +104,9 @@ public class GainSweep
 
         public boolean isOverloaded()
         {
-            return TunerSignalMonitor.isReportable(clippedPercent) || overloadEvents > 0;
+            //ap-22: a peak above 0 dBFS is the converter clipping, whatever the share of samples at full scale
+            return TunerSignalMonitor.isReportable(clippedPercent) || overloadEvents > 0 ||
+                TunerSignalMonitor.isConverterClipping(peakDbfs);
         }
     }
 
@@ -518,6 +520,91 @@ public class GainSweep
         return false;
     }
 
+    /**
+     * ap-22: groups the steps whose steady signals are the same signals.  Between neighbouring settings the
+     * signal-to-noise ratio of a signal that stays on the air moves by a few dB; a jump of more than
+     * STEADY_NEIGHBOUR_DB means a transmission started or stopped between the two steps, and the readings on either
+     * side of it are of different signals and can't be compared.  Denmark 2026-11-24, HydraSDR RF One 35933AC7 (NBFM
+     * channels only, 3 s a step): Oxford County Fire was transmitting during Linearity 1-7 (40 to 52 dB above the
+     * noise) and not during 8-11 (22 to 28 dB), so 7 read 27 dB better than the tuner's own setting of 9 and was
+     * recommended.
+     * @return for each step, the number of its group, or -1 for a step with no steady signal
+     */
+    static int[] steadyGroups(List<StepResult> results)
+    {
+        int[] groups = new int[results.size()];
+        int next = 0;
+
+        for(int x = 0; x < results.size(); x++)
+        {
+            groups[x] = -1;
+
+            if(!isSteadyAlone(results.get(x)))
+            {
+                continue;
+            }
+
+            //the nearest steady step below, at most two away, decides: same signals or not
+            for(int back = 1; back <= 2 && groups[x] < 0; back++)
+            {
+                int y = x - back;
+
+                if(y >= 0 && groups[y] >= 0)
+                {
+                    if(Math.abs(results.get(y).signalDb() - results.get(x).signalDb()) <= STEADY_NEIGHBOUR_DB)
+                    {
+                        groups[x] = groups[y];
+                    }
+
+                    break;
+                }
+            }
+
+            if(groups[x] < 0)
+            {
+                groups[x] = next++;
+            }
+        }
+
+        return groups;
+    }
+
+    /**
+     * ap-22: true when both steps measured the same steady signals (see steadyGroups)
+     */
+    static boolean sameSteadySignals(List<StepResult> results, StepResult a, StepResult b)
+    {
+        int x = results.indexOf(a);
+        int y = results.indexOf(b);
+
+        if(x < 0 || y < 0 || !isSteadySignal(results, a) || !isSteadySignal(results, b))
+        {
+            return false;
+        }
+
+        int[] groups = steadyGroups(results);
+        return groups[x] >= 0 && groups[x] == groups[y];
+    }
+
+    /**
+     * ap-22: number of groups of steady signals with at least two steps
+     */
+    static int steadyGroupCount(List<StepResult> results)
+    {
+        int[] groups = steadyGroups(results);
+        java.util.Set<Integer> counted = new java.util.HashSet<>();
+
+        for(int x = 0; x < groups.length; x++)
+        {
+            if(groups[x] >= 0 && isSteadySignal(results, results.get(x)))
+            {
+                counted.add(groups[x]);
+            }
+        }
+
+        return counted.size();
+    }
+
     private static boolean isSteadyAlone(StepResult result)
     {
         return isMeasured(result) && !Double.isNaN(result.signalDb()) && result.signalDb() >= STEADY_SIGNAL_MIN_DB &&
@@ -546,7 +633,7 @@ public class GainSweep
             return Double.NaN;
         }
 
-        if(isSteadySignal(results, own) && isSteadySignal(results, result))
+        if(sameSteadySignals(results, own, result))
         {
             //signalDb is above the noise floor: compare the signals' own levels
             return signalLevel(result) - signalLevel(own);
@@ -589,7 +676,7 @@ public class GainSweep
             estimate = Math.max(estimate, result.peakDbfs() - own.peakDbfs());
         }
 
-        if(isSteadySignal(results, own) && isSteadySignal(results, result))
+        if(sameSteadySignals(results, own, result))
         {
             estimate = Math.max(estimate, signalLevel(result) - signalLevel(own));
         }
@@ -712,13 +799,19 @@ public class GainSweep
                     .append(minutes).append(" minutes (").append(String.format("%.3f", history.reading().clippedPercent()))
                     .append("% of samples at full scale");
 
+                //ap-22
+                if(TunerSignalMonitor.isConverterClipping(history.reading().peakDbfs()))
+                {
+                    note.append(", peak ").append(String.format("%.1f", history.reading().peakDbfs()))
+                        .append(" dBFS: the tuner's converter clipped");
+                }
+
                 //ap-19: with samples at full scale, go down as far as the history's peak needs (3 dB of headroom
                 //below full scale), estimated from the check's measurements - not further: every step lower costs
                 //the weaker channels signal-to-noise
                 double peak = history.reading().peakDbfs();
 
-                if(TunerSignalMonitor.isReportable(history.reading().clippedPercent()) && !Double.isNaN(peak) &&
-                    peak > -100)
+                if(history.reading().isClipping() && !Double.isNaN(peak) && peak > -100)
                 {
                     double needed = Math.max(0.0, peak) + HEADROOM_MARGIN_DB;
                     int reach = Integer.MIN_VALUE;
@@ -763,7 +856,7 @@ public class GainSweep
                 }
 
                 //ap-16: overload reported only by the tuner (no samples at full scale) is mild: at most two lower
-                if(!TunerSignalMonitor.isReportable(history.reading().clippedPercent()))
+                if(!history.reading().isClipping())
                 {
                     int position = results.indexOf(own);
                     minIndex = results.get(Math.max(0, position - EVENTS_ONLY_MAX_STEPS_DOWN)).index();
@@ -1020,12 +1113,24 @@ public class GainSweep
         //2026-11-22: the noise floor rule picked Linearity 4 on the RF One, where the signals were 16.8 dB above
         //the noise against 28 dB at 11, and Bridgton Police turned hissy).  The lowest allowed setting within
         //SNR_TOLERANCE_DB of the best allowed signal-to-noise ratio, never below the noise floor setting.
+        //
+        //ap-22: when a transmission started or stopped during the check the steady signals fall into more than one
+        //group (steadyGroups), and only the steps that measured the same signals as the tuner's own setting are
+        //compared.
         StepResult snrChoice = null;
         StepResult bestStep = null;
+        boolean signalsChanged = steadyGroupCount(results) > 1;
+        java.util.function.Predicate<StepResult> comparable = result -> isSteadySignal(results, result);
+
+        if(signalsChanged)
+        {
+            StepResult ownStep = own;
+            comparable = result -> ownStep != null && sameSteadySignals(results, ownStep, result);
+        }
 
         for(StepResult result : allowed)
         {
-            if(isSteadySignal(results, result) && (bestStep == null || result.signalDb() > bestStep.signalDb()))
+            if(comparable.test(result) && (bestStep == null || result.signalDb() > bestStep.signalDb()))
             {
                 bestStep = result;
             }
@@ -1035,12 +1140,23 @@ public class GainSweep
         {
             for(StepResult result : allowed)
             {
-                if(snrChoice == null && isSteadySignal(results, result) &&
+                if(snrChoice == null && comparable.test(result) &&
                     result.signalDb() >= bestStep.signalDb() - SNR_TOLERANCE_DB)
                 {
                     snrChoice = result;
                 }
             }
+        }
+
+        //ap-22: signals came and went during the check and the tuner's own setting has none to compare with -
+        //nothing was measured that says another setting is better.  Keep it rather than fall back to the noise
+        //floor rule, which goes too low for the weak channels (ap-19).
+        if(signalsChanged && snrChoice == null && own != null && allowed.contains(own))
+        {
+            return new Recommendation(own.index(), note + "Recommended: keep " + own.label() + ".  Transmissions " +
+                "started or stopped on this tuner during the check, so its settings were measured on different " +
+                "signals and can't be compared.  Run the check again; it is most reliable on a tuner with a signal " +
+                "that is always on the air.");
         }
 
         StepResult choice = noiseChoice;
@@ -1052,7 +1168,9 @@ public class GainSweep
             reason = "Measured on the steady signals on this tuner: they are " +
                 String.format("%.1f", snrChoice.signalDb()) + " dB above the noise here (best allowed " +
                 String.format("%.1f", bestStep.signalDb()) + " dB at " + bestStep.label() + "), and every channel " +
-                "on the tuner gains or loses signal-to-noise with the setting the same way, the weak ones included";
+                "on the tuner gains or loses signal-to-noise with the setting the same way, the weak ones included" +
+                (signalsChanged ? ".  Transmissions started or stopped during the check, so only the settings " +
+                    "measured on the same signals as yours were compared" : "");
         }
         else
         {
@@ -1079,7 +1197,8 @@ public class GainSweep
         {
             for(StepResult result : clean)
             {
-                if(result.index() > choice.index() && isSteadySignal(results, result) &&
+                if(result.index() > choice.index() && comparable.test(result) &&
+                    (!signalsChanged || comparable.test(choice)) &&
                     result.signalDb() > choice.signalDb() + SNR_TOLERANCE_DB)
                 {
                     limited = "  More gain would still help the weaker channels (" +

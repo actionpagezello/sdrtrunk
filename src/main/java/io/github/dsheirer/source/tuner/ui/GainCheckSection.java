@@ -175,7 +175,7 @@ public class GainCheckSection extends TunerSection
         {
             if(reading.isOverloaded())
             {
-                setStatus(reading.overloadEvents() > 0 && !TunerSignalMonitor.isReportable(reading.clippedPercent()) ?
+                setStatus(reading.overloadEvents() > 0 && !reading.isClipping() ?
                     "Overload reported by tuner - reduce gain" : "Overload - reduce gain", RED);
             }
             else if(reading.isLowHeadroom())

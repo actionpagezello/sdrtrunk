@@ -62,6 +62,20 @@ public class TunerSignalMonitor
      */
     public static final double LOW_HEADROOM_DBFS = -3.0;
 
+    /**
+     * AP-fork (ap-22): a peak above 0 dBFS means the tuner's converter clipped.  It only occurs on tuners with a real
+     * (not I/Q) converter, Airspy and HydraSDR: their clipped samples are spread by the conversion to I/Q, so the
+     * share of I/Q samples at full scale stays near zero while the converter is on its rails.  Denmark 2026-11-24,
+     * HydraSDR RF One 35933AC7: three 5-minute periods peaked at +2.2 to +3.4 dBFS with 0.000% at full scale and
+     * were logged as a normal signal level; in the gain check, Linearity 16 and 17 peaked at +1.7 and +3.4 dBFS
+     * with 0.000% and 0.002% and counted as clean.
+     * @param peakDbfs highest sample level
+     */
+    public static boolean isConverterClipping(double peakDbfs)
+    {
+        return !Double.isNaN(peakDbfs) && peakDbfs > 0.0;
+    }
+
     static final long CHECK_INTERVAL_MS = 250;
     static final long LOG_INTERVAL_MS = 5 * 60 * 1000;
     //Period covered by the meter readings
@@ -200,7 +214,7 @@ public class TunerSignalMonitor
             logPeriod(now);
         }
         else if(now - mLogPeriodStart >= LOG_INTERVAL_MS - STRONGEST_SIGNAL_WARM_UP_MS && mLogChecked > 0 &&
-            (isReportable(100.0 * mLogClipped / mLogChecked) || mLogOverloadEvents > 0))
+            (isReportable(100.0 * mLogClipped / mLogChecked) || mLogOverloadEvents > 0 || mLogPeak > 1.0f))
         {
             try
             {
@@ -318,7 +332,8 @@ public class TunerSignalMonitor
         double percent = mLogChecked > 0 ? 100.0 * mLogClipped / mLogChecked : 0.0;
         long minutes = Math.max(1, Math.round((now - mLogPeriodStart) / 60000.0));
 
-        if(isReportable(percent) || mLogOverloadEvents > 0)
+        //ap-22: a peak above 0 dBFS is overload whatever the share of samples at full scale
+        if(isReportable(percent) || mLogOverloadEvents > 0 || mLogPeak > 1.0f)
         {
             StringBuilder sb = new StringBuilder();
             sb.append("Tuner [").append(mTunerName.get()).append("] overload over the last ").append(minutes)
@@ -459,11 +474,20 @@ public class TunerSignalMonitor
     public record Reading(long samplesChecked, double clippedPercent, double peakDbfs, int overloadEvents)
     {
         /**
-         * Indicates overload: samples at full scale at the reporting level, or an overload reported by the tuner
+         * Indicates overload: samples at full scale at the reporting level, a peak above 0 dBFS (ap-22), or an
+         * overload reported by the tuner
          */
         public boolean isOverloaded()
         {
-            return isReportable(clippedPercent) || overloadEvents > 0;
+            return isClipping() || overloadEvents > 0;
+        }
+
+        /**
+         * ap-22: the samples themselves show the overload - enough of them at full scale, or a peak above 0 dBFS
+         */
+        public boolean isClipping()
+        {
+            return isReportable(clippedPercent) || isConverterClipping(peakDbfs);
         }
 
         /**

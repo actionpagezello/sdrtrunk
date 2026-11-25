@@ -158,4 +158,28 @@ public class TunerSignalMonitorTest
         assertTrue(TunerSignalMonitor.isReportable(0.01));
         assertTrue(TunerSignalMonitor.isReportable(1.5));
     }
+
+    @Test
+    public void peakAboveZeroDbfsIsOverload()
+    {
+        //ap-22: Denmark 2026-11-24, HydraSDR RF One: +3.4 dBFS with 0.000% of samples at full scale
+        TunerSignalMonitor.Reading clipped = new TunerSignalMonitor.Reading(1_000_000, 0.0, 3.4, 0);
+        assertTrue(clipped.isOverloaded());
+        assertTrue(clipped.isClipping());
+        assertFalse(clipped.isLowHeadroom());
+
+        //An 8-bit RTL-SDR's top code is 0.996, -0.03 dBFS
+        TunerSignalMonitor.Reading rtl = new TunerSignalMonitor.Reading(1_000_000, 0.0, -0.03, 0);
+        assertFalse(rtl.isOverloaded());
+        assertTrue(rtl.isLowHeadroom());
+
+        //Overload reported by the tuner alone is not clipping
+        TunerSignalMonitor.Reading events = new TunerSignalMonitor.Reading(1_000_000, 0.0, -12.0, 2);
+        assertTrue(events.isOverloaded());
+        assertFalse(events.isClipping());
+
+        assertTrue(TunerSignalMonitor.isConverterClipping(0.1));
+        assertFalse(TunerSignalMonitor.isConverterClipping(0.0));
+        assertFalse(TunerSignalMonitor.isConverterClipping(Double.NaN));
+    }
 }
