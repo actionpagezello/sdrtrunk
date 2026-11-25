@@ -230,6 +230,14 @@ public class TdmaInterferenceDetector
      */
     private volatile float mTriggerScore = 0.0f;
 
+    /**
+     * AP-fork (ap-22): windows that have met the detection rule during the present latch, and whether there have
+     * been SUSTAINED_WINDOWS of them. See isInterferenceSustained().
+     */
+    private static final int SUSTAINED_WINDOWS = 2;
+    private int mLatchWindows = 0;
+    private volatile boolean mSustained = false;
+
     private String mChannelLabel = "";
 
     /**
@@ -346,6 +354,23 @@ public class TdmaInterferenceDetector
     }
 
     /**
+     * AP-fork (ap-22): true when the present latch has seen a second detection window.
+     *
+     * A single window latches the detector, which is right for keeping a closed gate closed. It is not enough to
+     * end a call that is already open: ordinary speech meets the detection rule for one 300 ms window about once in
+     * 20 to 50 minutes of talk and not again while the latch lasts (Denmark Oxford County Fire 154.070 and Daly
+     * Lawrence Fire 154.445 basebands, 2026-11-25; Somerville log the same day, 9 calls cut, the window after each
+     * scored 1 to 6 against the threshold of 20). A slot cadence that is really there comes back within the
+     * RELEASE_WINDOWS the latch is held for. The second window need not be the next one: a synthetic 50% duty
+     * burst over a CTCSS tone misses every other window often enough that "two in a row" took up to 1.8 s to end
+     * the call.
+     */
+    public boolean isInterferenceSustained()
+    {
+        return mInterferenceDetected && mSustained;
+    }
+
+    /**
      * Most recent comb score, for diagnostics.
      */
     public float getLastScore()
@@ -400,6 +425,8 @@ public class TdmaInterferenceDetector
         mAboveCount = 0;
         mBelowCount = 0;
         mInterferenceDetected = false;
+        mLatchWindows = 0;
+        mSustained = false;
         mLastScore = 0.0f;
         clearSuspicion();
         mPersistWindows = 0;
@@ -734,6 +761,7 @@ public class TdmaInterferenceDetector
         {
             mAboveCount++;
             mBelowCount = 0;
+            mLatchWindows++;
 
             if(!mInterferenceDetected && mAboveCount >= CONFIRMATION_WINDOWS)
             {
@@ -746,15 +774,31 @@ public class TdmaInterferenceDetector
                 LOGGER.debug("[{}] TDMA digital interference detected (comb score={}) — tone gate vetoed",
                         mChannelLabel, String.format("%.1f", score));
             }
+
+            if(mInterferenceDetected && !mSustained && mLatchWindows >= SUSTAINED_WINDOWS)
+            {
+                mSustained = true;
+                LOGGER.debug("[{}] TDMA digital interference sustained (second window of this latch, comb " +
+                        "score={})", mChannelLabel, String.format("%.1f", score));
+            }
         }
         else
         {
             mBelowCount++;
             mAboveCount = 0;
 
+            //AP-fork (ap-22): a window that fails before the detector is latched starts the count again; during
+            //a latch the count runs until the latch is released, so the second window need not be the very next
+            if(!mInterferenceDetected)
+            {
+                mLatchWindows = 0;
+            }
+
             if(mInterferenceDetected && mBelowCount >= RELEASE_WINDOWS)
             {
                 mInterferenceDetected = false;
+                mSustained = false;
+                mLatchWindows = 0;
                 LOGGER.debug("[{}] TDMA digital interference cleared (comb score={})",
                         mChannelLabel, String.format("%.1f", score));
             }

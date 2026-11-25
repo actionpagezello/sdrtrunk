@@ -109,6 +109,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
      * tone filtering is enabled, since it exists purely to protect the tone gate.
      */
     private TdmaInterferenceDetector mTdmaDetector;
+    //AP-fork (ap-22): one log line per latch that is not applied to an open call
+    private boolean mTdmaSingleWindowLogged;
 
     /**
      * Holdover period (ms) for tone match across brief squelch closures.
@@ -872,7 +874,30 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         // noise across the CTCSS bins — including the target tone's bin — which can satisfy the
         // tone detector and hold the gate open for the entire burst. The TDMA slot cadence is
         // unambiguous and speech never produces it, so it overrides any tone match.
-        if(mToneFilterEnabled && mTdmaDetector != null && mTdmaDetector.isInterferenceDetected())
+        //
+        // AP-fork (ap-22): a call that is already open is ended only by a latch that has held for two windows in a
+        // row (isInterferenceSustained). One window is what speech produces by chance, and it was cutting calls in
+        // mid-sentence on every tone-filtered machine (Somerville 22, Daly 17, Denmark 4 on 2026-11-24). A closed
+        // gate is still kept closed by a single window, as before.
+        boolean tdmaLatched = mToneFilterEnabled && mTdmaDetector != null && mTdmaDetector.isInterferenceDetected();
+
+        if(tdmaLatched && mToneMatch && !mConfirmHoldActive && !mTdmaDetector.isInterferenceSustained())
+        {
+            if(!mTdmaSingleWindowLogged)
+            {
+                mTdmaSingleWindowLogged = true;
+                mLog.debug("[{}] TDMA veto not applied to the open call - one window only (comb score={}), " +
+                    "waiting for a second", mChannelLabel, String.format("%.1f", mTdmaDetector.getTriggerScore()));
+            }
+
+            tdmaLatched = false;
+        }
+        else if(!tdmaLatched)
+        {
+            mTdmaSingleWindowLogged = false;
+        }
+
+        if(tdmaLatched)
         {
             //AP-fork (ap-15.9.20): the latch came while a weak confirmation was on hold - exactly the burst the
             //hold exists for. Nothing was started, so discard quietly rather than ending a call.
@@ -1324,6 +1349,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     }
 
     /**
+     * AP-fork (ap-22): true while the TDMA veto keeps a closed tone gate closed.
+     */
+    private boolean isTdmaVetoHoldingGate()
+    {
+        return mToneFilterEnabled && mTdmaDetector != null && mTdmaDetector.isInterferenceDetected();
+    }
+
+    /**
      * AP-fork (ap-15.9.20): what the TDMA detector saw, for the hold log lines.
      */
     private String describeTdmaEvidence()
@@ -1761,6 +1794,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 @Override
                 public void ctcssDetected(CTCSSCode code)
                 {
+                    //AP-fork (ap-22): the TDMA veto is holding the gate closed. Opening it here only for the veto
+                    //to close it again on the next buffer made five or six empty calls 50-100 ms apart after every
+                    //TDMA call end. The tone keeps being reported, so the gate opens once the latch is released.
+                    if(!mToneMatch && isTdmaVetoHoldingGate())
+                    {
+                        return;
+                    }
+
                     // Matching tone confirmed — wake up the channel like a real radio unsquelching
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
@@ -1857,6 +1898,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 @Override
                 public void dcsDetected(DCSCode code)
                 {
+                    //AP-fork (ap-22): as for CTCSS - no opening against a held TDMA veto
+                    if(!mToneMatch && isTdmaVetoHoldingGate())
+                    {
+                        return;
+                    }
+
                     // Matching code confirmed — wake up the channel
                     boolean wasBlocked = !mToneMatch;
                     mToneMatch = true;
