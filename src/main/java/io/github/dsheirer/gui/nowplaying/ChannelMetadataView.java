@@ -42,9 +42,6 @@ import io.github.dsheirer.settings.Settings;
 import io.github.dsheirer.settings.identifier.TalkgroupFormatSettings;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
-import io.github.dsheirer.source.config.SourceConfigTuner;
-import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
-import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.channel.TunerChannelSource;
 import java.text.DecimalFormat;
@@ -114,21 +111,23 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
     private final Broadcaster<ProcessingChain> mSelectedProcessingChainBroadcaster = new Broadcaster<>();
     private final TableColumnMonitor<Row> mTableColumnMonitor;
     private Channel mUserSelectedChannel;
-    //AP-fork: right-click Mute/Unmute and Show in Waterfall
+    //AP-fork: right-click Mute/Unmute
     private final ChannelAudioActions mChannelAudioActions;
+    private final ShowInWaterfallAction mShowInWaterfallAction;
 
     /**
      * Constructs an instance.  Construct on the JavaFX application thread.
      * @param playlistManager for the channel metadata, processing chains and aliases
      * @param iconModel for alias icons
      * @param settings for talkgroup formatting and column settings
-     * @param tunerManager for Show in Waterfall, or null
+     * @param tunerManager for showing a channel in the waterfall, or null
      */
     public ChannelMetadataView(PlaylistManager playlistManager, IconModel iconModel,
                                Settings settings, TunerManager tunerManager)
     {
         mChannelProcessingManager = playlistManager.getChannelProcessingManager();
-        mChannelAudioActions = new ChannelAudioActions(playlistManager, settings, tunerManager);
+        mChannelAudioActions = new ChannelAudioActions(playlistManager, settings);
+        mShowInWaterfallAction = new ShowInWaterfallAction(mChannelProcessingManager, tunerManager);
         mChannelMetadataModel = mChannelProcessingManager.getChannelMetadataModel();
         mIconModel = iconModel;
         mTalkgroupFormatSettings = settings.getTalkgroupFormatSettings();
@@ -288,9 +287,9 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
     {
         TableRow<Row> tableRow = new TableRow<>();
         ContextMenu contextMenu = new ContextMenu();
-        //AP-fork: the menu is built when the user right-clicks, before the row's own handler shows it.  Upstream built
-        //it in the menu's onShowing, but ContextMenu.show() returns without showing (or firing onShowing) when the menu
-        //has no items, so the right-click never opened.
+        //The menu items are built when the row is right-clicked, before the row shows the menu.  Building them in the
+        //menu's onShowing handler doesn't work: ContextMenu.show() returns without showing (and without firing
+        //onShowing) while the menu has no items, so the menu never opened.
         tableRow.addEventFilter(ContextMenuEvent.CONTEXT_MENU_REQUESTED, event -> {
             contextMenu.getItems().clear();
             Row row = tableRow.getItem();
@@ -315,13 +314,10 @@ public class ChannelMetadataView extends VBox implements ChannelMetadataModel.Li
                 muteItem.setOnAction(e -> mChannelAudioActions.setChannelMuted(metadata, channel, !isMuted));
                 contextMenu.getItems().add(muteItem);
 
-                //AP-fork: Show in Waterfall, for channels with a tuner source
-                SourceConfiguration sourceConfig = channel.getSourceConfiguration();
-
-                if(sourceConfig instanceof SourceConfigTuner || sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+                if(ShowInWaterfallAction.isSupported(channel))
                 {
                     MenuItem waterfallItem = new MenuItem("Show in Waterfall");
-                    waterfallItem.setOnAction(e -> mChannelAudioActions.showChannelInWaterfall(channel));
+                    waterfallItem.setOnAction(e -> mShowInWaterfallAction.showChannelInWaterfall(channel));
                     contextMenu.getItems().add(waterfallItem);
                 }
             }

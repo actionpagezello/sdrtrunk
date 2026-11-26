@@ -50,6 +50,7 @@ public class NowPlayingView extends SplitPane
      * @param playlistManager for the channels
      * @param iconModel for alias icons
      * @param settings for display formats and column settings
+     * @param tunerManager for showing a channel in the waterfall
      * @param detailTabsVisible to show the detail tabs
      */
     public NowPlayingView(PlaylistManager playlistManager, IconModel iconModel, Settings settings,

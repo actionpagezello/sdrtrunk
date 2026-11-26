@@ -234,7 +234,7 @@ public class MainSpectralDisplay extends StackPane
     }
 
     /**
-     * AP-fork: zooms the display to the zoom level and centres it on the frequency.  Used when a channel's "show in
+     * Zooms the display to the zoom level and centres it on the frequency.  Used when a channel's "show in
      * waterfall" request names the channel frequency.  Queued on the display thread after showTuner() so the tuner's
      * frequency range is known, then applied on the FX thread; the zoom is reset first so it always re-centres.
      * Can be called from any thread and doesn't block.

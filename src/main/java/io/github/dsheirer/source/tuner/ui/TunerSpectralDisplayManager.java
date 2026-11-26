@@ -99,7 +99,7 @@ public class TunerSpectralDisplayManager implements Listener<TunerEvent>
 
                     if(event.hasCenterFrequency())
                     {
-                        //AP-fork: zoom to level 4 (16x) centred on the channel frequency
+                        //Zoom to level 4 (16x) centred on the channel frequency
                         mMainSpectralDisplay.zoomTo(4, event.getCenterFrequency());
                     }
                 }
