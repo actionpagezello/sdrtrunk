@@ -27,6 +27,7 @@ import io.github.dsheirer.gui.broadcast.BroadcastStatusView;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.settings.Setting;
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import javafx.collections.ListChangeListener;
 
@@ -66,7 +67,20 @@ public class StreamingStatusItem extends ServiceStatusItem
     @Override
     protected void update()
     {
-        List<ConfiguredBroadcast> broadcasts = new ArrayList<>(mBroadcastModel.getConfiguredBroadcasts());
+        List<ConfiguredBroadcast> broadcasts;
+
+        try
+        {
+            broadcasts = new ArrayList<>(mBroadcastModel.getConfiguredBroadcasts());
+        }
+        catch(ConcurrentModificationException e)
+        {
+            //AP-fork: at start-up the playlist loader adds the configured streams from the main thread while this
+            //runs on the JavaFX thread, and the copy can fail part way through.  The list is still changing, so
+            //try again after it settles instead of letting the exception reach the uncaught exception handler.
+            scheduleUpdate();
+            return;
+        }
         int enabled = 0;
         int connected = 0;
         StatusSeverity severity = StatusSeverity.NEUTRAL;
