@@ -3,6 +3,31 @@
 > `CLAUDE.md` (repo root, gitignored) is the primary session context file. This file tracks build state at a glance.
 > The 0.6.2 series status (ap-15.x, ap-16.x, `edacs` builds 1-25) is in `SESSION-STATUS-0.6.2.md`.
 
+## 2026-11-26 11:30 - `1.0.0-ap-23` delivered as `ap-1.0.0-ap-23.patch` (not yet applied when written)
+
+- Eleven commits on ap-22 (`5e05e840` on the fork, tree `f12640b3`): upstream #2761, #2801, #2803, #2807, #2808,
+  #2815, #2810, #2818, #2770 (`133f7c73..86de0ff2`, all of upstream master on 2026-11-26); the streaming status
+  fix; version and docs.  842 tests.
+- **#2770 merge.**  Upstream's `ShowInWaterfallAction`, `TunerEvent` centre frequency and `MainSpectralDisplay.zoomTo`
+  replace the fork's copies (those files now equal upstream's).  `ChannelAudioActions` keeps only Mute/Unmute and no
+  longer takes a `TunerManager`; `ChannelMetadataView` still takes the `PlaylistManager` (Mute needs the alias
+  model), which is the one line `NowPlayingView` differs from upstream by.
+- **Streaming status fix is not reproduced by a test**: `BroadcastModel` starts a scheduled monitor and touches the
+  recordings folder in its constructor.  The fix catches the exception at the list copy and schedules the update
+  again.
+- **ap-22 overnight 11-25 19:30 to 11-26 09:30** (CTCSS / DCS box on): calls ended as TDMA - Daly 0 (ap-21: 7),
+  Denmark 0 (10), Somerville 1 (16); one-window triggers left alone 6 / 11 / 18; no empty calls.
+- **The one Somerville cut was not DMR.**  Brookline Fire 483.4375, 23:14:24, slice kept as
+  `logs\reference\somerville_BrooklineFire_2314_slice.wav` (cut about 120 s in).  One narrow FM carrier, 4-15 dB
+  above the noise, amplitude swinging 10-15 dB at a steady 32.5 Hz for about 1.5 s; no wide digital signal on or
+  beside the channel.  The noise burst in each dip gave the detector two windows (28.6, 29.5).  Lost: about 0.5 s
+  at the end of a 2.6 s call and about 1 s at the start of the next.  Cause of the flutter not established.  No
+  detector change on one case; if it repeats, require DMR's hard slot edges, with this slice as the test.
+- **Open:** Denmark RTL 97350833 (Cornish Control 172.5) and 43819678 report overload - Gain Check each.  Daly
+  RSP1B gaps every 15 min unidentified.  "CTCSS holdover" measurement lines are at WARN with the Diagnostics boxes
+  off (Somerville, 56 on 11-25).  Cambridge is on ap-21.  PR #2771 (Mute) declined as written; redesign and reply
+  to Dennis under discussion.
+
 ## 2026-11-25 15:30 - `1.0.0-ap-22` delivered as `ap-1.0.0-ap-22.patch` (not yet applied when written)
 
 - Nine commits on `4168ebf3` (ap-21 + the 11-24 docs commit): upstream #2702, #2791, #2760, #2793, #2796, #2798

@@ -5,6 +5,35 @@ All notable changes to the SDRTrunk AP fork, 1.0.0 series (branch `ap-1.0`).
 Versions are `<upstream version>-ap-<n>`: the upstream SDRTrunk release the build is based on, then the fork's own
 counter. The 0.6.2 series (ap-15.x, ap-16.x and the `edacs` test builds 1-25) is in `CHANGELOG-0.6.2.md`.
 
+## [1.0.0-ap-23] - 2026-11-26
+
+Upstream from 2026-11-26 and one start-up error from the Somerville log.  No change to NBFM decoding, the TDMA
+detector or Gain Check.  Builds on ap-22.
+
+### Fixed
+- **Start-up error in the streaming status.**  Somerville logged one uncaught `ConcurrentModificationException`
+  from the status bar's Streaming item while the playlist was still adding its streams (2026-11-25 19:25, ap-22).
+  The item now tries again when the stream list changes under it.  The error left nothing broken: the next change
+  redrew the item.
+
+### Changed
+- **Show in Waterfall is upstream's.**  Upstream merged the fork's Now Playing right-click fix and Show in Waterfall
+  as #2770, so the fork's copy is removed and upstream's is used.  The menu reads and works the same.  Mute/Unmute
+  stays the fork's and sits in the same menu.
+
+### Upstream
+- **#2761** the audio filters work on a copy of the demodulated audio, so the MDC-1200, Fleetsync and DCS decoders
+  on an analog channel get unfiltered audio while the squelch is open.
+- **#2770** Now Playing: the channel right-click menu opens, and Show in Waterfall.
+- **#2801** P25 Motorola group regroup: empty radio addresses in the terminator are ignored.
+- **#2803** the talker alias is cleared when the calling radio changes.
+- **#2807** DMR: full link control messages that passed error correction were marked invalid, and failed ones
+  valid.
+- **#2808, #2810, #2815** P25 Phase 2: wrong lengths for three answer-request messages and for paging messages,
+  which made the message after them parse at the wrong position; several fields read one bit too many, which gave
+  wrong fully qualified radio and group IDs and a wrong frequency in one unit-to-unit channel grant.
+- **#2818** P25 Phase 2: a priority page event showed only "PRIORITY" in its details.
+
 ## [1.0.0-ap-22] - 2026-11-25
 
 Voice calls cut as "DMR/TDMA interference", two Gain Check faults from the Denmark RF One, and upstream from
